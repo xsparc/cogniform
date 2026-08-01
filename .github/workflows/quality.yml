@@ -1,0 +1,71 @@
+name: quality
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CARGO_NET_OFFLINE: "true"
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Classify changed paths
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rust_required=false
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              *.md|LICENSE)
+                ;;
+              *)
+                rust_required=true
+                break
+                ;;
+            esac
+          done < <(git diff --name-only --diff-filter=ACDMRTUXB -z HEAD^1 HEAD)
+
+          echo "rust_required=$rust_required" >> "$GITHUB_OUTPUT"
+          echo "Rust validation required: $rust_required"
+
+      - name: Install the pinned Rust toolchain
+        if: steps.changes.outputs.rust_required == 'true'
+        shell: bash
+        run: rustup toolchain install 1.97.1 --profile minimal --component clippy --component rustfmt --no-self-update
+
+      - name: Check formatting
+        if: steps.changes.outputs.rust_required == 'true'
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        if: steps.changes.outputs.rust_required == 'true'
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Run tests
+        if: steps.changes.outputs.rust_required == 'true'
+        run: cargo test --workspace --all-features --locked
+
+      - name: Build documentation
+        if: steps.changes.outputs.rust_required == 'true'
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --all-features --locked
