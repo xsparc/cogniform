@@ -14,5 +14,6 @@ earlier one and links the history.
 | [0006](0006-coalesced-extraction-and-bounded-observations.md) | Accepted | Drain coalesced render changes into revision-linked frames and bounded observations |
 | [0007](0007-pure-imagination-compiler-and-bounded-local-gateway.md) | Accepted | Compile bounded primitive imaginations purely and admit local commands with explicit queue semantics |
 | [0008](0008-content-addressed-assets-and-pure-built-in-procedures.md) | Accepted | Separate content-addressed CPU import, logical asset references, bounded GPU upload, and pure built-in procedures |
+| [0009](0009-recorded-engine-and-local-typed-service.md) | Accepted | Record engine mutations and expose a bounded local typed service with a canonical unattended scenario |
 
 New records use four sections: context, decision, consequences, and status.

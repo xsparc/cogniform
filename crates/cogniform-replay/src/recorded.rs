@@ -1,8 +1,8 @@
-use cogniform_protocol::{ApplyReceipt, FrameId, ScenePatch};
-use cogniform_world::{AuthoritativeWorld, WorldConfig};
+use cogniform_protocol::{ApplyReceipt, FrameId, RenderExtraction, ScenePatch};
+use cogniform_world::{AuthoritativeWorld, WorldConfig, WorldExtractionError};
 
 use crate::{
-    RecordedApplyError, ReplayConfig, ReplayConfigError, ReplayEntry, ReplayLog,
+    RecordedApplyError, ReplayConfig, ReplayConfigError, ReplayEntry, ReplayError, ReplayLog,
     log::{ENTRY_ENVELOPE_BYTES, ReplayEntryMetadata},
 };
 
@@ -40,6 +40,16 @@ impl RecordedWorld {
     #[must_use]
     pub const fn log(&self) -> &ReplayLog {
         &self.log
+    }
+
+    /// Drains the next compact renderer extraction without exposing mutable world state.
+    pub fn take_render_extraction(&mut self) -> Result<RenderExtraction, WorldExtractionError> {
+        self.world.take_render_extraction()
+    }
+
+    /// Replays every accepted entry into a fresh world with the original bounds.
+    pub fn replay(&self) -> Result<AuthoritativeWorld, ReplayError> {
+        self.log.replay(self.world_config)
     }
 
     /// Applies a patch atomically and records it exactly once when newly accepted.

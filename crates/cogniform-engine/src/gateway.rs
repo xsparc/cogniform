@@ -184,24 +184,10 @@ impl LocalGateway {
     /// Wraps one engine with bounded command admission and deterministic compilation.
     pub fn new(engine: CogniformEngine, config: GatewayConfig) -> Result<Self, GatewayError> {
         let limits = engine.runtime_limits();
-        if config.command_capacity.get() > limits.max_queue_capacity.get() {
-            return Err(GatewayError::InvalidConfig {
-                reason: "gateway command capacity exceeds the active protocol queue limit",
-            });
-        }
-        if config.command_capacity.get() > config.idempotency_capacity.get() {
-            return Err(GatewayError::InvalidConfig {
-                reason: "gateway idempotency capacity must cover command capacity",
-            });
-        }
         let available_world_records = engine
             .max_idempotency_records()
             .saturating_sub(engine.idempotency_record_count());
-        if config.idempotency_capacity.get() > available_world_records {
-            return Err(GatewayError::InvalidConfig {
-                reason: "gateway idempotency capacity exceeds available world result retention",
-            });
-        }
+        validate_config(config, &limits, available_world_records)?;
         Ok(Self {
             engine,
             compiler: DeterministicCompiler::new(CompilerConfig::new(limits)),
@@ -306,6 +292,10 @@ impl LocalGateway {
         &self.engine
     }
 
+    pub(crate) const fn engine_mut(&mut self) -> &mut CogniformEngine {
+        &mut self.engine
+    }
+
     /// Consumes the gateway and returns its engine.
     #[must_use]
     pub fn into_engine(self) -> CogniformEngine {
@@ -326,6 +316,29 @@ impl LocalGateway {
             count(self.completed.len()) + self.queue.depth() < self.idempotency_capacity;
         self.queue.admit(record, has_idempotency_capacity)
     }
+}
+
+pub(crate) fn validate_config(
+    config: GatewayConfig,
+    limits: &RuntimeLimits,
+    available_world_records: u32,
+) -> Result<(), GatewayError> {
+    if config.command_capacity.get() > limits.max_queue_capacity.get() {
+        return Err(GatewayError::InvalidConfig {
+            reason: "gateway command capacity exceeds the active protocol queue limit",
+        });
+    }
+    if config.command_capacity.get() > config.idempotency_capacity.get() {
+        return Err(GatewayError::InvalidConfig {
+            reason: "gateway idempotency capacity must cover command capacity",
+        });
+    }
+    if config.idempotency_capacity.get() > available_world_records {
+        return Err(GatewayError::InvalidConfig {
+            reason: "gateway idempotency capacity exceeds available world result retention",
+        });
+    }
+    Ok(())
 }
 
 #[derive(Clone)]

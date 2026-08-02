@@ -2,7 +2,10 @@ use core::num::NonZeroU32;
 
 use cogniform_protocol::{ApplyReceipt, ApplyStatus, RuntimeLimits, ScenePatch, SceneRevision};
 use cogniform_renderer::{HeadlessRenderer, RendererConfig};
-use cogniform_world::{AuthoritativeWorld, WorldConfig};
+use cogniform_replay::{
+    RecordedApplyError, RecordedWorld, ReplayConfig, ReplayError, ReplayLog, ReplayVerification,
+};
+use cogniform_world::{AuthoritativeWorld, LogicalSceneHash, WorldConfig};
 
 use crate::{EngineError, Observation, ObservationQueue, ObservationRequest};
 
@@ -13,6 +16,8 @@ pub struct EngineConfig {
     pub world: WorldConfig,
     /// Fixed-size renderer and readback bounds.
     pub renderer: RendererConfig,
+    /// Bounded accepted-event replay log.
+    pub replay: ReplayConfig,
     /// Total queued, active, or completed observations allowed at once.
     pub observation_capacity: NonZeroU32,
 }
@@ -24,6 +29,7 @@ impl EngineConfig {
         Self {
             world: WorldConfig::default(),
             renderer: RendererConfig::new(width, height),
+            replay: ReplayConfig::default(),
             observation_capacity: NonZeroU32::new(2).expect("constant is non-zero"),
         }
     }
@@ -38,7 +44,7 @@ impl EngineConfig {
 
 /// Local composition of one authoritative world, renderer, and observation path.
 pub struct CogniformEngine {
-    world: AuthoritativeWorld,
+    world: RecordedWorld,
     renderer: HeadlessRenderer,
     observations: ObservationQueue,
 }
@@ -47,7 +53,7 @@ impl std::fmt::Debug for CogniformEngine {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("CogniformEngine")
-            .field("revision", &self.world.revision())
+            .field("revision", &self.world.world().revision())
             .field("renderer", &self.renderer)
             .field("observations", &self.observations)
             .finish_non_exhaustive()
@@ -59,7 +65,8 @@ impl CogniformEngine {
     pub async fn new(config: EngineConfig) -> Result<Self, EngineError> {
         validate_config(&config)?;
         let limits = config.world.runtime_limits;
-        let world = AuthoritativeWorld::new(config.world);
+        let world =
+            RecordedWorld::new(config.world, config.replay).map_err(EngineError::ReplayConfig)?;
         let renderer = HeadlessRenderer::new(config.renderer).await?;
         let observations = ObservationQueue::new(config.observation_capacity, limits)?;
         Ok(Self {
@@ -72,13 +79,13 @@ impl CogniformEngine {
     /// Returns the current authoritative scene revision.
     #[must_use]
     pub const fn revision(&self) -> SceneRevision {
-        self.world.revision()
+        self.world.world().revision()
     }
 
     /// Returns read-only access to the authoritative world contract.
     #[must_use]
     pub const fn world(&self) -> &AuthoritativeWorld {
-        &self.world
+        self.world.world()
     }
 
     /// Returns read-only access to renderer metadata and extracted-state counters.
@@ -90,15 +97,56 @@ impl CogniformEngine {
     /// Applies one atomic patch and immediately consumes its compact extraction.
     pub fn apply_patch(&mut self, patch: &ScenePatch) -> Result<ApplyReceipt, EngineError> {
         let estimated_visible_frame = self.renderer.next_frame_id()?;
-        let receipt = self.world.apply_patch(patch, estimated_visible_frame)?;
+        let receipt = match self.world.apply_patch(patch, estimated_visible_frame) {
+            Ok(receipt) => receipt,
+            Err(RecordedApplyError::World(error)) => return Err(EngineError::WorldApply(error)),
+            Err(error) => return Err(EngineError::ReplayRecord(error)),
+        };
         if receipt.status == ApplyStatus::IdempotentReplay {
             return Ok(receipt);
         }
         let extraction = self.world.take_render_extraction()?;
         let summary = self.renderer.apply_extraction(&extraction)?;
-        debug_assert_eq!(summary.scene_revision, self.world.revision());
-        debug_assert_eq!(self.renderer.scene_revision(), self.world.revision());
+        debug_assert_eq!(summary.scene_revision, self.revision());
+        debug_assert_eq!(self.renderer.scene_revision(), self.revision());
         Ok(receipt)
+    }
+
+    /// Returns the bounded append-only log of newly accepted patches.
+    #[must_use]
+    pub const fn replay_log(&self) -> &ReplayLog {
+        self.world.log()
+    }
+
+    /// Returns an owned version-one encoding of the accepted-event log.
+    #[must_use]
+    pub fn replay_bytes(&self) -> Vec<u8> {
+        self.world.log().to_bytes()
+    }
+
+    /// Verifies the complete accepted-event hash and revision chain.
+    pub fn verify_replay(&self) -> Result<ReplayVerification, EngineError> {
+        self.world
+            .log()
+            .verify()
+            .map_err(|error| EngineError::Replay(ReplayError::Integrity(error)))
+    }
+
+    /// Returns the current authoritative logical scene hash.
+    pub fn logical_hash(&self) -> Result<LogicalSceneHash, EngineError> {
+        self.world
+            .world()
+            .logical_hash()
+            .map_err(EngineError::WorldInvariant)
+    }
+
+    /// Replays every accepted event into a fresh world and returns its logical hash.
+    pub fn replayed_logical_hash(&self) -> Result<LogicalSceneHash, EngineError> {
+        self.world
+            .replay()
+            .map_err(EngineError::Replay)?
+            .logical_hash()
+            .map_err(EngineError::WorldInvariant)
     }
 
     /// Submits one extracted-scene observation without waiting for readback or consumers.
@@ -113,7 +161,7 @@ impl CogniformEngine {
     /// Polls one completed observation without waiting.
     pub fn try_receive_observation(&self) -> Result<Option<Observation>, EngineError> {
         self.observations
-            .try_receive(self.world.revision())
+            .try_receive(self.revision())
             .map_err(EngineError::from)
     }
 
@@ -132,23 +180,27 @@ impl CogniformEngine {
     /// Returns the active bounded public protocol limits.
     #[must_use]
     pub const fn runtime_limits(&self) -> RuntimeLimits {
-        self.world.runtime_limits()
+        self.world.world().runtime_limits()
     }
 
     /// Returns the accepted idempotency-result capacity shared with the gateway.
     #[must_use]
     pub const fn max_idempotency_records(&self) -> u32 {
-        self.world.max_idempotency_records()
+        self.world.world().max_idempotency_records()
     }
 
     /// Returns the number of accepted world idempotency records already retained.
     #[must_use]
     pub fn idempotency_record_count(&self) -> u32 {
-        u32::try_from(self.world.idempotency_record_count()).unwrap_or(u32::MAX)
+        u32::try_from(self.world.world().idempotency_record_count()).unwrap_or(u32::MAX)
     }
 }
 
-fn validate_config(config: &EngineConfig) -> Result<(), EngineError> {
+pub(crate) fn validate_config(config: &EngineConfig) -> Result<(), EngineError> {
+    config
+        .replay
+        .validate()
+        .map_err(EngineError::ReplayConfig)?;
     if config.world.max_entities.get() > config.renderer.max_scene_entities.get() {
         return Err(EngineError::InvalidConfig {
             reason: "renderer entity capacity must cover the maximum live world entity count",
@@ -182,6 +234,13 @@ mod tests {
 
     #[test]
     fn cross_domain_capacities_fail_before_renderer_initialization() {
+        let mut config = EngineConfig::new(64, 64);
+        config.replay.max_log_bytes = NonZeroU32::new(1).unwrap();
+        assert!(matches!(
+            validate_config(&config),
+            Err(EngineError::ReplayConfig(_))
+        ));
+
         let mut config = EngineConfig::new(64, 64);
         config.observation_capacity = NonZeroU32::new(3).unwrap();
         assert!(matches!(

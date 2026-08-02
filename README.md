@@ -13,8 +13,10 @@ scene revision that produced it.
 > are implemented. A bounded in-process gateway, exact logical queries, and a
 > deterministic primitive imagination compiler are also available. The current
 > asset baseline adds content-addressed GLB geometry, bounded caller-driven CPU
-> decode and GPU upload, plus pure seeded cuboid-grid procedures. External
-> service packaging and the canonical MVP client flow have not landed yet.
+> decode and GPU upload, plus pure seeded cuboid-grid procedures. A bounded
+> local typed service and CLI now run the canonical unattended MVP flow and
+> verify replay to the same logical hash. Remote transport, persistence, and
+> release packaging have not landed yet.
 
 ## Architecture
 
@@ -49,7 +51,11 @@ machine-readable payloads. The
 command admission, idempotency, deterministic compilation, and logical queries.
 The [GLB asset guide](docs/assets/glb-subset.md) documents exact source
 admission, the approved format subset, lifecycle, capacity limits, proxy policy,
-and controlled GPU validation.
+and controlled GPU validation. The
+[local service guide](docs/protocol/local-service.md) documents the in-process
+composition boundary and known limitations, while the
+[canonical scenario guide](docs/getting-started/canonical-scenario.md) provides
+the unattended MVP command and expected evidence.
 
 ## Build and test
 
@@ -65,9 +71,16 @@ cargo doc --workspace --no-deps --all-features --locked --offline
 ```
 
 Dependency sources are checked into `vendor/`, so these commands need no
-external service after the pinned toolchain is installed. The CLI currently
-exits with a clear not-implemented message rather than suggesting runtime
-capability.
+external service after the pinned toolchain is installed. On a supported
+headless DX12 or Vulkan adapter, run the canonical local scenario with:
+
+```text
+cargo run -p cogniform-cli --locked --offline -- scenario
+```
+
+The command opens no window and performs no network call. It verifies the room,
+table, light, camera, atomic update, exact query, color/entity-ID/visibility
+causality, and replay hash contract before returning success.
 
 ## Contributing and security
 

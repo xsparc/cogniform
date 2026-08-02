@@ -113,6 +113,15 @@ Outcome: a local CLI/service runs the complete room/table/light/camera flow, ret
 
 Gate: the six-step MVP scenario passes unattended with no external service, no visible window, and bounded queues. The protocol surface and known limitations are documented.
 
+Implemented contract: the engine records every newly accepted patch through a
+bounded `RecordedWorld`; a local typed service composes command admission,
+caller-driven processing, exact queries, revision-linked observations, status,
+and replay verification without a socket or external side effect. The CLI and
+controlled integration test share the six-step canonical scenario. See
+[ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md), the
+[local service guide](../protocol/local-service.md), and the
+[canonical scenario guide](../getting-started/canonical-scenario.md).
+
 ### PR 10 - CF009: MVP hardening and release-candidate evidence
 
 Outcome: threat model, performance fixtures, compatibility evidence, failure injection, packaging decision, and contributor/release documentation support an honest first release candidate.
