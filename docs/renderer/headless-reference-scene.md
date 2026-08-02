@@ -36,9 +36,10 @@ view shear. The background entity ID is `0` and cleared depth is `1.0`.
 - center depth uses an absolute tolerance of 0.02;
 - cross-adapter bitwise image equality is not claimed.
 
-The `u32` attachment is compact render identity, not
-`StableEntityId`. Stable-to-render identity mapping and observation causality
-arrive with extraction in CF005.
+The `u32` attachment is compact render identity, not `StableEntityId`. CF005
+adds a bounded renderer-owned mapping and retains its compact-to-stable snapshot
+with every pending frame, so machine-facing observations expose exact stable
+identity even when compact values are later recycled.
 
 ## API lifecycle
 
@@ -46,8 +47,8 @@ arrive with extraction in CF005.
 use cogniform_renderer::{HeadlessRenderer, RendererConfig};
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-let renderer = HeadlessRenderer::new(RendererConfig::new(64, 64)).await?;
-let pending = renderer.submit_reference_scene();
+let mut renderer = HeadlessRenderer::new(RendererConfig::new(64, 64)).await?;
+let pending = renderer.submit_reference_scene()?;
 
 // Explicit synchronization point. Submission itself does not wait.
 let frame = pending.read()?;
@@ -61,9 +62,11 @@ Configuration rejects zero dimensions, dimensions above 4096, more than
 above 60 seconds before GPU allocation. Texture copies use 256-byte padded
 rows; only initialized pixel bytes enter the tightly packed output vectors.
 
-`PendingFrame::read` is intended for conformance tests and diagnostics. It may
-block its caller for the configured timeout. Bounded buffer reuse and
-non-blocking observation consumers are explicitly deferred to CF005.
+`PendingFrame::read` is intended for conformance tests, the bounded observation
+worker, and diagnostics. It may block its caller for the configured timeout.
+Submission leases one preallocated readback set and fails immediately when the
+fixed pool is exhausted. The engine worker performs the blocking read outside
+renderer submission and releases the lease after completion.
 
 ## Validation
 
@@ -84,3 +87,5 @@ upload an artifact, or require a paid runner.
 
 See [ADR 0005](../adr/0005-bounded-headless-wgpu-baseline.md) for the dependency,
 backend, identity, and synchronization decisions.
+See [the extraction and observation guide](incremental-extraction-and-observations.md)
+for the CF005 world-to-render and asynchronous feedback path.

@@ -16,3 +16,6 @@ cogniform-protocol.workspace = true
 cogniform-renderer.workspace = true
 cogniform-replay.workspace = true
 cogniform-world.workspace = true
+
+[dev-dependencies]
+pollster = "=0.4.0"

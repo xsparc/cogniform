@@ -6,11 +6,12 @@ worlds, render machine-readable observations, and link feedback to the exact
 scene revision that produced it.
 
 > [!IMPORTANT]
-> Cogniform is an early core, not a working 3D engine. The public protocol
-> contracts, atomic authoritative world, deterministic hierarchy, logical
-> hashing, replay, and a bounded headless primitive renderer are implemented;
-> world extraction, revision-linked observations, and service behavior have
-> not landed yet.
+> Cogniform is an early core, not a complete service or general-purpose 3D
+> engine. Public contracts, the atomic authoritative world, deterministic
+> hierarchy/hash/replay, compact render extraction, bounded headless cuboid
+> rendering, and revision-linked color/depth/entity-ID/visibility observations
+> are implemented. Agent gateway, assets, service packaging, and the canonical
+> MVP client flow have not landed yet.
 
 ## Architecture
 
@@ -34,7 +35,10 @@ schema and validation boundary. The
 [determinism and replay guide](docs/architecture/determinism-and-replay.md)
 documents hierarchy, transform, hash, and recovery behavior. The
 [headless renderer guide](docs/renderer/headless-reference-scene.md) documents
-the current offscreen targets, backend boundary, probes, and limitations.
+the current offscreen targets, backend boundary, probes, and limitations. The
+[extraction and observation guide](docs/renderer/incremental-extraction-and-observations.md)
+documents sparse world updates, frame causality, pressure behavior, and owned
+machine-readable payloads.
 
 ## Build and test
 

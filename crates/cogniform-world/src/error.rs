@@ -1,7 +1,8 @@
 use core::fmt;
 
 use cogniform_protocol::{
-    ComponentKind, IdempotencyKey, SceneRevision, StableEntityId, TransactionId, ValidationError,
+    ComponentKind, IdempotencyKey, RenderContractError, SceneRevision, StableEntityId,
+    TransactionId, ValidationError,
 };
 
 /// A rejected patch that left the authoritative world unchanged.
@@ -93,6 +94,13 @@ pub enum WorldApplyError {
     },
     /// The monotonic transform generation cannot be incremented.
     TransformGenerationOverflow,
+    /// Changed render records cannot fit in the bounded pending extraction set.
+    RenderExtractionCapacityExceeded {
+        /// Configured maximum number of pending stable identities.
+        limit: u32,
+    },
+    /// No later render extraction generation can represent another commit.
+    RenderExtractionGenerationOverflow,
     /// The operation belongs to a later approved world slice.
     UnsupportedOperation {
         /// Zero-based operation index.
@@ -149,12 +157,56 @@ impl fmt::Display for WorldApplyError {
             Self::TransformGenerationOverflow => {
                 formatter.write_str("transform generation overflow")
             }
+            Self::RenderExtractionCapacityExceeded { limit } => write!(
+                formatter,
+                "pending render extraction capacity {limit} would be exceeded"
+            ),
+            Self::RenderExtractionGenerationOverflow => {
+                formatter.write_str("render extraction generation overflow")
+            }
             Self::UnsupportedOperation { .. } => {
                 formatter.write_str("operation is not supported by this world version")
             }
             Self::InvariantViolation(error) => {
                 write!(formatter, "world invariant failure: {error}")
             }
+        }
+    }
+}
+
+/// Failure to produce the next immutable render extraction packet.
+#[derive(Debug)]
+pub enum WorldExtractionError {
+    /// The monotonic extraction generation cannot be incremented.
+    GenerationOverflow,
+    /// Private world state no longer satisfies its invariants.
+    InvariantViolation(WorldInvariantError),
+    /// Derived backend-neutral data violated its public contract.
+    InvalidRenderData(RenderContractError),
+}
+
+impl fmt::Display for WorldExtractionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GenerationOverflow => {
+                formatter.write_str("render extraction generation overflow")
+            }
+            Self::InvariantViolation(error) => {
+                write!(formatter, "world invariant failure: {error}")
+            }
+            Self::InvalidRenderData(error) => {
+                write!(formatter, "invalid render extraction: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for WorldExtractionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::GenerationOverflow => None,
+            Self::InvariantViolation(error) => Some(error),
+            Self::InvalidRenderData(error) => Some(error),
         }
     }
 }

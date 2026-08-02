@@ -61,6 +61,14 @@ metadata has no pixel dimensions.
 Bulk image bytes are deliberately absent. Later renderer or transport adapters
 must keep payload storage separate from this causal envelope.
 
+CF005 also defines an in-process `RenderExtraction` value contract. It carries
+one monotonic generation, exact base/target revisions, and strictly
+stable-ID-ordered complete upserts or removals. Upserts contain a finite derived
+world matrix and only render-domain components. This value is deliberately not
+a canonical public transport schema: it contains no ECS/GPU handle and keeps
+bulk observation storage separate, but a future remote extraction boundary
+requires its own versioned encoding and resynchronization design.
+
 ## Canonical JSON and limits
 
 The supported encoder produces one compact JSON object followed by LF. Field

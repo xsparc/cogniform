@@ -1,10 +1,16 @@
 use std::{
+    collections::BTreeMap,
     fmt,
     sync::mpsc,
     time::{Duration, Instant},
 };
 
-use crate::{RendererError, renderer::ReadbackLayout};
+use cogniform_protocol::{FrameId, SceneRevision, StableEntityId};
+
+use crate::{
+    RendererError,
+    renderer::{ReadbackLayout, ReadbackLease},
+};
 
 /// Public, backend-neutral description of the selected adapter.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,15 +45,30 @@ impl AdapterSummary {
     }
 }
 
+/// Exact causal source of one submitted extracted-scene frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FrameMetadata {
+    /// Monotonic identity allocated when submission succeeds.
+    pub frame_id: FrameId,
+    /// Latest fully consumed world revision used by this frame.
+    pub scene_revision: SceneRevision,
+    /// Stable camera identity used to build the view.
+    pub camera_id: StableEntityId,
+    /// Monotonic extraction generation consumed by the renderer.
+    pub extraction_generation: u64,
+}
+
 /// Completed color, depth, and renderer-local entity-ID outputs.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderedFrame {
     width: u32,
     height: u32,
     adapter: AdapterSummary,
+    metadata: FrameMetadata,
     color: Vec<[u8; 4]>,
     depth: Vec<f32>,
     entity_ids: Vec<u32>,
+    stable_entity_ids: Vec<Option<StableEntityId>>,
 }
 
 impl RenderedFrame {
@@ -69,6 +90,12 @@ impl RenderedFrame {
         &self.adapter
     }
 
+    /// Returns exact revision, frame, camera, and extraction causality.
+    #[must_use]
+    pub const fn metadata(&self) -> FrameMetadata {
+        self.metadata
+    }
+
     /// Linear RGBA8 pixels in row-major order.
     #[must_use]
     pub fn color(&self) -> &[[u8; 4]] {
@@ -85,6 +112,15 @@ impl RenderedFrame {
     #[must_use]
     pub fn entity_ids(&self) -> &[u32] {
         &self.entity_ids
+    }
+
+    /// Stable world identities corresponding to the entity-ID attachment.
+    ///
+    /// Background pixels are `None`; compact renderer identities never cross
+    /// this boundary without their frame-local stable mapping.
+    #[must_use]
+    pub fn stable_entity_ids(&self) -> &[Option<StableEntityId>] {
+        &self.stable_entity_ids
     }
 
     /// Returns the color at `(x, y)`, or `None` when outside the frame.
@@ -105,6 +141,32 @@ impl RenderedFrame {
         self.pixel_index(x, y).map(|index| self.entity_ids[index])
     }
 
+    /// Returns the stable world identity at `(x, y)`, or `None` for background
+    /// and coordinates outside the frame.
+    #[must_use]
+    pub fn stable_entity_id_at(&self, x: u32, y: u32) -> Option<StableEntityId> {
+        self.pixel_index(x, y)
+            .and_then(|index| self.stable_entity_ids[index])
+    }
+
+    /// Consumes the frame and returns its color payload.
+    #[must_use]
+    pub fn into_color(self) -> Vec<[u8; 4]> {
+        self.color
+    }
+
+    /// Consumes the frame and returns its depth payload.
+    #[must_use]
+    pub fn into_depth(self) -> Vec<f32> {
+        self.depth
+    }
+
+    /// Consumes the frame and returns exact stable entity identities.
+    #[must_use]
+    pub fn into_stable_entity_ids(self) -> Vec<Option<StableEntityId>> {
+        self.stable_entity_ids
+    }
+
     fn pixel_index(&self, x: u32, y: u32) -> Option<usize> {
         if x >= self.width || y >= self.height {
             return None;
@@ -121,11 +183,11 @@ impl RenderedFrame {
 pub struct PendingFrame {
     pub(crate) device: wgpu::Device,
     pub(crate) submission: wgpu::SubmissionIndex,
-    pub(crate) color: wgpu::Buffer,
-    pub(crate) depth: wgpu::Buffer,
-    pub(crate) entity_ids: wgpu::Buffer,
+    pub(crate) readback: ReadbackLease,
     pub(crate) layout: ReadbackLayout,
     pub(crate) adapter: AdapterSummary,
+    pub(crate) metadata: FrameMetadata,
+    pub(crate) id_lookup: BTreeMap<u32, StableEntityId>,
     pub(crate) timeout: Duration,
 }
 
@@ -136,6 +198,7 @@ impl fmt::Debug for PendingFrame {
             .field("width", &self.layout.width)
             .field("height", &self.layout.height)
             .field("adapter", &self.adapter)
+            .field("metadata", &self.metadata)
             .field("timeout", &self.timeout)
             .finish_non_exhaustive()
     }
@@ -144,12 +207,13 @@ impl fmt::Debug for PendingFrame {
 impl PendingFrame {
     /// Waits for this submission, maps its three output buffers, and returns
     /// tightly packed CPU data.
-    pub fn read(self) -> Result<RenderedFrame, RendererError> {
+    pub fn read(mut self) -> Result<RenderedFrame, RendererError> {
         let deadline = Instant::now() + self.timeout;
-        let (sender, receiver) = mpsc::channel();
-        schedule_map(&self.color, "color-map", &sender);
-        schedule_map(&self.depth, "depth-map", &sender);
-        schedule_map(&self.entity_ids, "entity-id-map", &sender);
+        let (sender, receiver) = mpsc::sync_channel(3);
+        self.readback.begin_mapping();
+        schedule_map(self.readback.color(), "color-map", &sender);
+        schedule_map(self.readback.depth(), "depth-map", &sender);
+        schedule_map(self.readback.entity_ids(), "entity-id-map", &sender);
         drop(sender);
 
         let poll_timeout = deadline.saturating_duration_since(Instant::now());
@@ -177,10 +241,10 @@ impl PendingFrame {
             })?;
         }
 
-        let color_bytes = read_tightly_packed(&self.color, self.layout, "color-range")?;
-        let depth_bytes = read_tightly_packed(&self.depth, self.layout, "depth-range")?;
+        let color_bytes = read_tightly_packed(self.readback.color(), self.layout, "color-range")?;
+        let depth_bytes = read_tightly_packed(self.readback.depth(), self.layout, "depth-range")?;
         let entity_id_bytes =
-            read_tightly_packed(&self.entity_ids, self.layout, "entity-id-range")?;
+            read_tightly_packed(self.readback.entity_ids(), self.layout, "entity-id-range")?;
 
         let color = color_bytes
             .chunks_exact(4)
@@ -199,15 +263,32 @@ impl PendingFrame {
         let entity_ids = entity_id_bytes
             .chunks_exact(4)
             .map(|bytes| u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-            .collect();
+            .collect::<Vec<_>>();
+        let stable_entity_ids = entity_ids
+            .iter()
+            .map(|&render_entity_id| {
+                if render_entity_id == 0 {
+                    Ok(None)
+                } else {
+                    self.id_lookup
+                        .get(&render_entity_id)
+                        .copied()
+                        .map(Some)
+                        .ok_or(RendererError::UnknownRenderEntityId { render_entity_id })
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.readback.finish_mapping();
 
         Ok(RenderedFrame {
             width: self.layout.width,
             height: self.layout.height,
             adapter: self.adapter,
+            metadata: self.metadata,
             color,
             depth,
             entity_ids,
+            stable_entity_ids,
         })
     }
 }
@@ -215,7 +296,7 @@ impl PendingFrame {
 fn schedule_map(
     buffer: &wgpu::Buffer,
     stage: &'static str,
-    sender: &mpsc::Sender<(&'static str, Result<(), wgpu::BufferAsyncError>)>,
+    sender: &mpsc::SyncSender<(&'static str, Result<(), wgpu::BufferAsyncError>)>,
 ) {
     let sender = sender.clone();
     buffer
@@ -246,6 +327,5 @@ fn read_tightly_packed(
         packed.extend_from_slice(&row[..layout.unpadded_bytes_per_row as usize]);
     }
     drop(mapped);
-    buffer.unmap();
     Ok(packed)
 }

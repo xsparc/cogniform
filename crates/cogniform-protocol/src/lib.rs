@@ -12,6 +12,7 @@ mod error;
 mod id;
 mod limits;
 mod message;
+mod render;
 
 pub use component::{
     CameraComponent, ColorRgb, ColorRgba, ComponentKind, ComponentValue, LightComponent, LightKind,
@@ -32,3 +33,4 @@ pub use message::{
     ObservationMetadata, ObservationQuality, ObservationStaleness, QueueConfig, RemoveComponent,
     ReparentEntity, SceneOperation, ScenePatch, SetComponent,
 };
+pub use render::{RenderChange, RenderContractError, RenderEntity, RenderExtraction};
