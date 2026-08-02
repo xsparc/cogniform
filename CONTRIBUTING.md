@@ -13,6 +13,8 @@ remain reviewable.
 3. Keep a pull request focused on one approved task or one clearly bounded fix.
 4. Do not add credentials, private data, paid-service calls, deployment steps,
    or release automation.
+5. Use placeholders in examples. Never paste a real token, password, private
+   endpoint, local home path, production record, or credential-bearing URL.
 
 ## Local setup
 
@@ -32,6 +34,25 @@ The Cargo commands use the locked dependency sources checked into `vendor/` and
 run offline without contacting crates.io. Do not edit vendored code directly;
 manifest changes require a fresh locked vendor operation and the dependency
 review described below.
+
+After staging a change, scan exactly what would be committed:
+
+```text
+python scripts/check_public_repo.py --staged
+```
+
+Use `python scripts/check_public_repo.py --all` to scan the complete tracked
+tree. The check reports a rule identifier and path, never the matched value.
+GitHub secret scanning and push protection provide provider-aware detection at
+the repository boundary; do not bypass a block merely to make a push succeed.
+
+If a real credential is found, revoke or rotate it first, remove it from every
+pending commit and working copy, and report the incident privately. Deleting a
+file in a later commit does not remove a secret from public history.
+
+Git also publishes commit author and committer names and email addresses. Use a
+GitHub-provided no-reply address before committing if you do not intend to make
+your personal address part of the public repository history.
 
 Local maintainer tools and working notes that match ignored paths are not part
 of the project and must not be force-added. Record accepted outcomes in public

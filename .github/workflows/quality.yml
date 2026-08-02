@@ -26,6 +26,11 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
+      - name: Check public repository hygiene
+        run: |
+          python3 tests/security/test_public_repo_check.py
+          python3 scripts/check_public_repo.py --all
+
       - name: Classify changed paths
         id: changes
         shell: bash
