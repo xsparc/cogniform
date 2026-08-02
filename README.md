@@ -6,8 +6,9 @@ worlds, render machine-readable observations, and link feedback to the exact
 scene revision that produced it.
 
 > [!IMPORTANT]
-> Cogniform is an early foundation, not a working 3D engine. The current crates
-> intentionally contain no ECS, replay, renderer, or service behavior.
+> Cogniform is an early core, not a working 3D engine. The public protocol
+> contracts are implemented; ECS, replay, renderer, and service behavior have
+> not landed yet.
 
 ## Architecture
 
@@ -26,8 +27,10 @@ implementations arrive:
 See the [software design document](docs/architecture/software-design-document.md),
 [implementation plan](docs/roadmap/development-implementation-plan.md), and
 [architecture decisions](docs/adr/README.md) for the authoritative direction.
+The [core contract guide](docs/protocol/core-contracts.md) documents the current
+schema and validation boundary.
 
-## Build the foundation
+## Build and test
 
 Install [rustup](https://rustup.rs/). The checked-in toolchain file selects the
 exact Rust version and components:
@@ -40,9 +43,10 @@ cargo test --workspace --all-features --locked --offline
 cargo doc --workspace --no-deps --all-features --locked --offline
 ```
 
-These commands need no external services and run with Cargo offline once the
-pinned toolchain is installed. The CLI currently exits with a clear
-not-implemented message rather than suggesting runtime capability.
+Dependency sources are checked into `vendor/`, so these commands need no
+external service after the pinned toolchain is installed. The CLI currently
+exits with a clear not-implemented message rather than suggesting runtime
+capability.
 
 ## Contributing and security
 
