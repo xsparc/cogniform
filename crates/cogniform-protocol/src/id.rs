@@ -92,6 +92,10 @@ opaque_id!(
     /// Identity of one semantic imagination request.
     ImaginationId
 );
+opaque_id!(
+    /// Identity of one deterministic built-in procedure request.
+    ProcedureId
+);
 
 /// Monotonically increasing authoritative scene revision.
 #[derive(

@@ -1,6 +1,6 @@
 # Core protocol contracts
 
-Status: schema version 1 implemented by CF001 and extended by CF006.
+Status: schema version 1 implemented by CF001 and extended through CF007.
 
 `cogniform-protocol` is the dependency-neutral boundary between Cogniform's
 world, render, and service domains. It contains values only: no ECS handles,
@@ -8,10 +8,12 @@ GPU resources, sockets, generated transport messages, or service lifecycle.
 
 ## Identity and numeric representation
 
-`StableEntityId`, `TransactionId`, `IdempotencyKey`, `ImaginationId`, and `ObservationId` are
-non-zero 128-bit values encoded as 32 lowercase hexadecimal characters. This
-encoding is canonical and does not rely on a JSON consumer preserving 128-bit
-numbers. `SceneRevision` is an unsigned 64-bit counter beginning at zero;
+`StableEntityId`, `TransactionId`, `IdempotencyKey`, `ImaginationId`,
+`ProcedureId`, and `ObservationId` are non-zero 128-bit values encoded as 32
+lowercase hexadecimal characters. This encoding is canonical and does not rely
+on a JSON consumer preserving 128-bit numbers. `ContentHash` is the exact
+SHA-256 identity of immutable source bytes and uses 64 lowercase hexadecimal
+characters. `SceneRevision` is an unsigned 64-bit counter beginning at zero;
 `FrameId` is non-zero. Revision increments are checked for overflow.
 
 Protocol floating-point wrappers reject NaN and infinity. Negative zero is
@@ -29,12 +31,14 @@ A `ScenePatch` always carries:
 - a non-empty ordered sequence of create, delete, set-component,
   remove-component, or reparent operations.
 
-Initial component values cover names, local transforms, built-in primitives,
-materials, perspective cameras, and baseline lights. A create operation cannot
-repeat a component kind. Rotations must be non-zero, camera ranges must be
-valid, and an entity cannot directly parent itself. Full hierarchy cycle/depth,
-ownership, asset, and authoritative-world checks belong to the world boundary;
-cycle and depth enforcement is implemented by CF003.
+Component values cover names, local transforms, built-in primitives, materials,
+perspective cameras, baseline lights, and immutable asset mesh references. An
+asset reference contains only a content hash and zero-based mesh index; bulk
+bytes and backend handles remain outside the protocol. A create operation
+cannot repeat a component kind. Rotations must be non-zero, camera ranges must
+be valid, and an entity cannot directly parent itself. Full hierarchy
+cycle/depth, ownership, asset availability, and authoritative-world checks
+belong to their owning domains.
 
 Patch validation compares actual counts and declared budgets with
 `RuntimeLimits`. Validation never reorders operations. Atomic commit and
@@ -81,10 +85,25 @@ in the [local gateway guide](local-gateway-and-imagination.md).
 CF005 also defines an in-process `RenderExtraction` value contract. It carries
 one monotonic generation, exact base/target revisions, and strictly
 stable-ID-ordered complete upserts or removals. Upserts contain a finite derived
-world matrix and only render-domain components. This value is deliberately not
-a canonical public transport schema: it contains no ECS/GPU handle and keeps
-bulk observation storage separate, but a future remote extraction boundary
-requires its own versioned encoding and resynchronization design.
+world matrix and only render-domain components, including an immutable asset
+mesh reference when present. This value is deliberately not a canonical public
+transport schema: it contains no ECS/GPU handle and keeps bulk asset and
+observation storage separate, but a future remote extraction boundary requires
+its own versioned encoding and resynchronization design.
+
+## Asset references and built-in procedures
+
+CF007 adds `AssetMeshComponent` as ordinary authoritative scene state. It is
+included in snapshots, the version-one logical hash, replay, and render
+extraction. Exact source admission, CPU decoding, diagnostics, and GPU upload
+are separate bounded domain APIs described in the
+[GLB asset guide](../assets/glb-subset.md).
+
+Built-in procedures are pure library functions with an explicit `ProcedureId`,
+seed, transaction and idempotency identities, base revision, delivery
+semantics, and output budgets. The initial cuboid-grid procedure returns an
+ordinary validated `ScenePatch` in deterministic row-major order; it has no
+world, filesystem, network, clock, entropy, renderer, or mutation access.
 
 ## Canonical JSON and limits
 

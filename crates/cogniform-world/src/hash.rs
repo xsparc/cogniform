@@ -168,5 +168,10 @@ fn update_component(hasher: &mut Sha256, component: &ComponentValue) {
                 update_f32(hasher, number);
             }
         }
+        ComponentValue::AssetMesh(value) => {
+            hasher.update([7]);
+            hasher.update(value.content_hash.as_bytes());
+            update_u32(hasher, value.mesh_index);
+        }
     }
 }

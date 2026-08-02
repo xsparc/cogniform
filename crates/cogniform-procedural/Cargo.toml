@@ -1,6 +1,6 @@
 [package]
-name = "cogniform-renderer"
-description = "Headless rendering boundary for Cogniform"
+name = "cogniform-procedural"
+description = "Pure deterministic built-in scene procedures for Cogniform"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,10 +12,5 @@ publish = false
 workspace = true
 
 [dependencies]
-cogniform-assets.workspace = true
 cogniform-protocol.workspace = true
-wgpu.workspace = true
-
-[dev-dependencies]
-cogniform-world.workspace = true
-pollster = "=0.4.0"
+sha2.workspace = true

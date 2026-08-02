@@ -1,4 +1,5 @@
 use crate::{AdapterPreference, AdapterSummary};
+use cogniform_assets::AssetMeshKey;
 use cogniform_protocol::{PrimitiveShape, StableEntityId};
 
 /// Offscreen target whose required capability was unavailable.
@@ -79,6 +80,11 @@ pub enum RendererError {
     InvalidReadbackTimeout,
     /// The configured readback pool capacity was zero or exceeded its bound.
     InvalidReadbackCapacity,
+    /// Asset upload or residency limits are internally inconsistent.
+    InvalidAssetConfig {
+        /// Stable configuration reason.
+        reason: &'static str,
+    },
     /// No readback buffer set was immediately available for submission.
     ReadbackPoolExhausted {
         /// Fixed number of in-flight frames supported by this renderer.
@@ -137,6 +143,62 @@ pub enum RendererError {
         /// Configured maximum draws per frame.
         limit: u32,
     },
+    /// A CPU upload job does not contain a supported expanded triangle mesh.
+    InvalidAssetMesh {
+        /// Immutable mesh identity.
+        key: AssetMeshKey,
+        /// Stable validation reason.
+        reason: &'static str,
+    },
+    /// One decoded mesh exceeds the configured vertex limit.
+    AssetVertexLimitExceeded {
+        /// Immutable mesh identity.
+        key: AssetMeshKey,
+        /// Supplied vertex count.
+        actual: u32,
+        /// Configured maximum.
+        limit: u32,
+    },
+    /// One decoded mesh exceeds the configured per-buffer byte limit.
+    AssetMeshBytesExceeded {
+        /// Immutable mesh identity.
+        key: AssetMeshKey,
+        /// Supplied byte count.
+        actual: u64,
+        /// Configured maximum.
+        limit: u64,
+    },
+    /// The bounded renderer upload queue is full.
+    AssetUploadCapacityExceeded {
+        /// Configured job capacity.
+        capacity: u32,
+    },
+    /// Pending upload byte reservations would exceed their bound.
+    AssetUploadBytesExceeded {
+        /// Projected reserved bytes.
+        actual: u64,
+        /// Configured maximum.
+        limit: u64,
+    },
+    /// Resident plus reserved mesh count would exceed its bound.
+    AssetResidencyCapacityExceeded {
+        /// Configured mesh capacity.
+        capacity: u32,
+    },
+    /// Resident plus reserved GPU asset bytes would exceed their bound.
+    AssetResidencyBytesExceeded {
+        /// Projected bytes.
+        actual: u64,
+        /// Configured maximum.
+        limit: u64,
+    },
+    /// An extracted asset mesh is not GPU-resident and has no explicit primitive proxy.
+    AssetUnavailable {
+        /// Affected stable scene entity.
+        entity_id: StableEntityId,
+        /// Missing immutable mesh identity.
+        key: AssetMeshKey,
+    },
     /// The monotonic frame identity cannot be incremented.
     FrameIdOverflow,
     /// GPU completion or buffer mapping failed.
@@ -173,6 +235,15 @@ impl std::fmt::Display for RendererError {
             Self::InvalidReadbackCapacity => {
                 formatter.write_str("readback capacity must be greater than zero and at most 16")
             }
+            error @ (Self::InvalidAssetConfig { .. }
+            | Self::InvalidAssetMesh { .. }
+            | Self::AssetVertexLimitExceeded { .. }
+            | Self::AssetMeshBytesExceeded { .. }
+            | Self::AssetUploadCapacityExceeded { .. }
+            | Self::AssetUploadBytesExceeded { .. }
+            | Self::AssetResidencyCapacityExceeded { .. }
+            | Self::AssetResidencyBytesExceeded { .. }
+            | Self::AssetUnavailable { .. }) => format_asset_error(error, formatter),
             Self::ReadbackPoolExhausted { capacity } => write!(
                 formatter,
                 "all {capacity} bounded readback slots are in flight"
@@ -234,6 +305,47 @@ impl std::fmt::Display for RendererError {
                 "frame contains unknown renderer entity ID {render_entity_id}"
             ),
         }
+    }
+}
+
+fn format_asset_error(
+    error: &RendererError,
+    formatter: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match error {
+        RendererError::InvalidAssetConfig { reason } => {
+            write!(formatter, "invalid renderer asset config: {reason}")
+        }
+        RendererError::InvalidAssetMesh { key, reason } => {
+            write!(formatter, "asset mesh {key:?} is invalid: {reason}")
+        }
+        RendererError::AssetVertexLimitExceeded { key, actual, limit } => write!(
+            formatter,
+            "asset mesh {key:?} has {actual} vertices; limit is {limit}"
+        ),
+        RendererError::AssetMeshBytesExceeded { key, actual, limit } => write!(
+            formatter,
+            "asset mesh {key:?} has {actual} bytes; limit is {limit}"
+        ),
+        RendererError::AssetUploadCapacityExceeded { capacity } => {
+            write!(formatter, "asset upload capacity {capacity} is full")
+        }
+        RendererError::AssetUploadBytesExceeded { actual, limit } => write!(
+            formatter,
+            "pending asset uploads reserve {actual} bytes; limit is {limit}"
+        ),
+        RendererError::AssetResidencyCapacityExceeded { capacity } => {
+            write!(formatter, "asset residency capacity {capacity} is full")
+        }
+        RendererError::AssetResidencyBytesExceeded { actual, limit } => write!(
+            formatter,
+            "asset residency would reserve {actual} bytes; limit is {limit}"
+        ),
+        RendererError::AssetUnavailable { entity_id, key } => write!(
+            formatter,
+            "entity {entity_id} references unavailable asset mesh {key:?}"
+        ),
+        _ => unreachable!("only asset errors are delegated"),
     }
 }
 

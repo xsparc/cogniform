@@ -1,8 +1,8 @@
 use core::{fmt, num::NonZeroU64};
 
 use crate::{
-    CameraComponent, LightComponent, MaterialComponent, PrimitiveComponent, SceneRevision,
-    StableEntityId,
+    AssetMeshComponent, CameraComponent, LightComponent, MaterialComponent, PrimitiveComponent,
+    SceneRevision, StableEntityId,
 };
 
 /// Backend-neutral render record extracted from one authoritative entity.
@@ -14,10 +14,22 @@ pub struct RenderEntity {
     entity_id: StableEntityId,
     world_transform: [f64; 16],
     world_transform_generation: u64,
-    primitive: Option<PrimitiveComponent>,
-    material: Option<MaterialComponent>,
-    camera: Option<CameraComponent>,
-    light: Option<LightComponent>,
+    components: RenderComponents,
+}
+
+/// Compact render-relevant component bundle for one extracted entity.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RenderComponents {
+    /// Built-in primitive geometry, including an explicit asset fallback proxy.
+    pub primitive: Option<PrimitiveComponent>,
+    /// Optional scene-level material override.
+    pub material: Option<MaterialComponent>,
+    /// Optional perspective camera.
+    pub camera: Option<CameraComponent>,
+    /// Optional baseline light.
+    pub light: Option<LightComponent>,
+    /// Optional immutable hash-addressed mesh selection.
+    pub asset_mesh: Option<AssetMeshComponent>,
 }
 
 impl RenderEntity {
@@ -26,25 +38,24 @@ impl RenderEntity {
         entity_id: StableEntityId,
         world_transform: [f64; 16],
         world_transform_generation: u64,
-        primitive: Option<PrimitiveComponent>,
-        material: Option<MaterialComponent>,
-        camera: Option<CameraComponent>,
-        light: Option<LightComponent>,
+        components: RenderComponents,
     ) -> Result<Self, RenderContractError> {
         if !world_transform.iter().all(|value| value.is_finite()) {
             return Err(RenderContractError::NonFiniteWorldTransform { entity_id });
         }
-        if primitive.is_none() && material.is_none() && camera.is_none() && light.is_none() {
+        if components.primitive.is_none()
+            && components.material.is_none()
+            && components.camera.is_none()
+            && components.light.is_none()
+            && components.asset_mesh.is_none()
+        {
             return Err(RenderContractError::EmptyRenderEntity { entity_id });
         }
         Ok(Self {
             entity_id,
             world_transform,
             world_transform_generation,
-            primitive,
-            material,
-            camera,
-            light,
+            components,
         })
     }
 
@@ -69,25 +80,31 @@ impl RenderEntity {
     /// Returns the built-in primitive, when present.
     #[must_use]
     pub const fn primitive(&self) -> Option<PrimitiveComponent> {
-        self.primitive
+        self.components.primitive
     }
 
     /// Returns the material, when present.
     #[must_use]
     pub const fn material(&self) -> Option<MaterialComponent> {
-        self.material
+        self.components.material
     }
 
     /// Returns the perspective camera, when present.
     #[must_use]
     pub const fn camera(&self) -> Option<CameraComponent> {
-        self.camera
+        self.components.camera
     }
 
     /// Returns the light, when present.
     #[must_use]
     pub const fn light(&self) -> Option<LightComponent> {
-        self.light
+        self.components.light
+    }
+
+    /// Returns the hash-addressed mesh selection, when present.
+    #[must_use]
+    pub const fn asset_mesh(&self) -> Option<AssetMeshComponent> {
+        self.components.asset_mesh
     }
 }
 

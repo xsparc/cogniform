@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    DiagnosticCode, FiniteF32, NonNegativeF32, PositiveF32, SceneText, UnitF32, ValidationError,
+    AssetMeshComponent, DiagnosticCode, FiniteF32, NonNegativeF32, PositiveF32, SceneText, UnitF32,
+    ValidationError,
 };
 
 /// A finite three-dimensional vector.
@@ -184,6 +185,8 @@ pub enum ComponentKind {
     Camera,
     /// Baseline light.
     Light,
+    /// Immutable hash-addressed decoded mesh selection.
+    AssetMesh,
 }
 
 /// Version-one component values carried by scene operations.
@@ -207,6 +210,8 @@ pub enum ComponentValue {
     Camera(CameraComponent),
     /// Light value.
     Light(LightComponent),
+    /// Immutable hash-addressed decoded mesh selection.
+    AssetMesh(AssetMeshComponent),
 }
 
 impl ComponentValue {
@@ -220,6 +225,7 @@ impl ComponentValue {
             Self::Material(_) => ComponentKind::Material,
             Self::Camera(_) => ComponentKind::Camera,
             Self::Light(_) => ComponentKind::Light,
+            Self::AssetMesh(_) => ComponentKind::AssetMesh,
         }
     }
 
@@ -241,6 +247,7 @@ impl ComponentValue {
             Self::Material(_) => TAG_BYTES + (6 * 4),
             Self::Camera(_) => TAG_BYTES + (3 * 4),
             Self::Light(_) => TAG_BYTES + 1 + (4 * 4),
+            Self::AssetMesh(_) => TAG_BYTES + 32 + 4,
         }
     }
 

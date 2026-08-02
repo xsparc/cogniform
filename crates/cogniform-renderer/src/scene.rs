@@ -1,6 +1,7 @@
 use core::num::{NonZeroU32, NonZeroU64};
 use std::collections::{BTreeMap, BTreeSet};
 
+use cogniform_assets::AssetMeshKey;
 use cogniform_protocol::{
     CameraComponent, ColorRgba, RenderChange, RenderEntity, RenderExtraction, SceneRevision,
     StableEntityId,
@@ -242,6 +243,7 @@ impl RenderScene {
         width: u32,
         height: u32,
         max_draws: NonZeroU32,
+        mut resolve_asset: impl FnMut(AssetMeshKey) -> Option<[f32; 4]>,
     ) -> Result<PreparedScene, RendererError> {
         let camera_entity = self
             .entities
@@ -254,7 +256,22 @@ impl RenderScene {
         let mut draws = Vec::new();
         let mut id_lookup = BTreeMap::new();
         for (&entity_id, entity) in &self.entities {
-            let Some(primitive) = entity.primitive() else {
+            let primitive = entity.primitive();
+            let (geometry, imported_color) = if let Some(asset_mesh) = entity.asset_mesh() {
+                let key = AssetMeshKey {
+                    content_hash: asset_mesh.content_hash,
+                    mesh_index: asset_mesh.mesh_index,
+                };
+                if let Some(color) = resolve_asset(key) {
+                    (PreparedGeometry::Asset(key), Some(color))
+                } else if primitive.is_some() {
+                    (PreparedGeometry::Cuboid, None)
+                } else {
+                    return Err(RendererError::AssetUnavailable { entity_id, key });
+                }
+            } else if primitive.is_some() {
+                (PreparedGeometry::Cuboid, None)
+            } else {
                 continue;
             };
             if draws.len()
@@ -264,28 +281,33 @@ impl RenderScene {
                     limit: max_draws.get(),
                 });
             }
-            if primitive.shape != cogniform_protocol::PrimitiveShape::Cuboid {
-                return Err(RendererError::UnsupportedPrimitive {
-                    entity_id,
-                    shape: primitive.shape,
-                });
-            }
             let compact_id = self.compact_ids[&entity_id];
             let mut model = matrix_to_f32(entity.world_transform(), entity_id)?;
-            let dimensions = [
-                primitive.dimensions.x.get(),
-                primitive.dimensions.y.get(),
-                primitive.dimensions.z.get(),
-            ];
-            for row in 0..4 {
-                model[row] *= dimensions[0];
-                model[4 + row] *= dimensions[1];
-                model[8 + row] *= dimensions[2];
+            if geometry == PreparedGeometry::Cuboid {
+                let primitive = primitive.expect("cube geometry has a primitive");
+                if primitive.shape != cogniform_protocol::PrimitiveShape::Cuboid {
+                    return Err(RendererError::UnsupportedPrimitive {
+                        entity_id,
+                        shape: primitive.shape,
+                    });
+                }
+                let dimensions = [
+                    primitive.dimensions.x.get(),
+                    primitive.dimensions.y.get(),
+                    primitive.dimensions.z.get(),
+                ];
+                for row in 0..4 {
+                    model[row] *= dimensions[0];
+                    model[4 + row] *= dimensions[1];
+                    model[8 + row] *= dimensions[2];
+                }
             }
-            let color = entity.material().map_or([0.8, 0.8, 0.8, 1.0], |material| {
-                color_values(material.base_color)
-            });
+            let color = entity.material().map_or_else(
+                || imported_color.unwrap_or([0.8, 0.8, 0.8, 1.0]),
+                |material| color_values(material.base_color),
+            );
             draws.push(PreparedDraw {
+                geometry,
                 model,
                 view_projection,
                 color,
@@ -303,10 +325,17 @@ pub(crate) struct PreparedScene {
 }
 
 pub(crate) struct PreparedDraw {
+    pub(crate) geometry: PreparedGeometry,
     pub(crate) model: [f32; 16],
     pub(crate) view_projection: [f32; 16],
     pub(crate) color: [f32; 4],
     pub(crate) compact_id: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PreparedGeometry {
+    Cuboid,
+    Asset(AssetMeshKey),
 }
 
 fn color_values(color: ColorRgba) -> [f32; 4] {
@@ -443,8 +472,8 @@ fn multiply_matrices(left: &[f64; 16], right: &[f64; 16]) -> [f64; 16] {
 mod tests {
     use super::*;
     use cogniform_protocol::{
-        CameraComponent, ColorRgba, MaterialComponent, PositiveF32, PositiveVec3,
-        PrimitiveComponent, PrimitiveShape, UnitF32,
+        AssetMeshComponent, CameraComponent, ColorRgba, ContentHash, MaterialComponent,
+        PositiveF32, PositiveVec3, PrimitiveComponent, PrimitiveShape, RenderComponents, UnitF32,
     };
 
     fn id(value: u128) -> StableEntityId {
@@ -460,26 +489,27 @@ mod tests {
                 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             ],
             1,
-            Some(PrimitiveComponent {
-                shape: PrimitiveShape::Cuboid,
-                dimensions: PositiveVec3 {
-                    x: positive(1.0),
-                    y: positive(1.0),
-                    z: positive(1.0),
-                },
-            }),
-            Some(MaterialComponent {
-                base_color: ColorRgba {
-                    r: unit(0.2),
-                    g: unit(0.4),
-                    b: unit(0.6),
-                    a: unit(1.0),
-                },
-                metallic: unit(0.0),
-                roughness: unit(0.5),
-            }),
-            None,
-            None,
+            RenderComponents {
+                primitive: Some(PrimitiveComponent {
+                    shape: PrimitiveShape::Cuboid,
+                    dimensions: PositiveVec3 {
+                        x: positive(1.0),
+                        y: positive(1.0),
+                        z: positive(1.0),
+                    },
+                }),
+                material: Some(MaterialComponent {
+                    base_color: ColorRgba {
+                        r: unit(0.2),
+                        g: unit(0.4),
+                        b: unit(0.6),
+                        a: unit(1.0),
+                    },
+                    metallic: unit(0.0),
+                    roughness: unit(0.5),
+                }),
+                ..RenderComponents::default()
+            },
         )
         .unwrap()
     }
@@ -491,14 +521,32 @@ mod tests {
                 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 3.0, 1.0,
             ],
             1,
-            None,
-            None,
-            Some(CameraComponent {
-                vertical_fov_radians: PositiveF32::new(core::f32::consts::FRAC_PI_2).unwrap(),
-                near: PositiveF32::new(0.1).unwrap(),
-                far: PositiveF32::new(100.0).unwrap(),
-            }),
-            None,
+            RenderComponents {
+                camera: Some(CameraComponent {
+                    vertical_fov_radians: PositiveF32::new(core::f32::consts::FRAC_PI_2).unwrap(),
+                    near: PositiveF32::new(0.1).unwrap(),
+                    far: PositiveF32::new(100.0).unwrap(),
+                }),
+                ..RenderComponents::default()
+            },
+        )
+        .unwrap()
+    }
+
+    fn asset_entity(entity_id: StableEntityId, key: AssetMeshKey) -> RenderEntity {
+        RenderEntity::new(
+            entity_id,
+            [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+            1,
+            RenderComponents {
+                asset_mesh: Some(AssetMeshComponent {
+                    content_hash: key.content_hash,
+                    mesh_index: key.mesh_index,
+                }),
+                ..RenderComponents::default()
+            },
         )
         .unwrap()
     }
@@ -569,8 +617,35 @@ mod tests {
             ))
             .unwrap();
         assert!(matches!(
-            scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap()),
+            scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None),
             Err(RendererError::DrawCapacityExceeded { limit: 1 })
+        ));
+    }
+
+    #[test]
+    fn unavailable_asset_without_an_explicit_primitive_proxy_is_typed() {
+        let key = AssetMeshKey {
+            content_hash: ContentHash::from_bytes([7; 32]),
+            mesh_index: 3,
+        };
+        let mut scene = RenderScene::new(NonZeroU32::new(2).unwrap());
+        scene
+            .apply(&extraction(
+                1,
+                0,
+                1,
+                vec![
+                    RenderChange::upsert(camera(id(1))),
+                    RenderChange::upsert(asset_entity(id(2), key)),
+                ],
+            ))
+            .unwrap();
+        assert!(matches!(
+            scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None),
+            Err(RendererError::AssetUnavailable {
+                entity_id,
+                key: missing,
+            }) if entity_id == id(2) && missing == key
         ));
     }
 }
