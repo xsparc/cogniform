@@ -1,4 +1,14 @@
-//! Authoritative world boundary for Cogniform.
+//! Authoritative, deterministic scene-world ownership for Cogniform.
 //!
-//! This crate is a dependency skeleton only. ECS storage, stable identity, and
-//! transactional scene mutation are deliberately deferred to approved slices.
+//! The crate keeps ECS handles private, validates complete ordered patches
+//! before mutation, and exposes only stable-ID logical snapshots and receipts.
+
+#![forbid(unsafe_code)]
+
+mod error;
+mod snapshot;
+mod world;
+
+pub use error::{WorldApplyError, WorldInvariantError, WorldInvariantErrorKind};
+pub use snapshot::{EntitySnapshot, WorldSnapshot};
+pub use world::{AuthoritativeWorld, WorldConfig};

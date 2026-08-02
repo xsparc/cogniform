@@ -45,7 +45,7 @@ Gate: serialization fixtures are deterministic, invalid values and configured li
 
 Outcome: an authoritative `hecs` world applies create/delete/component patches against stable IDs and revisions atomically.
 
-Gate: invalid multi-operation patches leave revision/hash unchanged; stable IDs survive ECS slot reuse; repeated idempotency keys do not duplicate effects; randomized operation/property tests preserve invariants.
+Gate: invalid multi-operation patches leave the revision, stable-ID index, and logical snapshot unchanged; stable IDs survive ECS slot reuse; repeated idempotency keys do not duplicate effects; randomized operation/property tests preserve invariants.
 
 ### PR 4 - CF003: Hierarchy, transforms, canonical hash, and replay
 
@@ -97,6 +97,10 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
+
+The numbered PR labels above identify product-delivery slices, not guaranteed
+GitHub pull-request numbers. Bounded repository, security, or governance work
+may interleave without changing the product dependency order.
 
 The tracked roadmap, ADRs, code, tests, and pull-request record are the public
 project history.
