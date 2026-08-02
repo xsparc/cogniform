@@ -100,6 +100,13 @@ Outcome: immutable asset records, bounded asynchronous glTF/GLB import for an ap
 
 Gate: content-hash mismatch and decompression/size limits fail closed; unsupported glTF features produce diagnostics; asset decode never runs on world/render critical paths; seeded procedures replay exactly.
 
+Implemented contract: exact SHA-256 source admission, retained typed asset
+states and diagnostics, an explicit bounded GLB decode queue, immutable logical
+mesh references, separately reserved renderer upload/residency, and pure seeded
+cuboid-grid procedures that emit ordinary atomic patches. See
+[ADR 0008](../adr/0008-content-addressed-assets-and-pure-built-in-procedures.md)
+and the [GLB asset guide](../assets/glb-subset.md).
+
 ### PR 9 - CF008: Local headless service and canonical MVP scenario
 
 Outcome: a local CLI/service runs the complete room/table/light/camera flow, returns color/entity-ID observation metadata and visibility, and replays to the same hash.

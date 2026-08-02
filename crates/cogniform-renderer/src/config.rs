@@ -1,4 +1,4 @@
-use core::num::NonZeroU32;
+use core::num::{NonZeroU32, NonZeroU64};
 use std::time::Duration;
 
 /// Maximum width or height accepted for an offscreen target.
@@ -62,6 +62,18 @@ pub struct RendererConfig {
     pub max_scene_entities: NonZeroU32,
     /// Maximum primitive draws admitted for one submitted frame.
     pub max_draws_per_frame: NonZeroU32,
+    /// Maximum upload jobs awaiting explicit renderer processing.
+    pub asset_upload_capacity: NonZeroU32,
+    /// Maximum aggregate bytes reserved by pending upload jobs.
+    pub max_pending_asset_upload_bytes: NonZeroU64,
+    /// Maximum expanded vertices in one uploaded asset mesh.
+    pub max_asset_vertices: NonZeroU32,
+    /// Maximum bytes in one asset vertex buffer.
+    pub max_asset_mesh_bytes: NonZeroU64,
+    /// Maximum immutable asset meshes resident on the GPU.
+    pub max_resident_asset_meshes: NonZeroU32,
+    /// Maximum aggregate immutable asset vertex bytes resident on the GPU.
+    pub max_resident_asset_bytes: NonZeroU64,
 }
 
 impl RendererConfig {
@@ -76,6 +88,15 @@ impl RendererConfig {
             readback_capacity: NonZeroU32::new(2).expect("constant is non-zero"),
             max_scene_entities: NonZeroU32::new(65_536).expect("constant is non-zero"),
             max_draws_per_frame: NonZeroU32::new(4_096).expect("constant is non-zero"),
+            asset_upload_capacity: NonZeroU32::new(64).expect("constant is non-zero"),
+            max_pending_asset_upload_bytes: NonZeroU64::new(32 * 1_024 * 1_024)
+                .expect("constant is non-zero"),
+            max_asset_vertices: NonZeroU32::new(262_144).expect("constant is non-zero"),
+            max_asset_mesh_bytes: NonZeroU64::new(16 * 1_024 * 1_024)
+                .expect("constant is non-zero"),
+            max_resident_asset_meshes: NonZeroU32::new(256).expect("constant is non-zero"),
+            max_resident_asset_bytes: NonZeroU64::new(64 * 1_024 * 1_024)
+                .expect("constant is non-zero"),
         }
     }
 
@@ -111,6 +132,48 @@ impl RendererConfig {
     #[must_use]
     pub const fn with_max_draws_per_frame(mut self, capacity: NonZeroU32) -> Self {
         self.max_draws_per_frame = capacity;
+        self
+    }
+
+    /// Sets the maximum count of explicitly processed upload jobs.
+    #[must_use]
+    pub const fn with_asset_upload_capacity(mut self, capacity: NonZeroU32) -> Self {
+        self.asset_upload_capacity = capacity;
+        self
+    }
+
+    /// Sets the aggregate pending upload-byte reservation.
+    #[must_use]
+    pub const fn with_max_pending_asset_upload_bytes(mut self, bytes: NonZeroU64) -> Self {
+        self.max_pending_asset_upload_bytes = bytes;
+        self
+    }
+
+    /// Sets the per-mesh expanded vertex limit.
+    #[must_use]
+    pub const fn with_max_asset_vertices(mut self, vertices: NonZeroU32) -> Self {
+        self.max_asset_vertices = vertices;
+        self
+    }
+
+    /// Sets the per-mesh GPU vertex-byte limit.
+    #[must_use]
+    pub const fn with_max_asset_mesh_bytes(mut self, bytes: NonZeroU64) -> Self {
+        self.max_asset_mesh_bytes = bytes;
+        self
+    }
+
+    /// Sets the aggregate GPU-resident mesh-count limit.
+    #[must_use]
+    pub const fn with_max_resident_asset_meshes(mut self, meshes: NonZeroU32) -> Self {
+        self.max_resident_asset_meshes = meshes;
+        self
+    }
+
+    /// Sets the aggregate GPU-resident asset vertex-byte limit.
+    #[must_use]
+    pub const fn with_max_resident_asset_bytes(mut self, bytes: NonZeroU64) -> Self {
+        self.max_resident_asset_bytes = bytes;
         self
     }
 }

@@ -11,9 +11,10 @@ scene revision that produced it.
 > hierarchy/hash/replay, compact render extraction, bounded headless cuboid
 > rendering, and revision-linked color/depth/entity-ID/visibility observations
 > are implemented. A bounded in-process gateway, exact logical queries, and a
-> deterministic primitive imagination compiler are also available. Assets,
-> external service packaging, and the canonical MVP client flow have not landed
-> yet.
+> deterministic primitive imagination compiler are also available. The current
+> asset baseline adds content-addressed GLB geometry, bounded caller-driven CPU
+> decode and GPU upload, plus pure seeded cuboid-grid procedures. External
+> service packaging and the canonical MVP client flow have not landed yet.
 
 ## Architecture
 
@@ -24,6 +25,8 @@ implementations arrive:
 |---|---|
 | `cogniform-protocol` | Backend-neutral IDs, patches, receipts, limits, and observations |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded decoding, and immutable upload jobs |
+| `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |
 | `cogniform-renderer` | Headless GPU ownership and machine-readable outputs |
@@ -44,6 +47,9 @@ documents sparse world updates, frame causality, pressure behavior, and owned
 machine-readable payloads. The
 [local gateway guide](docs/protocol/local-gateway-and-imagination.md) documents
 command admission, idempotency, deterministic compilation, and logical queries.
+The [GLB asset guide](docs/assets/glb-subset.md) documents exact source
+admission, the approved format subset, lifecycle, capacity limits, proxy policy,
+and controlled GPU validation.
 
 ## Build and test
 

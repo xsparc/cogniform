@@ -1,26 +1,3 @@
-// Twelve triangles forming one unit cube. The order is fixed and independent
-// of CPU collections or backend handles.
-const CUBE_VERTICES: array<vec3<f32>, 36> = array<vec3<f32>, 36>(
-    // Near face.
-    vec3(-0.5, -0.5, -0.5), vec3( 0.5, -0.5, -0.5), vec3( 0.5,  0.5, -0.5),
-    vec3(-0.5, -0.5, -0.5), vec3( 0.5,  0.5, -0.5), vec3(-0.5,  0.5, -0.5),
-    // Far face.
-    vec3( 0.5, -0.5,  0.5), vec3(-0.5, -0.5,  0.5), vec3(-0.5,  0.5,  0.5),
-    vec3( 0.5, -0.5,  0.5), vec3(-0.5,  0.5,  0.5), vec3( 0.5,  0.5,  0.5),
-    // Left face.
-    vec3(-0.5, -0.5,  0.5), vec3(-0.5, -0.5, -0.5), vec3(-0.5,  0.5, -0.5),
-    vec3(-0.5, -0.5,  0.5), vec3(-0.5,  0.5, -0.5), vec3(-0.5,  0.5,  0.5),
-    // Right face.
-    vec3( 0.5, -0.5, -0.5), vec3( 0.5, -0.5,  0.5), vec3( 0.5,  0.5,  0.5),
-    vec3( 0.5, -0.5, -0.5), vec3( 0.5,  0.5,  0.5), vec3( 0.5,  0.5, -0.5),
-    // Top face.
-    vec3(-0.5,  0.5, -0.5), vec3( 0.5,  0.5, -0.5), vec3( 0.5,  0.5,  0.5),
-    vec3(-0.5,  0.5, -0.5), vec3( 0.5,  0.5,  0.5), vec3(-0.5,  0.5,  0.5),
-    // Bottom face.
-    vec3(-0.5, -0.5,  0.5), vec3( 0.5, -0.5,  0.5), vec3( 0.5, -0.5, -0.5),
-    vec3(-0.5, -0.5,  0.5), vec3( 0.5, -0.5, -0.5), vec3(-0.5, -0.5, -0.5),
-);
-
 struct DrawUniform {
     model: mat4x4<f32>,
     view_projection: mat4x4<f32>,
@@ -41,9 +18,9 @@ struct FragmentOutput {
 };
 
 @vertex
-fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+fn vs_main(@location(0) position: vec3<f32>) -> VertexOutput {
     var output: VertexOutput;
-    output.position = draw.view_projection * draw.model * vec4(CUBE_VERTICES[vertex_index], 1.0);
+    output.position = draw.view_projection * draw.model * vec4(position, 1.0);
     return output;
 }
 

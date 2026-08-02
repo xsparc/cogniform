@@ -1,13 +1,15 @@
 use std::sync::{Arc, Mutex, TryLockError};
 
+use cogniform_assets::AssetUploadJob;
 use cogniform_protocol::{FrameId, RenderExtraction, SceneRevision, StableEntityId};
 
 use crate::{
-    AdapterPreference, AdapterSummary, CapabilityIssue, FrameMetadata, MAX_READBACK_CAPACITY,
-    MAX_READBACK_TIMEOUT, MAX_TARGET_DIMENSION, MAX_TARGET_PIXELS, PendingFrame, REFERENCE_COLOR,
-    REFERENCE_ENTITY_ID, RenderTargetKind, RendererConfig, RendererError, SceneUpdateError,
-    SceneUpdateSummary,
-    scene::{PreparedDraw, PreparedScene, RenderScene},
+    AdapterPreference, AdapterSummary, AssetUploadAdmission, AssetUploadOutcome, CapabilityIssue,
+    FrameMetadata, MAX_READBACK_CAPACITY, MAX_READBACK_TIMEOUT, MAX_TARGET_DIMENSION,
+    MAX_TARGET_PIXELS, PendingFrame, REFERENCE_COLOR, REFERENCE_ENTITY_ID, RenderTargetKind,
+    RendererAssetStats, RendererConfig, RendererError, SceneUpdateError, SceneUpdateSummary,
+    asset::RendererAssets,
+    scene::{PreparedDraw, PreparedGeometry, PreparedScene, RenderScene},
 };
 
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -16,6 +18,46 @@ const ENTITY_ID_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 const BYTES_PER_PIXEL: u32 = 4;
 const COPY_ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 const REFERENCE_VERTEX_COUNT: u32 = 36;
+const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 1] =
+    wgpu::vertex_attr_array![0 => Float32x3];
+const CUBE_VERTICES: [[f32; 3]; 36] = [
+    [-0.5, -0.5, -0.5],
+    [0.5, -0.5, -0.5],
+    [0.5, 0.5, -0.5],
+    [-0.5, -0.5, -0.5],
+    [0.5, 0.5, -0.5],
+    [-0.5, 0.5, -0.5],
+    [0.5, -0.5, 0.5],
+    [-0.5, -0.5, 0.5],
+    [-0.5, 0.5, 0.5],
+    [0.5, -0.5, 0.5],
+    [-0.5, 0.5, 0.5],
+    [0.5, 0.5, 0.5],
+    [-0.5, -0.5, 0.5],
+    [-0.5, -0.5, -0.5],
+    [-0.5, 0.5, -0.5],
+    [-0.5, -0.5, 0.5],
+    [-0.5, 0.5, -0.5],
+    [-0.5, 0.5, 0.5],
+    [0.5, -0.5, -0.5],
+    [0.5, -0.5, 0.5],
+    [0.5, 0.5, 0.5],
+    [0.5, -0.5, -0.5],
+    [0.5, 0.5, 0.5],
+    [0.5, 0.5, -0.5],
+    [-0.5, 0.5, -0.5],
+    [0.5, 0.5, -0.5],
+    [0.5, 0.5, 0.5],
+    [-0.5, 0.5, -0.5],
+    [0.5, 0.5, 0.5],
+    [-0.5, 0.5, 0.5],
+    [-0.5, -0.5, 0.5],
+    [0.5, -0.5, 0.5],
+    [0.5, -0.5, -0.5],
+    [-0.5, -0.5, 0.5],
+    [0.5, -0.5, -0.5],
+    [-0.5, -0.5, -0.5],
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ReadbackLayout {
@@ -77,6 +119,8 @@ pub struct HeadlessRenderer {
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
     draw_layout: wgpu::BindGroupLayout,
+    cube_vertices: wgpu::Buffer,
+    assets: RendererAssets,
     readback_layout: ReadbackLayout,
     readback_pool: ReadbackPool,
     scene: RenderScene,
@@ -89,6 +133,7 @@ impl std::fmt::Debug for HeadlessRenderer {
             .debug_struct("HeadlessRenderer")
             .field("config", &self.config)
             .field("adapter", &self.adapter)
+            .field("assets", &self.assets)
             .finish_non_exhaustive()
     }
 }
@@ -103,6 +148,8 @@ impl HeadlessRenderer {
         let (device, queue) =
             request_device(&adapter, &adapter_summary, &config, readback_layout).await?;
         let (pipeline, draw_layout) = create_reference_pipeline(&device).await?;
+        let cube_vertices =
+            create_vertex_buffer(&device, "cogniform-cube-vertices", &CUBE_VERTICES);
         let readback_pool = ReadbackPool::new(
             &device,
             readback_layout.buffer_size,
@@ -117,6 +164,8 @@ impl HeadlessRenderer {
             queue,
             pipeline,
             draw_layout,
+            cube_vertices,
+            assets: RendererAssets::new(),
             readback_layout,
             readback_pool,
             scene,
@@ -173,6 +222,28 @@ impl HeadlessRenderer {
         self.scene.apply(extraction)
     }
 
+    /// Admits one immutable CPU mesh while reserving all pending and residency capacity.
+    pub fn enqueue_asset_upload(
+        &mut self,
+        job: AssetUploadJob,
+    ) -> Result<AssetUploadAdmission, RendererError> {
+        self.assets.enqueue(job, &self.config)
+    }
+
+    /// Processes at most one admitted upload job on the renderer domain.
+    ///
+    /// This method never decodes source assets and is never called implicitly by
+    /// frame submission.
+    pub fn process_next_asset_upload(&mut self) -> Option<AssetUploadOutcome> {
+        self.assets.process_next(&self.device)
+    }
+
+    /// Returns aggregate upload and GPU residency occupancy.
+    #[must_use]
+    pub fn asset_stats(&self) -> RendererAssetStats {
+        self.assets.stats()
+    }
+
     /// Encodes and submits the built-in cube reference scene without waiting
     /// for GPU completion or CPU readback.
     pub fn submit_reference_scene(&mut self) -> Result<PendingFrame, RendererError> {
@@ -181,6 +252,7 @@ impl HeadlessRenderer {
             .expect("reference entity ID is non-zero");
         let prepared = PreparedScene {
             draws: vec![PreparedDraw {
+                geometry: PreparedGeometry::Cuboid,
                 model: [
                     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
                 ],
@@ -207,6 +279,11 @@ impl HeadlessRenderer {
             self.config.width,
             self.config.height,
             self.config.max_draws_per_frame,
+            |key| {
+                self.assets
+                    .mesh(key)
+                    .map(super::asset::GpuAssetMesh::base_color)
+            },
         )?;
         self.submit_prepared(
             camera_id,
@@ -239,11 +316,15 @@ impl HeadlessRenderer {
             });
         encode_scene_pass(
             &mut encoder,
-            &self.device,
-            &self.queue,
-            &self.pipeline,
-            &self.draw_layout,
-            &targets,
+            &ScenePassResources {
+                device: &self.device,
+                queue: &self.queue,
+                pipeline: &self.pipeline,
+                draw_layout: &self.draw_layout,
+                cube_vertices: &self.cube_vertices,
+                assets: &self.assets,
+                targets: &targets,
+            },
             &prepared.draws,
         );
 
@@ -383,7 +464,11 @@ async fn create_reference_pipeline(
             module: &shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[],
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: 12,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &ASSET_VERTEX_ATTRIBUTES,
+            })],
         },
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: Some(wgpu::DepthStencilState {
@@ -446,6 +531,16 @@ fn validate_config(config: &RendererConfig) -> Result<(), RendererError> {
     if config.readback_capacity.get() > MAX_READBACK_CAPACITY {
         return Err(RendererError::InvalidReadbackCapacity);
     }
+    if config.max_asset_mesh_bytes.get() > config.max_pending_asset_upload_bytes.get() {
+        return Err(RendererError::InvalidAssetConfig {
+            reason: "pending upload bytes must admit at least one maximum-size asset mesh",
+        });
+    }
+    if config.max_asset_mesh_bytes.get() > config.max_resident_asset_bytes.get() {
+        return Err(RendererError::InvalidAssetConfig {
+            reason: "resident asset bytes must admit at least one maximum-size asset mesh",
+        });
+    }
     Ok(())
 }
 
@@ -471,6 +566,9 @@ fn required_limits(
     required.max_color_attachment_bytes_per_sample =
         required.max_color_attachment_bytes_per_sample.max(8);
     required.max_buffer_size = required.max_buffer_size.max(layout.buffer_size);
+    required.max_buffer_size = required
+        .max_buffer_size
+        .max(config.max_asset_mesh_bytes.get());
     required
 }
 
@@ -673,18 +771,24 @@ impl Drop for ReadbackLease {
     }
 }
 
+struct ScenePassResources<'a> {
+    device: &'a wgpu::Device,
+    queue: &'a wgpu::Queue,
+    pipeline: &'a wgpu::RenderPipeline,
+    draw_layout: &'a wgpu::BindGroupLayout,
+    cube_vertices: &'a wgpu::Buffer,
+    assets: &'a RendererAssets,
+    targets: &'a RenderTargets,
+}
+
 fn encode_scene_pass(
     encoder: &mut wgpu::CommandEncoder,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    pipeline: &wgpu::RenderPipeline,
-    draw_layout: &wgpu::BindGroupLayout,
-    targets: &RenderTargets,
+    resources: &ScenePassResources<'_>,
     draws: &[PreparedDraw],
 ) {
     let color_attachments = [
         Some(wgpu::RenderPassColorAttachment {
-            view: &targets.color_view,
+            view: &resources.targets.color_view,
             depth_slice: None,
             resolve_target: None,
             ops: wgpu::Operations {
@@ -698,7 +802,7 @@ fn encode_scene_pass(
             },
         }),
         Some(wgpu::RenderPassColorAttachment {
-            view: &targets.entity_id_view,
+            view: &resources.targets.entity_id_view,
             depth_slice: None,
             resolve_target: None,
             ops: wgpu::Operations {
@@ -711,7 +815,7 @@ fn encode_scene_pass(
         label: Some("cogniform-reference-scene-pass"),
         color_attachments: &color_attachments,
         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            view: &targets.depth_view,
+            view: &resources.targets.depth_view,
             depth_ops: Some(wgpu::Operations {
                 load: wgpu::LoadOp::Clear(1.0),
                 store: wgpu::StoreOp::Store,
@@ -722,27 +826,70 @@ fn encode_scene_pass(
         occlusion_query_set: None,
         multiview_mask: None,
     });
-    render_pass.set_pipeline(pipeline);
+    render_pass.set_pipeline(resources.pipeline);
     for draw in draws {
         let bytes = encode_draw_uniform(draw);
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let buffer = resources.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cogniform-draw-uniform"),
             size: u64::try_from(bytes.len()).expect("uniform length fits u64"),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        queue.write_buffer(&buffer, 0, &bytes);
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("cogniform-draw-bind-group"),
-            layout: draw_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
-        });
+        resources.queue.write_buffer(&buffer, 0, &bytes);
+        let bind_group = resources
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("cogniform-draw-bind-group"),
+                layout: resources.draw_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            });
         render_pass.set_bind_group(0, &bind_group, &[]);
-        render_pass.draw(0..REFERENCE_VERTEX_COUNT, 0..1);
+        let (vertices, vertex_count) = match draw.geometry {
+            PreparedGeometry::Cuboid => (resources.cube_vertices, REFERENCE_VERTEX_COUNT),
+            PreparedGeometry::Asset(key) => {
+                let mesh = resources
+                    .assets
+                    .mesh(key)
+                    .expect("prepared asset geometry remains resident until renderer drop");
+                (mesh.buffer(), mesh.vertex_count())
+            }
+        };
+        render_pass.set_vertex_buffer(0, vertices.slice(..));
+        render_pass.draw(0..vertex_count, 0..1);
     }
+}
+
+fn create_vertex_buffer(
+    device: &wgpu::Device,
+    label: &'static str,
+    vertices: &[[f32; 3]],
+) -> wgpu::Buffer {
+    let size = u64::try_from(vertices.len())
+        .expect("vertex count fits u64")
+        .checked_mul(12)
+        .expect("fixed cube bytes fit u64");
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size,
+        usage: wgpu::BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    {
+        let mut mapped = buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .expect("newly created mapped buffer is writable");
+        let encoded = vertices
+            .iter()
+            .flat_map(|vertex| vertex.iter().flat_map(|value| value.to_le_bytes()))
+            .collect::<Vec<_>>();
+        mapped.copy_from_slice(&encoded);
+    }
+    buffer.unmap();
+    buffer
 }
 
 fn encode_draw_uniform(draw: &PreparedDraw) -> Vec<u8> {

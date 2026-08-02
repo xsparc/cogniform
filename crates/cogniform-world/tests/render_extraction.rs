@@ -3,11 +3,12 @@
 use core::num::NonZeroU32;
 
 use cogniform_protocol::{
-    ColorRgba, ComponentValue, ConflictPolicy, CreateEntity, DeleteEntity, DeliverySemantic,
-    FiniteF32, FrameId, IdempotencyKey, LocalTransform, MaterialComponent, NameComponent,
-    PatchBudget, PositiveF32, PositiveVec3, PrimitiveComponent, PrimitiveShape, Quaternion,
-    RenderChange, ReparentEntity, SceneOperation, ScenePatch, SceneRevision, SceneText,
-    SchemaVersion, SetComponent, StableEntityId, TransactionId, UnitF32, Vec3,
+    AssetMeshComponent, ColorRgba, ComponentValue, ConflictPolicy, ContentHash, CreateEntity,
+    DeleteEntity, DeliverySemantic, FiniteF32, FrameId, IdempotencyKey, LocalTransform,
+    MaterialComponent, NameComponent, PatchBudget, PositiveF32, PositiveVec3, PrimitiveComponent,
+    PrimitiveShape, Quaternion, RenderChange, ReparentEntity, SceneOperation, ScenePatch,
+    SceneRevision, SceneText, SchemaVersion, SetComponent, StableEntityId, TransactionId, UnitF32,
+    Vec3,
 };
 use cogniform_world::{AuthoritativeWorld, WorldApplyError, WorldConfig};
 
@@ -254,4 +255,77 @@ fn extraction_capacity_rejects_before_world_mutation() {
     );
     assert_eq!(world.snapshot().unwrap(), before);
     assert_eq!(world.pending_render_change_count(), 0);
+}
+
+#[test]
+fn hash_addressed_mesh_is_logical_state_and_compact_render_data() {
+    let entity_id = id(41);
+    let content_hash = ContentHash::from_bytes([0x41; 32]);
+    let mut world = AuthoritativeWorld::default();
+    world
+        .apply_patch(
+            &patch(
+                SceneRevision::INITIAL,
+                20,
+                vec![SceneOperation::Create(CreateEntity {
+                    entity_id,
+                    components: vec![
+                        ComponentValue::LocalTransform(transform(0.0)),
+                        ComponentValue::AssetMesh(AssetMeshComponent {
+                            content_hash,
+                            mesh_index: 2,
+                        }),
+                    ],
+                })],
+            ),
+            FrameId::new(1).unwrap(),
+        )
+        .unwrap();
+
+    let snapshot = world.snapshot().unwrap();
+    assert!(matches!(
+        snapshot
+            .entity(entity_id)
+            .unwrap()
+            .component(cogniform_protocol::ComponentKind::AssetMesh),
+        Some(ComponentValue::AssetMesh(value))
+            if value.content_hash == content_hash && value.mesh_index == 2
+    ));
+    let initial_hash = world.logical_hash().unwrap();
+    assert_ne!(initial_hash, cogniform_world::LogicalSceneHash::ZERO);
+
+    let extraction = world.take_render_extraction().unwrap();
+    let RenderChange::Upsert(render_entity) = &extraction.changes()[0] else {
+        panic!("expected asset render upsert");
+    };
+    assert_eq!(
+        render_entity.asset_mesh(),
+        Some(AssetMeshComponent {
+            content_hash,
+            mesh_index: 2,
+        })
+    );
+
+    world
+        .apply_patch(
+            &patch(
+                world.revision(),
+                21,
+                vec![SceneOperation::SetComponent(SetComponent {
+                    entity_id,
+                    component: ComponentValue::AssetMesh(AssetMeshComponent {
+                        content_hash,
+                        mesh_index: 3,
+                    }),
+                })],
+            ),
+            FrameId::new(2).unwrap(),
+        )
+        .unwrap();
+    assert_ne!(world.logical_hash().unwrap(), initial_hash);
+    let extraction = world.take_render_extraction().unwrap();
+    let RenderChange::Upsert(render_entity) = &extraction.changes()[0] else {
+        panic!("expected changed asset render upsert");
+    };
+    assert_eq!(render_entity.asset_mesh().unwrap().mesh_index, 3);
 }

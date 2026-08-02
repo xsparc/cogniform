@@ -6,11 +6,12 @@ use std::{
 };
 
 use cogniform_protocol::{
-    ApplyReceipt, ApplyStatus, ApplyTiming, CameraComponent, ComponentKind, ComponentValue,
-    ConflictPolicy, CreateEntity, DeleteEntity, FrameId, IdempotencyKey, LightComponent,
-    LocalTransform, MaterialComponent, NameComponent, PrimitiveComponent, RemoveComponent,
-    RenderChange, RenderEntity, RenderExtraction, ReparentEntity, RuntimeLimits, SceneOperation,
-    ScenePatch, SceneRevision, SetComponent, StableEntityId, TransactionId,
+    ApplyReceipt, ApplyStatus, ApplyTiming, AssetMeshComponent, CameraComponent, ComponentKind,
+    ComponentValue, ConflictPolicy, CreateEntity, DeleteEntity, FrameId, IdempotencyKey,
+    LightComponent, LocalTransform, MaterialComponent, NameComponent, PrimitiveComponent,
+    RemoveComponent, RenderChange, RenderComponents, RenderEntity, RenderExtraction,
+    ReparentEntity, RuntimeLimits, SceneOperation, ScenePatch, SceneRevision, SetComponent,
+    StableEntityId, TransactionId,
 };
 use hecs::{Entity, EntityBuilder, World};
 
@@ -89,6 +90,7 @@ impl ComponentMask {
             ComponentKind::Material => 1 << 3,
             ComponentKind::Camera => 1 << 4,
             ComponentKind::Light => 1 << 5,
+            ComponentKind::AssetMesh => 1 << 6,
         }
     }
 
@@ -907,11 +909,14 @@ impl AuthoritativeWorld {
         if self.storage.get::<&LightComponent>(entity).is_ok() {
             mask.insert(ComponentKind::Light);
         }
+        if self.storage.get::<&AssetMeshComponent>(entity).is_ok() {
+            mask.insert(ComponentKind::AssetMesh);
+        }
         mask
     }
 
     fn snapshot_components(&self, entity: Entity) -> Vec<ComponentValue> {
-        let mut components = Vec::with_capacity(6);
+        let mut components = Vec::with_capacity(7);
         if let Ok(value) = self.storage.get::<&NameComponent>(entity) {
             components.push(ComponentValue::Name((*value).clone()));
         }
@@ -929,6 +934,9 @@ impl AuthoritativeWorld {
         }
         if let Ok(value) = self.storage.get::<&LightComponent>(entity) {
             components.push(ComponentValue::Light(*value));
+        }
+        if let Ok(value) = self.storage.get::<&AssetMeshComponent>(entity) {
+            components.push(ComponentValue::AssetMesh(*value));
         }
         components
     }
@@ -970,17 +978,30 @@ impl AuthoritativeWorld {
             .get::<&LightComponent>(entity)
             .ok()
             .map(|value| *value);
-        if primitive.is_none() && material.is_none() && camera.is_none() && light.is_none() {
+        let asset_mesh = self
+            .storage
+            .get::<&AssetMeshComponent>(entity)
+            .ok()
+            .map(|value| *value);
+        if primitive.is_none()
+            && material.is_none()
+            && camera.is_none()
+            && light.is_none()
+            && asset_mesh.is_none()
+        {
             return Ok(None);
         }
         RenderEntity::new(
             entity_id,
             *transform.matrix(),
             transform.generation(),
-            primitive,
-            material,
-            camera,
-            light,
+            RenderComponents {
+                primitive,
+                material,
+                camera,
+                light,
+                asset_mesh,
+            },
         )
         .map(Some)
         .map_err(WorldExtractionError::InvalidRenderData)
@@ -1166,6 +1187,9 @@ fn add_component_to_builder(builder: &mut EntityBuilder, component: &ComponentVa
         ComponentValue::Light(value) => {
             builder.add(*value);
         }
+        ComponentValue::AssetMesh(value) => {
+            builder.add(*value);
+        }
     }
 }
 
@@ -1177,6 +1201,7 @@ fn set_component(storage: &mut World, entity: Entity, component: &ComponentValue
         ComponentValue::Material(value) => storage.insert_one(entity, *value),
         ComponentValue::Camera(value) => storage.insert_one(entity, *value),
         ComponentValue::Light(value) => storage.insert_one(entity, *value),
+        ComponentValue::AssetMesh(value) => storage.insert_one(entity, *value),
     };
     result.expect("preflight resolved live storage entity");
 }
@@ -1211,6 +1236,11 @@ fn remove_component(storage: &mut World, entity: Entity, component: ComponentKin
         ComponentKind::Light => drop(
             storage
                 .remove_one::<LightComponent>(entity)
+                .expect("preflight resolved present component"),
+        ),
+        ComponentKind::AssetMesh => drop(
+            storage
+                .remove_one::<AssetMeshComponent>(entity)
                 .expect("preflight resolved present component"),
         ),
     }

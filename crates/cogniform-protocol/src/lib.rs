@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+mod asset;
 mod codec;
 mod component;
 mod error;
@@ -16,6 +17,7 @@ mod message;
 mod query;
 mod render;
 
+pub use asset::{AssetMeshComponent, ContentHash};
 pub use component::{
     CameraComponent, ColorRgb, ColorRgba, ComponentKind, ComponentValue, LightComponent, LightKind,
     LocalTransform, MaterialComponent, NameComponent, PositiveVec3, PrimitiveComponent,
@@ -26,7 +28,7 @@ pub use error::{
 };
 pub use id::{
     FiniteF32, FrameId, IdempotencyKey, ImaginationId, NonNegativeF32, ObservationId, PositiveF32,
-    SceneRevision, SceneText, SchemaVersion, StableEntityId, TransactionId, UnitF32,
+    ProcedureId, SceneRevision, SceneText, SchemaVersion, StableEntityId, TransactionId, UnitF32,
 };
 pub use imagination::{
     ImaginationBudget, ImaginationConstraint, ImaginationEnvelope, ImaginationRelation,
@@ -40,4 +42,6 @@ pub use message::{
     ReparentEntity, SceneOperation, ScenePatch, SetComponent,
 };
 pub use query::{SceneEntityView, SceneQuery, SceneQueryResult};
-pub use render::{RenderChange, RenderContractError, RenderEntity, RenderExtraction};
+pub use render::{
+    RenderChange, RenderComponents, RenderContractError, RenderEntity, RenderExtraction,
+};
