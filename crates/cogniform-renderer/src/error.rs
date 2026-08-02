@@ -1,0 +1,165 @@
+use crate::{AdapterPreference, AdapterSummary};
+
+/// Offscreen target whose required capability was unavailable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RenderTargetKind {
+    /// Linear RGBA8 color output.
+    Color,
+    /// 32-bit floating-point depth output.
+    Depth,
+    /// 32-bit unsigned renderer-local entity-ID output.
+    EntityId,
+}
+
+impl std::fmt::Display for RenderTargetKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Color => formatter.write_str("color"),
+            Self::Depth => formatter.write_str("depth"),
+            Self::EntityId => formatter.write_str("entity-id"),
+        }
+    }
+}
+
+/// One missing adapter capability.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CapabilityIssue {
+    /// A required WebGPU limit exceeded the adapter's supported value.
+    Limit {
+        /// Stable `wgpu` limit name.
+        name: &'static str,
+        /// Minimum value required by the renderer.
+        required: u64,
+        /// Value reported by the adapter.
+        supported: u64,
+    },
+    /// A target format lacks render-attachment or copy-source usage.
+    TextureUsage {
+        /// Affected renderer target.
+        target: RenderTargetKind,
+        /// Stable description of the required usages.
+        required: &'static str,
+    },
+}
+
+impl std::fmt::Display for CapabilityIssue {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Limit {
+                name,
+                required,
+                supported,
+            } => write!(
+                formatter,
+                "limit {name} requires {required}, adapter reports {supported}"
+            ),
+            Self::TextureUsage { target, required } => {
+                write!(formatter, "{target} target requires {required}")
+            }
+        }
+    }
+}
+
+/// Structured renderer initialization, submission, or readback failure.
+#[derive(Debug)]
+pub enum RendererError {
+    /// No native backend was compiled for the current platform.
+    BackendUnavailable,
+    /// Target dimensions were zero or exceeded the fixed project bounds.
+    InvalidTarget {
+        /// Requested width.
+        width: u32,
+        /// Requested height.
+        height: u32,
+        /// Stable reason code.
+        reason: &'static str,
+    },
+    /// The configured readback timeout was zero or exceeded the project bound.
+    InvalidReadbackTimeout,
+    /// No adapter matched the requested preference.
+    AdapterUnavailable {
+        /// Preference used for the failed request.
+        preference: AdapterPreference,
+        /// Backend request diagnostic.
+        reason: String,
+    },
+    /// The selected adapter lacks one or more required capabilities.
+    UnsupportedCapabilities {
+        /// Selected adapter summary.
+        adapter: AdapterSummary,
+        /// Complete bounded list of detected issues.
+        issues: Vec<CapabilityIssue>,
+    },
+    /// Logical device creation failed after capability validation.
+    DeviceRequestFailed {
+        /// Selected adapter summary.
+        adapter: AdapterSummary,
+        /// Device request diagnostic.
+        reason: String,
+    },
+    /// Built-in shader or pipeline validation failed.
+    PipelineCreationFailed {
+        /// Validation diagnostic.
+        reason: String,
+    },
+    /// GPU completion or buffer mapping failed.
+    ReadbackFailed {
+        /// Stable readback stage.
+        stage: &'static str,
+        /// Backend diagnostic.
+        reason: String,
+    },
+    /// A mapped output contained an invalid depth value.
+    InvalidDepthOutput {
+        /// Pixel index containing the invalid value.
+        pixel_index: usize,
+    },
+}
+
+impl std::fmt::Display for RendererError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BackendUnavailable => formatter
+                .write_str("no supported native wgpu backend is compiled for this platform"),
+            Self::InvalidTarget {
+                width,
+                height,
+                reason,
+            } => write!(formatter, "invalid {width}x{height} target: {reason}"),
+            Self::InvalidReadbackTimeout => formatter
+                .write_str("readback timeout must be greater than zero and at most 60 seconds"),
+            Self::AdapterUnavailable { preference, reason } => {
+                write!(formatter, "no {preference} adapter is available: {reason}")
+            }
+            Self::UnsupportedCapabilities { adapter, issues } => {
+                write!(
+                    formatter,
+                    "adapter {} ({}/{}) is missing {} required capability or capabilities",
+                    adapter.name,
+                    adapter.backend,
+                    adapter.device_type,
+                    issues.len()
+                )
+            }
+            Self::DeviceRequestFailed { adapter, reason } => write!(
+                formatter,
+                "device request failed for {} ({}/{}): {reason}",
+                adapter.name, adapter.backend, adapter.device_type
+            ),
+            Self::PipelineCreationFailed { reason } => {
+                write!(formatter, "reference pipeline creation failed: {reason}")
+            }
+            Self::ReadbackFailed { stage, reason } => {
+                write!(formatter, "readback failed during {stage}: {reason}")
+            }
+            Self::InvalidDepthOutput { pixel_index } => {
+                write!(
+                    formatter,
+                    "depth output at pixel {pixel_index} is not finite or normalized"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for RendererError {}
