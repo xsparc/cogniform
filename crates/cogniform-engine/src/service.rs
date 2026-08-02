@@ -5,8 +5,9 @@ use cogniform_replay::ReplayVerification;
 use cogniform_world::LogicalSceneHash;
 
 use crate::{
-    CogniformEngine, EngineConfig, GatewayAdmission, GatewayConfig, GatewayQueueStats,
-    GatewayResponse, LocalGateway, LocalServiceError, Observation, ObservationRequest,
+    AdapterSummary, CogniformEngine, EngineConfig, GatewayAdmission, GatewayConfig,
+    GatewayQueueStats, GatewayResponse, LocalGateway, LocalServiceError, Observation,
+    ObservationRequest,
 };
 use crate::{
     engine::validate_config as validate_engine_config,
@@ -85,6 +86,12 @@ impl LocalService {
         let engine = CogniformEngine::new(engine).await?;
         let gateway = LocalGateway::new(engine, gateway)?;
         Ok(Self { gateway })
+    }
+
+    /// Returns the backend-neutral selected adapter summary for diagnostics.
+    #[must_use]
+    pub fn adapter(&self) -> &AdapterSummary {
+        self.gateway.engine().renderer().adapter()
     }
 
     /// Admits one validated explicit patch under its declared delivery semantic.

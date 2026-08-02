@@ -16,7 +16,10 @@ scene revision that produced it.
 > decode and GPU upload, plus pure seeded cuboid-grid procedures. A bounded
 > local typed service and CLI now run the canonical unattended MVP flow and
 > verify replay to the same logical hash. Remote transport, persistence, and
-> release packaging have not landed yet.
+> release packaging have not landed yet. The current hardening baseline adds a
+> threat model, fault/recovery matrix, controlled compatibility and performance
+> evidence, and a source-first release-candidate checklist. No release has been
+> published.
 
 ## Architecture
 
@@ -55,7 +58,12 @@ and controlled GPU validation. The
 [local service guide](docs/protocol/local-service.md) documents the in-process
 composition boundary and known limitations, while the
 [canonical scenario guide](docs/getting-started/canonical-scenario.md) provides
-the unattended MVP command and expected evidence.
+the unattended MVP command and expected evidence. The
+[validation baseline](docs/operations/validation-baseline.md),
+[failure and recovery guide](docs/operations/failure-and-recovery.md),
+[MVP threat model](docs/threat-model/mvp.md), and
+[release-candidate checklist](docs/release/release-candidate.md) state the
+validated profile, residual risks, and release limits.
 
 ## Build and test
 
@@ -81,6 +89,17 @@ cargo run -p cogniform-cli --locked --offline -- scenario
 The command opens no window and performs no network call. It verifies the room,
 table, light, camera, atomic update, exact query, color/entity-ID/visibility
 causality, and replay hash contract before returning success.
+
+The controlled CPU fixture is informational and should be run in the optimized
+profile:
+
+```text
+cargo run --release -p cogniform-cli --locked --offline -- measure-world
+```
+
+See [CHANGELOG.md](CHANGELOG.md) for the unreleased capability and limitation
+summary. The workspace remains `0.0.0`, source packages remain unpublished, and
+creating a tag or release requires a separate explicit maintainer action.
 
 ## Contributing and security
 

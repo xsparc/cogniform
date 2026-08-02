@@ -128,6 +128,21 @@ Outcome: threat model, performance fixtures, compatibility evidence, failure inj
 
 Gate: correctness/security matrices pass; measured budgets are reported without silent threshold changes; supported platforms are named; release remains a separate explicit action.
 
+Implemented contract: the local single-user threat model and failure/recovery
+matrix name every current trust boundary and residual risk; every-byte replay
+corruption injection proves verified-prefix containment; the versioned
+`world-create-empty-v1` command records controlled release-mode distributions;
+guarded GPU retirement keeps renderer destruction off a pending readback's
+bounded caller path; and the compatibility baseline names one validated
+Windows/Vulkan runtime profile without generalizing it to untested backends.
+[ADR 0010](../adr/0010-source-first-release-profile.md)
+selects source-first candidate packaging while leaving all publication manual
+and separately authorized. See the
+[validation baseline](../operations/validation-baseline.md),
+[threat model](../threat-model/mvp.md),
+[failure guide](../operations/failure-and-recovery.md), and
+[release-candidate checklist](../release/release-candidate.md).
+
 ## 3. Dependency graph
 
 ```text

@@ -71,6 +71,27 @@ fn reference_cube_produces_exact_ids_and_tolerant_color_depth() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn pending_readback_survives_renderer_drop_after_submission() {
+    let pending = pollster::block_on(async {
+        let mut renderer = HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT))
+            .await
+            .expect("the declared reference adapter must initialize");
+        renderer
+            .submit_reference_scene()
+            .expect("reference submission must be admitted")
+    });
+
+    let frame = pending
+        .read()
+        .expect("readback must remain valid after the renderer is dropped");
+    assert_eq!(
+        frame.entity_id_at(WIDTH / 2, HEIGHT / 2),
+        Some(REFERENCE_ENTITY_ID)
+    );
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn readback_pool_pressure_is_explicit_and_reusable() {
     let config =
         RendererConfig::new(WIDTH, HEIGHT).with_readback_capacity(NonZeroU32::new(1).unwrap());

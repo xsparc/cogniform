@@ -24,6 +24,7 @@ handle, renderer device, queue, staging buffer, or replay log.
 
 | Method | Behavior |
 |---|---|
+| `adapter` | Return the backend-neutral selected adapter summary for diagnostics |
 | `submit_patch` | Validate and admit one explicit patch under its delivery semantic |
 | `submit_imagination` | Validate and admit one deterministic primitive imagination |
 | `process_next` | Compile/apply at most one queued mutating command |

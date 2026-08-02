@@ -9,7 +9,7 @@ use cogniform_protocol::{FrameId, SceneRevision, StableEntityId};
 
 use crate::{
     RendererError,
-    renderer::{ReadbackLayout, ReadbackLease},
+    renderer::{GpuRetirementGuard, ReadbackLayout, ReadbackLease},
 };
 
 /// Public, backend-neutral description of the selected adapter.
@@ -189,6 +189,10 @@ pub struct PendingFrame {
     pub(crate) metadata: FrameMetadata,
     pub(crate) id_lookup: BTreeMap<u32, StableEntityId>,
     pub(crate) timeout: Duration,
+    // This field must drop after the frame's GPU resources. It keeps final
+    // device/queue destruction on the retirement worker when the renderer is
+    // dropped before readback.
+    pub(crate) _gpu_retirement: GpuRetirementGuard,
 }
 
 impl fmt::Debug for PendingFrame {
