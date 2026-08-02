@@ -13,3 +13,4 @@ workspace = true
 
 [dependencies]
 cogniform-protocol.workspace = true
+hecs.workspace = true

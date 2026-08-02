@@ -8,5 +8,6 @@ earlier one and links the history.
 |---|---|---|
 | [0001](0001-rust-workspace-and-domain-boundaries.md) | Accepted | Establish the Rust workspace and exclusive domain boundaries |
 | [0002](0002-bounded-canonical-json-contracts.md) | Accepted | Use bounded canonical JSON contracts with exact-pinned vendored Serde |
+| [0003](0003-atomic-world-preflight-and-stable-identity.md) | Accepted | Preflight atomic patches and keep stable identity outside ECS handles |
 
 New records use four sections: context, decision, consequences, and status.

@@ -7,12 +7,12 @@ scene revision that produced it.
 
 > [!IMPORTANT]
 > Cogniform is an early core, not a working 3D engine. The public protocol
-> contracts are implemented; ECS, replay, renderer, and service behavior have
-> not landed yet.
+> contracts and atomic authoritative world are implemented; hierarchy, replay,
+> renderer, and service behavior have not landed yet.
 
 ## Architecture
 
-The workspace establishes exclusive ownership boundaries before their runtime
+The workspace keeps exclusive ownership boundaries as their runtime
 implementations arrive:
 
 | Package | Intended responsibility |
