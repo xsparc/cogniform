@@ -64,6 +64,12 @@ Outcome: negotiated `wgpu` initialization renders a deterministic primitive refe
 
 Gate: no visible window is required; exact entity-ID probes and tolerant depth/color probes pass on the declared reference adapter; unsupported adapters return structured capability diagnostics.
 
+Implemented contract: exact-pinned `wgpu` initialization with no surface,
+bounded offscreen `Rgba8Unorm`/`Depth32Float`/`R32Uint` targets, a built-in cube
+and camera, separate submission/readback, backend-neutral adapter diagnostics,
+and exact/tolerant probes on the declared DX12/Vulkan baseline. See
+[ADR 0005](../adr/0005-bounded-headless-wgpu-baseline.md).
+
 ### PR 6 - CF005: Incremental extraction and revision-linked observation
 
 Outcome: compact changed-record extraction connects world revisions to rendered frame metadata and asynchronous observations without cloning the world or blocking rendering.

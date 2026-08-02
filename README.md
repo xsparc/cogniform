@@ -8,8 +8,9 @@ scene revision that produced it.
 > [!IMPORTANT]
 > Cogniform is an early core, not a working 3D engine. The public protocol
 > contracts, atomic authoritative world, deterministic hierarchy, logical
-> hashing, and replay are implemented; renderer and service behavior have not
-> landed yet.
+> hashing, replay, and a bounded headless primitive renderer are implemented;
+> world extraction, revision-linked observations, and service behavior have
+> not landed yet.
 
 ## Architecture
 
@@ -31,7 +32,9 @@ See the [software design document](docs/architecture/software-design-document.md
 The [core contract guide](docs/protocol/core-contracts.md) documents the current
 schema and validation boundary. The
 [determinism and replay guide](docs/architecture/determinism-and-replay.md)
-documents hierarchy, transform, hash, and recovery behavior.
+documents hierarchy, transform, hash, and recovery behavior. The
+[headless renderer guide](docs/renderer/headless-reference-scene.md) documents
+the current offscreen targets, backend boundary, probes, and limitations.
 
 ## Build and test
 

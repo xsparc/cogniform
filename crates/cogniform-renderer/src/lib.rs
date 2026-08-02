@@ -1,4 +1,20 @@
-//! Headless rendering boundary for Cogniform.
+//! Bounded, headless rendering for Cogniform.
 //!
-//! This crate owns no GPU resources yet. Adapter negotiation, render targets,
-//! and observation outputs are deferred to their approved rendering slices.
+//! The renderer owns its `wgpu` device and all GPU resources. It renders to
+//! offscreen textures and exposes no window, surface, or backend handle through
+//! its public API. The first reference scene is intentionally small: one
+//! built-in cube, one built-in camera, and color, depth, and renderer-local
+//! entity-ID outputs.
+
+mod config;
+mod error;
+mod frame;
+mod renderer;
+
+pub use config::{
+    AdapterPreference, MAX_READBACK_TIMEOUT, MAX_TARGET_DIMENSION, MAX_TARGET_PIXELS,
+    REFERENCE_COLOR, REFERENCE_ENTITY_ID, RendererConfig,
+};
+pub use error::{CapabilityIssue, RenderTargetKind, RendererError};
+pub use frame::{AdapterSummary, PendingFrame, RenderedFrame};
+pub use renderer::HeadlessRenderer;
