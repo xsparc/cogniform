@@ -53,6 +53,11 @@ Outcome: deterministic parent/child updates, generation-based world transforms, 
 
 Gate: cycles/depth violations reject atomically; sparse propagation touches changed branches; repeated replay yields the same logical hash; corrupt/reordered log entries are detected.
 
+Implemented contract: stable-ID hierarchy indexes, copy-on-write topology
+preflight, parent-before-child derived matrices, versioned SHA-256 logical
+hashes, and bounded hash-chained replay with verified-prefix tail recovery. See
+[ADR 0004](../adr/0004-stable-hierarchy-canonical-hash-and-replay-chain.md).
+
 ### PR 5 - CF004: Headless primitive renderer
 
 Outcome: negotiated `wgpu` initialization renders a deterministic primitive reference scene to offscreen color, depth, and entity-ID targets.

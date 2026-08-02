@@ -353,7 +353,7 @@ fn accepted_idempotency_key_replays_without_duplicate_effects() {
 }
 
 #[test]
-fn stale_reparent_and_missing_component_rejections_are_atomic() {
+fn stale_and_missing_component_rejections_are_atomic_around_reparenting() {
     let entity_id = stable_id(1);
     let parent_id = stable_id(2);
     let mut world = AuthoritativeWorld::default();
@@ -367,7 +367,7 @@ fn stale_reparent_and_missing_component_rejections_are_atomic() {
             frame(1),
         )
         .unwrap();
-    let before = world.snapshot().unwrap();
+    let before_reparent = world.snapshot().unwrap();
 
     let stale = patch(
         SceneRevision::INITIAL,
@@ -387,13 +387,10 @@ fn stale_reparent_and_missing_component_rejections_are_atomic() {
             parent_id: Some(parent_id),
         })],
     );
-    assert_eq!(
-        world.apply_patch(&reparent, frame(3)).unwrap_err(),
-        WorldApplyError::UnsupportedOperation {
-            operation_index: 0,
-            entity_id,
-        }
-    );
+    world.apply_patch(&reparent, frame(3)).unwrap();
+    assert_ne!(world.snapshot().unwrap(), before_reparent);
+    assert_eq!(world.parent_id(entity_id), Some(Some(parent_id)));
+    let before_remove = world.snapshot().unwrap();
 
     let remove = patch(
         world.revision(),
@@ -411,7 +408,7 @@ fn stale_reparent_and_missing_component_rejections_are_atomic() {
             component: ComponentKind::Name,
         }
     );
-    assert_eq!(world.snapshot().unwrap(), before);
+    assert_eq!(world.snapshot().unwrap(), before_remove);
 }
 
 #[test]
