@@ -6,9 +6,13 @@
 #![forbid(unsafe_code)]
 
 mod error;
+mod hash;
 mod snapshot;
+mod transform;
 mod world;
 
 pub use error::{WorldApplyError, WorldInvariantError, WorldInvariantErrorKind};
+pub use hash::LogicalSceneHash;
 pub use snapshot::{EntitySnapshot, WorldSnapshot};
+pub use transform::WorldTransform;
 pub use world::{AuthoritativeWorld, WorldConfig};

@@ -33,7 +33,8 @@ Initial component values cover names, local transforms, built-in primitives,
 materials, perspective cameras, and baseline lights. A create operation cannot
 repeat a component kind. Rotations must be non-zero, camera ranges must be
 valid, and an entity cannot directly parent itself. Full hierarchy cycle/depth,
-ownership, asset, and authoritative-world checks belong to later world slices.
+ownership, asset, and authoritative-world checks belong to the world boundary;
+cycle and depth enforcement is implemented by CF003.
 
 Patch validation compares actual counts and declared budgets with
 `RuntimeLimits`. Validation never reorders operations. Atomic commit and

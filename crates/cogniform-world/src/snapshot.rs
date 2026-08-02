@@ -4,13 +4,19 @@ use cogniform_protocol::{ComponentKind, ComponentValue, SceneRevision, StableEnt
 #[derive(Debug, Clone, PartialEq)]
 pub struct EntitySnapshot {
     entity_id: StableEntityId,
+    parent_id: Option<StableEntityId>,
     components: Vec<ComponentValue>,
 }
 
 impl EntitySnapshot {
-    pub(crate) fn new(entity_id: StableEntityId, components: Vec<ComponentValue>) -> Self {
+    pub(crate) fn new(
+        entity_id: StableEntityId,
+        parent_id: Option<StableEntityId>,
+        components: Vec<ComponentValue>,
+    ) -> Self {
         Self {
             entity_id,
+            parent_id,
             components,
         }
     }
@@ -19,6 +25,12 @@ impl EntitySnapshot {
     #[must_use]
     pub const fn entity_id(&self) -> StableEntityId {
         self.entity_id
+    }
+
+    /// Returns the stable parent identity, or `None` for a hierarchy root.
+    #[must_use]
+    pub const fn parent_id(&self) -> Option<StableEntityId> {
+        self.parent_id
     }
 
     /// Returns component values in versioned component-kind order.

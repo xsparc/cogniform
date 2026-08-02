@@ -65,6 +65,34 @@ pub enum WorldApplyError {
         /// Missing component kind.
         component: ComponentKind,
     },
+    /// The final hierarchy names a parent that is not live.
+    HierarchyParentNotFound {
+        /// Child whose parent is missing.
+        entity_id: StableEntityId,
+        /// Missing parent identity.
+        parent_id: StableEntityId,
+    },
+    /// The final hierarchy contains a parent cycle.
+    HierarchyCycle {
+        /// Stable entity at which the cycle was detected.
+        entity_id: StableEntityId,
+    },
+    /// The final hierarchy exceeds the configured maximum depth.
+    HierarchyDepthExceeded {
+        /// Entity whose root-relative depth exceeds the bound.
+        entity_id: StableEntityId,
+        /// Observed root-relative depth.
+        depth: u32,
+        /// Configured maximum root-relative depth.
+        limit: u32,
+    },
+    /// A derived matrix became non-finite during bounded propagation.
+    TransformOverflow {
+        /// Entity whose derived matrix could not be represented.
+        entity_id: StableEntityId,
+    },
+    /// The monotonic transform generation cannot be incremented.
+    TransformGenerationOverflow,
     /// The operation belongs to a later approved world slice.
     UnsupportedOperation {
         /// Zero-based operation index.
@@ -105,6 +133,22 @@ impl fmt::Display for WorldApplyError {
             Self::ComponentNotFound { .. } => {
                 formatter.write_str("component does not exist at this operation")
             }
+            Self::HierarchyParentNotFound { .. } => {
+                formatter.write_str("hierarchy parent does not exist")
+            }
+            Self::HierarchyCycle { .. } => formatter.write_str("hierarchy contains a cycle"),
+            Self::HierarchyDepthExceeded { limit, .. } => {
+                write!(
+                    formatter,
+                    "hierarchy depth exceeds configured limit {limit}"
+                )
+            }
+            Self::TransformOverflow { .. } => {
+                formatter.write_str("derived world transform is not finite")
+            }
+            Self::TransformGenerationOverflow => {
+                formatter.write_str("transform generation overflow")
+            }
             Self::UnsupportedOperation { .. } => {
                 formatter.write_str("operation is not supported by this world version")
             }
@@ -135,6 +179,16 @@ pub enum WorldInvariantErrorKind {
     MissingStorageEntity,
     /// An ECS entity's private stable-ID marker differs from its index key.
     StableIdMismatch,
+    /// A hierarchy relation names a missing entity.
+    HierarchyEntityMissing,
+    /// Parent and child indexes are not reciprocal.
+    HierarchyIndexMismatch,
+    /// Hierarchy topology contains a cycle or exceeds its configured depth.
+    HierarchyTopologyInvalid,
+    /// A live entity has no cached derived transform.
+    WorldTransformMissing,
+    /// A cached derived transform belongs to no live entity.
+    WorldTransformOrphan,
 }
 
 /// Reports a private ECS/index consistency failure without exposing an ECS handle.
@@ -176,6 +230,21 @@ impl fmt::Display for WorldInvariantError {
             }
             WorldInvariantErrorKind::StableIdMismatch => {
                 formatter.write_str("stable-ID marker mismatch")
+            }
+            WorldInvariantErrorKind::HierarchyEntityMissing => {
+                formatter.write_str("hierarchy entity is missing")
+            }
+            WorldInvariantErrorKind::HierarchyIndexMismatch => {
+                formatter.write_str("hierarchy indexes disagree")
+            }
+            WorldInvariantErrorKind::HierarchyTopologyInvalid => {
+                formatter.write_str("hierarchy topology is invalid")
+            }
+            WorldInvariantErrorKind::WorldTransformMissing => {
+                formatter.write_str("live entity has no world transform")
+            }
+            WorldInvariantErrorKind::WorldTransformOrphan => {
+                formatter.write_str("world transform belongs to no live entity")
             }
         }
     }
