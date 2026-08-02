@@ -28,8 +28,10 @@ cargo test --workspace --all-features --locked --offline
 cargo doc --workspace --no-deps --all-features --locked --offline
 ```
 
-The Cargo commands run offline after the pinned toolchain and locked dependency
-sources are present. CF000 has no external Cargo dependencies.
+The Cargo commands use the locked dependency sources checked into `vendor/` and
+run offline without contacting crates.io. Do not edit vendored code directly;
+manifest changes require a fresh locked vendor operation and the dependency
+review described below.
 
 Local maintainer tools and working notes that match ignored paths are not part
 of the project and must not be force-added. Record accepted outcomes in public

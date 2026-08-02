@@ -1,0 +1,1 @@
+{"schema_version":1,"transaction_id":"00000000000000000000000000000010","idempotency_key":"00000000000000000000000000000020","status":"applied","previous_revision":7,"new_revision":8,"operation_count":3,"diagnostics":[],"timing":{"decode_micros":12,"validate_micros":34,"commit_micros":56},"estimated_visible_frame":42}

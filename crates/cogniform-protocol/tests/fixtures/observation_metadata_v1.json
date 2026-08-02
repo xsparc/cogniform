@@ -1,0 +1,1 @@
+{"schema_version":1,"observation_id":"00000000000000000000000000000030","scene_revision":8,"frame_id":42,"camera_id":"00000000000000000000000000000003","kind":"entity_id","dimensions":{"width":64,"height":32},"quality":"low","observed_at_unix_micros":1725000000000000,"production_latency_micros":2500,"staleness":{"latest_known_revision":10,"revisions_behind":2}}
