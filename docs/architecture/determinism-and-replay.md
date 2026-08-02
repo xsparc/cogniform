@@ -44,6 +44,11 @@ and log admission before the authoritative mutation. A newly accepted patch
 adds one entry. An idempotent repeat returns the recorded world receipt without
 adding another entry.
 
+`CogniformEngine` owns a `RecordedWorld`, so engine and local-service patches
+cannot bypass accepted-event recording. It exposes immutable verification and
+owned stream-copy methods while keeping the wrapped world mutable only through
+the recorded apply path.
+
 `ReplayLog::verify` checks the complete in-memory sequence and hash chain.
 `ReplayLog::to_bytes` emits the portable version-one stream.
 `ReplayLog::load_prefix` applies total, per-entry, count, and protocol limits

@@ -5,6 +5,7 @@ use cogniform_protocol::{
     CodecError, IdempotencyKey, SceneRevision, StableEntityId, ValidationError,
 };
 use cogniform_renderer::{RendererError, SceneUpdateError};
+use cogniform_replay::{RecordedApplyError, ReplayConfigError, ReplayError};
 use cogniform_world::{WorldApplyError, WorldExtractionError, WorldInvariantError};
 
 /// Composition failure that preserves the responsible domain boundary.
@@ -15,6 +16,12 @@ pub enum EngineError {
         /// Stable configuration reason.
         reason: &'static str,
     },
+    /// Replay bounds cannot represent an engine-owned accepted-event log.
+    ReplayConfig(ReplayConfigError),
+    /// A patch could not be recorded before authoritative mutation.
+    ReplayRecord(RecordedApplyError),
+    /// Verification or replay of accepted engine events failed.
+    Replay(ReplayError),
     /// The authoritative world rejected a transaction before mutation.
     WorldApply(WorldApplyError),
     /// The world could not produce an immutable extraction packet.
@@ -25,17 +32,25 @@ pub enum EngineError {
     Renderer(RendererError),
     /// The observation worker could not be initialized.
     Observation(ObservationError),
+    /// The authoritative logical state could not be inspected safely.
+    WorldInvariant(WorldInvariantError),
 }
 
 impl fmt::Display for EngineError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidConfig { reason } => write!(formatter, "invalid engine config: {reason}"),
+            Self::ReplayConfig(error) => write!(formatter, "invalid replay config: {error}"),
+            Self::ReplayRecord(error) => {
+                write!(formatter, "accepted-event recording failed: {error}")
+            }
+            Self::Replay(error) => write!(formatter, "accepted-event replay failed: {error}"),
             Self::WorldApply(error) => write!(formatter, "world apply failed: {error}"),
             Self::WorldExtraction(error) => write!(formatter, "world extraction failed: {error}"),
             Self::SceneUpdate(error) => write!(formatter, "renderer state update failed: {error}"),
             Self::Renderer(error) => write!(formatter, "renderer failed: {error}"),
             Self::Observation(error) => write!(formatter, "observation path failed: {error}"),
+            Self::WorldInvariant(error) => write!(formatter, "world invariant failed: {error}"),
         }
     }
 }
@@ -44,11 +59,15 @@ impl std::error::Error for EngineError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::InvalidConfig { .. } => None,
+            Self::ReplayConfig(error) => Some(error),
+            Self::ReplayRecord(error) => Some(error),
+            Self::Replay(error) => Some(error),
             Self::WorldApply(error) => Some(error),
             Self::WorldExtraction(error) => Some(error),
             Self::SceneUpdate(error) => Some(error),
             Self::Renderer(error) => Some(error),
             Self::Observation(error) => Some(error),
+            Self::WorldInvariant(error) => Some(error),
         }
     }
 }
@@ -201,6 +220,45 @@ impl From<EngineError> for GatewayError {
 impl From<WorldInvariantError> for GatewayError {
     fn from(value: WorldInvariantError) -> Self {
         Self::WorldView(value)
+    }
+}
+
+/// Failure at the local typed service boundary.
+#[derive(Debug)]
+pub enum LocalServiceError {
+    /// Command admission, compilation, application, or query failed.
+    Gateway(Box<GatewayError>),
+    /// Observation, replay, renderer, or engine composition failed.
+    Engine(Box<EngineError>),
+}
+
+impl fmt::Display for LocalServiceError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Gateway(error) => write!(formatter, "local command failed: {error}"),
+            Self::Engine(error) => write!(formatter, "local engine failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for LocalServiceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Gateway(error) => Some(error),
+            Self::Engine(error) => Some(error),
+        }
+    }
+}
+
+impl From<GatewayError> for LocalServiceError {
+    fn from(value: GatewayError) -> Self {
+        Self::Gateway(Box::new(value))
+    }
+}
+
+impl From<EngineError> for LocalServiceError {
+    fn from(value: EngineError) -> Self {
+        Self::Engine(Box::new(value))
     }
 }
 

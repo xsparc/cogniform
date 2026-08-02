@@ -10,9 +10,11 @@ mod engine;
 mod error;
 mod gateway;
 mod observation;
+mod scenario;
+mod service;
 
 pub use engine::{CogniformEngine, EngineConfig};
-pub use error::{EngineError, GatewayError, ObservationError};
+pub use error::{EngineError, GatewayError, LocalServiceError, ObservationError};
 pub use gateway::{
     GatewayAdmission, GatewayCommand, GatewayConfig, GatewayQueueStats, GatewayResponse,
     LocalGateway,
@@ -20,3 +22,8 @@ pub use gateway::{
 pub use observation::{
     EntityVisibility, Observation, ObservationPayload, ObservationQueue, ObservationRequest,
 };
+pub use scenario::{
+    CanonicalScenarioConfig, CanonicalScenarioError, CanonicalScenarioReport, ObservationEvidence,
+    run_canonical_scenario,
+};
+pub use service::{LocalService, LocalServiceConfig, LocalServiceStatus};

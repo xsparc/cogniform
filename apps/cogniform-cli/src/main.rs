@@ -1,8 +1,88 @@
 //! Local command-line composition root for Cogniform.
 
-use std::process::ExitCode;
+use std::{env, ffi::OsStr, io, process::ExitCode};
+
+use cogniform_engine::{
+    CanonicalScenarioConfig, LocalService, LocalServiceConfig, run_canonical_scenario,
+};
+
+const SCENARIO_WIDTH: u32 = 64;
+const SCENARIO_HEIGHT: u32 = 64;
 
 fn main() -> ExitCode {
-    eprintln!("cogniform-cli is a foundation skeleton; runtime commands are not implemented yet");
-    ExitCode::FAILURE
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let mut arguments = env::args_os();
+    let _program = arguments.next();
+    match arguments.next() {
+        None => {
+            print_usage();
+            Ok(())
+        }
+        Some(command) if command == OsStr::new("scenario") => {
+            if arguments.next().is_some() {
+                return Err(invalid_input("scenario accepts no arguments"));
+            }
+            run_scenario()
+        }
+        Some(command) if command == OsStr::new("help") || command == OsStr::new("--help") => {
+            if arguments.next().is_some() {
+                return Err(invalid_input("help accepts no arguments"));
+            }
+            print_usage();
+            Ok(())
+        }
+        Some(_) => Err(invalid_input("unknown command; run with --help for usage")),
+    }
+}
+
+fn run_scenario() -> Result<(), Box<dyn std::error::Error>> {
+    let mut service = pollster::block_on(LocalService::new(LocalServiceConfig::new(
+        SCENARIO_WIDTH,
+        SCENARIO_HEIGHT,
+    )))?;
+    let report = run_canonical_scenario(&mut service, CanonicalScenarioConfig::default())?;
+
+    println!("Cogniform canonical scenario passed");
+    println!("revision: {}", report.update_receipt.new_revision.get());
+    println!("entities: {}", report.queried_entities);
+    println!("table: {}", report.table_id);
+    println!("camera: {}", report.camera_id);
+    println!("color frame: {}", report.color.frame_id.get());
+    println!("entity-ID frame: {}", report.entity_id.frame_id.get());
+    println!("visibility frame: {}", report.visibility.frame_id.get());
+    println!(
+        "center color: #{:02x}{:02x}{:02x}{:02x}",
+        report.center_color[0],
+        report.center_color[1],
+        report.center_color[2],
+        report.center_color[3]
+    );
+    println!("center entity: {}", report.center_entity_id);
+    println!("table visible pixels: {}", report.table_visible_pixels);
+    println!("logical hash: {}", report.logical_hash);
+    println!("replayed logical hash: {}", report.replayed_logical_hash);
+    println!("replay entries: {}", report.replay.entry_count());
+    println!("replay bytes: {}", report.replay_bytes);
+    Ok(())
+}
+
+fn print_usage() {
+    println!("Cogniform local headless engine");
+    println!();
+    println!("Usage:");
+    println!("  cogniform-cli scenario  Run the canonical unattended MVP scenario");
+    println!("  cogniform-cli --help    Show this help");
+}
+
+fn invalid_input(message: impl Into<String>) -> Box<dyn std::error::Error> {
+    Box::new(io::Error::new(io::ErrorKind::InvalidInput, message.into()))
 }
