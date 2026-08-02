@@ -35,6 +35,23 @@ run offline without contacting crates.io. Do not edit vendored code directly;
 manifest changes require a fresh locked vendor operation and the dependency
 review described below.
 
+GPU conformance and performance measurements are controlled evidence, not
+ordinary pull-request CI. Run them only when the changed risk or a release-
+candidate review requires them, and report the adapter, profile, fixture,
+sampling method, hardware, and limitations:
+
+```text
+cargo test --release -p cogniform-renderer --tests --locked --offline -- --ignored
+cargo test --release -p cogniform-engine --tests --locked --offline -- --ignored
+cargo run --release -p cogniform-cli --locked --offline -- scenario
+cargo run --release -p cogniform-cli --locked --offline -- measure-world
+```
+
+Do not turn one-machine timing into a merge threshold or silently replace a
+recorded baseline. Follow the
+[validation baseline](docs/operations/validation-baseline.md) and
+[source release-candidate checklist](docs/release/release-candidate.md).
+
 After staging a change, scan exactly what would be committed:
 
 ```text

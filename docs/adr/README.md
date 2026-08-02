@@ -15,5 +15,6 @@ earlier one and links the history.
 | [0007](0007-pure-imagination-compiler-and-bounded-local-gateway.md) | Accepted | Compile bounded primitive imaginations purely and admit local commands with explicit queue semantics |
 | [0008](0008-content-addressed-assets-and-pure-built-in-procedures.md) | Accepted | Separate content-addressed CPU import, logical asset references, bounded GPU upload, and pure built-in procedures |
 | [0009](0009-recorded-engine-and-local-typed-service.md) | Accepted | Record engine mutations and expose a bounded local typed service with a canonical unattended scenario |
+| [0010](0010-source-first-release-profile.md) | Accepted | Prepare a narrow source-first candidate profile without publishing crates, binaries, or a release |
 
 New records use four sections: context, decision, consequences, and status.

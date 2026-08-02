@@ -1,0 +1,104 @@
+# Validation and compatibility baseline
+
+Status: controlled CF009 evidence collected on 2026-08-02. This document names
+what was reproduced and what remains unsupported; it is not a promise for
+untested hardware.
+
+## Compatibility profile
+
+| Environment | Evidence | Classification |
+|---|---|---|
+| Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, readback-pressure, and canonical scenario tests passed | Validated local MVP profile |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Selected by the scenario; exact entity ID and tolerant color/depth probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
+| Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
+| Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
+| Software/fallback adapter | Selection and unavailable-backend errors are typed; no full scenario result is recorded | Not release-supported yet |
+| macOS/Metal, mobile, browser/WebGPU | Backend features and controlled results are absent from this workspace profile | Unsupported |
+
+The renderer is capability based. An adapter must satisfy the configured target
+dimensions, buffer bounds, attachment count, and render/copy usage for RGBA8
+color, Depth32Float depth, and R32Uint identity targets before device creation.
+The validated GPU above is evidence that one adapter meets the contract; it does
+not impose a specific GPU model or driver version on future entries.
+
+The pinned compiler used for this baseline was:
+
+```text
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+host: x86_64-pc-windows-msvc
+LLVM 22.1.6
+cargo 1.97.1 (c980f4866 2026-06-30)
+```
+
+## Controlled GPU commands
+
+The following commands ran in the optimized profile with checked-in dependency
+sources and no visible window or network service:
+
+```text
+cargo test --release -p cogniform-renderer --tests --locked --offline -- --ignored
+cargo test --release -p cogniform-engine --tests --locked --offline -- --ignored
+cargo run --release -p cogniform-cli --locked --offline -- scenario
+```
+
+The renderer suite passed the built-in cube, bounded readback pressure, and GLB
+asset fixture. The engine suite passed gateway/idempotency, revision causality,
+and the canonical scenario. The scenario selected Vulkan, committed revision 2,
+reported frames 1-3, found the table at the center color/entity-ID pixels,
+reported 72 visible table pixels, and replayed two entries to logical hash
+`db23b22d98da433d6050c0cd863f3a736832c7bae2ca674cdbee3dae8ed25106`.
+Pixel coverage is visual evidence for this adapter, not a cross-GPU exact value.
+
+## Controlled CPU performance fixture
+
+The versioned fixture is `world-create-empty-v1` in `cogniform-cli
+measure-world`. It prepares one validated patch containing 1,000 stable-ID
+entity-create operations with no components. Each sample starts from a fresh
+default `AuthoritativeWorld`. Timing excludes patch construction and world
+construction, then measures:
+
+1. complete decoded patch apply;
+2. protocol validation plus world preflight, from receipt timing;
+3. atomic commit, from receipt timing;
+4. compact render extraction; and
+5. canonical logical hash after extraction.
+
+The optimized command is:
+
+```text
+cargo run --release -p cogniform-cli --locked --offline -- measure-world
+```
+
+Two independent command invocations were recorded on 2026-08-02. Each used
+five warmups followed by 30 measured samples in one process. Nearest-rank p95
+and the upper middle sample for the median are reported. The machine had an AMD
+Ryzen 7 7800X3D (8 cores/16 threads) and 33,462,239,232 bytes of physical
+memory, running the Windows/toolchain profile above.
+
+| Run | Span, microseconds | Min | Median | p95 | Max |
+|---|---|---:|---:|---:|---:|
+| A | Apply total | 1,031.000 | 1,079.800 | 1,422.700 | 1,486.400 |
+| A | Validate and preflight | 704.000 | 749.000 | 995.000 | 1,158.000 |
+| A | Atomic commit | 307.000 | 327.000 | 426.000 | 432.000 |
+| A | Render extraction | 315.700 | 329.500 | 410.700 | 420.100 |
+| A | Logical hash | 406.900 | 434.900 | 508.000 | 529.500 |
+| B | Apply total | 1,044.100 | 1,198.000 | 2,128.300 | 2,166.200 |
+| B | Validate and preflight | 736.000 | 881.000 | 1,500.000 | 1,527.000 |
+| B | Atomic commit | 298.000 | 330.000 | 599.000 | 665.000 |
+| B | Render extraction | 312.300 | 332.400 | 556.400 | 569.600 |
+| B | Logical hash | 388.200 | 428.700 | 685.200 | 704.000 |
+
+Both measured 1,000-operation apply p95 values are below the design's 8 ms
+research target on this machine. That is an observation, not a general
+threshold. The fixture uses empty entities, receipt subspans have microsecond
+resolution, the
+process was not CPU-pinned or isolated, power/thermal state was uncontrolled,
+and the result excludes JSON decode, imagination compilation, GPU work,
+observations, persistence, and transport. CI does not run this benchmark and no
+merge gate is derived from it.
+
+Future baselines append a dated table with the exact fixture version, commit,
+profile, toolchain, OS, CPU, adapter when relevant, warmups, sample count, and
+limitations. Existing numbers are never silently replaced or used to weaken a
+threshold.

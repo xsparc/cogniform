@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex, TryLockError};
+use std::{
+    sync::{Arc, Mutex, TryLockError, mpsc},
+    thread,
+};
 
 use cogniform_assets::AssetUploadJob;
 use cogniform_protocol::{FrameId, RenderExtraction, SceneRevision, StableEntityId};
@@ -125,6 +128,8 @@ pub struct HeadlessRenderer {
     readback_pool: ReadbackPool,
     scene: RenderScene,
     next_frame_id: u64,
+    // This field must drop after the renderer's GPU resources.
+    gpu_retirement: GpuRetirementGuard,
 }
 
 impl std::fmt::Debug for HeadlessRenderer {
@@ -147,6 +152,7 @@ impl HeadlessRenderer {
         let adapter_summary = AdapterSummary::from_adapter(&adapter);
         let (device, queue) =
             request_device(&adapter, &adapter_summary, &config, readback_layout).await?;
+        let gpu_retirement = GpuRetirementGuard::start(device.clone(), queue.clone())?;
         let (pipeline, draw_layout) = create_reference_pipeline(&device).await?;
         let cube_vertices =
             create_vertex_buffer(&device, "cogniform-cube-vertices", &CUBE_VERTICES);
@@ -170,6 +176,7 @@ impl HeadlessRenderer {
             readback_pool,
             scene,
             next_frame_id: 1,
+            gpu_retirement,
         })
     }
 
@@ -369,6 +376,31 @@ impl HeadlessRenderer {
             },
             id_lookup: prepared.id_lookup,
             timeout: self.config.readback_timeout,
+            _gpu_retirement: self.gpu_retirement.clone(),
+        })
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct GpuRetirementGuard {
+    _keep_alive: mpsc::SyncSender<()>,
+}
+
+impl GpuRetirementGuard {
+    fn start(device: wgpu::Device, queue: wgpu::Queue) -> Result<Self, RendererError> {
+        let (keep_alive, disconnected) = mpsc::sync_channel(0);
+        thread::Builder::new()
+            .name("cogniform-gpu-retirement".to_owned())
+            .spawn(move || {
+                let _ = disconnected.recv();
+                drop(queue);
+                drop(device);
+            })
+            .map_err(|error| RendererError::GpuRetirementWorkerUnavailable {
+                reason: error.to_string(),
+            })?;
+        Ok(Self {
+            _keep_alive: keep_alive,
         })
     }
 }

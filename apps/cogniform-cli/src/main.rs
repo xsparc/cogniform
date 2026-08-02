@@ -9,6 +9,8 @@ use cogniform_engine::{
 const SCENARIO_WIDTH: u32 = 64;
 const SCENARIO_HEIGHT: u32 = 64;
 
+mod measure;
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -33,6 +35,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             run_scenario()
         }
+        Some(command) if command == OsStr::new("measure-world") => {
+            if arguments.next().is_some() {
+                return Err(invalid_input("measure-world accepts no arguments"));
+            }
+            measure::run()
+        }
         Some(command) if command == OsStr::new("help") || command == OsStr::new("--help") => {
             if arguments.next().is_some() {
                 return Err(invalid_input("help accepts no arguments"));
@@ -49,9 +57,14 @@ fn run_scenario() -> Result<(), Box<dyn std::error::Error>> {
         SCENARIO_WIDTH,
         SCENARIO_HEIGHT,
     )))?;
+    let adapter = service.adapter().clone();
     let report = run_canonical_scenario(&mut service, CanonicalScenarioConfig::default())?;
 
     println!("Cogniform canonical scenario passed");
+    println!("adapter: {}", adapter.name);
+    println!("backend: {}", adapter.backend);
+    println!("device type: {}", adapter.device_type);
+    println!("WebGPU compliant: {}", adapter.webgpu_compliant);
     println!("revision: {}", report.update_receipt.new_revision.get());
     println!("entities: {}", report.queried_entities);
     println!("table: {}", report.table_id);
@@ -80,6 +93,7 @@ fn print_usage() {
     println!();
     println!("Usage:");
     println!("  cogniform-cli scenario  Run the canonical unattended MVP scenario");
+    println!("  cogniform-cli measure-world  Measure the controlled CPU world fixture");
     println!("  cogniform-cli --help    Show this help");
 }
 

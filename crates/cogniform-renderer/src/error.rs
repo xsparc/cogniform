@@ -111,6 +111,11 @@ pub enum RendererError {
         /// Device request diagnostic.
         reason: String,
     },
+    /// The bounded GPU-retirement worker could not be created.
+    GpuRetirementWorkerUnavailable {
+        /// Operating-system thread-creation diagnostic.
+        reason: String,
+    },
     /// Built-in shader or pipeline validation failed.
     PipelineCreationFailed {
         /// Validation diagnostic.
@@ -266,6 +271,9 @@ impl std::fmt::Display for RendererError {
                 "device request failed for {} ({}/{}): {reason}",
                 adapter.name, adapter.backend, adapter.device_type
             ),
+            Self::GpuRetirementWorkerUnavailable { reason } => {
+                write!(formatter, "GPU retirement worker could not start: {reason}")
+            }
             Self::PipelineCreationFailed { reason } => {
                 write!(formatter, "reference pipeline creation failed: {reason}")
             }

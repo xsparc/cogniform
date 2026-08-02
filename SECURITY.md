@@ -47,3 +47,11 @@ Agent input, scene data, assets, labels, procedures, and transport messages are
 untrusted. Future implementation must enforce limits before expensive decode,
 allocation, ECS mutation, or GPU work. Arbitrary native plugins and user shaders
 are outside the MVP security model.
+
+The reviewed [MVP threat model](docs/threat-model/mvp.md) names assets, trust
+boundaries, abuse cases, controls, residual risks, and assumptions for the
+single-user local profile. The
+[failure and recovery guide](docs/operations/failure-and-recovery.md) records
+the tested containment behavior and operational gaps. Neither document turns
+the current source workspace into a remote, multi-tenant, or production
+security boundary.

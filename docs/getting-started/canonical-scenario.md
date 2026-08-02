@@ -26,11 +26,11 @@ The command exits successfully only after it has:
 5. linked non-zero table visibility to the same revision and camera; and
 6. verified the accepted-event chain and replayed it to the same logical hash.
 
-Successful output reports revision `2`, four entities, stable table and camera
-IDs, three monotonic frame IDs, the center color and entity ID, visible table
-pixels, matching 64-character logical hashes, two replay entries, and the
-bounded replay byte count. Wall-clock timestamps and local paths are not
-printed.
+Successful output reports the selected backend-neutral adapter summary,
+revision `2`, four entities, stable table and camera IDs, three monotonic frame
+IDs, the center color and entity ID, visible table pixels, matching 64-character
+logical hashes, two replay entries, and the bounded replay byte count.
+Wall-clock timestamps and local paths are not printed.
 
 ## Failure behavior
 

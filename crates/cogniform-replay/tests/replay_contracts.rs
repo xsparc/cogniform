@@ -185,6 +185,35 @@ fn truncated_or_modified_tail_preserves_only_the_verified_prefix() {
 }
 
 #[test]
+fn every_single_byte_corruption_stops_before_the_unverified_entry() {
+    let encoded = record_three().log().to_bytes();
+    for index in 0..encoded.len() {
+        let mut modified = encoded.clone();
+        modified[index] ^= 0x01;
+        let loaded = ReplayLog::load_prefix(
+            &modified,
+            ReplayConfig::default(),
+            &WorldConfig::default().runtime_limits,
+        );
+        assert!(
+            loaded.tail_error().is_some(),
+            "byte {index} was not rejected"
+        );
+        assert!(loaded.log().len() < 3, "byte {index} entered the log");
+        let verification = loaded.log().verify().unwrap();
+        assert_eq!(
+            verification.entry_count(),
+            u32::try_from(loaded.log().len()).unwrap()
+        );
+        let recovered = loaded.log().replay(WorldConfig::default()).unwrap();
+        assert_eq!(
+            recovered.revision().get(),
+            u64::try_from(loaded.log().len()).unwrap()
+        );
+    }
+}
+
+#[test]
 fn missing_and_reordered_entries_break_the_chain() {
     let encoded = record_three().log().to_bytes();
     let ranges = frame_ranges(&encoded);
