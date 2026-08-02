@@ -131,6 +131,7 @@ dependencies = [
  "cogniform-renderer",
  "cogniform-replay",
  "cogniform-world",
+ "pollster",
 ]
 
 [[package]]

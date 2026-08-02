@@ -1,4 +1,4 @@
-use core::num::NonZeroU32;
+use core::num::{NonZeroU32, NonZeroU64};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
@@ -9,13 +9,13 @@ use cogniform_protocol::{
     ApplyReceipt, ApplyStatus, ApplyTiming, CameraComponent, ComponentKind, ComponentValue,
     ConflictPolicy, CreateEntity, DeleteEntity, FrameId, IdempotencyKey, LightComponent,
     LocalTransform, MaterialComponent, NameComponent, PrimitiveComponent, RemoveComponent,
-    ReparentEntity, RuntimeLimits, SceneOperation, ScenePatch, SceneRevision, SetComponent,
-    StableEntityId, TransactionId,
+    RenderChange, RenderEntity, RenderExtraction, ReparentEntity, RuntimeLimits, SceneOperation,
+    ScenePatch, SceneRevision, SetComponent, StableEntityId, TransactionId,
 };
 use hecs::{Entity, EntityBuilder, World};
 
 use crate::{
-    EntitySnapshot, LogicalSceneHash, WorldApplyError, WorldInvariantError,
+    EntitySnapshot, LogicalSceneHash, WorldApplyError, WorldExtractionError, WorldInvariantError,
     WorldInvariantErrorKind, WorldSnapshot, WorldTransform,
 };
 
@@ -28,6 +28,8 @@ pub struct WorldConfig {
     pub max_entities: NonZeroU32,
     /// Maximum retained accepted idempotency records.
     pub max_idempotency_records: NonZeroU32,
+    /// Maximum stable identities awaiting the next render extraction.
+    pub max_pending_render_changes: NonZeroU32,
     /// Maximum number of parent edges from a root to any descendant.
     pub max_hierarchy_depth: NonZeroU32,
 }
@@ -38,6 +40,7 @@ impl Default for WorldConfig {
             runtime_limits: RuntimeLimits::default(),
             max_entities: NonZeroU32::new(65_536).expect("constant is non-zero"),
             max_idempotency_records: NonZeroU32::new(4_096).expect("constant is non-zero"),
+            max_pending_render_changes: NonZeroU32::new(65_536).expect("constant is non-zero"),
             max_hierarchy_depth: NonZeroU32::new(256).expect("constant is non-zero"),
         }
     }
@@ -110,6 +113,7 @@ struct CommitPlan {
     children: Option<BTreeMap<StableEntityId, BTreeSet<StableEntityId>>>,
     transform_updates: BTreeMap<StableEntityId, WorldTransform>,
     transform_generation: u64,
+    render_changed_ids: BTreeSet<StableEntityId>,
 }
 
 struct PreflightState<'a> {
@@ -117,6 +121,7 @@ struct PreflightState<'a> {
     parents: Cow<'a, BTreeMap<StableEntityId, StableEntityId>>,
     local_overrides: BTreeMap<StableEntityId, Option<LocalTransform>>,
     dirty_roots: BTreeSet<StableEntityId>,
+    render_changed_ids: BTreeSet<StableEntityId>,
     hierarchy_changed: bool,
     live_entities: u32,
     operations: Vec<SceneOperation>,
@@ -131,6 +136,9 @@ pub struct AuthoritativeWorld {
     world_transforms: BTreeMap<StableEntityId, WorldTransform>,
     transform_generation: u64,
     revision: SceneRevision,
+    pending_render_changes: BTreeSet<StableEntityId>,
+    last_extracted_revision: SceneRevision,
+    render_extraction_generation: u64,
     idempotency_records: BTreeMap<IdempotencyKey, RecordedApply>,
     config: WorldConfig,
 }
@@ -147,6 +155,9 @@ impl AuthoritativeWorld {
             world_transforms: BTreeMap::new(),
             transform_generation: 0,
             revision: SceneRevision::INITIAL,
+            pending_render_changes: BTreeSet::new(),
+            last_extracted_revision: SceneRevision::INITIAL,
+            render_extraction_generation: 0,
             idempotency_records: BTreeMap::new(),
             config,
         }
@@ -168,6 +179,18 @@ impl AuthoritativeWorld {
     #[must_use]
     pub fn idempotency_record_count(&self) -> usize {
         self.idempotency_records.len()
+    }
+
+    /// Returns the number of stable identities coalesced for extraction.
+    #[must_use]
+    pub fn pending_render_change_count(&self) -> usize {
+        self.pending_render_changes.len()
+    }
+
+    /// Returns the last world revision successfully handed to a renderer.
+    #[must_use]
+    pub const fn last_extracted_revision(&self) -> SceneRevision {
+        self.last_extracted_revision
     }
 
     /// Returns the transaction recorded for an accepted idempotency key.
@@ -320,6 +343,39 @@ impl AuthoritativeWorld {
         Ok(WorldSnapshot::new(self.revision, entities))
     }
 
+    /// Drains the compact set of changed render records into one immutable packet.
+    ///
+    /// Repeated changes to the same stable identity are coalesced. A packet may
+    /// contain no record changes while still advancing the fully extracted
+    /// scene revision after a logical-only edit.
+    pub fn take_render_extraction(&mut self) -> Result<RenderExtraction, WorldExtractionError> {
+        self.validate_invariants()
+            .map_err(WorldExtractionError::InvariantViolation)?;
+        let generation = self
+            .render_extraction_generation
+            .checked_add(1)
+            .and_then(NonZeroU64::new)
+            .ok_or(WorldExtractionError::GenerationOverflow)?;
+        let mut changes = Vec::with_capacity(self.pending_render_changes.len());
+        for &entity_id in &self.pending_render_changes {
+            match self.render_entity(entity_id)? {
+                Some(entity) => changes.push(RenderChange::upsert(entity)),
+                None => changes.push(RenderChange::remove(entity_id)),
+            }
+        }
+        let extraction = RenderExtraction::new(
+            generation,
+            self.last_extracted_revision,
+            self.revision,
+            changes,
+        )
+        .map_err(WorldExtractionError::InvalidRenderData)?;
+        self.pending_render_changes.clear();
+        self.last_extracted_revision = self.revision;
+        self.render_extraction_generation = generation.get();
+        Ok(extraction)
+    }
+
     /// Applies one complete patch or returns a rejection without mutation.
     ///
     /// `estimated_visible_frame` is supplied by the orchestration boundary
@@ -346,6 +402,10 @@ impl AuthoritativeWorld {
             let mut receipt = recorded.receipt.clone();
             receipt.status = ApplyStatus::IdempotentReplay;
             return Ok(receipt);
+        }
+
+        if self.render_extraction_generation == u64::MAX {
+            return Err(WorldApplyError::RenderExtractionGenerationOverflow);
         }
 
         if self.idempotency_records.len()
@@ -422,6 +482,7 @@ impl AuthoritativeWorld {
             parents: Cow::Borrowed(&self.parents),
             local_overrides: BTreeMap::new(),
             dirty_roots: BTreeSet::new(),
+            render_changed_ids: BTreeSet::new(),
             hierarchy_changed: false,
             live_entities: u32::try_from(self.stable_index.len()).map_err(|_| {
                 WorldApplyError::InvariantViolation(WorldInvariantError::new(
@@ -491,6 +552,20 @@ impl AuthoritativeWorld {
             &state.local_overrides,
             &state.dirty_roots,
         )?;
+        let mut render_changed_ids = state.render_changed_ids;
+        render_changed_ids.extend(transform_updates.keys().copied());
+        let pending_count = self
+            .pending_render_changes
+            .union(&render_changed_ids)
+            .count();
+        if pending_count
+            > usize::try_from(self.config.max_pending_render_changes.get())
+                .expect("u32 extraction capacity fits usize")
+        {
+            return Err(WorldApplyError::RenderExtractionCapacityExceeded {
+                limit: self.config.max_pending_render_changes.get(),
+            });
+        }
         let parents = match state.parents {
             Cow::Borrowed(_) => None,
             Cow::Owned(parents) => Some(parents),
@@ -504,6 +579,7 @@ impl AuthoritativeWorld {
             children: rebuilt_children,
             transform_updates,
             transform_generation,
+            render_changed_ids,
         })
     }
 
@@ -554,6 +630,7 @@ impl AuthoritativeWorld {
             .local_overrides
             .insert(create.entity_id, local_transform);
         state.dirty_roots.insert(create.entity_id);
+        state.render_changed_ids.insert(create.entity_id);
         Ok(())
     }
 
@@ -580,6 +657,7 @@ impl AuthoritativeWorld {
         state.hierarchy_changed = true;
         state.local_overrides.remove(&delete.entity_id);
         state.dirty_roots.remove(&delete.entity_id);
+        state.render_changed_ids.insert(delete.entity_id);
         Ok(())
     }
 
@@ -602,6 +680,9 @@ impl AuthoritativeWorld {
                 state.dirty_roots.insert(set.entity_id);
             }
             state.local_overrides.insert(set.entity_id, Some(*value));
+        }
+        if set.component.kind() != ComponentKind::Name {
+            state.render_changed_ids.insert(set.entity_id);
         }
         entity_state.components.insert(set.component.kind());
         state.overlay.insert(set.entity_id, entity_state);
@@ -631,6 +712,9 @@ impl AuthoritativeWorld {
         if remove.component == ComponentKind::LocalTransform {
             state.local_overrides.insert(remove.entity_id, None);
             state.dirty_roots.insert(remove.entity_id);
+        }
+        if remove.component != ComponentKind::Name {
+            state.render_changed_ids.insert(remove.entity_id);
         }
         entity_state.components.remove(remove.component);
         state.overlay.insert(remove.entity_id, entity_state);
@@ -837,6 +921,59 @@ impl AuthoritativeWorld {
         components
     }
 
+    fn render_entity(
+        &self,
+        entity_id: StableEntityId,
+    ) -> Result<Option<RenderEntity>, WorldExtractionError> {
+        let Some(&entity) = self.stable_index.get(&entity_id) else {
+            return Ok(None);
+        };
+        let transform = self
+            .world_transforms
+            .get(&entity_id)
+            .copied()
+            .ok_or_else(|| {
+                WorldExtractionError::InvariantViolation(WorldInvariantError::new(
+                    WorldInvariantErrorKind::WorldTransformMissing,
+                    Some(entity_id),
+                ))
+            })?;
+        let primitive = self
+            .storage
+            .get::<&PrimitiveComponent>(entity)
+            .ok()
+            .map(|value| *value);
+        let material = self
+            .storage
+            .get::<&MaterialComponent>(entity)
+            .ok()
+            .map(|value| *value);
+        let camera = self
+            .storage
+            .get::<&CameraComponent>(entity)
+            .ok()
+            .map(|value| *value);
+        let light = self
+            .storage
+            .get::<&LightComponent>(entity)
+            .ok()
+            .map(|value| *value);
+        if primitive.is_none() && material.is_none() && camera.is_none() && light.is_none() {
+            return Ok(None);
+        }
+        RenderEntity::new(
+            entity_id,
+            *transform.matrix(),
+            transform.generation(),
+            primitive,
+            material,
+            camera,
+            light,
+        )
+        .map(Some)
+        .map_err(WorldExtractionError::InvalidRenderData)
+    }
+
     fn commit(&mut self, plan: CommitPlan) {
         for operation in &plan.operations {
             match operation {
@@ -881,6 +1018,7 @@ impl AuthoritativeWorld {
         }
         self.transform_generation = plan.transform_generation;
         self.revision = plan.new_revision;
+        self.pending_render_changes.extend(plan.render_changed_ids);
         debug_assert!(self.validate_invariants().is_ok());
     }
 }

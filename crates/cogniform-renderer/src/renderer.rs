@@ -1,6 +1,13 @@
+use std::sync::{Arc, Mutex, TryLockError};
+
+use cogniform_protocol::{FrameId, RenderExtraction, SceneRevision, StableEntityId};
+
 use crate::{
-    AdapterPreference, AdapterSummary, CapabilityIssue, MAX_READBACK_TIMEOUT, MAX_TARGET_DIMENSION,
-    MAX_TARGET_PIXELS, PendingFrame, RenderTargetKind, RendererConfig, RendererError,
+    AdapterPreference, AdapterSummary, CapabilityIssue, FrameMetadata, MAX_READBACK_CAPACITY,
+    MAX_READBACK_TIMEOUT, MAX_TARGET_DIMENSION, MAX_TARGET_PIXELS, PendingFrame, REFERENCE_COLOR,
+    REFERENCE_ENTITY_ID, RenderTargetKind, RendererConfig, RendererError, SceneUpdateError,
+    SceneUpdateSummary,
+    scene::{PreparedDraw, PreparedScene, RenderScene},
 };
 
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -69,7 +76,11 @@ pub struct HeadlessRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
+    draw_layout: wgpu::BindGroupLayout,
     readback_layout: ReadbackLayout,
+    readback_pool: ReadbackPool,
+    scene: RenderScene,
+    next_frame_id: u64,
 }
 
 impl std::fmt::Debug for HeadlessRenderer {
@@ -91,7 +102,13 @@ impl HeadlessRenderer {
         let adapter_summary = AdapterSummary::from_adapter(&adapter);
         let (device, queue) =
             request_device(&adapter, &adapter_summary, &config, readback_layout).await?;
-        let pipeline = create_reference_pipeline(&device).await?;
+        let (pipeline, draw_layout) = create_reference_pipeline(&device).await?;
+        let readback_pool = ReadbackPool::new(
+            &device,
+            readback_layout.buffer_size,
+            config.readback_capacity,
+        );
+        let scene = RenderScene::new(config.max_scene_entities);
 
         Ok(Self {
             config,
@@ -99,7 +116,11 @@ impl HeadlessRenderer {
             device,
             queue,
             pipeline,
+            draw_layout,
             readback_layout,
+            readback_pool,
+            scene,
+            next_frame_id: 1,
         })
     }
 
@@ -115,29 +136,122 @@ impl HeadlessRenderer {
         &self.adapter
     }
 
+    /// Returns the latest fully consumed extracted scene revision.
+    #[must_use]
+    pub const fn scene_revision(&self) -> SceneRevision {
+        self.scene.revision()
+    }
+
+    /// Returns the latest consumed extraction generation.
+    #[must_use]
+    pub const fn extraction_generation(&self) -> u64 {
+        self.scene.generation()
+    }
+
+    /// Returns the renderer-owned extracted record count.
+    #[must_use]
+    pub fn extracted_entity_count(&self) -> usize {
+        self.scene.entity_count()
+    }
+
+    /// Returns the compact identity assigned to one current stable entity.
+    #[must_use]
+    pub fn compact_entity_id(&self, entity_id: StableEntityId) -> Option<crate::RenderEntityId> {
+        self.scene.compact_id(entity_id)
+    }
+
+    /// Returns the frame identity that the next successful submission will use.
+    pub fn next_frame_id(&self) -> Result<FrameId, RendererError> {
+        FrameId::new(self.next_frame_id).map_err(|_| RendererError::FrameIdOverflow)
+    }
+
+    /// Atomically consumes one ordered world extraction packet.
+    pub fn apply_extraction(
+        &mut self,
+        extraction: &RenderExtraction,
+    ) -> Result<SceneUpdateSummary, SceneUpdateError> {
+        self.scene.apply(extraction)
+    }
+
     /// Encodes and submits the built-in cube reference scene without waiting
     /// for GPU completion or CPU readback.
-    #[must_use]
-    pub fn submit_reference_scene(&self) -> PendingFrame {
+    pub fn submit_reference_scene(&mut self) -> Result<PendingFrame, RendererError> {
+        let camera_id = StableEntityId::new(1).expect("reference camera ID is non-zero");
+        let entity_id = StableEntityId::new(u128::from(REFERENCE_ENTITY_ID))
+            .expect("reference entity ID is non-zero");
+        let prepared = PreparedScene {
+            draws: vec![PreparedDraw {
+                model: [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ],
+                view_projection: [
+                    0.70, 0.00, 0.00, 0.00, 0.00, 0.70, 0.00, 0.00, 0.20, 0.15, 0.40, 0.00, 0.00,
+                    0.00, 0.50, 1.00,
+                ],
+                color: REFERENCE_COLOR.map(|channel| f32::from(channel) / 255.0),
+                compact_id: REFERENCE_ENTITY_ID,
+            }],
+            id_lookup: [(REFERENCE_ENTITY_ID, entity_id)].into_iter().collect(),
+        };
+        self.submit_prepared(camera_id, SceneRevision::INITIAL, 0, prepared)
+    }
+
+    /// Submits the current extracted scene without waiting for GPU completion,
+    /// CPU readback, observation processing, or downstream consumers.
+    pub fn submit_scene(
+        &mut self,
+        camera_id: StableEntityId,
+    ) -> Result<PendingFrame, RendererError> {
+        let prepared = self.scene.prepare(
+            camera_id,
+            self.config.width,
+            self.config.height,
+            self.config.max_draws_per_frame,
+        )?;
+        self.submit_prepared(
+            camera_id,
+            self.scene.revision(),
+            self.scene.generation(),
+            prepared,
+        )
+    }
+
+    fn submit_prepared(
+        &mut self,
+        camera_id: StableEntityId,
+        scene_revision: SceneRevision,
+        extraction_generation: u64,
+        prepared: PreparedScene,
+    ) -> Result<PendingFrame, RendererError> {
+        let readback = self.readback_pool.try_acquire()?;
+        let frame_id = self.next_frame_id()?;
+        let next_frame_id = self.next_frame_id.checked_add(1).unwrap_or(0);
         let size = wgpu::Extent3d {
             width: self.config.width,
             height: self.config.height,
             depth_or_array_layers: 1,
         };
         let targets = RenderTargets::new(&self.device, size);
-        let readbacks = ReadbackBuffers::new(&self.device, self.readback_layout.buffer_size);
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("cogniform-reference-scene-encoder"),
             });
-        encode_reference_pass(&mut encoder, &self.pipeline, &targets);
+        encode_scene_pass(
+            &mut encoder,
+            &self.device,
+            &self.queue,
+            &self.pipeline,
+            &self.draw_layout,
+            &targets,
+            &prepared.draws,
+        );
 
         copy_target_to_buffer(
             &mut encoder,
             &targets.color,
             wgpu::TextureAspect::All,
-            &readbacks.color,
+            readback.color(),
             self.readback_layout,
             size,
         );
@@ -145,7 +259,7 @@ impl HeadlessRenderer {
             &mut encoder,
             &targets.depth,
             wgpu::TextureAspect::DepthOnly,
-            &readbacks.depth,
+            readback.depth(),
             self.readback_layout,
             size,
         );
@@ -153,22 +267,28 @@ impl HeadlessRenderer {
             &mut encoder,
             &targets.entity_ids,
             wgpu::TextureAspect::All,
-            &readbacks.entity_ids,
+            readback.entity_ids(),
             self.readback_layout,
             size,
         );
 
         let submission = self.queue.submit([encoder.finish()]);
-        PendingFrame {
+        self.next_frame_id = next_frame_id;
+        Ok(PendingFrame {
             device: self.device.clone(),
             submission,
-            color: readbacks.color,
-            depth: readbacks.depth,
-            entity_ids: readbacks.entity_ids,
+            readback,
             layout: self.readback_layout,
             adapter: self.adapter.clone(),
+            metadata: FrameMetadata {
+                frame_id,
+                scene_revision,
+                camera_id,
+                extraction_generation,
+            },
+            id_lookup: prepared.id_lookup,
             timeout: self.config.readback_timeout,
-        }
+        })
     }
 }
 
@@ -231,15 +351,28 @@ async fn request_device(
 
 async fn create_reference_pipeline(
     device: &wgpu::Device,
-) -> Result<wgpu::RenderPipeline, RendererError> {
+) -> Result<(wgpu::RenderPipeline, wgpu::BindGroupLayout), RendererError> {
     let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("cogniform-reference-scene-shader"),
         source: wgpu::ShaderSource::Wgsl(include_str!("reference_scene.wgsl").into()),
     });
+    let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("cogniform-draw-bind-group-layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("cogniform-reference-scene-layout"),
-        bind_group_layouts: &[],
+        bind_group_layouts: &[Some(&draw_layout)],
         immediate_size: 0,
     });
     let targets = [Some(COLOR_FORMAT.into()), Some(ENTITY_ID_FORMAT.into())];
@@ -275,7 +408,7 @@ async fn create_reference_pipeline(
             reason: error.to_string(),
         });
     }
-    Ok(pipeline)
+    Ok((pipeline, draw_layout))
 }
 
 fn validate_config(config: &RendererConfig) -> Result<(), RendererError> {
@@ -309,6 +442,9 @@ fn validate_config(config: &RendererConfig) -> Result<(), RendererError> {
     }
     if config.readback_timeout.is_zero() || config.readback_timeout > MAX_READBACK_TIMEOUT {
         return Err(RendererError::InvalidReadbackTimeout);
+    }
+    if config.readback_capacity.get() > MAX_READBACK_CAPACITY {
+        return Err(RendererError::InvalidReadbackCapacity);
     }
     Ok(())
 }
@@ -414,7 +550,7 @@ impl RenderTargets {
     }
 }
 
-struct ReadbackBuffers {
+pub(crate) struct ReadbackBuffers {
     color: wgpu::Buffer,
     depth: wgpu::Buffer,
     entity_ids: wgpu::Buffer,
@@ -430,10 +566,121 @@ impl ReadbackBuffers {
     }
 }
 
-fn encode_reference_pass(
+#[derive(Clone)]
+struct ReadbackPool {
+    inner: Arc<ReadbackPoolInner>,
+}
+
+struct ReadbackPoolInner {
+    available: Mutex<Vec<ReadbackBuffers>>,
+    capacity: u32,
+}
+
+impl ReadbackPool {
+    fn new(device: &wgpu::Device, size: u64, capacity: core::num::NonZeroU32) -> Self {
+        let available = (0..capacity.get())
+            .map(|_| ReadbackBuffers::new(device, size))
+            .collect();
+        Self {
+            inner: Arc::new(ReadbackPoolInner {
+                available: Mutex::new(available),
+                capacity: capacity.get(),
+            }),
+        }
+    }
+
+    fn try_acquire(&self) -> Result<ReadbackLease, RendererError> {
+        let mut available = match self.inner.available.try_lock() {
+            Ok(available) => available,
+            Err(TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(TryLockError::WouldBlock) => {
+                return Err(RendererError::ReadbackPoolExhausted {
+                    capacity: self.inner.capacity,
+                });
+            }
+        };
+        let buffers = available
+            .pop()
+            .ok_or(RendererError::ReadbackPoolExhausted {
+                capacity: self.inner.capacity,
+            })?;
+        drop(available);
+        Ok(ReadbackLease {
+            pool: self.clone(),
+            buffers: Some(buffers),
+            mapping_started: false,
+        })
+    }
+}
+
+pub(crate) struct ReadbackLease {
+    pool: ReadbackPool,
+    buffers: Option<ReadbackBuffers>,
+    mapping_started: bool,
+}
+
+impl ReadbackLease {
+    pub(crate) fn color(&self) -> &wgpu::Buffer {
+        &self.buffers.as_ref().expect("live readback lease").color
+    }
+
+    pub(crate) fn depth(&self) -> &wgpu::Buffer {
+        &self.buffers.as_ref().expect("live readback lease").depth
+    }
+
+    pub(crate) fn entity_ids(&self) -> &wgpu::Buffer {
+        &self
+            .buffers
+            .as_ref()
+            .expect("live readback lease")
+            .entity_ids
+    }
+
+    pub(crate) fn begin_mapping(&mut self) {
+        debug_assert!(!self.mapping_started);
+        self.mapping_started = true;
+    }
+
+    pub(crate) fn finish_mapping(&mut self) {
+        self.unmap_started();
+    }
+
+    fn unmap_started(&mut self) {
+        if !self.mapping_started {
+            return;
+        }
+        let buffers = self.buffers.as_ref().expect("live readback lease");
+        buffers.color.unmap();
+        buffers.depth.unmap();
+        buffers.entity_ids.unmap();
+        self.mapping_started = false;
+    }
+}
+
+impl Drop for ReadbackLease {
+    fn drop(&mut self) {
+        self.unmap_started();
+        let Some(buffers) = self.buffers.take() else {
+            return;
+        };
+        let mut available = self
+            .pool
+            .inner
+            .available
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        available.push(buffers);
+    }
+}
+
+fn encode_scene_pass(
     encoder: &mut wgpu::CommandEncoder,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
     pipeline: &wgpu::RenderPipeline,
+    draw_layout: &wgpu::BindGroupLayout,
     targets: &RenderTargets,
+    draws: &[PreparedDraw],
 ) {
     let color_attachments = [
         Some(wgpu::RenderPassColorAttachment {
@@ -476,7 +723,46 @@ fn encode_reference_pass(
         multiview_mask: None,
     });
     render_pass.set_pipeline(pipeline);
-    render_pass.draw(0..REFERENCE_VERTEX_COUNT, 0..1);
+    for draw in draws {
+        let bytes = encode_draw_uniform(draw);
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cogniform-draw-uniform"),
+            size: u64::try_from(bytes.len()).expect("uniform length fits u64"),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&buffer, 0, &bytes);
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cogniform-draw-bind-group"),
+            layout: draw_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
+        render_pass.set_bind_group(0, &bind_group, &[]);
+        render_pass.draw(0..REFERENCE_VERTEX_COUNT, 0..1);
+    }
+}
+
+fn encode_draw_uniform(draw: &PreparedDraw) -> Vec<u8> {
+    const UNIFORM_BYTES: usize = (16 + 16 + 4 + 4) * 4;
+    let mut bytes = Vec::with_capacity(UNIFORM_BYTES);
+    for value in draw.model {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in draw.view_projection {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in draw.color {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&draw.compact_id.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    debug_assert_eq!(bytes.len(), UNIFORM_BYTES);
+    bytes
 }
 
 fn create_target_texture(
@@ -568,6 +854,12 @@ mod tests {
         assert!(matches!(
             validate_config(&RendererConfig::new(64, 64).with_readback_timeout(Duration::ZERO)),
             Err(RendererError::InvalidReadbackTimeout)
+        ));
+        assert!(matches!(
+            validate_config(&RendererConfig::new(64, 64).with_readback_capacity(
+                core::num::NonZeroU32::new(MAX_READBACK_CAPACITY + 1).unwrap()
+            )),
+            Err(RendererError::InvalidReadbackCapacity)
         ));
         assert!(matches!(
             validate_config(

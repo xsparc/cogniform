@@ -1,4 +1,5 @@
 use crate::{AdapterPreference, AdapterSummary};
+use cogniform_protocol::{PrimitiveShape, StableEntityId};
 
 /// Offscreen target whose required capability was unavailable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,6 +77,13 @@ pub enum RendererError {
     },
     /// The configured readback timeout was zero or exceeded the project bound.
     InvalidReadbackTimeout,
+    /// The configured readback pool capacity was zero or exceeded its bound.
+    InvalidReadbackCapacity,
+    /// No readback buffer set was immediately available for submission.
+    ReadbackPoolExhausted {
+        /// Fixed number of in-flight frames supported by this renderer.
+        capacity: u32,
+    },
     /// No adapter matched the requested preference.
     AdapterUnavailable {
         /// Preference used for the failed request.
@@ -102,6 +110,35 @@ pub enum RendererError {
         /// Validation diagnostic.
         reason: String,
     },
+    /// The requested stable camera is absent or has no camera component.
+    CameraUnavailable {
+        /// Requested stable camera identity.
+        camera_id: StableEntityId,
+    },
+    /// The extracted camera transform cannot be inverted.
+    CameraTransformNotInvertible {
+        /// Requested stable camera identity.
+        camera_id: StableEntityId,
+    },
+    /// An extracted matrix cannot be represented by the GPU's f32 inputs.
+    GpuTransformOutOfRange {
+        /// Affected stable entity.
+        entity_id: StableEntityId,
+    },
+    /// A built-in primitive is not yet supported by the bounded draw path.
+    UnsupportedPrimitive {
+        /// Affected stable entity.
+        entity_id: StableEntityId,
+        /// Unsupported built-in shape.
+        shape: PrimitiveShape,
+    },
+    /// The extracted scene contains more drawable primitives than configured.
+    DrawCapacityExceeded {
+        /// Configured maximum draws per frame.
+        limit: u32,
+    },
+    /// The monotonic frame identity cannot be incremented.
+    FrameIdOverflow,
     /// GPU completion or buffer mapping failed.
     ReadbackFailed {
         /// Stable readback stage.
@@ -113,6 +150,11 @@ pub enum RendererError {
     InvalidDepthOutput {
         /// Pixel index containing the invalid value.
         pixel_index: usize,
+    },
+    /// A non-background attachment value had no stable-ID mapping for the frame.
+    UnknownRenderEntityId {
+        /// Unrecognized renderer-local attachment value.
+        render_entity_id: u32,
     },
 }
 
@@ -128,6 +170,13 @@ impl std::fmt::Display for RendererError {
             } => write!(formatter, "invalid {width}x{height} target: {reason}"),
             Self::InvalidReadbackTimeout => formatter
                 .write_str("readback timeout must be greater than zero and at most 60 seconds"),
+            Self::InvalidReadbackCapacity => {
+                formatter.write_str("readback capacity must be greater than zero and at most 16")
+            }
+            Self::ReadbackPoolExhausted { capacity } => write!(
+                formatter,
+                "all {capacity} bounded readback slots are in flight"
+            ),
             Self::AdapterUnavailable { preference, reason } => {
                 write!(formatter, "no {preference} adapter is available: {reason}")
             }
@@ -149,6 +198,28 @@ impl std::fmt::Display for RendererError {
             Self::PipelineCreationFailed { reason } => {
                 write!(formatter, "reference pipeline creation failed: {reason}")
             }
+            Self::CameraUnavailable { camera_id } => {
+                write!(
+                    formatter,
+                    "camera {camera_id} is unavailable in extracted renderer state"
+                )
+            }
+            Self::CameraTransformNotInvertible { camera_id } => write!(
+                formatter,
+                "camera {camera_id} has a non-invertible world transform"
+            ),
+            Self::GpuTransformOutOfRange { entity_id } => write!(
+                formatter,
+                "entity {entity_id} has a transform outside finite GPU f32 range"
+            ),
+            Self::UnsupportedPrimitive { entity_id, shape } => write!(
+                formatter,
+                "entity {entity_id} uses unsupported primitive {shape:?}"
+            ),
+            Self::DrawCapacityExceeded { limit } => {
+                write!(formatter, "frame draw capacity {limit} would be exceeded")
+            }
+            Self::FrameIdOverflow => formatter.write_str("frame identifier overflow"),
             Self::ReadbackFailed { stage, reason } => {
                 write!(formatter, "readback failed during {stage}: {reason}")
             }
@@ -158,6 +229,10 @@ impl std::fmt::Display for RendererError {
                     "depth output at pixel {pixel_index} is not finite or normalized"
                 )
             }
+            Self::UnknownRenderEntityId { render_entity_id } => write!(
+                formatter,
+                "frame contains unknown renderer entity ID {render_entity_id}"
+            ),
         }
     }
 }

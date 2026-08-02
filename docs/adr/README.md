@@ -11,5 +11,6 @@ earlier one and links the history.
 | [0003](0003-atomic-world-preflight-and-stable-identity.md) | Accepted | Preflight atomic patches and keep stable identity outside ECS handles |
 | [0004](0004-stable-hierarchy-canonical-hash-and-replay-chain.md) | Accepted | Keep hierarchy stable-ID based and replay canonical state through a bounded hash chain |
 | [0005](0005-bounded-headless-wgpu-baseline.md) | Accepted | Use an exact-pinned, bounded DX12/Vulkan wgpu core for offscreen reference rendering |
+| [0006](0006-coalesced-extraction-and-bounded-observations.md) | Accepted | Drain coalesced render changes into revision-linked frames and bounded observations |
 
 New records use four sections: context, decision, consequences, and status.

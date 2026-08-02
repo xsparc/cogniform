@@ -2,7 +2,11 @@
 
 #![cfg(any(target_os = "windows", target_os = "linux"))]
 
-use cogniform_renderer::{HeadlessRenderer, REFERENCE_COLOR, REFERENCE_ENTITY_ID, RendererConfig};
+use core::num::NonZeroU32;
+
+use cogniform_renderer::{
+    HeadlessRenderer, REFERENCE_COLOR, REFERENCE_ENTITY_ID, RendererConfig, RendererError,
+};
 
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 64;
@@ -10,11 +14,13 @@ const HEIGHT: u32 = 64;
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn reference_cube_produces_exact_ids_and_tolerant_color_depth() {
-    let renderer = pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
-        .expect("the declared reference adapter must initialize");
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
     let adapter = renderer.adapter().clone();
     let frame = renderer
         .submit_reference_scene()
+        .expect("reference submission must be admitted")
         .read()
         .expect("reference readback must complete");
 
@@ -61,4 +67,26 @@ fn reference_cube_produces_exact_ids_and_tolerant_color_depth() {
     assert_eq!(frame.color_at(WIDTH, 0), None);
     assert_eq!(frame.depth_at(0, HEIGHT), None);
     assert_eq!(frame.entity_id_at(WIDTH, HEIGHT), None);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn readback_pool_pressure_is_explicit_and_reusable() {
+    let config =
+        RendererConfig::new(WIDTH, HEIGHT).with_readback_capacity(NonZeroU32::new(1).unwrap());
+    let mut renderer = pollster::block_on(HeadlessRenderer::new(config))
+        .expect("the declared reference adapter must initialize");
+    let first = renderer
+        .submit_reference_scene()
+        .expect("the first readback lease must be available");
+    assert!(matches!(
+        renderer.submit_reference_scene(),
+        Err(RendererError::ReadbackPoolExhausted { capacity: 1 })
+    ));
+    drop(first);
+    renderer
+        .submit_reference_scene()
+        .expect("dropping a pending frame must return its lease")
+        .read()
+        .expect("the recycled readback lease must remain valid");
 }

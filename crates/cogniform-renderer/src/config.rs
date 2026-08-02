@@ -1,3 +1,4 @@
+use core::num::NonZeroU32;
 use std::time::Duration;
 
 /// Maximum width or height accepted for an offscreen target.
@@ -6,14 +7,16 @@ pub const MAX_TARGET_DIMENSION: u32 = 4_096;
 /// Maximum number of pixels accepted for one offscreen target set.
 pub const MAX_TARGET_PIXELS: u64 = 4_194_304;
 
+/// Maximum fixed number of simultaneously in-flight readback sets.
+pub const MAX_READBACK_CAPACITY: u32 = 16;
+
 /// Maximum time a caller may allow a reference-frame readback to wait.
 pub const MAX_READBACK_TIMEOUT: Duration = Duration::from_mins(1);
 
 /// Renderer-local ID written by the built-in reference cube.
 ///
-/// This is deliberately not a [`cogniform_protocol::StableEntityId`]. CF005
-/// will own the bounded mapping between stable world identity and compact GPU
-/// identity.
+/// This is deliberately not a [`cogniform_protocol::StableEntityId`]. Extracted
+/// scene frames retain an explicit compact-to-stable mapping instead.
 pub const REFERENCE_ENTITY_ID: u32 = 7;
 
 /// Expected linear RGBA8 color of the built-in reference cube.
@@ -53,6 +56,12 @@ pub struct RendererConfig {
     pub adapter_preference: AdapterPreference,
     /// Maximum duration allowed while waiting for mapped readback buffers.
     pub readback_timeout: Duration,
+    /// Fixed number of frames that may await readback concurrently.
+    pub readback_capacity: NonZeroU32,
+    /// Maximum number of renderer-owned extracted entity records.
+    pub max_scene_entities: NonZeroU32,
+    /// Maximum primitive draws admitted for one submitted frame.
+    pub max_draws_per_frame: NonZeroU32,
 }
 
 impl RendererConfig {
@@ -64,6 +73,9 @@ impl RendererConfig {
             height,
             adapter_preference: AdapterPreference::HighPerformance,
             readback_timeout: Duration::from_secs(10),
+            readback_capacity: NonZeroU32::new(2).expect("constant is non-zero"),
+            max_scene_entities: NonZeroU32::new(65_536).expect("constant is non-zero"),
+            max_draws_per_frame: NonZeroU32::new(4_096).expect("constant is non-zero"),
         }
     }
 
@@ -78,6 +90,27 @@ impl RendererConfig {
     #[must_use]
     pub const fn with_readback_timeout(mut self, timeout: Duration) -> Self {
         self.readback_timeout = timeout;
+        self
+    }
+
+    /// Sets the fixed number of simultaneously in-flight readback sets.
+    #[must_use]
+    pub const fn with_readback_capacity(mut self, capacity: NonZeroU32) -> Self {
+        self.readback_capacity = capacity;
+        self
+    }
+
+    /// Sets the maximum renderer-owned extracted entity count.
+    #[must_use]
+    pub const fn with_max_scene_entities(mut self, capacity: NonZeroU32) -> Self {
+        self.max_scene_entities = capacity;
+        self
+    }
+
+    /// Sets the maximum primitive draws admitted for one frame.
+    #[must_use]
+    pub const fn with_max_draws_per_frame(mut self, capacity: NonZeroU32) -> Self {
+        self.max_draws_per_frame = capacity;
         self
     }
 }

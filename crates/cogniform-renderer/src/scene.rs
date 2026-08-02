@@ -1,0 +1,576 @@
+use core::num::{NonZeroU32, NonZeroU64};
+use std::collections::{BTreeMap, BTreeSet};
+
+use cogniform_protocol::{
+    CameraComponent, ColorRgba, RenderChange, RenderEntity, RenderExtraction, SceneRevision,
+    StableEntityId,
+};
+
+use crate::RendererError;
+
+/// Non-zero compact identity owned exclusively by one renderer instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RenderEntityId(NonZeroU32);
+
+impl RenderEntityId {
+    /// Returns the compact numeric value written to the entity-ID attachment.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+/// Result of atomically consuming one extraction packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneUpdateSummary {
+    /// Fully consumed scene revision.
+    pub scene_revision: SceneRevision,
+    /// Consumed extraction generation.
+    pub generation: NonZeroU64,
+    /// Number of records inserted or replaced.
+    pub upserts: u32,
+    /// Number of removal records consumed.
+    pub removals: u32,
+}
+
+/// Rejected renderer-state update; the previous extracted scene is preserved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SceneUpdateError {
+    /// The packet did not extend the previously consumed extraction generation.
+    GenerationMismatch {
+        /// Expected next generation.
+        expected: u64,
+        /// Supplied generation.
+        supplied: u64,
+    },
+    /// The renderer has consumed the final representable generation.
+    GenerationExhausted,
+    /// The packet was prepared against another renderer revision.
+    BaseRevisionMismatch {
+        /// Current renderer revision.
+        current: SceneRevision,
+        /// Packet base revision.
+        supplied: SceneRevision,
+    },
+    /// Applying the packet would exceed the configured renderer-state capacity.
+    EntityCapacityExceeded {
+        /// Configured maximum retained render records.
+        limit: u32,
+    },
+    /// The monotonic compact identity space was exhausted.
+    CompactIdentityExhausted,
+}
+
+impl std::fmt::Display for SceneUpdateError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GenerationMismatch { expected, supplied } => write!(
+                formatter,
+                "expected extraction generation {expected}, received {supplied}"
+            ),
+            Self::GenerationExhausted => {
+                formatter.write_str("renderer extraction generation is exhausted")
+            }
+            Self::BaseRevisionMismatch { current, supplied } => write!(
+                formatter,
+                "renderer revision {} does not match packet base {}",
+                current.get(),
+                supplied.get()
+            ),
+            Self::EntityCapacityExceeded { limit } => {
+                write!(
+                    formatter,
+                    "renderer entity capacity {limit} would be exceeded"
+                )
+            }
+            Self::CompactIdentityExhausted => {
+                formatter.write_str("renderer compact identity space is exhausted")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SceneUpdateError {}
+
+pub(crate) struct RenderScene {
+    revision: SceneRevision,
+    generation: u64,
+    entities: BTreeMap<StableEntityId, RenderEntity>,
+    compact_ids: BTreeMap<StableEntityId, RenderEntityId>,
+    free_compact_ids: BTreeSet<RenderEntityId>,
+    next_compact_id: Option<NonZeroU32>,
+    max_entities: NonZeroU32,
+}
+
+impl RenderScene {
+    pub(crate) fn new(max_entities: NonZeroU32) -> Self {
+        Self {
+            revision: SceneRevision::INITIAL,
+            generation: 0,
+            entities: BTreeMap::new(),
+            compact_ids: BTreeMap::new(),
+            free_compact_ids: BTreeSet::new(),
+            next_compact_id: NonZeroU32::new(1),
+            max_entities,
+        }
+    }
+
+    pub(crate) const fn revision(&self) -> SceneRevision {
+        self.revision
+    }
+
+    pub(crate) const fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub(crate) fn entity_count(&self) -> usize {
+        self.entities.len()
+    }
+
+    pub(crate) fn compact_id(&self, entity_id: StableEntityId) -> Option<RenderEntityId> {
+        self.compact_ids.get(&entity_id).copied()
+    }
+
+    pub(crate) fn apply(
+        &mut self,
+        extraction: &RenderExtraction,
+    ) -> Result<SceneUpdateSummary, SceneUpdateError> {
+        let supplied_generation = extraction.generation().get();
+        let expected_generation = self
+            .generation
+            .checked_add(1)
+            .ok_or(SceneUpdateError::GenerationExhausted)?;
+        if supplied_generation != expected_generation {
+            return Err(SceneUpdateError::GenerationMismatch {
+                expected: expected_generation,
+                supplied: supplied_generation,
+            });
+        }
+        if extraction.base_revision() != self.revision {
+            return Err(SceneUpdateError::BaseRevisionMismatch {
+                current: self.revision,
+                supplied: extraction.base_revision(),
+            });
+        }
+
+        let mut projected_count = self.entities.len();
+        let mut new_id_count = 0_usize;
+        for change in extraction.changes() {
+            match change {
+                RenderChange::Upsert(entity)
+                    if !self.entities.contains_key(&entity.entity_id()) =>
+                {
+                    projected_count = projected_count.saturating_add(1);
+                    new_id_count = new_id_count.saturating_add(1);
+                }
+                RenderChange::Remove(entity_id) if self.entities.contains_key(entity_id) => {
+                    projected_count = projected_count.saturating_sub(1);
+                }
+                RenderChange::Upsert(_) | RenderChange::Remove(_) => {}
+            }
+        }
+        if projected_count
+            > usize::try_from(self.max_entities.get()).expect("u32 entity capacity fits usize")
+        {
+            return Err(SceneUpdateError::EntityCapacityExceeded {
+                limit: self.max_entities.get(),
+            });
+        }
+
+        let mut assigned = BTreeMap::new();
+        let mut free_compact_ids = self.free_compact_ids.clone();
+        for change in extraction.changes() {
+            if let RenderChange::Remove(entity_id) = change
+                && let Some(compact_id) = self.compact_ids.get(entity_id)
+            {
+                free_compact_ids.insert(*compact_id);
+            }
+        }
+        let mut next = self.next_compact_id;
+        for change in extraction.changes() {
+            let RenderChange::Upsert(entity) = change else {
+                continue;
+            };
+            if self.entities.contains_key(&entity.entity_id()) {
+                continue;
+            }
+            let compact_id = if let Some(value) = free_compact_ids.pop_first() {
+                value
+            } else {
+                let value = next.ok_or(SceneUpdateError::CompactIdentityExhausted)?;
+                next = value.get().checked_add(1).and_then(NonZeroU32::new);
+                RenderEntityId(value)
+            };
+            assigned.insert(entity.entity_id(), compact_id);
+        }
+        debug_assert_eq!(assigned.len(), new_id_count);
+
+        let mut upserts = 0_u32;
+        let mut removals = 0_u32;
+        for change in extraction.changes() {
+            match change {
+                RenderChange::Upsert(entity) => {
+                    if let Some(compact_id) = assigned.remove(&entity.entity_id()) {
+                        self.compact_ids.insert(entity.entity_id(), compact_id);
+                    }
+                    self.entities
+                        .insert(entity.entity_id(), entity.as_ref().clone());
+                    upserts = upserts.saturating_add(1);
+                }
+                RenderChange::Remove(entity_id) => {
+                    self.entities.remove(entity_id);
+                    self.compact_ids.remove(entity_id);
+                    removals = removals.saturating_add(1);
+                }
+            }
+        }
+        self.next_compact_id = next;
+        self.free_compact_ids = free_compact_ids;
+        self.revision = extraction.scene_revision();
+        self.generation = supplied_generation;
+        Ok(SceneUpdateSummary {
+            scene_revision: self.revision,
+            generation: extraction.generation(),
+            upserts,
+            removals,
+        })
+    }
+
+    pub(crate) fn prepare(
+        &self,
+        camera_id: StableEntityId,
+        width: u32,
+        height: u32,
+        max_draws: NonZeroU32,
+    ) -> Result<PreparedScene, RendererError> {
+        let camera_entity = self
+            .entities
+            .get(&camera_id)
+            .ok_or(RendererError::CameraUnavailable { camera_id })?;
+        let camera = camera_entity
+            .camera()
+            .ok_or(RendererError::CameraUnavailable { camera_id })?;
+        let view_projection = camera_view_projection(camera_entity, camera, width, height)?;
+        let mut draws = Vec::new();
+        let mut id_lookup = BTreeMap::new();
+        for (&entity_id, entity) in &self.entities {
+            let Some(primitive) = entity.primitive() else {
+                continue;
+            };
+            if draws.len()
+                >= usize::try_from(max_draws.get()).expect("u32 draw capacity fits usize")
+            {
+                return Err(RendererError::DrawCapacityExceeded {
+                    limit: max_draws.get(),
+                });
+            }
+            if primitive.shape != cogniform_protocol::PrimitiveShape::Cuboid {
+                return Err(RendererError::UnsupportedPrimitive {
+                    entity_id,
+                    shape: primitive.shape,
+                });
+            }
+            let compact_id = self.compact_ids[&entity_id];
+            let mut model = matrix_to_f32(entity.world_transform(), entity_id)?;
+            let dimensions = [
+                primitive.dimensions.x.get(),
+                primitive.dimensions.y.get(),
+                primitive.dimensions.z.get(),
+            ];
+            for row in 0..4 {
+                model[row] *= dimensions[0];
+                model[4 + row] *= dimensions[1];
+                model[8 + row] *= dimensions[2];
+            }
+            let color = entity.material().map_or([0.8, 0.8, 0.8, 1.0], |material| {
+                color_values(material.base_color)
+            });
+            draws.push(PreparedDraw {
+                model,
+                view_projection,
+                color,
+                compact_id: compact_id.get(),
+            });
+            id_lookup.insert(compact_id.get(), entity_id);
+        }
+        Ok(PreparedScene { draws, id_lookup })
+    }
+}
+
+pub(crate) struct PreparedScene {
+    pub(crate) draws: Vec<PreparedDraw>,
+    pub(crate) id_lookup: BTreeMap<u32, StableEntityId>,
+}
+
+pub(crate) struct PreparedDraw {
+    pub(crate) model: [f32; 16],
+    pub(crate) view_projection: [f32; 16],
+    pub(crate) color: [f32; 4],
+    pub(crate) compact_id: u32,
+}
+
+fn color_values(color: ColorRgba) -> [f32; 4] {
+    [color.r.get(), color.g.get(), color.b.get(), color.a.get()]
+}
+
+fn camera_view_projection(
+    entity: &RenderEntity,
+    camera: CameraComponent,
+    width: u32,
+    height: u32,
+) -> Result<[f32; 16], RendererError> {
+    let world = entity.world_transform();
+    let view = invert_affine(world).ok_or(RendererError::CameraTransformNotInvertible {
+        camera_id: entity.entity_id(),
+    })?;
+    let aspect = f64::from(width) / f64::from(height);
+    let f = (f64::from(camera.vertical_fov_radians.get()) * 0.5)
+        .tan()
+        .recip();
+    let near = f64::from(camera.near.get());
+    let far = f64::from(camera.far.get());
+    let projection = [
+        f / aspect,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        f,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        far / (near - far),
+        -1.0,
+        0.0,
+        0.0,
+        (far * near) / (near - far),
+        0.0,
+    ];
+    let combined = multiply_matrices(&projection, &view);
+    matrix_to_f32(&combined, entity.entity_id())
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn matrix_to_f32(
+    matrix: &[f64; 16],
+    entity_id: StableEntityId,
+) -> Result<[f32; 16], RendererError> {
+    let mut result = [0.0_f32; 16];
+    for (target, &value) in result.iter_mut().zip(matrix) {
+        let converted = value as f32;
+        if !converted.is_finite() {
+            return Err(RendererError::GpuTransformOutOfRange { entity_id });
+        }
+        *target = converted;
+    }
+    Ok(result)
+}
+
+fn invert_affine(matrix: &[f64; 16]) -> Option<[f64; 16]> {
+    let epsilon = f64::EPSILON * 16.0;
+    if matrix[3].abs() > epsilon
+        || matrix[7].abs() > epsilon
+        || matrix[11].abs() > epsilon
+        || (matrix[15] - 1.0).abs() > epsilon
+    {
+        return None;
+    }
+    let a00 = matrix[0];
+    let a01 = matrix[4];
+    let a02 = matrix[8];
+    let a10 = matrix[1];
+    let a11 = matrix[5];
+    let a12 = matrix[9];
+    let a20 = matrix[2];
+    let a21 = matrix[6];
+    let a22 = matrix[10];
+    let determinant = a00 * (a11 * a22 - a12 * a21) - a01 * (a10 * a22 - a12 * a20)
+        + a02 * (a10 * a21 - a11 * a20);
+    if !determinant.is_finite() || determinant.abs() <= f64::EPSILON {
+        return None;
+    }
+    let inverse = determinant.recip();
+    let b00 = (a11 * a22 - a12 * a21) * inverse;
+    let b01 = (a02 * a21 - a01 * a22) * inverse;
+    let b02 = (a01 * a12 - a02 * a11) * inverse;
+    let b10 = (a12 * a20 - a10 * a22) * inverse;
+    let b11 = (a00 * a22 - a02 * a20) * inverse;
+    let b12 = (a02 * a10 - a00 * a12) * inverse;
+    let b20 = (a10 * a21 - a11 * a20) * inverse;
+    let b21 = (a01 * a20 - a00 * a21) * inverse;
+    let b22 = (a00 * a11 - a01 * a10) * inverse;
+    let tx = matrix[12];
+    let ty = matrix[13];
+    let tz = matrix[14];
+    let result = [
+        b00,
+        b10,
+        b20,
+        0.0,
+        b01,
+        b11,
+        b21,
+        0.0,
+        b02,
+        b12,
+        b22,
+        0.0,
+        -(b00 * tx + b01 * ty + b02 * tz),
+        -(b10 * tx + b11 * ty + b12 * tz),
+        -(b20 * tx + b21 * ty + b22 * tz),
+        1.0,
+    ];
+    result
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(result)
+}
+
+fn multiply_matrices(left: &[f64; 16], right: &[f64; 16]) -> [f64; 16] {
+    let mut output = [0.0; 16];
+    for column in 0..4 {
+        for row in 0..4 {
+            output[column * 4 + row] = (0..4)
+                .map(|index| left[index * 4 + row] * right[column * 4 + index])
+                .sum();
+        }
+    }
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cogniform_protocol::{
+        CameraComponent, ColorRgba, MaterialComponent, PositiveF32, PositiveVec3,
+        PrimitiveComponent, PrimitiveShape, UnitF32,
+    };
+
+    fn id(value: u128) -> StableEntityId {
+        StableEntityId::new(value).unwrap()
+    }
+
+    fn entity(entity_id: StableEntityId) -> RenderEntity {
+        let positive = |value| PositiveF32::new(value).unwrap();
+        let unit = |value| UnitF32::new(value).unwrap();
+        RenderEntity::new(
+            entity_id,
+            [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+            1,
+            Some(PrimitiveComponent {
+                shape: PrimitiveShape::Cuboid,
+                dimensions: PositiveVec3 {
+                    x: positive(1.0),
+                    y: positive(1.0),
+                    z: positive(1.0),
+                },
+            }),
+            Some(MaterialComponent {
+                base_color: ColorRgba {
+                    r: unit(0.2),
+                    g: unit(0.4),
+                    b: unit(0.6),
+                    a: unit(1.0),
+                },
+                metallic: unit(0.0),
+                roughness: unit(0.5),
+            }),
+            None,
+            None,
+        )
+        .unwrap()
+    }
+
+    fn camera(entity_id: StableEntityId) -> RenderEntity {
+        RenderEntity::new(
+            entity_id,
+            [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 3.0, 1.0,
+            ],
+            1,
+            None,
+            None,
+            Some(CameraComponent {
+                vertical_fov_radians: PositiveF32::new(core::f32::consts::FRAC_PI_2).unwrap(),
+                near: PositiveF32::new(0.1).unwrap(),
+                far: PositiveF32::new(100.0).unwrap(),
+            }),
+            None,
+        )
+        .unwrap()
+    }
+
+    fn extraction(
+        generation: u64,
+        base: u64,
+        target: u64,
+        changes: Vec<RenderChange>,
+    ) -> RenderExtraction {
+        RenderExtraction::new(
+            NonZeroU64::new(generation).unwrap(),
+            SceneRevision::new(base),
+            SceneRevision::new(target),
+            changes,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn updates_are_atomic_and_compact_ids_are_safely_recycled() {
+        let mut scene = RenderScene::new(NonZeroU32::new(2).unwrap());
+        scene
+            .apply(&extraction(
+                1,
+                0,
+                1,
+                vec![RenderChange::upsert(entity(id(1)))],
+            ))
+            .unwrap();
+        let first = scene.compact_id(id(1)).unwrap();
+
+        let mismatch = extraction(3, 1, 2, vec![RenderChange::upsert(entity(id(2)))]);
+        assert!(matches!(
+            scene.apply(&mismatch),
+            Err(SceneUpdateError::GenerationMismatch { .. })
+        ));
+        assert_eq!(scene.entity_count(), 1);
+        assert_eq!(scene.revision(), SceneRevision::new(1));
+
+        scene
+            .apply(&extraction(2, 1, 2, vec![RenderChange::remove(id(1))]))
+            .unwrap();
+        scene
+            .apply(&extraction(
+                3,
+                2,
+                3,
+                vec![RenderChange::upsert(entity(id(1)))],
+            ))
+            .unwrap();
+        assert_eq!(scene.compact_id(id(1)).unwrap(), first);
+    }
+
+    #[test]
+    fn draw_capacity_rejects_before_gpu_preparation() {
+        let mut scene = RenderScene::new(NonZeroU32::new(3).unwrap());
+        scene
+            .apply(&extraction(
+                1,
+                0,
+                1,
+                vec![
+                    RenderChange::upsert(camera(id(1))),
+                    RenderChange::upsert(entity(id(2))),
+                    RenderChange::upsert(entity(id(3))),
+                ],
+            ))
+            .unwrap();
+        assert!(matches!(
+            scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap()),
+            Err(RendererError::DrawCapacityExceeded { limit: 1 })
+        ));
+    }
+}

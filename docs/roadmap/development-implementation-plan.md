@@ -76,6 +76,12 @@ Outcome: compact changed-record extraction connects world revisions to rendered 
 
 Gate: sparse edits update only affected records; every observation reports its source revision/frame; bounded readback pools degrade explicitly under pressure.
 
+Implemented contract: bounded coalesced stable-ID extraction, ordered
+generation/base-revision packets, atomic renderer-owned scene updates,
+frame-local compact identity mapping, extracted cuboid/camera rendering, fixed
+readback leases, and globally bounded asynchronous color/depth/ID/visibility
+observations. See [ADR 0006](../adr/0006-coalesced-extraction-and-bounded-observations.md).
+
 ### PR 7 - CF006: Bounded agent gateway and imagination compiler
 
 Outcome: a local in-process/loopback gateway accepts explicit patches and a minimal deterministic primitive imagination, enforces budgets and queue semantics, and returns explanations/receipts.
