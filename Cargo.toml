@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "apps/cogniform-cli",
+    "crates/cogniform-compiler",
     "crates/cogniform-engine",
     "crates/cogniform-protocol",
     "crates/cogniform-renderer",
@@ -17,6 +18,7 @@ license = "Apache-2.0"
 repository = "https://github.com/xsparc/cogniform"
 
 [workspace.dependencies]
+cogniform-compiler = { version = "=0.0.0", path = "crates/cogniform-compiler" }
 cogniform-engine = { version = "=0.0.0", path = "crates/cogniform-engine" }
 cogniform-protocol = { version = "=0.0.0", path = "crates/cogniform-protocol" }
 cogniform-renderer = { version = "=0.0.0", path = "crates/cogniform-renderer" }

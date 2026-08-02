@@ -1,8 +1,11 @@
 use core::fmt;
 
-use cogniform_protocol::{SceneRevision, StableEntityId, ValidationError};
+use cogniform_compiler::CompileError;
+use cogniform_protocol::{
+    CodecError, IdempotencyKey, SceneRevision, StableEntityId, ValidationError,
+};
 use cogniform_renderer::{RendererError, SceneUpdateError};
-use cogniform_world::{WorldApplyError, WorldExtractionError};
+use cogniform_world::{WorldApplyError, WorldExtractionError, WorldInvariantError};
 
 /// Composition failure that preserves the responsible domain boundary.
 #[derive(Debug)]
@@ -77,6 +80,127 @@ impl From<RendererError> for EngineError {
 impl From<ObservationError> for EngineError {
     fn from(value: ObservationError) -> Self {
         Self::Observation(value)
+    }
+}
+
+/// Bounded local gateway admission, compilation, query, or apply failure.
+#[derive(Debug)]
+pub enum GatewayError {
+    /// Gateway capacities are incompatible with engine/runtime bounds.
+    InvalidConfig {
+        /// Stable configuration reason.
+        reason: &'static str,
+    },
+    /// A command or query violates its public schema or configured limits.
+    InvalidCommand(ValidationError),
+    /// A validated typed command cannot be represented within canonical wire bounds.
+    InvalidCommandEncoding(CodecError),
+    /// The fixed uncommitted command queue is full.
+    CommandCapacityExceeded {
+        /// Maximum uncommitted command count.
+        capacity: u32,
+    },
+    /// The bounded queued-plus-completed idempotency capacity is exhausted.
+    IdempotencyCapacityExceeded,
+    /// One idempotency key was reused for a different typed command.
+    IdempotencyConflict {
+        /// Conflicting key, retained as a typed value rather than formatted input.
+        idempotency_key: IdempotencyKey,
+    },
+    /// Deterministic semantic compilation failed before world mutation.
+    Compiler(CompileError),
+    /// Engine composition or world application failed.
+    Engine(Box<EngineError>),
+    /// A read-only world snapshot could not be produced.
+    WorldView(WorldInvariantError),
+    /// A query requested a revision other than the current immutable view.
+    QueryRevisionMismatch {
+        /// Revision named by the query.
+        requested: SceneRevision,
+        /// Revision represented by the world snapshot.
+        actual: SceneRevision,
+    },
+    /// A complete query result would exceed the caller's explicit limit.
+    QueryResultCapacityExceeded {
+        /// Matching entity count.
+        actual: u32,
+        /// Maximum result count declared by the query.
+        limit: u32,
+    },
+    /// A produced query result violated canonical protocol invariants.
+    InvalidQueryResult(ValidationError),
+}
+
+impl fmt::Display for GatewayError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidConfig { reason } => write!(formatter, "invalid gateway config: {reason}"),
+            Self::InvalidCommand(error) => write!(formatter, "invalid gateway command: {error}"),
+            Self::InvalidCommandEncoding(error) => {
+                write!(formatter, "invalid gateway command encoding: {error}")
+            }
+            Self::CommandCapacityExceeded { capacity } => {
+                write!(formatter, "gateway command capacity {capacity} is full")
+            }
+            Self::IdempotencyCapacityExceeded => {
+                formatter.write_str("gateway idempotency capacity is full")
+            }
+            Self::IdempotencyConflict { .. } => {
+                formatter.write_str("idempotency key is already bound to another command")
+            }
+            Self::Compiler(error) => write!(formatter, "imagination compiler failed: {error}"),
+            Self::Engine(error) => write!(formatter, "gateway engine operation failed: {error}"),
+            Self::WorldView(error) => write!(formatter, "gateway scene view failed: {error}"),
+            Self::QueryRevisionMismatch { requested, actual } => write!(
+                formatter,
+                "query revision {} does not match current revision {}",
+                requested.get(),
+                actual.get()
+            ),
+            Self::QueryResultCapacityExceeded { actual, limit } => write!(
+                formatter,
+                "query matches {actual} entities; result limit is {limit}"
+            ),
+            Self::InvalidQueryResult(error) => {
+                write!(formatter, "invalid gateway query result: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for GatewayError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidCommand(error) | Self::InvalidQueryResult(error) => Some(error),
+            Self::InvalidCommandEncoding(error) => Some(error),
+            Self::Compiler(error) => Some(error),
+            Self::Engine(error) => Some(error),
+            Self::WorldView(error) => Some(error),
+            Self::InvalidConfig { .. }
+            | Self::CommandCapacityExceeded { .. }
+            | Self::IdempotencyCapacityExceeded
+            | Self::IdempotencyConflict { .. }
+            | Self::QueryRevisionMismatch { .. }
+            | Self::QueryResultCapacityExceeded { .. } => None,
+        }
+    }
+}
+
+impl From<CompileError> for GatewayError {
+    fn from(value: CompileError) -> Self {
+        Self::Compiler(value)
+    }
+}
+
+impl From<EngineError> for GatewayError {
+    fn from(value: EngineError) -> Self {
+        Self::Engine(Box::new(value))
+    }
+}
+
+impl From<WorldInvariantError> for GatewayError {
+    fn from(value: WorldInvariantError) -> Self {
+        Self::WorldView(value)
     }
 }
 

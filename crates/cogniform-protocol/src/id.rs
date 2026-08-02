@@ -88,6 +88,10 @@ opaque_id!(
     /// Identity of one requested or produced observation.
     ObservationId
 );
+opaque_id!(
+    /// Identity of one semantic imagination request.
+    ImaginationId
+);
 
 /// Monotonically increasing authoritative scene revision.
 #[derive(

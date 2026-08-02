@@ -10,8 +10,10 @@ scene revision that produced it.
 > engine. Public contracts, the atomic authoritative world, deterministic
 > hierarchy/hash/replay, compact render extraction, bounded headless cuboid
 > rendering, and revision-linked color/depth/entity-ID/visibility observations
-> are implemented. Agent gateway, assets, service packaging, and the canonical
-> MVP client flow have not landed yet.
+> are implemented. A bounded in-process gateway, exact logical queries, and a
+> deterministic primitive imagination compiler are also available. Assets,
+> external service packaging, and the canonical MVP client flow have not landed
+> yet.
 
 ## Architecture
 
@@ -21,6 +23,7 @@ implementations arrive:
 | Package | Intended responsibility |
 |---|---|
 | `cogniform-protocol` | Backend-neutral IDs, patches, receipts, limits, and observations |
+| `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |
 | `cogniform-renderer` | Headless GPU ownership and machine-readable outputs |
@@ -38,7 +41,9 @@ documents hierarchy, transform, hash, and recovery behavior. The
 the current offscreen targets, backend boundary, probes, and limitations. The
 [extraction and observation guide](docs/renderer/incremental-extraction-and-observations.md)
 documents sparse world updates, frame causality, pressure behavior, and owned
-machine-readable payloads.
+machine-readable payloads. The
+[local gateway guide](docs/protocol/local-gateway-and-imagination.md) documents
+command admission, idempotency, deterministic compilation, and logical queries.
 
 ## Build and test
 

@@ -12,5 +12,6 @@ earlier one and links the history.
 | [0004](0004-stable-hierarchy-canonical-hash-and-replay-chain.md) | Accepted | Keep hierarchy stable-ID based and replay canonical state through a bounded hash chain |
 | [0005](0005-bounded-headless-wgpu-baseline.md) | Accepted | Use an exact-pinned, bounded DX12/Vulkan wgpu core for offscreen reference rendering |
 | [0006](0006-coalesced-extraction-and-bounded-observations.md) | Accepted | Drain coalesced render changes into revision-linked frames and bounded observations |
+| [0007](0007-pure-imagination-compiler-and-bounded-local-gateway.md) | Accepted | Compile bounded primitive imaginations purely and admit local commands with explicit queue semantics |
 
 New records use four sections: context, decision, consequences, and status.

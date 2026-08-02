@@ -1,6 +1,6 @@
 use core::num::NonZeroU32;
 
-use cogniform_protocol::{ApplyReceipt, ApplyStatus, ScenePatch, SceneRevision};
+use cogniform_protocol::{ApplyReceipt, ApplyStatus, RuntimeLimits, ScenePatch, SceneRevision};
 use cogniform_renderer::{HeadlessRenderer, RendererConfig};
 use cogniform_world::{AuthoritativeWorld, WorldConfig};
 
@@ -127,6 +127,24 @@ impl CogniformEngine {
     #[must_use]
     pub fn outstanding_observations(&self) -> u32 {
         self.observations.outstanding()
+    }
+
+    /// Returns the active bounded public protocol limits.
+    #[must_use]
+    pub const fn runtime_limits(&self) -> RuntimeLimits {
+        self.world.runtime_limits()
+    }
+
+    /// Returns the accepted idempotency-result capacity shared with the gateway.
+    #[must_use]
+    pub const fn max_idempotency_records(&self) -> u32 {
+        self.world.max_idempotency_records()
+    }
+
+    /// Returns the number of accepted world idempotency records already retained.
+    #[must_use]
+    pub fn idempotency_record_count(&self) -> u32 {
+        u32::try_from(self.world.idempotency_record_count()).unwrap_or(u32::MAX)
     }
 }
 

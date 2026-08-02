@@ -1,6 +1,6 @@
 # Core protocol contracts
 
-Status: schema version 1 implemented by CF001.
+Status: schema version 1 implemented by CF001 and extended by CF006.
 
 `cogniform-protocol` is the dependency-neutral boundary between Cogniform's
 world, render, and service domains. It contains values only: no ECS handles,
@@ -8,7 +8,7 @@ GPU resources, sockets, generated transport messages, or service lifecycle.
 
 ## Identity and numeric representation
 
-`StableEntityId`, `TransactionId`, `IdempotencyKey`, and `ObservationId` are
+`StableEntityId`, `TransactionId`, `IdempotencyKey`, `ImaginationId`, and `ObservationId` are
 non-zero 128-bit values encoded as 32 lowercase hexadecimal characters. This
 encoding is canonical and does not rely on a JSON consumer preserving 128-bit
 numbers. `SceneRevision` is an unsigned 64-bit counter beginning at zero;
@@ -61,6 +61,23 @@ metadata has no pixel dimensions.
 Bulk image bytes are deliberately absent. Later renderer or transport adapters
 must keep payload storage separate from this causal envelope.
 
+## Imaginations and logical queries
+
+CF006 adds a bounded `ImaginationEnvelope` for the pure primitive compiler. It
+carries exact revision and idempotency identity, delivery semantics, an
+explicit seed, sender-declared compilation and output-patch budgets, primitive
+entity descriptions, a small typed relation subset, and stable-ID scene-view
+preconditions. Missing optional runtime details are resolved by documented
+defaults and every choice is returned as a structured compiler decision.
+
+`SceneQuery` and `SceneQueryResult` provide exact-revision backend-neutral
+logical views. Entity and component filters are unique and bounded. Results
+must be in strict stable-ID/component-kind order and fail when the complete
+match set exceeds the declared result limit. They never expose ECS handles.
+
+The detailed compiler, admission, idempotency, and query behavior is documented
+in the [local gateway guide](local-gateway-and-imagination.md).
+
 CF005 also defines an in-process `RenderExtraction` value contract. It carries
 one monotonic generation, exact base/target revisions, and strictly
 stable-ID-ordered complete upserts or removals. Upserts contain a finite derived
@@ -89,6 +106,10 @@ The default `RuntimeLimits` are deliberately conservative starting points:
 | Aggregate text bytes | 65,536 |
 | Diagnostics per receipt | 128 |
 | Queue capacity | 1,024 |
+| Imagination entities | 256 |
+| Imagination relations | 512 |
+| Imagination constraints | 256 |
+| Query result entities | 1,024 |
 | Observation width or height | 4,096 |
 | Observation pixels | 16,777,216 |
 
@@ -102,10 +123,12 @@ The decoder rejects an encoded message before parsing when it exceeds
 duplicate, unknown, or type-incompatible fields. Typed validation then applies
 the deterministic `max_decoded_bytes` accounting described in ADR 0002 plus
 operation, component, text, diagnostics, queue, observation dimension, and
-pixel limits. Parser errors retain only category and location, not untrusted
+pixel limits, plus imagination and query collections. Parser errors retain only category and location, not untrusted
 input or an unbounded diagnostic string.
 
 Callers should decode through `ScenePatch::from_json`,
-`ApplyReceipt::from_json`, or `ObservationMetadata::from_json`, and encode with
+`ApplyReceipt::from_json`, `ObservationMetadata::from_json`,
+`ImaginationEnvelope::from_json`, `SceneQuery::from_json`, or
+`SceneQueryResult::from_json`, and encode with
 the corresponding `to_canonical_json` method. Direct Serde use does not apply
 runtime limits.

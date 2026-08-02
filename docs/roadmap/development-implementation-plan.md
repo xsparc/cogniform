@@ -88,6 +88,12 @@ Outcome: a local in-process/loopback gateway accepts explicit patches and a mini
 
 Gate: `MustApply`, `LatestWins`, and `BestEffort` remain bounded; same imagination/scene/seed produces the same normalized patch; substitutions and unresolved constraints are structured.
 
+Implemented contract: canonical bounded imagination/query values, a pure
+seeded primitive compiler with stable-key normalization and structured
+decisions, exact-revision queries, a fixed command queue implementing all three
+delivery semantics, and bounded queued/accepted idempotency routing. See
+[ADR 0007](../adr/0007-pure-imagination-compiler-and-bounded-local-gateway.md).
+
 ### PR 8 - CF007: Content-addressed assets and built-in procedures
 
 Outcome: immutable asset records, bounded asynchronous glTF/GLB import for an approved subset, and deterministic built-in procedures integrate with world and renderer.

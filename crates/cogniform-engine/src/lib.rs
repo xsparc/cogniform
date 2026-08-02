@@ -8,10 +8,15 @@
 
 mod engine;
 mod error;
+mod gateway;
 mod observation;
 
 pub use engine::{CogniformEngine, EngineConfig};
-pub use error::{EngineError, ObservationError};
+pub use error::{EngineError, GatewayError, ObservationError};
+pub use gateway::{
+    GatewayAdmission, GatewayCommand, GatewayConfig, GatewayQueueStats, GatewayResponse,
+    LocalGateway,
+};
 pub use observation::{
     EntityVisibility, Observation, ObservationPayload, ObservationQueue, ObservationRequest,
 };
