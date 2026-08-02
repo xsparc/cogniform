@@ -1,5 +1,7 @@
 /target/
 *.profraw
+__pycache__/
+*.py[cod]
 /.agents/
 /AGENTS.md
 /scripts/agent_workflow.py

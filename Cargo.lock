@@ -124,14 +124,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "cogniform-compiler"
+version = "0.0.0"
+dependencies = [
+ "cogniform-protocol",
+ "sha2",
+]
+
+[[package]]
 name = "cogniform-engine"
 version = "0.0.0"
 dependencies = [
+ "cogniform-compiler",
  "cogniform-protocol",
  "cogniform-renderer",
  "cogniform-replay",
  "cogniform-world",
  "pollster",
+ "sha2",
 ]
 
 [[package]]

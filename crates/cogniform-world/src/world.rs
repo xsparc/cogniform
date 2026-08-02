@@ -181,6 +181,18 @@ impl AuthoritativeWorld {
         self.idempotency_records.len()
     }
 
+    /// Returns the configured accepted-result retention capacity.
+    #[must_use]
+    pub const fn max_idempotency_records(&self) -> u32 {
+        self.config.max_idempotency_records.get()
+    }
+
+    /// Returns the active public protocol limits.
+    #[must_use]
+    pub const fn runtime_limits(&self) -> RuntimeLimits {
+        self.config.runtime_limits
+    }
+
     /// Returns the number of stable identities coalesced for extraction.
     #[must_use]
     pub fn pending_render_change_count(&self) -> usize {

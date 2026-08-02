@@ -91,6 +91,22 @@ pub enum DiagnosticCode {
     DiagnosticLimitExceeded,
     /// A queue capacity exceeded the runtime limit.
     QueueCapacityExceeded,
+    /// An imagination contains no entities.
+    EmptyImagination,
+    /// An imagination entity collection exceeded its declared or runtime limit.
+    ImaginationEntityLimitExceeded,
+    /// An imagination relation collection exceeded its declared or runtime limit.
+    ImaginationRelationLimitExceeded,
+    /// An imagination constraint collection exceeded its declared or runtime limit.
+    ImaginationConstraintLimitExceeded,
+    /// An imagination declares the same local entity key more than once.
+    DuplicateImaginationEntity,
+    /// A scene query contains duplicate entity or component filters.
+    DuplicateQueryFilter,
+    /// A scene query or result exceeded its entity limit.
+    QueryEntityLimitExceeded,
+    /// A scene query result is not in canonical stable order.
+    NonCanonicalQueryResult,
     /// A component value violates its domain invariant.
     InvalidComponentValue,
     /// A create operation contains the same component kind more than once.

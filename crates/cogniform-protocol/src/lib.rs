@@ -10,8 +10,10 @@ mod codec;
 mod component;
 mod error;
 mod id;
+mod imagination;
 mod limits;
 mod message;
+mod query;
 mod render;
 
 pub use component::{
@@ -23,8 +25,12 @@ pub use error::{
     CodecError, DiagnosticCode, JsonErrorCategory, ValidationError, ValueError, ValueErrorKind,
 };
 pub use id::{
-    FiniteF32, FrameId, IdempotencyKey, NonNegativeF32, ObservationId, PositiveF32, SceneRevision,
-    SceneText, SchemaVersion, StableEntityId, TransactionId, UnitF32,
+    FiniteF32, FrameId, IdempotencyKey, ImaginationId, NonNegativeF32, ObservationId, PositiveF32,
+    SceneRevision, SceneText, SchemaVersion, StableEntityId, TransactionId, UnitF32,
+};
+pub use imagination::{
+    ImaginationBudget, ImaginationConstraint, ImaginationEnvelope, ImaginationRelation,
+    ImaginedEntity,
 };
 pub use limits::{PatchBudget, RuntimeLimits};
 pub use message::{
@@ -33,4 +39,5 @@ pub use message::{
     ObservationMetadata, ObservationQuality, ObservationStaleness, QueueConfig, RemoveComponent,
     ReparentEntity, SceneOperation, ScenePatch, SetComponent,
 };
+pub use query::{SceneEntityView, SceneQuery, SceneQueryResult};
 pub use render::{RenderChange, RenderContractError, RenderEntity, RenderExtraction};

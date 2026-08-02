@@ -34,14 +34,14 @@ pub enum DeliverySemantic {
 }
 
 impl DeliverySemantic {
-    fn text_bytes(&self) -> usize {
+    pub(crate) fn text_bytes(&self) -> usize {
         match self {
             Self::LatestWins { supersession_key } => supersession_key.len_bytes(),
             Self::MustApply | Self::BestEffort => 0,
         }
     }
 
-    fn logical_size_bytes(&self) -> u64 {
+    pub(crate) fn logical_size_bytes(&self) -> u64 {
         match self {
             Self::LatestWins { supersession_key } => 1_u64
                 .saturating_add(4)

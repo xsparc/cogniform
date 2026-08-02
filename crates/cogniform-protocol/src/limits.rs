@@ -24,6 +24,14 @@ pub struct RuntimeLimits {
     pub max_diagnostics: NonZeroU32,
     /// Maximum admitted capacity for one queue.
     pub max_queue_capacity: NonZeroU32,
+    /// Maximum primitive entities declared by one imagination.
+    pub max_imagination_entities: NonZeroU32,
+    /// Maximum relations declared by one imagination.
+    pub max_imagination_relations: NonZeroU32,
+    /// Maximum constraints declared by one imagination.
+    pub max_imagination_constraints: NonZeroU32,
+    /// Maximum entities returned by one scene query.
+    pub max_query_entities: NonZeroU32,
     /// Maximum observation width in pixels.
     pub max_observation_width: NonZeroU32,
     /// Maximum observation height in pixels.
@@ -44,6 +52,10 @@ impl Default for RuntimeLimits {
             max_text_bytes: NonZeroU64::new(65_536).expect("constant is non-zero"),
             max_diagnostics: NonZeroU32::new(128).expect("constant is non-zero"),
             max_queue_capacity: NonZeroU32::new(1_024).expect("constant is non-zero"),
+            max_imagination_entities: NonZeroU32::new(256).expect("constant is non-zero"),
+            max_imagination_relations: NonZeroU32::new(512).expect("constant is non-zero"),
+            max_imagination_constraints: NonZeroU32::new(256).expect("constant is non-zero"),
+            max_query_entities: NonZeroU32::new(1_024).expect("constant is non-zero"),
             max_observation_width: NonZeroU32::new(4_096).expect("constant is non-zero"),
             max_observation_height: NonZeroU32::new(4_096).expect("constant is non-zero"),
             max_observation_pixels: NonZeroU64::new(16_777_216).expect("constant is non-zero"),

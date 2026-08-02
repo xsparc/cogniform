@@ -63,18 +63,25 @@ The first workspace should prove boundaries without prematurely creating every e
 | Area | Responsibility | Dependency rule |
 |---|---|---|
 | `cogniform-protocol` | Stable public value types, patches, receipts, observations, limits, errors | No ECS, GPU, network, or generated transport dependency |
+| `cogniform-compiler` | Pure seeded primitive imagination normalization and structured explanations | Depends only on protocol and deterministic hashing; owns no world/service state |
 | `cogniform-world` | `hecs` implementation, stable-ID index, validation, atomic commit, hierarchy, transforms, queries | Depends on protocol/math; never renderer or service |
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
 | `cogniform-renderer` | `wgpu` feature negotiation, headless targets, primitive rendering, ID/depth/normal outputs | Consumes extracted render data; never mutable world access |
 | `cogniform-engine` | Bounded channels, domain lifecycle, frame/revision correlation, composition | Orchestrates through public interfaces; does not absorb domain state |
 | `cogniform-cli` | Local sample client, replay and diagnostic commands | Depends on public engine/protocol interfaces only |
 
-Gateway, semantic compiler, assets, spatial acceleration, shared memory, remote transport, Wasm, and model bridge become separate crates only when their milestone establishes an independent contract or dependency footprint.
+CF006 establishes the semantic compiler as a separate pure crate while its
+offline gateway remains in the engine composition boundary. Assets, spatial
+acceleration, shared memory, remote transport, Wasm, and model bridge become
+separate crates only when their milestone establishes an independent contract
+or dependency footprint.
 
 ### 2.3 Dependency direction
 
 ```text
 protocol <- world <- replay
+    ^
+    +---- compiler
     ^          |
     |          v
     +---- render extraction -> renderer
@@ -86,6 +93,10 @@ protocol <- world <- replay
 ```
 
 The diagram shows allowed information flow, not permission to create circular Cargo dependencies. Shared render DTOs belong in a dependency-neutral boundary rather than making world depend on renderer.
+
+The compiler depends only on protocol values and deterministic hashing. Engine
+may orchestrate compiler, world, renderer, and replay through their public
+interfaces; compiler never reads mutable world state.
 
 ## 3. Core contracts and invariants
 
