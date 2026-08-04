@@ -13,6 +13,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Idempotency | Pass | World and gateway replay the retained result; content conflicts reject without mutation |
 | Hierarchy and transforms | Pass | Cycle/depth/dangling rejection and stable parent-before-child sparse propagation |
 | Deterministic replay | Pass | Canonical logical hash, chained entries, verified-prefix inspection, every-byte corruption injection |
+| Recovery envelope | Pass | Deterministic bounded v1 encoding, exact round trip, typed malformed-input rejection, and every-byte corruption injection |
 | Fresh-service restoration | Pass on validated profile | Complete replay and frame state restore revision/hash/query/idempotency and continue observation and append causality |
 | Headless render | Pass on validated profile | No surface/window; Vulkan cube, GLB, readback pressure, renderer-drop retirement, and canonical scenario evidence |
 | Machine outputs | Pass on validated profile | Tolerant color/depth, exact stable entity ID, structured visibility, and quantized flat world-space normals following triangle winding |
@@ -40,7 +41,8 @@ This does not make the current `0.0.0` workspace a supported release.
 - [ ] Re-run `measure-world` in release mode and append rather than overwrite
       the dated baseline if hardware, fixture, or result materially changes.
 - [ ] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
-      matrix, known limitations, and license from the exact candidate tree.
+      matrix, recovery-envelope format/limitations, known limitations, and
+      license from the exact candidate tree.
 - [ ] Change the shared workspace version from `0.0.0` to the explicitly
       approved candidate version without changing `publish = false`.
 - [ ] Build the source archive from the annotated candidate tag, not a dirty
@@ -65,6 +67,8 @@ The GitHub release must be marked prerelease and state:
 - validated Windows/Vulkan profile and build-only Ubuntu evidence;
 - no remote service, authentication, durable persistence, automatic restart,
   production SLA, or semver-stable crates.io API;
+- recovery envelopes detect corruption but provide no encryption,
+  authentication, freshness, or rollback protection;
 - normal output is flat and quantized, with no imported smoothing, normal maps,
   or tangent-space contract; unvalidated platforms/backends remain
   unsupported; and

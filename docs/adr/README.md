@@ -18,5 +18,6 @@ earlier one and links the history.
 | [0010](0010-source-first-release-profile.md) | Accepted | Prepare a narrow source-first candidate profile without publishing crates, binaries, or a release |
 | [0011](0011-quantized-world-space-normal-observations.md) | Accepted | Add bounded quantized flat world-space normal observations without changing asset contracts |
 | [0012](0012-complete-in-memory-service-restoration.md) | Accepted | Restore a fresh bounded local service from complete verified replay and frame-continuity state |
+| [0013](0013-versioned-recovery-point-envelope.md) | Accepted | Bind replay and frame-continuity state in one bounded integrity-protected portable envelope |
 
 New records use four sections: context, decision, consequences, and status.

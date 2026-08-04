@@ -24,6 +24,9 @@ release yet; the current workspace version remains `0.0.0`.
 - local typed service and unattended room/table/light/camera scenario;
 - complete verified in-memory local-service restoration with retained replay,
   logical state, idempotency, renderer revision, and frame continuity;
+- deterministic bounded version-one recovery-point envelopes that bind replay
+  bytes and frame continuity with typed validation and SHA-256 corruption
+  detection before payload allocation;
 - public-repository safeguards, threat model, failure/recovery matrix,
   controlled compatibility/performance baseline, and source-first candidate
   checklist.
@@ -40,6 +43,7 @@ release yet; the current workspace version remains `0.0.0`.
   subset excludes textures, external buffers, compression, scene traversal,
   and most vertex attributes;
 - recovery points do not include queued commands, observations, asset
-  residency, storage, or automatic startup; device-loss recreation, durable
-  recovery, binary packaging, signing, provenance, and automated release
-  publication are not implemented.
+  residency, storage, or automatic startup; their envelopes are not encrypted
+  or authenticated; device-loss recreation, durable recovery, binary
+  packaging, signing, provenance, and automated release publication are not
+  implemented.

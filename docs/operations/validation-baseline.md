@@ -1,9 +1,9 @@
 # Validation and compatibility baseline
 
-Status: controlled CF009 evidence collected on 2026-08-02 and CF011 normal plus
-CF012 restoration evidence collected on 2026-08-04. This document names what
-was reproduced and what remains unsupported; it is not a promise for untested
-hardware.
+Status: controlled CF009 evidence collected on 2026-08-02 and CF011 normal,
+CF012 restoration, plus CF013 recovery-envelope evidence collected on
+2026-08-04. This document names what was reproduced and what remains
+unsupported; it is not a promise for untested hardware.
 
 ## Compatibility profile
 
@@ -64,13 +64,16 @@ Windows/Vulkan profile:
 cargo test --release -p cogniform-engine --test service_restore --locked --offline -- --ignored --exact complete_recovery_restores_queries_observations_and_continuation
 ```
 
-It captured state after revision 3, rejected a frame marker behind replay
-evidence, restored exact replay bytes and logical hash into a fresh service,
-started all transient queues empty, reproduced an exact query, returned an old
-patch as an idempotent replay, produced the next observation frame, appended a
-new revision 4 entry, and ended with matching live and replayed hashes. This is
-in-memory restoration evidence, not filesystem crash-consistency or automatic
-device-recreation evidence.
+It captured state after revision 3, encoded and decoded one deterministic
+bounded recovery envelope, rejected a frame marker behind replay evidence,
+restored exact replay bytes and logical hash into a fresh service, started all
+transient queues empty, reproduced an exact query, returned an old patch as an
+idempotent replay, produced the next observation frame, appended a new revision
+4 entry, and ended with matching live and replayed hashes. CPU unit tests also
+rejected a one-byte mutation at every envelope position and covered typed
+header, version, size, length, frame, and integrity failures. This is in-memory
+restoration evidence, not authentication, encryption, filesystem crash
+consistency, or automatic device-recreation evidence.
 
 ## Controlled CPU performance fixture
 
