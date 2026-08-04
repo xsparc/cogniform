@@ -29,7 +29,7 @@ pub use cogniform_renderer::{
     AdapterSummary, AssetUploadAdmission, AssetUploadOutcome, RendererAssetStats, RendererError,
 };
 pub use engine::{CogniformEngine, EngineConfig};
-pub use error::{EngineError, GatewayError, LocalServiceError, ObservationError};
+pub use error::{EngineError, GatewayError, LocalRevertError, LocalServiceError, ObservationError};
 pub use gateway::{
     GatewayAdmission, GatewayCommand, GatewayConfig, GatewayQueueStats, GatewayResponse,
     LocalGateway,
@@ -47,5 +47,6 @@ pub use scenario::{
     run_canonical_scenario,
 };
 pub use service::{
-    LocalAssetStatus, LocalService, LocalServiceConfig, LocalServiceStatus, ProcedureSubmission,
+    LocalAssetStatus, LocalRevertReceipt, LocalService, LocalServiceConfig, LocalServiceStatus,
+    ProcedureSubmission,
 };

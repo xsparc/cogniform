@@ -3,7 +3,8 @@
 Status: controlled CF009 evidence collected on 2026-08-02 and CF011 normal,
 CF012 restoration, CF013 recovery-envelope, CF014 historical-fork, plus CF015
 service-asset rehydration and CF016 service-procedure composition evidence
-collected on 2026-08-04. This document names
+collected on 2026-08-04, plus CF017 quiescent live-revert evidence collected on
+2026-08-05. This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
 
@@ -95,8 +96,9 @@ replayed hashes, query state, empty transient queues, and renderer revision;
 the fork then produced the expected next observation frame and appended a new
 revision 3 with matching live/replayed hash. CPU replay tests covered revision
 zero, every retained revision, repeatable prefix encoding, full-stream prefix
-relationships, and future-revision rejection. This is fresh-service branching
-evidence, not in-place revert, persistence, branch management, or rollback
+relationships, and future-revision rejection. That CF014 case is
+fresh-service branching evidence; CF017 live-revert evidence is recorded
+below. Neither case proves persistence, branch management, or rollback
 protection.
 
 ## Controlled service-asset command
@@ -136,6 +138,27 @@ post-restoration resubmission both returned the retained receipt without
 revision or replay growth. This is pure built-in synchronous preparation
 evidence, not a plugin/Wasm host, user-code boundary, background scheduler, or
 external procedure loader.
+
+## Controlled in-place-revert command
+
+The following focused CF017 test passed in release mode on the validated
+Windows/Vulkan profile:
+
+```text
+cargo test --release -p cogniform-engine --test service_revert --locked --offline -- --ignored --exact local_service_revert_is_quiescent_atomic_and_branch_continuable
+```
+
+It proved current/future targets and pending commands, observations, imports,
+or uploads reject without changing status, assets, logical hash, replay bytes,
+or next frame identity. A revision-3 service with decoded and GPU-resident
+assets then reverted to the exact revision-1 prefix through a restored
+replacement. The receipt accounted for the two removed entries and cleared
+gateway/CPU/GPU state; query, renderer revision, replay, and live/replayed hash
+matched; the first observation used the source frame frontier; retained
+idempotency added no event; and the removed revision-2 patch applied normally
+on the new branch. This is quiescent local lifecycle evidence, not persistence,
+automatic rollback, transient migration, asset preservation, authentication,
+or device-loss recovery.
 
 ## Controlled CPU performance fixture
 

@@ -150,8 +150,10 @@ replay prefix and restored into a separate fresh service. The point carries the
 source renderer's current next unreserved frame identity so logical history may
 branch without reusing an identity issued before capture. Capturing a
 historical point does not mutate the source; concurrent branches advance
-independent frame counters, and in-place revert or cross-branch coordination
-remain separate lifecycle concerns.
+independent frame counters. A quiescent local service may use the same point to
+build a fully restored replacement and assign it only after successful
+initialization; automatic rollback and cross-branch coordination remain
+separate lifecycle concerns.
 
 ### 3.5 Backpressure
 
@@ -252,6 +254,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Replay | Repeating accepted canonical events yields the exact logical hash |
 | Restoration | A bounded integrity-checked recovery envelope round-trips exact replay/frame state; the decoded complete point restores logical/replay state and continues frame/revision causality in a fresh service |
 | Historical fork | An exact retained revision restores into a fresh service without source mutation or reuse of a frame issued before capture, then continues query/observe/append causality |
+| Live revert | A quiescent service builds and validates an exact historical replacement before swap, preserves the source frame frontier, clears named transient/asset state, and continues retained idempotency and ordinary branch append |
 | Headless render | Reference primitive scene renders without a visible window |
 | Machine outputs | Entity-ID probes are exact; color/depth and quantized flat world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
@@ -270,9 +273,9 @@ entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
 artifacts, smooth normals and the wider visual-quality surface, remote
 protocol/authentication, tenancy, observation retention, durable persistence,
 automatic device recreation, persistent snapshot registries, in-place revert
-and branch coordination, log rotation, and model policy remain explicitly
-open. Defaults in the roadmap are planning assumptions, not production
-commitments.
+automation and branch coordination, log rotation, and model policy remain
+explicitly open. Defaults in the roadmap are planning assumptions, not
+production commitments.
 
 ## 11. Verified foundation references
 

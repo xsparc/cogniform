@@ -22,5 +22,6 @@ earlier one and links the history.
 | [0014](0014-exact-revision-historical-recovery-forks.md) | Accepted | Create fresh-service historical forks from exact retained revisions without source mutation or pre-capture frame reuse |
 | [0015](0015-service-owned-asset-resolution-and-rehydration.md) | Accepted | Compose bounded asset resolution into the local service with explicit post-recovery rehydration |
 | [0016](0016-service-procedure-composition-through-ordinary-patches.md) | Accepted | Compose pure built-in procedures into the local service through ordinary patch admission |
+| [0017](0017-quiescent-live-revert-through-fresh-replacement.md) | Accepted | Revert a quiescent local service through an exact fresh replacement before swap |
 
 New records use four sections: context, decision, consequences, and status.

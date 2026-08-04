@@ -284,12 +284,34 @@ scheduler, or new procedure kind is added. See
 the [gateway guide](../protocol/local-gateway-and-imagination.md), and the
 [local service guide](../protocol/local-service.md).
 
+### PR 17 - CF017: Quiescent in-place historical revert
+
+Outcome: a live local service can move to an exact older retained revision by
+building a complete restored replacement before an atomic swap.
+
+Gate: equal/future targets and queued commands, observations, imports, or
+uploads fail with typed bounded evidence and no state change; a successful
+revert returns explicit removed-replay/cache/asset counts, restores exact
+query/hash/replay/renderer state, preserves the source frame frontier, clears
+transient and asset residency, records no lifecycle event, retains prefix
+idempotency, and lets removed-tail keys form one ordinary new branch.
+
+Implemented contract: `LocalService::revert_to_revision` reuses the accepted
+exact-prefix and fresh-restoration paths under a privately retained validated
+configuration. The old service is assigned over only after replacement
+initialization succeeds. No persistence, automatic rollback, snapshot
+registry, transient migration, asset preservation, authentication, transport,
+device-loss recovery, or release action is added. See
+[ADR 0017](../adr/0017-quiescent-live-revert-through-fresh-replacement.md),
+the [replay guide](../architecture/determinism-and-replay.md), and the
+[local service guide](../protocol/local-service.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
-  -> CF014 -> CF015 -> CF016
+  -> CF014 -> CF015 -> CF016 -> CF017
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -364,6 +386,9 @@ Validation expands with capability:
 - CF016: pre-allocation procedure/text-budget rejection, deterministic
   stable-ID output, ordinary queue/delivery/idempotency behavior, exact logical
   query, replay/hash equality, and restored world-idempotent resubmission.
+- CF017: quiescence rejection without mutation, fresh-before-swap revert,
+  explicit cache/asset clearing, exact prefix/query/hash/renderer restoration,
+  source-frame continuity, retained idempotency, and removed-tail continuation.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

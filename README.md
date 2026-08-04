@@ -24,9 +24,12 @@ scene revision that produced it.
 > bounded envelope for portable corruption detection, without claiming
 > encryption, authentication, or durable storage. A caller can also capture an
 > exact retained revision as a fresh-service historical fork without mutating
-> the source or reusing a frame identity issued before capture. In-place revert,
-> cross-branch frame coordination, remote
-> transport, durable persistence, and release packaging have not landed yet.
+> the source or reusing a frame identity issued before capture. A quiescent
+> local service can also revert in place by constructing that exact historical
+> replacement before swap; queued work blocks the operation and asset residency
+> is explicitly cleared. Automatic rollback, cross-branch frame coordination,
+> remote transport, durable persistence, and release packaging have not landed
+> yet.
 > The current
 > hardening baseline adds a
 > threat model, fault/recovery matrix, controlled compatibility and performance

@@ -2,7 +2,8 @@
 
 Status: hierarchy, derived transforms, logical hashing, in-memory replay, a
 portable recovery-point envelope, and exact-revision recovery forks are
-implemented through CF014.
+implemented through CF014; CF017 adds quiescent live replacement from an exact
+prefix.
 
 ## Hierarchy and transforms
 
@@ -111,7 +112,28 @@ both continue, each may independently issue the same future numeric `FrameId`;
 callers that compare concurrent branches must supply branch identity or other
 coordination.
 
-This contract is a caller-directed fork, not an in-place revert, live service
-swap, snapshot registry, retention policy, rollback-protection mechanism, or
-persistence or cross-branch frame-allocation layer. See
+Capturing this point remains a non-mutating caller-directed fork primitive. It
+is not itself a live swap, snapshot registry, retention policy,
+rollback-protection mechanism, persistence layer, or cross-branch frame
+allocator. See
 [ADR 0014](../adr/0014-exact-revision-historical-recovery-forks.md).
+
+## Quiescent live revert
+
+`LocalService::revert_to_revision` uses the same exact prefix and current frame
+frontier to construct a fresh service under the retained validated
+configuration. Commands, observations, imports, and uploads must first be
+drained. Replay/world reconstruction and GPU initialization complete before the
+new value replaces the old one, so any failure preserves the live source.
+
+Success makes the target prefix authoritative and records no revert event.
+Gateway response caches and queue counters reset; CPU asset records and GPU
+residency are explicitly reported and cleared; logical asset references remain
+and require rehydration. Prefix idempotency survives in the authoritative
+world, while keys found only in the removed tail may be accepted on the new
+branch. The next observation uses the source's captured frame frontier.
+
+This is a local caller-authorized lifecycle operation, not automatic rollback,
+freshness/authenticity proof, persistence, branch management, queued-work
+migration, asset preservation, or device-loss recovery. See
+[ADR 0017](../adr/0017-quiescent-live-revert-through-fresh-replacement.md).
