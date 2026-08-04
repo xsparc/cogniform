@@ -1,7 +1,8 @@
 # Local typed service
 
 Status: implemented by CF008 for offline in-process use; complete caller-owned
-in-memory restoration was added by CF012.
+in-memory restoration was added by CF012 and a portable bounded recovery-point
+envelope by CF013.
 
 `LocalService` composes one bounded `LocalGateway`, authoritative recorded
 world, headless renderer, and observation worker. It is a Rust API, not a
@@ -77,8 +78,11 @@ service does not persist, rotate, transmit, or load them automatically.
 `recovery_point` captures the complete replay stream together with the source
 renderer's next unreserved frame identity. A caller may retain that owned value,
 drop the source service, and pass it to `LocalService::restore` with reviewed
-bounds. Callers that reconstruct a point with `EngineRecoveryPoint::from_parts`
-own the storage, confidentiality, and atomic association of both parts.
+bounds. `EngineRecoveryPoint::to_envelope_bytes` and `from_envelope_bytes` let a
+caller preserve both parts as one deterministic, versioned byte sequence under
+the same replay bound. Decoding checks header, version, exact length, non-zero
+frame, and SHA-256 integrity before copying replay bytes. Callers still own
+storage, confidentiality, authenticity, freshness, and atomic replacement.
 
 Restoration validates and replays the complete stream before adapter selection
 or GPU initialization. Any invalid tail rejects the point; the service never
@@ -111,6 +115,7 @@ asset residency are separate and must be re-established by their owner.
   Metal, OpenGL, and a hosted-GPU CI promise are outside the current contract.
 
 See [ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md),
-[ADR 0012](../adr/0012-complete-in-memory-service-restoration.md), the
+[ADR 0012](../adr/0012-complete-in-memory-service-restoration.md),
+[ADR 0013](../adr/0013-versioned-recovery-point-envelope.md), the
 [gateway guide](local-gateway-and-imagination.md), and the
 [canonical scenario](../getting-started/canonical-scenario.md).

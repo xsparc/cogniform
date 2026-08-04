@@ -12,7 +12,7 @@ separate transport and identity design violates the assumptions below.
 | Asset | Objective |
 |---|---|
 | Authoritative world | Only complete validated patches change state; stable IDs and revisions remain correct |
-| Accepted-event log | Newly accepted patches are complete, ordered, bounded, integrity checked, and replayable |
+| Accepted-event log and recovery point | Newly accepted patches stay complete, ordered, bounded, integrity checked, and replayable; replay bytes remain associated with frame-continuity state |
 | Observation causality | Payload, camera, frame, revision, and stable identity agree |
 | Asset state | Source identity is exact; malformed or oversized input cannot become decoded or GPU-resident state |
 | Host resources | CPU, memory, queues, GPU allocations, and waits stay within declared bounds |
@@ -34,9 +34,10 @@ snapshots and canonical replay entries.
    never mutable ECS state or an authorization decision.
 4. **Renderer to observation worker.** GPU readback crosses an asynchronous
    fixed-capacity lease and returns owned validated payloads.
-5. **Replay bytes to recovery.** Portable bytes are untrusted until the header,
-   length, protocol, revision, scene-hash, predecessor, and entry-hash chains
-   have been verified.
+5. **Recovery envelope and replay bytes to recovery.** Portable bytes are
+   untrusted until envelope header/version/bounds/length/frame/digest and replay
+   protocol/revision/scene-hash/predecessor/entry-hash chains have been
+   independently verified.
 6. **Repository to public hosting.** Tracked content, commit metadata, workflow
    definitions, dependencies, and future release artifacts become public.
 
@@ -58,6 +59,7 @@ Residual ratings assume the declared local single-user boundary.
 | Renderer-local IDs escape as authoritative identity | High | Frame-local compact mapping, stable IDs in public observations, exact center-pixel tests | Low |
 | Observation from an old camera or revision is accepted as current | High | Camera/frame/revision metadata, explicit staleness, source-ahead rejection, canonical scenario proof | Low |
 | Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |
+| Recovery replay bytes and frame marker are separated or accidentally changed | High | Single bounded versioned envelope, exact-length parsing, domain-separated SHA-256 digest, every-byte corruption rejection before replay allocation | Low for accidental corruption; authenticity remains caller-owned |
 | Scene text or replay data discloses caller secrets | High | No automatic logging, upload, persistence, or release; debug output is aggregate; operator warning and public-repo scan | Medium |
 | Native code or a procedure escapes its authority | High | Unsafe Rust forbidden; no native plugins or user shaders; procedures are pure compiled functions emitting ordinary patches | Low |
 | GPU driver/device failure corrupts authoritative world state | High | World commits precede only immutable extraction; renderer cannot mutate world; errors are typed; fresh-service restoration is documented | Medium |
@@ -80,9 +82,11 @@ use.
 - Stop admitting commands when capacity errors repeat. Retrying without a
   consumer or scheduling change is an availability attack on the same process.
 - On renderer/device failure, stop the affected service instance. If a complete
-  recovery point was captured, retain both parts only in an operator-approved
-  location and restore a fresh service. In-place or automatic device recreation
-  is not implemented.
+  recovery point was captured, retain the point or its single envelope only in
+  an operator-approved location and restore a fresh service. The envelope is
+  plaintext and unauthenticated; protect it according to the scene's
+  sensitivity and trust only an approved writer. In-place or automatic device
+  recreation is not implemented.
 - On replay tail failure, inspect only the verified prefix and preserve the
   rejected bytes for private diagnosis. Never adopt that prefix as successful
   `LocalService` recovery, skip an entry, or continue after the bad suffix.

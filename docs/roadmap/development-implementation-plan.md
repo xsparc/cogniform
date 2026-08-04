@@ -190,11 +190,34 @@ concerns. See
 [local service guide](../protocol/local-service.md), and the
 [failure guide](../operations/failure-and-recovery.md).
 
+### PR 13 - CF013: Versioned recovery-point envelope
+
+Outcome: callers can preserve complete replay bytes and the next renderer frame
+identity as one deterministic, bounded, integrity-protected portable value.
+
+Gate: repeated encoding is byte-identical; exact decoding round-trips both
+parts; header, version, configured bound, declared length, exact total length,
+non-zero frame, and SHA-256 integrity fail closed before replay bytes are
+copied; every one-byte corruption is rejected; and the decoded point completes
+the CF012 restore/query/observe/idempotency/append scenario.
+
+Implemented contract: `EngineRecoveryPoint` owns version-one envelope encode
+and decode methods under an explicit `ReplayConfig`. The 52-byte fixed overhead
+contains magic, version, frame, replay length, and digest; the payload remains
+the complete independently verified replay stream. The digest detects
+corruption but does not authenticate or encrypt the caller's data. Filesystem
+I/O, atomic replacement, automatic startup, retention, snapshots, rollback
+protection, assets, transient work, device recreation, transport, deployment,
+and release remain outside the slice. See
+[ADR 0013](../adr/0013-versioned-recovery-point-envelope.md), the
+[determinism and replay guide](../architecture/determinism-and-replay.md), and
+the [local service guide](../protocol/local-service.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
-  -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012
+  -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -257,6 +280,9 @@ Validation expands with capability:
 - CF012: complete-stream rejection, restored idempotency/query/replay
   continuation, empty transient queues, and controlled renderer frame
   continuity.
+- CF013: deterministic recovery-envelope round trip, every-byte corruption
+  rejection, typed header/version/bound/length/frame/integrity failures, and
+  controlled decode-before-restore continuation.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

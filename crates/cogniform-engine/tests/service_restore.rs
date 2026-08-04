@@ -140,6 +140,10 @@ fn complete_recovery_restores_queries_observations_and_continuation() {
 
         let expected_hash = service.logical_hash().unwrap();
         let recovery = service.recovery_point().unwrap();
+        let envelope = recovery.to_envelope_bytes(config.engine.replay).unwrap();
+        let decoded =
+            EngineRecoveryPoint::from_envelope_bytes(&envelope, config.engine.replay).unwrap();
+        assert_eq!(decoded, recovery);
         let expected_bytes = recovery.replay_bytes().to_vec();
         assert_eq!(
             recovery.next_frame_id(),
@@ -161,7 +165,7 @@ fn complete_recovery_restores_queries_observations_and_continuation() {
         )
         .await;
 
-        let mut restored = LocalService::restore(config, &recovery).await.unwrap();
+        let mut restored = LocalService::restore(config, &decoded).await.unwrap();
         let status = restored.status();
         assert_eq!(status.scene_revision, SceneRevision::new(3));
         assert_eq!(status.renderer_revision, SceneRevision::new(3));

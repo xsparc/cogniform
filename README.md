@@ -17,7 +17,9 @@ scene revision that produced it.
 > decode and GPU upload, plus pure seeded cuboid-grid procedures. A bounded
 > local typed service and CLI now run the canonical unattended MVP flow,
 > verify replay to the same logical hash, and restore a fresh service from a
-> complete caller-owned in-memory recovery point. Remote transport, durable
+> complete caller-owned in-memory recovery point. That point has a deterministic
+> bounded envelope for portable corruption detection, without claiming
+> encryption, authentication, or durable storage. Remote transport, durable
 > persistence, and release packaging have not landed yet. The current
 > hardening baseline adds a
 > threat model, fault/recovery matrix, controlled compatibility and performance

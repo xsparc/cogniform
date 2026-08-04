@@ -1,7 +1,7 @@
 # Deterministic hierarchy and replay
 
-Status: hierarchy, derived transforms, logical hashing, and in-memory replay
-implemented by CF003.
+Status: hierarchy, derived transforms, logical hashing, in-memory replay, and a
+portable recovery-point envelope are implemented through CF013.
 
 ## Hierarchy and transforms
 
@@ -61,3 +61,25 @@ Callers decide how to persist or replace the bytes. A tail error must be
 reported and the suffix must not be replayed. `ReplayLog::replay` starts from an
 empty world, checks every recorded pre-state, applies each patch, and compares
 the resulting revision and logical hash after every event.
+
+## Recovery-point envelope
+
+`EngineRecoveryPoint::to_envelope_bytes` binds complete replay bytes and the
+next unreserved renderer `FrameId` into one deterministic version-one byte
+sequence. The envelope uses big-endian fixed-width fields, an explicit replay
+length, and a domain-separated SHA-256 digest. Repeated encoding of the same
+point is byte-identical.
+
+`EngineRecoveryPoint::from_envelope_bytes` applies the caller's `ReplayConfig`
+bound to the complete input, validates header, version, replay length, exact
+total length, non-zero frame, and digest from the borrowed slice, and only then
+copies the replay payload. It rejects trailing as well as truncated input.
+Decoding establishes envelope integrity only: a writer able to replace both
+payload and digest is not authenticated, and the replay contents remain
+plaintext caller data.
+
+After decoding, `LocalService::restore` still performs complete replay-format,
+protocol, hash-chain, world-transition, and frame-continuity validation before
+adapter selection. The envelope neither accepts a verified prefix nor performs
+filesystem I/O, automatic startup, encryption, or authentication. See
+[ADR 0013](../adr/0013-versioned-recovery-point-envelope.md).

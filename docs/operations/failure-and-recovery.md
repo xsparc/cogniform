@@ -17,6 +17,7 @@ store; operators compose those concerns outside the MVP.
 | Replay entry or total-log capacity exhausted | Reject before world mutation | `replay_capacity_rejects_before_world_mutation` |
 | Replay byte truncated, reordered, removed, or modified | Return only the longest verified prefix and a typed tail error | replay contract tests |
 | Any one replay byte flipped | Reject before the affected entry; verify and replay only the intact prefix | `every_single_byte_corruption_stops_before_the_unverified_entry` |
+| Recovery envelope is malformed, over-limit, truncated, extended, or changed at any byte | Return a typed non-sensitive codec error before copying replay bytes or initializing a service | recovery-envelope unit tests |
 | Recovery stream has any invalid tail or a frame marker behind replay evidence | Reject the complete recovery point before GPU initialization; never adopt only the verified prefix | recovery unit and controlled service-restoration tests |
 | Asset content hash mismatch | Consume no record or queue capacity | asset-store tests |
 | Truncated, malformed, over-limit, or unsafe-proxy GLB | Reject without panic or GPU upload; only approved unsupported classes may proxy | asset truncation and classification tests |
@@ -64,15 +65,22 @@ Never remove, reorder, or skip the bad event to continue the same chain.
 `LocalService::restore` accepts only a complete valid recovery point and rejects
 the entire point before GPU initialization when any tail is invalid.
 
+When recovery state was retained as an envelope, decode it with the intended
+`ReplayConfig` before calling `restore`. Do not treat a valid envelope digest as
+proof of who produced the bytes: SHA-256 detects accidental change but does not
+authenticate a writer. A header, version, bound, exact-length, frame, or digest
+failure rejects the complete envelope; do not trim a suffix or extract its
+replay payload manually.
+
 ### Renderer, readback, or device failure
 
 Stop admitting work to the affected instance. If a complete
 `EngineRecoveryPoint` was captured while the source renderer was available,
-retain it only in an approved location, drop the service to release the device
-and worker channels, and restore a fresh instance. Re-establish asset residency
-separately. The MVP does not promise in-place device recreation, automatic
-command retry, queued-result recovery, or observation continuity across
-restart.
+retain it or its single encoded envelope only in an approved location, drop the
+service to release the device and worker channels, decode if needed, and
+restore a fresh instance. Re-establish asset residency separately. The MVP does
+not promise in-place device recreation, automatic command retry, queued-result
+recovery, or observation continuity across restart.
 
 ### Secret or private-data finding
 

@@ -9,7 +9,7 @@ use cogniform_replay::{
 };
 use cogniform_world::{AuthoritativeWorld, LogicalSceneHash, WorldConfig};
 
-use crate::{EngineError, Observation, ObservationQueue, ObservationRequest};
+use crate::{EngineError, EngineRecoveryPoint, Observation, ObservationQueue, ObservationRequest};
 
 /// Bounds and domain configuration for one local engine instance.
 #[derive(Debug, Clone)]
@@ -41,56 +41,6 @@ impl EngineConfig {
     pub const fn with_observation_capacity(mut self, capacity: NonZeroU32) -> Self {
         self.observation_capacity = capacity;
         self
-    }
-}
-
-/// Complete in-memory state required to restore engine causality.
-///
-/// Replay bytes preserve accepted authoritative state. The next frame identity
-/// prevents reuse of frames already reserved by the source renderer but not
-/// represented in the replay stream.
-#[derive(Clone, PartialEq, Eq)]
-pub struct EngineRecoveryPoint {
-    replay_bytes: Vec<u8>,
-    next_frame_id: FrameId,
-}
-
-impl EngineRecoveryPoint {
-    /// Creates a caller-owned recovery point for later bounded validation.
-    #[must_use]
-    pub const fn from_parts(replay_bytes: Vec<u8>, next_frame_id: FrameId) -> Self {
-        Self {
-            replay_bytes,
-            next_frame_id,
-        }
-    }
-
-    /// Returns the complete encoded replay stream.
-    #[must_use]
-    pub fn replay_bytes(&self) -> &[u8] {
-        &self.replay_bytes
-    }
-
-    /// Returns the first frame identity available to the restored renderer.
-    #[must_use]
-    pub const fn next_frame_id(&self) -> FrameId {
-        self.next_frame_id
-    }
-
-    /// Splits this point into its complete replay stream and next frame identity.
-    #[must_use]
-    pub fn into_parts(self) -> (Vec<u8>, FrameId) {
-        (self.replay_bytes, self.next_frame_id)
-    }
-}
-
-impl std::fmt::Debug for EngineRecoveryPoint {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("EngineRecoveryPoint")
-            .field("replay_byte_count", &self.replay_bytes.len())
-            .field("next_frame_id", &self.next_frame_id)
-            .finish()
     }
 }
 
@@ -398,17 +348,5 @@ mod tests {
             EngineError::Replay(ReplayError::Tail(error))
                 if matches!(error.kind(), ReplayTailErrorKind::InvalidHeader)
         ));
-    }
-
-    #[test]
-    fn recovery_point_debug_redacts_replay_contents() {
-        let recovery = EngineRecoveryPoint::from_parts(
-            b"private-scene-marker".to_vec(),
-            FrameId::new(7).unwrap(),
-        );
-        let debug = format!("{recovery:?}");
-        assert!(!debug.contains("private-scene-marker"));
-        assert!(debug.contains("replay_byte_count: 20"));
-        assert!(debug.contains("next_frame_id"));
     }
 }

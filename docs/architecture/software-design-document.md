@@ -139,6 +139,12 @@ Hierarchy is layered over the flat ECS using explicit parent/child relations. Va
 
 The MVP guarantees replay determinism. Canonical hashing sorts entities by stable ID and components by versioned type key, excludes transient handles/timing/GPU resources, defines endianness, and normalizes unsupported floating-point values. Randomized map iteration and implicit entropy are prohibited in hashed or compiled output. Agent/model output is recorded as external input; its production is not claimed deterministic.
 
+Complete engine recovery state can be represented as one bounded, versioned
+envelope containing the portable replay stream and next unreserved frame
+identity. Its deterministic SHA-256 digest detects corruption before payload
+allocation, but does not provide authenticity or confidentiality. Complete
+replay and frame validation remain mandatory before restoration.
+
 ### 3.5 Backpressure
 
 Every queued command declares one of:
@@ -184,7 +190,8 @@ All agent data, labels, assets, procedures, and transport messages are untrusted
 - stable ownership scopes and expected generation/revision checks;
 - scene text treated as data with provenance, never privileged instructions;
 - zero or reinitialize recycled observation buffers before crossing trust scopes;
-- append-only replay integrity and secret-free canonical events;
+- append-only replay integrity, bounded integrity-checked recovery envelopes,
+  and secret-free canonical events;
 - optional Wasm/model execution isolated behind explicit capability and resource limits.
 
 Failure behavior is controlled: invalid requests do not mutate state; device
@@ -225,7 +232,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Idempotency | Repeated key returns the same receipt without duplicate mutation |
 | Hierarchy | Cycles/depth violations reject atomically; propagation order is stable |
 | Replay | Repeating accepted canonical events yields the exact logical hash |
-| Restoration | A complete verified recovery point restores logical/replay state and continues frame/revision causality in a fresh service |
+| Restoration | A bounded integrity-checked recovery envelope round-trips exact replay/frame state; the decoded complete point restores logical/replay state and continues frame/revision causality in a fresh service |
 | Headless render | Reference primitive scene renders without a visible window |
 | Machine outputs | Entity-ID probes are exact; color/depth and quantized flat world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
