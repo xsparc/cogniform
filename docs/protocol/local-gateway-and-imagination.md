@@ -1,6 +1,7 @@
 # Local gateway and imagination compiler
 
-Status: implemented by CF006 for offline in-process use.
+Status: implemented by CF006 for offline in-process use; CF016 routes service
+procedure output through the unchanged patch gateway.
 
 The current gateway is a Rust composition API, not a network service. It
 accepts typed `ScenePatch` and `ImaginationEnvelope` values, owns one
@@ -40,6 +41,21 @@ input payload, and gateway debug output contains only aggregate state.
 `GatewayQueueStats` reports current depth and monotonic admitted, superseded,
 dropped, and rejected counters. These counters are local diagnostics and are
 not part of logical replay state.
+
+## Procedure output
+
+`LocalGateway` has no procedure command or response variant. The local service
+executes a supported pure procedure under the engine's runtime limits, then
+passes its generated `ScenePatch` to `submit_patch`. Consequently delivery,
+queue pressure, supersession, conflict, processing, and replay behavior are
+identical to an explicitly submitted patch.
+
+Idempotency is based on canonical output-patch bytes. An exact repeat returns
+`AlreadyQueued` or `Replayed` when the gateway retains the corresponding
+record; a different output under the same key returns
+`IdempotencyConflict`. A restored service has no gateway response cache, so an
+exact generated patch can queue once more, but world idempotency returns the
+original receipt without another mutation or replay entry.
 
 ## Imagination contract
 
@@ -99,4 +115,6 @@ controlled adapter integration compiles, applies, queries, replays, and rejects
 a stale explicit patch without duplicate mutation.
 
 See [ADR 0007](../adr/0007-pure-imagination-compiler-and-bounded-local-gateway.md)
-for the package and lifecycle decision.
+for the package and lifecycle decision and
+[ADR 0016](../adr/0016-service-procedure-composition-through-ordinary-patches.md)
+for service procedure composition.

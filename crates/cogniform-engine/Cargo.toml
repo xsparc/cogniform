@@ -15,6 +15,7 @@ workspace = true
 cogniform-assets.workspace = true
 cogniform-compiler.workspace = true
 cogniform-protocol.workspace = true
+cogniform-procedural.workspace = true
 cogniform-renderer.workspace = true
 cogniform-replay.workspace = true
 cogniform-world.workspace = true

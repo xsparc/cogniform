@@ -22,6 +22,9 @@ pub use cogniform_assets::{
     AssetProcessOutcome, AssetRecord, AssetState, AssetStoreConfig, AssetStoreStats,
     AssetUploadJob, AssetVertex, UnsupportedAssetPolicy, content_hash,
 };
+pub use cogniform_procedural::{
+    BuiltinProcedure, CuboidGrid, ProcedureError, ProcedureLimits, ProcedureRequest,
+};
 pub use cogniform_renderer::{
     AdapterSummary, AssetUploadAdmission, AssetUploadOutcome, RendererAssetStats, RendererError,
 };
@@ -43,4 +46,6 @@ pub use scenario::{
     CanonicalScenarioConfig, CanonicalScenarioError, CanonicalScenarioReport, ObservationEvidence,
     run_canonical_scenario,
 };
-pub use service::{LocalAssetStatus, LocalService, LocalServiceConfig, LocalServiceStatus};
+pub use service::{
+    LocalAssetStatus, LocalService, LocalServiceConfig, LocalServiceStatus, ProcedureSubmission,
+};

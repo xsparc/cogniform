@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF015 service-owned asset rehydration on 2026-08-04.
+and extended through CF016 service procedure composition on 2026-08-04.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -27,8 +27,9 @@ snapshots and canonical replay entries.
 
 ## Trust boundaries
 
-1. **Caller to protocol.** Patches, imagination, queries, IDs, labels, limits,
-   and observation requests are untrusted typed or JSON-derived data.
+1. **Caller to protocol and pure preparation.** Patches, imagination,
+   procedures, queries, IDs, labels, limits, and observation requests are
+   untrusted typed or JSON-derived data.
 2. **Asset bytes to decoder.** A claimed SHA-256 identity and GLB bytes cross
    into a strict, separately scheduled parser.
 3. **World to renderer.** The renderer receives immutable compact extraction,
@@ -56,6 +57,7 @@ Residual ratings assume the declared local single-user boundary.
 | Malformed, substituted, or adversarial GLB allocates excessively or reaches GPU state | High | Service-owned exact-hash admission, source/decoded/count limits, strict subset, explicit one-item processing, empty recovery residency, truncation corpus, unsafe proxy exclusions | Medium |
 | Stale, conflicting, or partially invalid patch mutates part of the world | High | Exact base revision, complete preflight plan, atomic commit, invariant/property tests | Low |
 | Idempotency-key reuse duplicates or substitutes work | High | Retained canonical command fingerprint, transaction identity, conflict error, exact replayed receipt | Low |
+| Adversarial procedure dimensions or text allocate unbounded output or bypass mutation controls | High | Pure built-in implementation, entity/patch/decoded/text preflight under active runtime limits, ordinary gateway admission and atomic patch processing, controlled restoration test | Low |
 | Queue or readback pressure creates hidden unbounded work | High | Fixed command, idempotency, asset, renderer, and observation capacities with typed rejection/drop/supersession; per-renderer retirement guard keeps final driver destruction off the caller's bounded read path | Low |
 | Renderer-local IDs escape as authoritative identity | High | Frame-local compact mapping, stable IDs in public observations, exact center-pixel tests | Low |
 | Observation from an old camera or revision is accepted as current | High | Camera/frame/revision metadata, explicit staleness, source-ahead rejection, canonical scenario proof | Low |
@@ -83,6 +85,9 @@ use.
   text. Cogniform validates structure and bounds; it is not a secret sanitizer.
 - Stop admitting commands when capacity errors repeat. Retrying without a
   consumer or scheduling change is an availability attack on the same process.
+- Treat procedure requests as untrusted bounded data. Do not load external
+  procedure code or grant a procedure filesystem, network, clock, renderer, or
+  mutable-world access under this threat model.
 - On renderer/device failure, stop the affected service instance. If a complete
   recovery point was captured, retain the point or its single envelope only in
   an operator-approved location and restore a fresh service. The envelope is

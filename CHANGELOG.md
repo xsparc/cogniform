@@ -19,6 +19,8 @@ release yet; the current workspace version remains `0.0.0`.
   background GPU retirement;
 - deterministic primitive imagination compilation and pure seeded built-in
   cuboid-grid procedures;
+- local-service execution of pure bounded procedures through ordinary patch
+  admission, idempotency, processing, query, replay, and restoration;
 - bounded content-addressed GLB admission, CPU decode, renderer upload, and
   explicit unsupported/proxy policy;
 - service-owned asset admission, explicit single-item CPU/GPU processing,

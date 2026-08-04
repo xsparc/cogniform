@@ -15,8 +15,9 @@ scene revision that produced it.
 > deterministic primitive imagination compiler are also available. The current
 > asset baseline adds content-addressed GLB geometry, bounded caller-driven CPU
 > decode and GPU upload, plus pure seeded cuboid-grid procedures. The local
-> service now owns that bounded asset lifecycle and requires exact-hash
-> rehydration after recovery. A bounded
+> service now owns that bounded asset lifecycle, requires exact-hash
+> rehydration after recovery, and executes supported pure procedures through
+> the ordinary patch admission and replay path. A bounded
 > local typed service and CLI now run the canonical unattended MVP flow,
 > verify replay to the same logical hash, and restore a fresh service from a
 > complete caller-owned in-memory recovery point. That point has a deterministic

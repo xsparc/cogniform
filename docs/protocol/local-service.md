@@ -4,7 +4,8 @@ Status: implemented by CF008 for offline in-process use; complete caller-owned
 in-memory restoration was added by CF012 and a portable bounded recovery-point
 envelope by CF013. CF014 adds exact-revision recovery points for fresh-service
 historical forks. CF015 adds service-owned bounded asset resolution and
-explicit recovery rehydration.
+explicit recovery rehydration. CF016 composes pure built-in procedures through
+ordinary patch admission.
 
 `LocalService` composes one bounded `LocalGateway`, authoritative recorded
 world, service-owned asset store, headless renderer, and observation worker. It
@@ -40,6 +41,7 @@ handle, renderer device, queue, staging buffer, or replay log.
 | `asset_status` | Return aggregate CPU-store and renderer-residency counters |
 | `submit_patch` | Validate and admit one explicit patch under its delivery semantic |
 | `submit_imagination` | Validate and admit one deterministic primitive imagination |
+| `submit_procedure` | Execute one pure bounded built-in procedure and admit its generated ordinary patch |
 | `process_next` | Compile/apply at most one queued mutating command |
 | `query` | Return one bounded, exact-revision logical result immediately |
 | `request_observation` | Reserve one observation slot and submit a revision-linked frame |
@@ -58,6 +60,29 @@ Patch and imagination admission preserves the gateway's `MustApply`,
 does not secretly process work. `process_next` handles no more than one queued
 item, so embedders choose their own scheduling policy without an unbounded
 background loop.
+
+## Built-in procedures
+
+`submit_procedure` synchronously executes a typed `ProcedureRequest` under the
+engine's active `RuntimeLimits`. It returns the procedure's deterministic
+stable entity IDs and an ordinary `GatewayAdmission`. The resulting patch is
+queued, processed, extracted, replayed, queried, and recovered exactly like a
+caller-supplied patch; admission itself does not mutate the world.
+
+Procedure and supersession-text budgets are checked before output allocation
+or gateway admission. The gateway fingerprints the generated canonical patch,
+so idempotency is output-oriented: an exact output repeats normally, while a
+different output using the same key conflicts. The replay retains only the
+accepted patch and receipt, not the procedure request, seed, or implementation
+metadata. After restoration, an exact resubmission can re-enter the empty
+gateway queue, but world idempotency returns the original receipt without
+revision or replay growth.
+
+Execution is a pure preparation step. It has no ambient I/O or authoritative
+world access, and stable-ID collisions remain ordinary atomic patch failures
+when `process_next` applies the command. Only the built-in cuboid-grid
+procedure exists; user code, native plugins, Wasm, and external procedure
+loading remain unsupported.
 
 Observation requests are separate from the mutating command queue. A request
 reserves capacity across GPU submission, readback, worker processing, and
@@ -165,7 +190,8 @@ must explicitly own and coordinate every fork.
   persistence, automatic startup, snapshot registries, in-place recovery or
   revert, branch management, cross-branch frame allocation, and log rotation
   are not implemented.
-- Pure procedures remain a separate library API. The service accepts
+- Only the pure built-in cuboid-grid procedure is supported. External
+  procedures, plugins, Wasm, and user code are not loaded. The service accepts
   caller-supplied exact-hash asset bytes but does not fetch external assets,
   persist them, evict them, or restore their residency automatically.
 - The headless baseline supports controlled DX12 or Vulkan adapters. Browser,
@@ -175,6 +201,7 @@ See [ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md),
 [ADR 0012](../adr/0012-complete-in-memory-service-restoration.md),
 [ADR 0013](../adr/0013-versioned-recovery-point-envelope.md),
 [ADR 0014](../adr/0014-exact-revision-historical-recovery-forks.md),
-[ADR 0015](../adr/0015-service-owned-asset-resolution-and-rehydration.md), the
+[ADR 0015](../adr/0015-service-owned-asset-resolution-and-rehydration.md),
+[ADR 0016](../adr/0016-service-procedure-composition-through-ordinary-patches.md), the
 [gateway guide](local-gateway-and-imagination.md), and the
 [canonical scenario](../getting-started/canonical-scenario.md).

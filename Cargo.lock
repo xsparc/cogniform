@@ -147,6 +147,7 @@ version = "0.0.0"
 dependencies = [
  "cogniform-assets",
  "cogniform-compiler",
+ "cogniform-procedural",
  "cogniform-protocol",
  "cogniform-renderer",
  "cogniform-replay",

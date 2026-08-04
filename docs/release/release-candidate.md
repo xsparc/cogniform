@@ -22,6 +22,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, truncation corpus, typed unsupported/proxy policy |
 | Service asset resolution | Pass on validated profile | Explicit one-item import/upload renders an exact stable ID; recovery retains logical references and exact-hash rehydration resumes rendering without replay mutation |
+| Service procedure composition | Pass on validated profile | A bounded 2x3 built-in procedure follows ordinary queue, idempotency, query, replay/hash, and restored world-idempotency behavior |
 | End to end | Pass on validated profile | Room/table/light/camera create and atomic restyle, exact query, three observations, same replay hash |
 | Repository and dependency hygiene | Pass | Redacted Git-object scan, secret scanning/push protection, pinned vendor/lock/action, cargo-deny |
 
@@ -77,6 +78,8 @@ The GitHub release must be marked prerelease and state:
 - asset bytes, decoded meshes, and GPU residency are not recovery state;
   callers must rehydrate exact matching content, and no filesystem/network
   resolver, durable cache, eviction policy, or automatic asset startup exists;
+- only compiled pure built-in procedures are supported; no external procedure
+  loading, user-code execution, native plugin, or Wasm host is included;
 - normal output is flat and quantized, with no imported smoothing, normal maps,
   or tangent-space contract; unvalidated platforms/backends remain
   unsupported; and

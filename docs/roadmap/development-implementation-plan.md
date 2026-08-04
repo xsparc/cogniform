@@ -262,12 +262,34 @@ asset persistence. See
 [GLB asset guide](../assets/glb-subset.md), and the
 [local service guide](../protocol/local-service.md).
 
+### PR 16 - CF016: Local-service built-in procedure composition
+
+Outcome: the local typed service executes a supported pure built-in procedure
+and admits its generated scene change through the ordinary patch lifecycle.
+
+Gate: invalid procedure or text budgets fail before gateway admission; a 2x3
+grid reports deterministic stable IDs without mutating before processing;
+ordinary delivery, queue, and output-oriented idempotency semantics apply; the
+processed entities are exactly queryable; live and replayed hashes match; and
+exact resubmission before and after restoration adds no world revision or
+replay entry.
+
+Implemented contract: `LocalService::submit_procedure` executes under the
+engine's active runtime limits and returns the generated entity IDs with an
+ordinary `GatewayAdmission`. The gateway sees only the generated canonical
+patch, and replay retains only that accepted patch and receipt. No procedure
+command/response schema, ambient I/O, plugin/Wasm host, user code, background
+scheduler, or new procedure kind is added. See
+[ADR 0016](../adr/0016-service-procedure-composition-through-ordinary-patches.md),
+the [gateway guide](../protocol/local-gateway-and-imagination.md), and the
+[local service guide](../protocol/local-service.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
-  -> CF014 -> CF015
+  -> CF014 -> CF015 -> CF016
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -339,6 +361,9 @@ Validation expands with capability:
 - CF015: exact-hash service admission, explicit single-item import/upload,
   stable-identity GLB observation, empty recovered asset state, typed missing
   residency, and revision/hash/replay-preserving rehydration.
+- CF016: pre-allocation procedure/text-budget rejection, deterministic
+  stable-ID output, ordinary queue/delivery/idempotency behavior, exact logical
+  query, replay/hash equality, and restored world-idempotent resubmission.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
