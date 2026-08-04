@@ -47,6 +47,8 @@ pub enum ObservationPayload {
     Color(Vec<[u8; 4]>),
     /// Normalized f32 depth pixels in row-major order.
     Depth(Vec<f32>),
+    /// Flat world-space unit normals; background pixels are `None`.
+    Normal(Vec<Option<[f32; 3]>>),
     /// Exact stable identity per pixel; background is `None`.
     EntityId(Vec<Option<StableEntityId>>),
     /// Stable-identity visibility counts sorted by identity.
@@ -233,6 +235,7 @@ fn payload_for(kind: ObservationKind, frame: RenderedFrame) -> ObservationPayloa
     match kind {
         ObservationKind::Color => ObservationPayload::Color(frame.into_color()),
         ObservationKind::Depth => ObservationPayload::Depth(frame.into_depth()),
+        ObservationKind::Normal => ObservationPayload::Normal(frame.into_normals()),
         ObservationKind::EntityId => ObservationPayload::EntityId(frame.into_stable_entity_ids()),
         ObservationKind::Visibility => {
             let mut counts = BTreeMap::<StableEntityId, u64>::new();

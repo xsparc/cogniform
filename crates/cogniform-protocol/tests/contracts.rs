@@ -453,6 +453,20 @@ fn latest_wins_requires_a_key_and_queue_capacity_is_bounded() {
 #[test]
 fn observations_enforce_dimensions_pixels_and_revision_causality() {
     let limits = RuntimeLimits::default();
+    let mut normal = sample_observation();
+    normal.kind = ObservationKind::Normal;
+    let encoded = normal.to_canonical_json(&limits).unwrap();
+    let normal_kind = b"\"kind\":\"normal\"";
+    assert!(
+        encoded
+            .windows(normal_kind.len())
+            .any(|window| window == normal_kind)
+    );
+    assert_eq!(
+        ObservationMetadata::from_json(&encoded, &limits).unwrap(),
+        normal
+    );
+
     let mut observation = sample_observation();
     observation.dimensions = None;
     assert_eq!(

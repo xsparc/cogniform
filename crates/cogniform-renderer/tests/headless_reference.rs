@@ -13,7 +13,7 @@ const HEIGHT: u32 = 64;
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
-fn reference_cube_produces_exact_ids_and_tolerant_color_depth() {
+fn reference_cube_produces_exact_ids_and_tolerant_color_depth_normals() {
     let mut renderer =
         pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
             .expect("the declared reference adapter must initialize");
@@ -61,11 +61,25 @@ fn reference_cube_produces_exact_ids_and_tolerant_color_depth() {
     );
     assert_eq!(frame.depth_at(0, 0), Some(1.0));
 
+    let center_normal = frame
+        .normal_at(center.0, center.1)
+        .expect("cube center should have a world-space normal");
+    let normal_length = center_normal
+        .iter()
+        .map(|value| value * value)
+        .sum::<f32>()
+        .sqrt();
+    assert!((normal_length - 1.0).abs() <= 1.0e-5);
+    assert!(center_normal[2].abs() >= 0.99);
+    assert_eq!(frame.normal_at(0, 0), None);
+
     assert_eq!(frame.color().len(), (WIDTH * HEIGHT) as usize);
     assert_eq!(frame.depth().len(), (WIDTH * HEIGHT) as usize);
+    assert_eq!(frame.normals().len(), (WIDTH * HEIGHT) as usize);
     assert_eq!(frame.entity_ids().len(), (WIDTH * HEIGHT) as usize);
     assert_eq!(frame.color_at(WIDTH, 0), None);
     assert_eq!(frame.depth_at(0, HEIGHT), None);
+    assert_eq!(frame.normal_at(WIDTH, HEIGHT), None);
     assert_eq!(frame.entity_id_at(WIDTH, HEIGHT), None);
 }
 

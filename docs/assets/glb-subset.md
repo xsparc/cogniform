@@ -64,10 +64,11 @@ three indices.
 
 The strict schema rejects unknown fields after recognized unsupported feature
 declarations are classified. External buffers, data URIs, additional GLB
-chunks, sparse accessors, normalized accessors, normals, UVs, tangents, colors,
-morph targets, multiple primitives, non-triangle modes, images, samplers,
-textures, nodes, scenes, cameras, animations, skins, and extensions are not
-supported. There is no compressed geometry or texture decompression path.
+chunks, sparse accessors, normalized accessors, imported normals, UVs, tangents,
+colors, morph targets, multiple primitives, non-triangle modes, images,
+samplers, textures, nodes, scenes, cameras, animations, skins, and extensions
+are not supported. There is no compressed geometry or texture decompression
+path.
 
 ## Failure and proxy policy
 
@@ -145,7 +146,7 @@ The checked text fixture under `tests/assets/triangle.glb.hex` can be exercised
 on an approved DX12 or Vulkan adapter:
 
 ```text
-cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact approved_glb_fixture_renders_with_exact_identity_and_tolerant_color_depth
+cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal
 ```
 
 The controlled test creates no window, performs no network call, and uploads no

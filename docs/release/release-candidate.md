@@ -14,7 +14,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Hierarchy and transforms | Pass | Cycle/depth/dangling rejection and stable parent-before-child sparse propagation |
 | Deterministic replay | Pass | Canonical logical hash, chained entries, verified-prefix recovery, every-byte corruption injection |
 | Headless render | Pass on validated profile | No surface/window; Vulkan cube, GLB, readback pressure, renderer-drop retirement, and canonical scenario evidence |
-| Machine outputs | Pass for MVP profile | Tolerant color/depth, exact stable entity ID, structured visibility; normal output is explicitly deferred |
+| Machine outputs | Pass on validated profile | Tolerant color/depth, exact stable entity ID, structured visibility, and quantized flat world-space normals following triangle winding |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, truncation corpus, typed unsupported/proxy policy |
@@ -64,7 +64,9 @@ The GitHub release must be marked prerelease and state:
 - validated Windows/Vulkan profile and build-only Ubuntu evidence;
 - no remote service, authentication, persistence, production SLA, or semver-
   stable crates.io API;
-- normal output and all unvalidated platforms/backends are unsupported; and
+- normal output is flat and quantized, with no imported smoothing, normal maps,
+  or tangent-space contract; unvalidated platforms/backends remain
+  unsupported; and
 - performance figures are one-machine informational measurements.
 
 If a candidate is defective, close or supersede its release entry as

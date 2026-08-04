@@ -1,15 +1,15 @@
 # Validation and compatibility baseline
 
-Status: controlled CF009 evidence collected on 2026-08-02. This document names
-what was reproduced and what remains unsupported; it is not a promise for
-untested hardware.
+Status: controlled CF009 evidence collected on 2026-08-02 and CF011 normal
+evidence collected on 2026-08-04. This document names what was reproduced and
+what remains unsupported; it is not a promise for untested hardware.
 
 ## Compatibility profile
 
 | Environment | Evidence | Classification |
 |---|---|---|
-| Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, readback-pressure, and canonical scenario tests passed | Validated local MVP profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Selected by the scenario; exact entity ID and tolerant color/depth probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, tolerant color/depth, quantized unit normal, GLB winding, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -18,7 +18,9 @@ untested hardware.
 
 The renderer is capability based. An adapter must satisfy the configured target
 dimensions, buffer bounds, attachment count, and render/copy usage for RGBA8
-color, Depth32Float depth, and R32Uint identity targets before device creation.
+color, Depth32Float depth, R32Uint identity, and RGBA8 signed normal targets
+before device creation. The normal path requires three color attachments and
+twelve color-attachment bytes per sample.
 The validated GPU above is evidence that one adapter meets the contract; it does
 not impose a specific GPU model or driver version on future entries.
 
@@ -42,9 +44,10 @@ cargo test --release -p cogniform-engine --tests --locked --offline -- --ignored
 cargo run --release -p cogniform-cli --locked --offline -- scenario
 ```
 
-The renderer suite passed the built-in cube, bounded readback pressure, and GLB
-asset fixture. The engine suite passed gateway/idempotency, revision causality,
-and the canonical scenario. The scenario selected Vulkan, committed revision 2,
+The renderer suite passed the built-in cube, bounded four-buffer readback
+pressure, renderer-drop retirement, and GLB asset winding fixture. The engine
+suite passed gateway/idempotency, normal-aware revision causality, and the
+canonical scenario. The scenario selected Vulkan, committed revision 2,
 reported frames 1-3, found the table at the center color/entity-ID pixels,
 reported 72 visible table pixels, and replayed two entries to logical hash
 `db23b22d98da433d6050c0cd863f3a736832c7bae2ca674cdbee3dae8ed25106`.
