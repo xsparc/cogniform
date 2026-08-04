@@ -19,5 +19,6 @@ earlier one and links the history.
 | [0011](0011-quantized-world-space-normal-observations.md) | Accepted | Add bounded quantized flat world-space normal observations without changing asset contracts |
 | [0012](0012-complete-in-memory-service-restoration.md) | Accepted | Restore a fresh bounded local service from complete verified replay and frame-continuity state |
 | [0013](0013-versioned-recovery-point-envelope.md) | Accepted | Bind replay and frame-continuity state in one bounded integrity-protected portable envelope |
+| [0014](0014-exact-revision-historical-recovery-forks.md) | Accepted | Create fresh-service historical forks from exact retained revisions without source mutation or pre-capture frame reuse |
 
 New records use four sections: context, decision, consequences, and status.

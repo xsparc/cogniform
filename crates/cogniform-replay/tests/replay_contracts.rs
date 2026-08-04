@@ -12,7 +12,7 @@ use cogniform_replay::{
     RecordedApplyError, RecordedWorld, ReplayConfig, ReplayIntegrityErrorKind, ReplayLog,
     ReplayTailErrorKind,
 };
-use cogniform_world::WorldConfig;
+use cogniform_world::{AuthoritativeWorld, WorldConfig};
 
 fn id(value: u128) -> StableEntityId {
     StableEntityId::new(value).unwrap()
@@ -188,6 +188,51 @@ fn repeated_recording_is_byte_exact() {
         record_three().log().to_bytes(),
         record_three().log().to_bytes()
     );
+}
+
+#[test]
+fn exact_revision_prefixes_are_complete_bounded_replay_streams() {
+    let recorded = record_three();
+    let full_bytes = recorded.log().to_bytes();
+    let empty_hash = AuthoritativeWorld::default().logical_hash().unwrap();
+
+    for value in 0..=3 {
+        let revision = SceneRevision::new(value);
+        let first = recorded.log().to_bytes_through_revision(revision).unwrap();
+        let second = recorded.log().to_bytes_through_revision(revision).unwrap();
+        assert_eq!(first, second);
+        assert!(full_bytes.starts_with(&first));
+
+        let loaded = ReplayLog::load_prefix(
+            &first,
+            ReplayConfig::default(),
+            &WorldConfig::default().runtime_limits,
+        );
+        assert_eq!(loaded.tail_error(), None);
+        assert_eq!(loaded.log().verify().unwrap().final_revision(), revision);
+        let replayed = loaded.log().replay(WorldConfig::default()).unwrap();
+        let expected_hash = if value == 0 {
+            empty_hash
+        } else {
+            recorded.log().entries()[usize::try_from(value - 1).unwrap()].new_scene_hash()
+        };
+        assert_eq!(replayed.logical_hash().unwrap(), expected_hash);
+    }
+
+    assert_eq!(
+        recorded
+            .log()
+            .to_bytes_through_revision(SceneRevision::new(3))
+            .unwrap(),
+        full_bytes
+    );
+    let error = recorded
+        .log()
+        .to_bytes_through_revision(SceneRevision::new(4))
+        .unwrap_err();
+    assert_eq!(error.requested(), SceneRevision::new(4));
+    assert_eq!(error.latest(), SceneRevision::new(3));
+    assert_eq!(recorded.log().to_bytes(), full_bytes);
 }
 
 #[test]

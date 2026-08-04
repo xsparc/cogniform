@@ -1,9 +1,47 @@
 use core::fmt;
 
-use cogniform_protocol::CodecError;
+use cogniform_protocol::{CodecError, SceneRevision};
 use cogniform_world::{WorldApplyError, WorldInvariantError};
 
 use crate::ReplayConfigError;
+
+/// A requested historical revision is newer than the retained replay log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReplayRevisionError {
+    requested: SceneRevision,
+    latest: SceneRevision,
+}
+
+impl ReplayRevisionError {
+    pub(crate) const fn new(requested: SceneRevision, latest: SceneRevision) -> Self {
+        Self { requested, latest }
+    }
+
+    /// Returns the requested historical revision.
+    #[must_use]
+    pub const fn requested(self) -> SceneRevision {
+        self.requested
+    }
+
+    /// Returns the newest revision retained by the log.
+    #[must_use]
+    pub const fn latest(self) -> SceneRevision {
+        self.latest
+    }
+}
+
+impl fmt::Display for ReplayRevisionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "replay revision {} is newer than retained revision {}",
+            self.requested.get(),
+            self.latest.get()
+        )
+    }
+}
+
+impl std::error::Error for ReplayRevisionError {}
 
 /// Stable classification for an integrity failure in a complete replay log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

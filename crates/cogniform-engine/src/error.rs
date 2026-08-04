@@ -5,7 +5,7 @@ use cogniform_protocol::{
     CodecError, FrameId, IdempotencyKey, SceneRevision, StableEntityId, ValidationError,
 };
 use cogniform_renderer::{RendererError, SceneUpdateError};
-use cogniform_replay::{RecordedApplyError, ReplayConfigError, ReplayError};
+use cogniform_replay::{RecordedApplyError, ReplayConfigError, ReplayError, ReplayRevisionError};
 use cogniform_world::{WorldApplyError, WorldExtractionError, WorldInvariantError};
 
 /// Composition failure that preserves the responsible domain boundary.
@@ -25,6 +25,8 @@ pub enum EngineError {
     },
     /// Replay bounds cannot represent an engine-owned accepted-event log.
     ReplayConfig(ReplayConfigError),
+    /// A historical recovery point requested a revision newer than the log.
+    ReplayRevision(ReplayRevisionError),
     /// A patch could not be recorded before authoritative mutation.
     ReplayRecord(RecordedApplyError),
     /// Verification or replay of accepted engine events failed.
@@ -57,6 +59,7 @@ impl fmt::Display for EngineError {
                 recorded_frame_id.get()
             ),
             Self::ReplayConfig(error) => write!(formatter, "invalid replay config: {error}"),
+            Self::ReplayRevision(error) => write!(formatter, "historical recovery failed: {error}"),
             Self::ReplayRecord(error) => {
                 write!(formatter, "accepted-event recording failed: {error}")
             }
@@ -76,6 +79,7 @@ impl std::error::Error for EngineError {
         match self {
             Self::InvalidConfig { .. } | Self::RecoveryFrameBehindReplay { .. } => None,
             Self::ReplayConfig(error) => Some(error),
+            Self::ReplayRevision(error) => Some(error),
             Self::ReplayRecord(error) => Some(error),
             Self::Replay(error) => Some(error),
             Self::WorldApply(error) => Some(error),

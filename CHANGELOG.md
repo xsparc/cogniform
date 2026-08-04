@@ -27,6 +27,8 @@ release yet; the current workspace version remains `0.0.0`.
 - deterministic bounded version-one recovery-point envelopes that bind replay
   bytes and frame continuity with typed validation and SHA-256 corruption
   detection before payload allocation;
+- exact-revision replay prefixes and fresh-service historical recovery forks
+  that preserve the source service and carry its current next frame identity;
 - public-repository safeguards, threat model, failure/recovery matrix,
   controlled compatibility/performance baseline, and source-first candidate
   checklist.
@@ -44,6 +46,8 @@ release yet; the current workspace version remains `0.0.0`.
   and most vertex attributes;
 - recovery points do not include queued commands, observations, asset
   residency, storage, or automatic startup; their envelopes are not encrypted
-  or authenticated; device-loss recreation, durable recovery, binary
-  packaging, signing, provenance, and automated release publication are not
-  implemented.
+  or authenticated; historical recovery creates a separate fresh service, not
+  an in-place revert, and future frame identity across concurrently live
+  branches is caller-coordinated; device-loss recreation, durable recovery,
+  binary packaging, signing, provenance, and automated release publication are
+  not implemented.

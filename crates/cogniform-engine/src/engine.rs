@@ -183,6 +183,27 @@ impl CogniformEngine {
         ))
     }
 
+    /// Captures one exact historical replay prefix for a fresh-service fork.
+    ///
+    /// The point uses the source renderer's current next frame identity rather
+    /// than reconstructing a historical renderer marker, so the fork cannot
+    /// reuse a frame issued before capture. Concurrent branches must coordinate
+    /// their independently advancing frame identities outside the engine.
+    pub fn recovery_point_at_revision(
+        &self,
+        revision: SceneRevision,
+    ) -> Result<EngineRecoveryPoint, EngineError> {
+        let replay_bytes = self
+            .world
+            .log()
+            .to_bytes_through_revision(revision)
+            .map_err(EngineError::ReplayRevision)?;
+        Ok(EngineRecoveryPoint::from_parts(
+            replay_bytes,
+            self.renderer.next_frame_id()?,
+        ))
+    }
+
     /// Verifies the complete accepted-event hash and revision chain.
     pub fn verify_replay(&self) -> Result<ReplayVerification, EngineError> {
         self.world

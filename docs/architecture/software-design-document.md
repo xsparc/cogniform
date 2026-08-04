@@ -145,6 +145,14 @@ identity. Its deterministic SHA-256 digest detects corruption before payload
 allocation, but does not provide authenticity or confidentiality. Complete
 replay and frame validation remain mandatory before restoration.
 
+Any retained exact revision can also be represented as a complete standalone
+replay prefix and restored into a separate fresh service. The point carries the
+source renderer's current next unreserved frame identity so logical history may
+branch without reusing an identity issued before capture. Capturing a
+historical point does not mutate the source; concurrent branches advance
+independent frame counters, and in-place revert or cross-branch coordination
+remain separate lifecycle concerns.
+
 ### 3.5 Backpressure
 
 Every queued command declares one of:
@@ -210,8 +218,9 @@ Research targets such as 60 Hz, 3 ms p95 CPU engine work, 8 ms p95 GPU time, 8 m
 
 The public surface stays small: apply imagination, apply patch, query scene,
 request observation, subscribe to bounded feedback, explain compilation,
-capture or restore complete local recovery state, revert recorded state, and
-resolve assets. Initial implementation can use in-process Rust types and
+capture complete or exact-revision local recovery state, restore it into a
+fresh service, revert live recorded state, and resolve assets. Initial
+implementation can use in-process Rust types and
 canonical JSON fixtures. Protobuf/gRPC, MCP, local shared memory, and QUIC are
 adapters introduced after the core semantics are tested.
 
@@ -233,6 +242,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Hierarchy | Cycles/depth violations reject atomically; propagation order is stable |
 | Replay | Repeating accepted canonical events yields the exact logical hash |
 | Restoration | A bounded integrity-checked recovery envelope round-trips exact replay/frame state; the decoded complete point restores logical/replay state and continues frame/revision causality in a fresh service |
+| Historical fork | An exact retained revision restores into a fresh service without source mutation or reuse of a frame issued before capture, then continues query/observe/append causality |
 | Headless render | Reference primitive scene renders without a visible window |
 | Machine outputs | Entity-ID probes are exact; color/depth and quantized flat world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
@@ -248,9 +258,10 @@ publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
 artifacts, smooth normals and the wider visual-quality surface, remote
 protocol/authentication, tenancy, observation retention, durable persistence,
-automatic device recreation, snapshots/revert, log rotation, and model policy
-remain explicitly open. Defaults in the roadmap are planning assumptions, not
-production commitments.
+automatic device recreation, persistent snapshot registries, in-place revert
+and branch coordination, log rotation, and model policy remain explicitly
+open. Defaults in the roadmap are planning assumptions, not production
+commitments.
 
 ## 11. Verified foundation references
 

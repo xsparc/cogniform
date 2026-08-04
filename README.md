@@ -19,8 +19,12 @@ scene revision that produced it.
 > verify replay to the same logical hash, and restore a fresh service from a
 > complete caller-owned in-memory recovery point. That point has a deterministic
 > bounded envelope for portable corruption detection, without claiming
-> encryption, authentication, or durable storage. Remote transport, durable
-> persistence, and release packaging have not landed yet. The current
+> encryption, authentication, or durable storage. A caller can also capture an
+> exact retained revision as a fresh-service historical fork without mutating
+> the source or reusing a frame identity issued before capture. In-place revert,
+> cross-branch frame coordination, remote
+> transport, durable persistence, and release packaging have not landed yet.
+> The current
 > hardening baseline adds a
 > threat model, fault/recovery matrix, controlled compatibility and performance
 > evidence, and a source-first release-candidate checklist. No release has been

@@ -19,6 +19,7 @@ store; operators compose those concerns outside the MVP.
 | Any one replay byte flipped | Reject before the affected entry; verify and replay only the intact prefix | `every_single_byte_corruption_stops_before_the_unverified_entry` |
 | Recovery envelope is malformed, over-limit, truncated, extended, or changed at any byte | Return a typed non-sensitive codec error before copying replay bytes or initializing a service | recovery-envelope unit tests |
 | Recovery stream has any invalid tail or a frame marker behind replay evidence | Reject the complete recovery point before GPU initialization; never adopt only the verified prefix | recovery unit and controlled service-restoration tests |
+| Historical revision is newer than the retained log | Return the requested and latest revisions without changing the source service | exact-revision replay and controlled historical-fork tests |
 | Asset content hash mismatch | Consume no record or queue capacity | asset-store tests |
 | Truncated, malformed, over-limit, or unsafe-proxy GLB | Reject without panic or GPU upload; only approved unsupported classes may proxy | asset truncation and classification tests |
 | Renderer target/capability unavailable | Return a structured initialization error | renderer configuration/capability tests |
@@ -71,6 +72,16 @@ proof of who produced the bytes: SHA-256 detects accidental change but does not
 authenticate a writer. A header, version, bound, exact-length, frame, or digest
 failure rejects the complete envelope; do not trim a suffix or extract its
 replay payload manually.
+
+### Historical fork request
+
+Request only a revision retained by the source replay log. A newer revision
+returns a typed `ReplayRevisionError`; do not reinterpret that error as the
+latest available state. A successful historical point is a complete standalone
+replay prefix paired with the source renderer's current next frame identity.
+Restore it into a separate fresh service. The operation neither changes the
+source nor authorizes an in-place revert, automatic branch switch, or reuse of
+older frame identities.
 
 ### Renderer, readback, or device failure
 
