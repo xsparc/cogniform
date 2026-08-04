@@ -1,7 +1,8 @@
 # Deterministic hierarchy and replay
 
-Status: hierarchy, derived transforms, logical hashing, in-memory replay, and a
-portable recovery-point envelope are implemented through CF013.
+Status: hierarchy, derived transforms, logical hashing, in-memory replay, a
+portable recovery-point envelope, and exact-revision recovery forks are
+implemented through CF014.
 
 ## Hierarchy and transforms
 
@@ -51,6 +52,12 @@ the recorded apply path.
 
 `ReplayLog::verify` checks the complete in-memory sequence and hash chain.
 `ReplayLog::to_bytes` emits the portable version-one stream.
+`ReplayLog::to_bytes_through_revision` emits a complete standalone prefix
+ending at one retained revision. Revision zero is the valid header-only empty
+stream. Because every accepted patch advances the authoritative revision once,
+the requested revision selects an exact contiguous entry count. A revision
+newer than the retained log returns `ReplayRevisionError` with the requested
+and latest values rather than truncating or guessing.
 `ReplayLog::load_prefix` applies total, per-entry, count, and protocol limits
 before allocation or decoding and returns both:
 
@@ -83,3 +90,28 @@ protocol, hash-chain, world-transition, and frame-continuity validation before
 adapter selection. The envelope neither accepts a verified prefix nor performs
 filesystem I/O, automatic startup, encryption, or authentication. See
 [ADR 0013](../adr/0013-versioned-recovery-point-envelope.md).
+
+## Historical recovery forks
+
+`CogniformEngine::recovery_point_at_revision` and
+`LocalService::recovery_point_at_revision` combine an exact replay prefix with
+the source renderer's current next unreserved `FrameId`. Restoring that point
+creates a separate fresh service at the requested logical revision, with empty
+transient queues and the ordinary complete replay and frame validation.
+
+The current frame marker is intentional. A historical logical state does not
+authorize reuse of frame identities that the source may already have reserved
+or exposed after that revision. The fork resumes from the source's current
+frame frontier while its scene revision and replay chain resume from the chosen
+historical point. Capturing the point does not mutate the source world, replay
+log, renderer, or queues.
+
+The counters become branch-local after capture. If the source and restored fork
+both continue, each may independently issue the same future numeric `FrameId`;
+callers that compare concurrent branches must supply branch identity or other
+coordination.
+
+This contract is a caller-directed fork, not an in-place revert, live service
+swap, snapshot registry, retention policy, rollback-protection mechanism, or
+persistence or cross-branch frame-allocation layer. See
+[ADR 0014](../adr/0014-exact-revision-historical-recovery-forks.md).

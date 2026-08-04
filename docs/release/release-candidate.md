@@ -15,6 +15,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Deterministic replay | Pass | Canonical logical hash, chained entries, verified-prefix inspection, every-byte corruption injection |
 | Recovery envelope | Pass | Deterministic bounded v1 encoding, exact round trip, typed malformed-input rejection, and every-byte corruption injection |
 | Fresh-service restoration | Pass on validated profile | Complete replay and frame state restore revision/hash/query/idempotency and continue observation and append causality |
+| Historical recovery fork | Pass on validated profile | An exact retained revision restores into a separate fresh service, preserves the source, resumes from the source frame frontier, and continues query/observe/append causality |
 | Headless render | Pass on validated profile | No surface/window; Vulkan cube, GLB, readback pressure, renderer-drop retirement, and canonical scenario evidence |
 | Machine outputs | Pass on validated profile | Tolerant color/depth, exact stable entity ID, structured visibility, and quantized flat world-space normals following triangle winding |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
@@ -69,6 +70,9 @@ The GitHub release must be marked prerelease and state:
   production SLA, or semver-stable crates.io API;
 - recovery envelopes detect corruption but provide no encryption,
   authentication, freshness, or rollback protection;
+- historical recovery creates caller-coordinated fresh-service forks, not an
+  in-place revert, automatic branch manager, or global frame namespace across
+  concurrent branches;
 - normal output is flat and quantized, with no imported smoothing, normal maps,
   or tangent-space contract; unvalidated platforms/backends remain
   unsupported; and

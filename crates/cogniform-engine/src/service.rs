@@ -216,6 +216,21 @@ impl LocalService {
     pub fn recovery_point(&self) -> Result<EngineRecoveryPoint, LocalServiceError> {
         self.gateway.engine().recovery_point().map_err(Into::into)
     }
+
+    /// Captures an exact historical replay prefix for a fresh-service fork.
+    ///
+    /// The source service is unchanged. The returned point carries its current
+    /// next frame identity so a restored fork cannot reuse a frame issued
+    /// before capture. Concurrent branches remain caller-coordinated.
+    pub fn recovery_point_at_revision(
+        &self,
+        revision: SceneRevision,
+    ) -> Result<EngineRecoveryPoint, LocalServiceError> {
+        self.gateway
+            .engine()
+            .recovery_point_at_revision(revision)
+            .map_err(Into::into)
+    }
 }
 
 #[cfg(test)]

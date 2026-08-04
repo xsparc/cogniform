@@ -5,8 +5,8 @@ use cogniform_world::{AuthoritativeWorld, LogicalSceneHash, WorldConfig};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ReplayError, ReplayIntegrityError, ReplayIntegrityErrorKind, ReplayTailError,
-    ReplayTailErrorKind,
+    ReplayError, ReplayIntegrityError, ReplayIntegrityErrorKind, ReplayRevisionError,
+    ReplayTailError, ReplayTailErrorKind,
 };
 
 const REPLAY_HEADER: &[u8; 8] = b"CNFRPL1\n";
@@ -409,6 +409,43 @@ impl ReplayLog {
             entry.encode_into(&mut encoded);
         }
         encoded
+    }
+
+    /// Encodes the complete retained prefix ending at an exact scene revision.
+    ///
+    /// Revision zero produces the mandatory header with no entries. Retained
+    /// revisions are contiguous, so the revision also identifies the number of
+    /// entries in the returned independently valid replay stream.
+    pub fn to_bytes_through_revision(
+        &self,
+        revision: SceneRevision,
+    ) -> Result<Vec<u8>, ReplayRevisionError> {
+        let latest = self
+            .entries
+            .last()
+            .map_or(SceneRevision::INITIAL, ReplayEntry::new_revision);
+        if revision > latest {
+            return Err(ReplayRevisionError::new(revision, latest));
+        }
+
+        let entry_count = usize::try_from(revision.get())
+            .expect("a retained revision count is bounded by ReplayConfig");
+        let entries = &self.entries[..entry_count];
+        let encoded_bytes = entries
+            .iter()
+            .fold(REPLAY_HEADER.len() as u64, |total, entry| {
+                total
+                    .checked_add(entry.encoded_bytes())
+                    .expect("retained entries fit the configured replay byte bound")
+            });
+        let mut encoded = Vec::with_capacity(
+            usize::try_from(encoded_bytes).expect("configured log byte bound fits usize"),
+        );
+        encoded.extend_from_slice(REPLAY_HEADER);
+        for entry in entries {
+            entry.encode_into(&mut encoded);
+        }
+        Ok(encoded)
     }
 
     /// Loads and verifies the longest valid prefix of a bounded byte stream.

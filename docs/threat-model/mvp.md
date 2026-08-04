@@ -1,6 +1,7 @@
 # MVP threat model
 
-Status: reviewed for the local source-first candidate profile on 2026-08-02.
+Status: reviewed for the local source-first candidate profile on 2026-08-02
+and extended for CF014 historical recovery forks on 2026-08-04.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -12,7 +13,7 @@ separate transport and identity design violates the assumptions below.
 | Asset | Objective |
 |---|---|
 | Authoritative world | Only complete validated patches change state; stable IDs and revisions remain correct |
-| Accepted-event log and recovery point | Newly accepted patches stay complete, ordered, bounded, integrity checked, and replayable; replay bytes remain associated with frame-continuity state |
+| Accepted-event log and recovery point | Newly accepted patches stay complete, ordered, bounded, integrity checked, and replayable; complete or exact-revision replay bytes remain associated with non-reused frame-continuity state |
 | Observation causality | Payload, camera, frame, revision, and stable identity agree |
 | Asset state | Source identity is exact; malformed or oversized input cannot become decoded or GPU-resident state |
 | Host resources | CPU, memory, queues, GPU allocations, and waits stay within declared bounds |
@@ -60,6 +61,7 @@ Residual ratings assume the declared local single-user boundary.
 | Observation from an old camera or revision is accepted as current | High | Camera/frame/revision metadata, explicit staleness, source-ahead rejection, canonical scenario proof | Low |
 | Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |
 | Recovery replay bytes and frame marker are separated or accidentally changed | High | Single bounded versioned envelope, exact-length parsing, domain-separated SHA-256 digest, every-byte corruption rejection before replay allocation | Low for accidental corruption; authenticity remains caller-owned |
+| A historical fork reuses a frame identity issued before capture or mutates the live source | High | Exact contiguous replay prefixes are copied with the source's current next frame identity; controlled tests preserve source status/hash/bytes and prove query/observe/append continuation | Low for pre-capture reuse; future cross-branch identity and freshness remain caller-owned |
 | Scene text or replay data discloses caller secrets | High | No automatic logging, upload, persistence, or release; debug output is aggregate; operator warning and public-repo scan | Medium |
 | Native code or a procedure escapes its authority | High | Unsafe Rust forbidden; no native plugins or user shaders; procedures are pure compiled functions emitting ordinary patches | Low |
 | GPU driver/device failure corrupts authoritative world state | High | World commits precede only immutable extraction; renderer cannot mutate world; errors are typed; fresh-service restoration is documented | Medium |
@@ -90,6 +92,11 @@ use.
 - On replay tail failure, inspect only the verified prefix and preserve the
   rejected bytes for private diagnosis. Never adopt that prefix as successful
   `LocalService` recovery, skip an entry, or continue after the bad suffix.
+- Treat a historical recovery point as a new branch owned by the caller. Do not
+  present it as an in-place rollback of the source or infer freshness from its
+  envelope digest. If both services remain live, their independent counters may
+  issue equal future frame numbers; add branch identity or coordinate frame
+  allocation outside Cogniform.
 - On a repository secret finding, revoke or rotate first and coordinate history
   remediation privately. A later deletion does not remove public exposure.
 

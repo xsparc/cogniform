@@ -1,9 +1,9 @@
 # Validation and compatibility baseline
 
 Status: controlled CF009 evidence collected on 2026-08-02 and CF011 normal,
-CF012 restoration, plus CF013 recovery-envelope evidence collected on
-2026-08-04. This document names what was reproduced and what remains
-unsupported; it is not a promise for untested hardware.
+CF012 restoration, CF013 recovery-envelope, plus CF014 historical-fork
+evidence collected on 2026-08-04. This document names what was reproduced and
+what remains unsupported; it is not a promise for untested hardware.
 
 ## Compatibility profile
 
@@ -74,6 +74,28 @@ rejected a one-byte mutation at every envelope position and covered typed
 header, version, size, length, frame, and integrity failures. This is in-memory
 restoration evidence, not authentication, encryption, filesystem crash
 consistency, or automatic device-recreation evidence.
+
+## Controlled historical-fork command
+
+The following focused CF014 test passed in release mode on the validated
+Windows/Vulkan profile:
+
+```text
+cargo test --release -p cogniform-engine --test service_restore --locked --offline -- --ignored --exact historical_recovery_fork_restores_exact_revision_and_continues
+```
+
+It retained a revision-2 point after the source advanced to revision 3,
+confirmed the point used the source's current next frame identity, and proved
+capture left source status, logical hash, and full replay bytes unchanged. A
+newer revision returned the exact requested/latest typed error. After dropping
+the source, the point restored revision 2 with exact prefix bytes, logical and
+replayed hashes, query state, empty transient queues, and renderer revision;
+the fork then produced the expected next observation frame and appended a new
+revision 3 with matching live/replayed hash. CPU replay tests covered revision
+zero, every retained revision, repeatable prefix encoding, full-stream prefix
+relationships, and future-revision rejection. This is fresh-service branching
+evidence, not in-place revert, persistence, branch management, or rollback
+protection.
 
 ## Controlled CPU performance fixture
 

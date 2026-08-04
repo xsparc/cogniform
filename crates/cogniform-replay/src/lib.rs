@@ -11,7 +11,7 @@ mod recorded;
 
 pub use error::{
     RecordedApplyError, ReplayError, ReplayIntegrityError, ReplayIntegrityErrorKind,
-    ReplayTailError, ReplayTailErrorKind,
+    ReplayRevisionError, ReplayTailError, ReplayTailErrorKind,
 };
 pub use log::{
     ReplayConfig, ReplayConfigError, ReplayEntry, ReplayEntryHash, ReplayLoad, ReplayLog,

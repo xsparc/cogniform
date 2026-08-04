@@ -2,7 +2,8 @@
 
 Status: implemented by CF008 for offline in-process use; complete caller-owned
 in-memory restoration was added by CF012 and a portable bounded recovery-point
-envelope by CF013.
+envelope by CF013. CF014 adds exact-revision recovery points for fresh-service
+historical forks.
 
 `LocalService` composes one bounded `LocalGateway`, authoritative recorded
 world, headless renderer, and observation worker. It is a Rust API, not a
@@ -39,6 +40,7 @@ handle, renderer device, queue, staging buffer, or replay log.
 | `replayed_logical_hash` | Replay accepted events into a fresh world and hash the result |
 | `replay_bytes` | Copy the complete bounded version-one replay stream |
 | `recovery_point` | Capture complete replay bytes and the next unreserved renderer frame identity |
+| `recovery_point_at_revision` | Capture a complete exact-revision replay prefix with the source's current next frame identity |
 | `restore` | Create a fresh service from one complete validated recovery point |
 
 Patch and imagination admission preserves the gateway's `MustApply`,
@@ -98,6 +100,31 @@ the fresh gateway queue, but world-level idempotency returns the original
 receipt without mutation or another replay entry. Asset stores and renderer
 asset residency are separate and must be re-established by their owner.
 
+## Historical recovery forks
+
+`recovery_point_at_revision` captures the complete replay prefix through one
+retained revision. Revision zero is supported as the empty-world stream. A
+request newer than the current retained revision returns a typed error naming
+the requested and latest revisions. The source service is observationally
+unchanged: its world, full replay bytes, renderer, and transient queues remain
+in place.
+
+The point carries the source renderer's current next unreserved frame identity,
+not a frame inferred from the historical entry. Passing it to `restore`
+therefore creates a fresh logical fork at the historical revision without
+reusing a frame the source may already have reserved or exposed. The fork can
+query, observe, and append normally; subsequent entries form a new continuation
+from that exact prefix.
+
+Frame counters are independent after capture. Keeping the source and fork live
+can therefore produce the same future numeric frame identity in both branches.
+Callers comparing concurrent branches must add branch identity or coordinate
+frame allocation outside Cogniform.
+
+The API does not switch the live source, overwrite later history, retain a
+snapshot catalog, compare branch ancestry, or authenticate freshness. Callers
+must explicitly own and coordinate every fork.
+
 ## Known limitations
 
 - The boundary is local Rust only; there is no socket, wire compatibility
@@ -106,9 +133,11 @@ asset residency are separate and must be re-established by their owner.
   subscription stream, shutdown protocol, or automatic retry loop.
 - Observation payloads are owned vectors. Shared-memory leases and encoded
   delivery are deferred.
-- Recovery is into a fresh service from a complete in-memory point. Filesystem
-  persistence, automatic startup, snapshotting, in-place recovery, revert, and
-  log rotation are not implemented.
+- Recovery is into a fresh service from a complete in-memory point. Exact
+  retained revisions can seed separate historical forks, but filesystem
+  persistence, automatic startup, snapshot registries, in-place recovery or
+  revert, branch management, cross-branch frame allocation, and log rotation
+  are not implemented.
 - Asset stores, renderer asset upload, and pure procedures remain separate
   library APIs. The service does not fetch or resolve external assets.
 - The headless baseline supports controlled DX12 or Vulkan adapters. Browser,
@@ -116,6 +145,7 @@ asset residency are separate and must be re-established by their owner.
 
 See [ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md),
 [ADR 0012](../adr/0012-complete-in-memory-service-restoration.md),
-[ADR 0013](../adr/0013-versioned-recovery-point-envelope.md), the
+[ADR 0013](../adr/0013-versioned-recovery-point-envelope.md),
+[ADR 0014](../adr/0014-exact-revision-historical-recovery-forks.md), the
 [gateway guide](local-gateway-and-imagination.md), and the
 [canonical scenario](../getting-started/canonical-scenario.md).

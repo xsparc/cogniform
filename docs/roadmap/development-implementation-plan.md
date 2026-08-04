@@ -213,11 +213,37 @@ and release remain outside the slice. See
 [determinism and replay guide](../architecture/determinism-and-replay.md), and
 the [local service guide](../protocol/local-service.md).
 
+### PR 14 - CF014: Exact-revision historical recovery forks
+
+Outcome: a caller can select any retained exact revision and restore it as a
+separate fresh-service branch without mutating the source or reusing a frame
+identity issued before capture.
+
+Gate: revision zero and every retained revision encode as complete deterministic
+standalone replay streams; a newer revision returns a typed requested/latest
+error; capture preserves source status, hash, and full replay bytes; the point
+uses the source renderer's current next unreserved frame identity; and the
+restored fork reproduces exact revision/hash/query state before continuing
+observation and append causality.
+
+Implemented contract: `ReplayLog::to_bytes_through_revision` creates one
+complete exact-revision prefix. Engine and local-service capture wrap it in the
+existing recovery point with the current source frame frontier, and the
+existing restoration path validates and reconstructs a fresh branch. This is
+not an in-place revert, live source swap, snapshot registry, retention policy,
+branch manager, persistence layer, rollback-protection mechanism, asset
+restore, transient-work migration, cross-branch frame allocation, or release
+action. See
+[ADR 0014](../adr/0014-exact-revision-historical-recovery-forks.md), the
+[determinism and replay guide](../architecture/determinism-and-replay.md), and
+the [local service guide](../protocol/local-service.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
+  -> CF014
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -283,6 +309,9 @@ Validation expands with capability:
 - CF013: deterministic recovery-envelope round trip, every-byte corruption
   rejection, typed header/version/bound/length/frame/integrity failures, and
   controlled decode-before-restore continuation.
+- CF014: deterministic exact-revision prefixes, typed future-revision
+  rejection, source immutability, current-frame-frontier preservation, and
+  controlled historical query/observe/append continuation.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
