@@ -57,10 +57,10 @@ Residual ratings assume the declared local single-user boundary.
 | Queue or readback pressure creates hidden unbounded work | High | Fixed command, idempotency, asset, renderer, and observation capacities with typed rejection/drop/supersession; per-renderer retirement guard keeps final driver destruction off the caller's bounded read path | Low |
 | Renderer-local IDs escape as authoritative identity | High | Frame-local compact mapping, stable IDs in public observations, exact center-pixel tests | Low |
 | Observation from an old camera or revision is accepted as current | High | Camera/frame/revision metadata, explicit staleness, source-ahead rejection, canonical scenario proof | Low |
-| Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix loader, exact replay checks, every-byte corruption injection | Low |
+| Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |
 | Scene text or replay data discloses caller secrets | High | No automatic logging, upload, persistence, or release; debug output is aggregate; operator warning and public-repo scan | Medium |
 | Native code or a procedure escapes its authority | High | Unsafe Rust forbidden; no native plugins or user shaders; procedures are pure compiled functions emitting ordinary patches | Low |
-| GPU driver/device failure corrupts authoritative world state | High | World commits precede only immutable extraction; renderer cannot mutate world; errors are typed; process restart is documented | Medium |
+| GPU driver/device failure corrupts authoritative world state | High | World commits precede only immutable extraction; renderer cannot mutate world; errors are typed; fresh-service restoration is documented | Medium |
 | Dependency or workflow supply chain introduces unreviewed code | High | Exact lockfile, checked-in vendor sources, pinned action digest, read-only workflow permissions, cargo-deny policy | Medium |
 | Credential or private path enters the public repository | High | Local and CI Git-object scan, redacted findings, GitHub secret scanning/push protection, staged scan procedure | Low |
 | Local API is deployed as a remote or multi-tenant security boundary | Critical | Explicitly unsupported; no listener/auth/session surface exists | Not applicable inside scope; Critical if assumption is violated |
@@ -79,12 +79,13 @@ use.
   text. Cogniform validates structure and bounds; it is not a secret sanitizer.
 - Stop admitting commands when capacity errors repeat. Retrying without a
   consumer or scheduling change is an availability attack on the same process.
-- On renderer/device failure, stop the affected service instance, retain replay
-  bytes only in an operator-approved location, and restart from a verified
-  source. In-process device recovery is not implemented.
-- On replay tail failure, use only the verified prefix and preserve the rejected
-  bytes for private diagnosis. Never skip an entry or continue after the bad
-  suffix.
+- On renderer/device failure, stop the affected service instance. If a complete
+  recovery point was captured, retain both parts only in an operator-approved
+  location and restore a fresh service. In-place or automatic device recreation
+  is not implemented.
+- On replay tail failure, inspect only the verified prefix and preserve the
+  rejected bytes for private diagnosis. Never adopt that prefix as successful
+  `LocalService` recovery, skip an entry, or continue after the bad suffix.
 - On a repository secret finding, revoke or rotate first and coordinate history
   remediation privately. A later deletion does not remove public exposure.
 

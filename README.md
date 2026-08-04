@@ -15,9 +15,11 @@ scene revision that produced it.
 > deterministic primitive imagination compiler are also available. The current
 > asset baseline adds content-addressed GLB geometry, bounded caller-driven CPU
 > decode and GPU upload, plus pure seeded cuboid-grid procedures. A bounded
-> local typed service and CLI now run the canonical unattended MVP flow and
-> verify replay to the same logical hash. Remote transport, persistence, and
-> release packaging have not landed yet. The current hardening baseline adds a
+> local typed service and CLI now run the canonical unattended MVP flow,
+> verify replay to the same logical hash, and restore a fresh service from a
+> complete caller-owned in-memory recovery point. Remote transport, durable
+> persistence, and release packaging have not landed yet. The current
+> hardening baseline adds a
 > threat model, fault/recovery matrix, controlled compatibility and performance
 > evidence, and a source-first release-candidate checklist. No release has been
 > published.

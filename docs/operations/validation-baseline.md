@@ -1,8 +1,9 @@
 # Validation and compatibility baseline
 
-Status: controlled CF009 evidence collected on 2026-08-02 and CF011 normal
-evidence collected on 2026-08-04. This document names what was reproduced and
-what remains unsupported; it is not a promise for untested hardware.
+Status: controlled CF009 evidence collected on 2026-08-02 and CF011 normal plus
+CF012 restoration evidence collected on 2026-08-04. This document names what
+was reproduced and what remains unsupported; it is not a promise for untested
+hardware.
 
 ## Compatibility profile
 
@@ -46,12 +47,30 @@ cargo run --release -p cogniform-cli --locked --offline -- scenario
 
 The renderer suite passed the built-in cube, bounded four-buffer readback
 pressure, renderer-drop retirement, and GLB asset winding fixture. The engine
-suite passed gateway/idempotency, normal-aware revision causality, and the
-canonical scenario. The scenario selected Vulkan, committed revision 2,
+suite passed gateway/idempotency, normal-aware revision causality, complete
+service restoration, and the canonical scenario. The scenario selected Vulkan,
+committed revision 2,
 reported frames 1-3, found the table at the center color/entity-ID pixels,
 reported 72 visible table pixels, and replayed two entries to logical hash
 `db23b22d98da433d6050c0cd863f3a736832c7bae2ca674cdbee3dae8ed25106`.
 Pixel coverage is visual evidence for this adapter, not a cross-GPU exact value.
+
+## Controlled service-restoration command
+
+The following focused CF012 test passed in release mode on the validated
+Windows/Vulkan profile:
+
+```text
+cargo test --release -p cogniform-engine --test service_restore --locked --offline -- --ignored --exact complete_recovery_restores_queries_observations_and_continuation
+```
+
+It captured state after revision 3, rejected a frame marker behind replay
+evidence, restored exact replay bytes and logical hash into a fresh service,
+started all transient queues empty, reproduced an exact query, returned an old
+patch as an idempotent replay, produced the next observation frame, appended a
+new revision 4 entry, and ended with matching live and replayed hashes. This is
+in-memory restoration evidence, not filesystem crash-consistency or automatic
+device-recreation evidence.
 
 ## Controlled CPU performance fixture
 

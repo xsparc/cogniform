@@ -2,7 +2,7 @@ use core::fmt;
 
 use cogniform_compiler::CompileError;
 use cogniform_protocol::{
-    CodecError, IdempotencyKey, SceneRevision, StableEntityId, ValidationError,
+    CodecError, FrameId, IdempotencyKey, SceneRevision, StableEntityId, ValidationError,
 };
 use cogniform_renderer::{RendererError, SceneUpdateError};
 use cogniform_replay::{RecordedApplyError, ReplayConfigError, ReplayError};
@@ -15,6 +15,13 @@ pub enum EngineError {
     InvalidConfig {
         /// Stable configuration reason.
         reason: &'static str,
+    },
+    /// A recovery point would restart before a frame promised by its replay log.
+    RecoveryFrameBehindReplay {
+        /// Next frame identity supplied by the recovery point.
+        next_frame_id: FrameId,
+        /// Greatest estimated-visible frame retained by the replay log.
+        recorded_frame_id: FrameId,
     },
     /// Replay bounds cannot represent an engine-owned accepted-event log.
     ReplayConfig(ReplayConfigError),
@@ -40,6 +47,15 @@ impl fmt::Display for EngineError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidConfig { reason } => write!(formatter, "invalid engine config: {reason}"),
+            Self::RecoveryFrameBehindReplay {
+                next_frame_id,
+                recorded_frame_id,
+            } => write!(
+                formatter,
+                "recovery next frame {} is behind recorded estimated frame {}",
+                next_frame_id.get(),
+                recorded_frame_id.get()
+            ),
             Self::ReplayConfig(error) => write!(formatter, "invalid replay config: {error}"),
             Self::ReplayRecord(error) => {
                 write!(formatter, "accepted-event recording failed: {error}")
@@ -58,7 +74,7 @@ impl fmt::Display for EngineError {
 impl std::error::Error for EngineError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::InvalidConfig { .. } => None,
+            Self::InvalidConfig { .. } | Self::RecoveryFrameBehindReplay { .. } => None,
             Self::ReplayConfig(error) => Some(error),
             Self::ReplayRecord(error) => Some(error),
             Self::Replay(error) => Some(error),

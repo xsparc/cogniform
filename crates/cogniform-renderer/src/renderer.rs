@@ -147,6 +147,21 @@ impl std::fmt::Debug for HeadlessRenderer {
 impl HeadlessRenderer {
     /// Negotiates an adapter and device without creating a window or surface.
     pub async fn new(config: RendererConfig) -> Result<Self, RendererError> {
+        Self::new_with_next_frame_id(
+            config,
+            FrameId::new(1).expect("initial frame identity is non-zero"),
+        )
+        .await
+    }
+
+    /// Negotiates a headless renderer with an explicit next frame identity.
+    ///
+    /// This constructor supports composition roots that restore frame-sequence
+    /// causality from a previously captured engine recovery point.
+    pub async fn new_with_next_frame_id(
+        config: RendererConfig,
+        next_frame_id: FrameId,
+    ) -> Result<Self, RendererError> {
         validate_config(&config)?;
         let readback_layout = ReadbackLayout::new(config.width, config.height)?;
         let adapter = request_adapter(config.adapter_preference).await?;
@@ -176,7 +191,7 @@ impl HeadlessRenderer {
             readback_layout,
             readback_pool,
             scene,
-            next_frame_id: 1,
+            next_frame_id: next_frame_id.get(),
             gpu_retirement,
         })
     }

@@ -147,6 +147,42 @@ fn accepted_events_round_trip_and_replay_to_the_exact_hash() {
 }
 
 #[test]
+fn restored_recorded_world_retains_evidence_and_appends_the_next_entry() {
+    let original = record_three();
+    let original_bytes = original.log().to_bytes();
+    let original_hash = original.world().logical_hash().unwrap();
+    let original_snapshot = original.world().snapshot().unwrap();
+    let loaded = ReplayLog::load_prefix(
+        &original_bytes,
+        ReplayConfig::default(),
+        &WorldConfig::default().runtime_limits,
+    );
+    let (log, tail) = loaded.into_parts();
+    assert_eq!(tail, None);
+
+    let mut restored = RecordedWorld::restore(WorldConfig::default(), log).unwrap();
+    assert_eq!(restored.log().to_bytes(), original_bytes);
+    assert_eq!(restored.world().logical_hash().unwrap(), original_hash);
+    assert_eq!(restored.world().snapshot().unwrap(), original_snapshot);
+
+    restored
+        .apply_patch(
+            &patch(restored.world().revision(), 4, vec![create(id(3))]),
+            FrameId::new(40).unwrap(),
+        )
+        .unwrap();
+    let continued_bytes = restored.log().to_bytes();
+    assert!(continued_bytes.starts_with(&original_bytes));
+    let verification = restored.log().verify().unwrap();
+    assert_eq!(verification.entry_count(), 4);
+    assert_eq!(verification.final_revision(), SceneRevision::new(4));
+    assert_eq!(
+        verification.final_scene_hash(),
+        Some(restored.world().logical_hash().unwrap())
+    );
+}
+
+#[test]
 fn repeated_recording_is_byte_exact() {
     assert_eq!(
         record_three().log().to_bytes(),

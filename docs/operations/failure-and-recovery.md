@@ -17,6 +17,7 @@ store; operators compose those concerns outside the MVP.
 | Replay entry or total-log capacity exhausted | Reject before world mutation | `replay_capacity_rejects_before_world_mutation` |
 | Replay byte truncated, reordered, removed, or modified | Return only the longest verified prefix and a typed tail error | replay contract tests |
 | Any one replay byte flipped | Reject before the affected entry; verify and replay only the intact prefix | `every_single_byte_corruption_stops_before_the_unverified_entry` |
+| Recovery stream has any invalid tail or a frame marker behind replay evidence | Reject the complete recovery point before GPU initialization; never adopt only the verified prefix | recovery unit and controlled service-restoration tests |
 | Asset content hash mismatch | Consume no record or queue capacity | asset-store tests |
 | Truncated, malformed, over-limit, or unsafe-proxy GLB | Reject without panic or GPU upload; only approved unsupported classes may proxy | asset truncation and classification tests |
 | Renderer target/capability unavailable | Return a structured initialization error | renderer configuration/capability tests |
@@ -57,20 +58,21 @@ unless that changes the intended transaction semantics.
 ### Replay tail failure
 
 Preserve the source bytes privately. `ReplayLog::load_prefix` returns the
-verified prefix, failure offset, verified-entry count, and stable failure kind.
-Only that prefix may be inspected or replayed. Never remove, reorder, or skip
-the bad event to continue the same chain. Recovery into a new `LocalService` is
-not implemented; embedders may replay through the lower-level recorded-world
-API or restart from their own reviewed composition.
+verified prefix, failure offset, verified-entry count, and stable failure kind
+for diagnosis. Only that prefix may be inspected through the lower-level API.
+Never remove, reorder, or skip the bad event to continue the same chain.
+`LocalService::restore` accepts only a complete valid recovery point and rejects
+the entire point before GPU initialization when any tail is invalid.
 
 ### Renderer, readback, or device failure
 
-Stop admitting work to the affected instance and retain its accepted replay
-bytes only if the caller has an approved persistence location. Drop the service
-to release the device and worker channels, then start a new process or instance
-and re-establish state through a verified application-specific recovery path.
-The MVP does not promise in-process device recreation, automatic command retry,
-or observation continuity across restart.
+Stop admitting work to the affected instance. If a complete
+`EngineRecoveryPoint` was captured while the source renderer was available,
+retain it only in an approved location, drop the service to release the device
+and worker channels, and restore a fresh instance. Re-establish asset residency
+separately. The MVP does not promise in-place device recreation, automatic
+command retry, queued-result recovery, or observation continuity across
+restart.
 
 ### Secret or private-data finding
 

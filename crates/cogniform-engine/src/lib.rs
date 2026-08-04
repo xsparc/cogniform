@@ -15,7 +15,7 @@ mod scenario;
 mod service;
 
 pub use cogniform_renderer::AdapterSummary;
-pub use engine::{CogniformEngine, EngineConfig};
+pub use engine::{CogniformEngine, EngineConfig, EngineRecoveryPoint};
 pub use error::{EngineError, GatewayError, LocalServiceError, ObservationError};
 pub use gateway::{
     GatewayAdmission, GatewayCommand, GatewayConfig, GatewayQueueStats, GatewayResponse,

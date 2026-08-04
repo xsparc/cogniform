@@ -30,6 +30,20 @@ impl RecordedWorld {
         })
     }
 
+    /// Reconstructs authoritative state from one complete verified replay log.
+    ///
+    /// The supplied log remains the append-only evidence for later accepted
+    /// patches. Callers that loaded bytes must reject any unverified tail before
+    /// invoking this method.
+    pub fn restore(world_config: WorldConfig, log: ReplayLog) -> Result<Self, ReplayError> {
+        let world = log.replay(world_config)?;
+        Ok(Self {
+            world,
+            world_config,
+            log,
+        })
+    }
+
     /// Returns the authoritative world through a read-only reference.
     #[must_use]
     pub const fn world(&self) -> &AuthoritativeWorld {

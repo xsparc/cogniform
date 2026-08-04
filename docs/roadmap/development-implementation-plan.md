@@ -165,11 +165,36 @@ higher-precision targets, remote encoding, and release publication remain
 separate work. See
 [ADR 0011](../adr/0011-quantized-world-space-normal-observations.md).
 
+### PR 12 - CF012: Complete verified local-service restoration
+
+Outcome: a caller can capture the bounded in-memory state needed to restore a
+fresh local service without losing accepted-event, logical-world, renderer
+revision, idempotency, or frame causality.
+
+Gate: complete replay bytes and the source renderer's next frame identity
+restore the same logical hash, revision, exact replay chain, query results, and
+next observation frame; a prior patch remains idempotent; a new patch appends
+the next revision; malformed, truncated, noncanonical, integrity-invalid,
+over-limit, or frame-inconsistent input fails before GPU initialization; and
+transient queues start empty.
+
+Implemented contract: `EngineRecoveryPoint` captures complete replay bytes and
+the next unreserved frame identity. Restoration verifies and replays the whole
+stream before GPU initialization, rejects verified-prefix-only adoption,
+synchronizes one final-state extraction into a fresh renderer, retains the log
+for append continuation, and deliberately resets gateway and observation
+queues. Storage, atomic persistence, assets, automatic startup, device
+recreation, snapshots, revert, and log rotation remain caller or future
+concerns. See
+[ADR 0012](../adr/0012-complete-in-memory-service-restoration.md), the
+[local service guide](../protocol/local-service.md), and the
+[failure guide](../operations/failure-and-recovery.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
-  -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011
+  -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -229,6 +254,9 @@ Validation expands with capability:
 - CF011: additive observation contracts, normal decode boundaries, controlled
   winding/tolerance probes, and regression coverage for pooled readback and
   causality.
+- CF012: complete-stream rejection, restored idempotency/query/replay
+  continuation, empty transient queues, and controlled renderer frame
+  continuity.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
