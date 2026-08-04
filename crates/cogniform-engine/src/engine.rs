@@ -1,9 +1,12 @@
 use core::num::NonZeroU32;
 
+use cogniform_assets::AssetUploadJob;
 use cogniform_protocol::{
     ApplyReceipt, ApplyStatus, FrameId, RuntimeLimits, ScenePatch, SceneRevision,
 };
-use cogniform_renderer::{HeadlessRenderer, RendererConfig};
+use cogniform_renderer::{
+    AssetUploadAdmission, AssetUploadOutcome, HeadlessRenderer, RendererAssetStats, RendererConfig,
+};
 use cogniform_replay::{
     RecordedApplyError, RecordedWorld, ReplayConfig, ReplayError, ReplayLog, ReplayVerification,
 };
@@ -143,6 +146,28 @@ impl CogniformEngine {
     #[must_use]
     pub const fn renderer(&self) -> &HeadlessRenderer {
         &self.renderer
+    }
+
+    /// Reserves bounded renderer capacity for one immutable decoded asset mesh.
+    ///
+    /// The renderer remains the sole owner of its upload queue and GPU state;
+    /// callers receive only typed admission and occupancy values.
+    pub fn enqueue_asset_upload(
+        &mut self,
+        job: AssetUploadJob,
+    ) -> Result<AssetUploadAdmission, EngineError> {
+        self.renderer.enqueue_asset_upload(job).map_err(Into::into)
+    }
+
+    /// Processes at most one renderer-owned asset upload.
+    pub fn process_next_asset_upload(&mut self) -> Option<AssetUploadOutcome> {
+        self.renderer.process_next_asset_upload()
+    }
+
+    /// Returns bounded renderer asset occupancy without exposing GPU handles.
+    #[must_use]
+    pub fn renderer_asset_stats(&self) -> RendererAssetStats {
+        self.renderer.asset_stats()
     }
 
     /// Applies one atomic patch and immediately consumes its compact extraction.

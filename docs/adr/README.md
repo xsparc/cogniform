@@ -20,5 +20,6 @@ earlier one and links the history.
 | [0012](0012-complete-in-memory-service-restoration.md) | Accepted | Restore a fresh bounded local service from complete verified replay and frame-continuity state |
 | [0013](0013-versioned-recovery-point-envelope.md) | Accepted | Bind replay and frame-continuity state in one bounded integrity-protected portable envelope |
 | [0014](0014-exact-revision-historical-recovery-forks.md) | Accepted | Create fresh-service historical forks from exact retained revisions without source mutation or pre-capture frame reuse |
+| [0015](0015-service-owned-asset-resolution-and-rehydration.md) | Accepted | Compose bounded asset resolution into the local service with explicit post-recovery rehydration |
 
 New records use four sections: context, decision, consequences, and status.

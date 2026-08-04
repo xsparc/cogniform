@@ -21,6 +21,8 @@ release yet; the current workspace version remains `0.0.0`.
   cuboid-grid procedures;
 - bounded content-addressed GLB admission, CPU decode, renderer upload, and
   explicit unsupported/proxy policy;
+- service-owned asset admission, explicit single-item CPU/GPU processing,
+  aggregate residency status, and exact-hash post-recovery rehydration;
 - local typed service and unattended room/table/light/camera scenario;
 - complete verified in-memory local-service restoration with retained replay,
   logical state, idempotency, renderer revision, and frame continuity;
@@ -44,7 +46,7 @@ release yet; the current workspace version remains `0.0.0`.
   with no smooth imported normals, normal maps, or tangent space; the GLB
   subset excludes textures, external buffers, compression, scene traversal,
   and most vertex attributes;
-- recovery points do not include queued commands, observations, asset
+- recovery points do not include queued commands, observations, asset bytes or
   residency, storage, or automatic startup; their envelopes are not encrypted
   or authenticated; historical recovery creates a separate fresh service, not
   an in-place revert, and future frame identity across concurrently live

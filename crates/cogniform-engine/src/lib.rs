@@ -1,8 +1,10 @@
 //! Composition boundary for Cogniform's world, render, and observation domains.
 //!
 //! The engine applies world transactions, forwards compact immutable render
-//! extractions, submits revision-linked frames, and completes observations on
-//! a bounded worker path. It exposes no mutable ECS or GPU handle.
+//! extractions and asset-upload values, submits revision-linked frames, and
+//! completes observations on a bounded worker path. The local service also
+//! owns caller-driven bounded asset ingestion. No API exposes a mutable ECS or
+//! GPU handle.
 
 #![forbid(unsafe_code)]
 
@@ -15,7 +17,14 @@ mod recovery;
 mod scenario;
 mod service;
 
-pub use cogniform_renderer::AdapterSummary;
+pub use cogniform_assets::{
+    AssetAdmission, AssetDiagnostic, AssetDiagnosticCode, AssetError, AssetLimits, AssetMeshKey,
+    AssetProcessOutcome, AssetRecord, AssetState, AssetStoreConfig, AssetStoreStats,
+    AssetUploadJob, AssetVertex, UnsupportedAssetPolicy, content_hash,
+};
+pub use cogniform_renderer::{
+    AdapterSummary, AssetUploadAdmission, AssetUploadOutcome, RendererAssetStats, RendererError,
+};
 pub use engine::{CogniformEngine, EngineConfig};
 pub use error::{EngineError, GatewayError, LocalServiceError, ObservationError};
 pub use gateway::{
@@ -34,4 +43,4 @@ pub use scenario::{
     CanonicalScenarioConfig, CanonicalScenarioError, CanonicalScenarioReport, ObservationEvidence,
     run_canonical_scenario,
 };
-pub use service::{LocalService, LocalServiceConfig, LocalServiceStatus};
+pub use service::{LocalAssetStatus, LocalService, LocalServiceConfig, LocalServiceStatus};

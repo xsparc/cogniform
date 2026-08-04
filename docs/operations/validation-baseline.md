@@ -1,9 +1,10 @@
 # Validation and compatibility baseline
 
 Status: controlled CF009 evidence collected on 2026-08-02 and CF011 normal,
-CF012 restoration, CF013 recovery-envelope, plus CF014 historical-fork
-evidence collected on 2026-08-04. This document names what was reproduced and
-what remains unsupported; it is not a promise for untested hardware.
+CF012 restoration, CF013 recovery-envelope, CF014 historical-fork, plus CF015
+service-asset rehydration evidence collected on 2026-08-04. This document names
+what was reproduced and what remains unsupported; it is not a promise for
+untested hardware.
 
 ## Compatibility profile
 
@@ -96,6 +97,25 @@ zero, every retained revision, repeatable prefix encoding, full-stream prefix
 relationships, and future-revision rejection. This is fresh-service branching
 evidence, not in-place revert, persistence, branch management, or rollback
 protection.
+
+## Controlled service-asset command
+
+The following focused CF015 test passed in release mode on the validated
+Windows/Vulkan profile:
+
+```text
+cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
+```
+
+It proved hash-mismatch admission consumed no record or queue capacity; one
+checked triangle GLB moved through explicit one-item CPU import and GPU upload;
+and its exact stable entity identity rendered through `LocalService`. A fresh
+restore retained the logical asset reference, replay bytes, revision, and hash
+but began with empty CPU/GPU asset state. Observation then returned the exact
+missing entity and mesh key. Reimporting the same bytes and uploading the mesh
+restored the observation without a world mutation or replay change. This is
+caller-supplied in-memory rehydration evidence, not filesystem/network
+resolution, persistence, eviction, automatic startup, or device recreation.
 
 ## Controlled CPU performance fixture
 

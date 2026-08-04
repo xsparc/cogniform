@@ -12,6 +12,7 @@ publish = false
 workspace = true
 
 [dependencies]
+cogniform-assets.workspace = true
 cogniform-compiler.workspace = true
 cogniform-protocol.workspace = true
 cogniform-renderer.workspace = true
