@@ -3,20 +3,24 @@
 Status: implemented by CF008 for offline in-process use; complete caller-owned
 in-memory restoration was added by CF012 and a portable bounded recovery-point
 envelope by CF013. CF014 adds exact-revision recovery points for fresh-service
-historical forks.
+historical forks. CF015 adds service-owned bounded asset resolution and
+explicit recovery rehydration.
 
 `LocalService` composes one bounded `LocalGateway`, authoritative recorded
-world, headless renderer, and observation worker. It is a Rust API, not a
-network listener or daemon. No method performs authentication, remote I/O,
-filesystem persistence, deployment, model access, or a paid service call.
+world, service-owned asset store, headless renderer, and observation worker. It
+is a Rust API, not a network listener or daemon. No method performs
+authentication, remote I/O, filesystem persistence, deployment, model access,
+or a paid service call.
 
 ## Lifecycle and configuration
 
-`LocalServiceConfig` contains an `EngineConfig` and `GatewayConfig`.
+`LocalServiceConfig` contains an `EngineConfig`, `GatewayConfig`, and
+`AssetStoreConfig`.
 `LocalServiceConfig::new(width, height)` selects the existing bounded defaults
 for an offscreen target. Initialization validates replay, world, renderer,
 observation, command, and idempotency capacities before adapter/device
-allocation.
+allocation; asset bounds are structurally non-zero typed values and remain
+independent from renderer residency bounds.
 Renderer initialization is asynchronous because adapter/device discovery is
 asynchronous; steady-state service methods are caller-driven.
 
@@ -28,6 +32,12 @@ handle, renderer device, queue, staging buffer, or replay log.
 | Method | Behavior |
 |---|---|
 | `adapter` | Return the backend-neutral selected adapter summary for diagnostics |
+| `enqueue_asset_source` | Verify exact source identity and admit bytes to the bounded import queue |
+| `process_next_asset_import` | Decode at most one queued source into service-owned CPU meshes |
+| `asset_record` | Return one immutable lifecycle record without source bytes |
+| `enqueue_asset_upload` | Create an immutable ready-mesh job and reserve renderer capacity |
+| `process_next_asset_upload` | Upload at most one renderer-owned queued mesh |
+| `asset_status` | Return aggregate CPU-store and renderer-residency counters |
 | `submit_patch` | Validate and admit one explicit patch under its delivery semantic |
 | `submit_imagination` | Validate and admit one deterministic primitive imagination |
 | `process_next` | Compile/apply at most one queued mutating command |
@@ -94,11 +104,28 @@ final-state extraction to a fresh renderer, and resumes at the captured frame
 identity. A marker behind any replay-recorded estimated-visible frame is
 rejected.
 
-Command queues, cached gateway responses, outstanding observations, and
-readback work start empty. Resubmitting an accepted patch may therefore enter
+Command queues, cached gateway responses, outstanding observations, readback
+work, asset records/imports, and renderer asset residency start empty.
+Resubmitting an accepted patch may therefore enter
 the fresh gateway queue, but world-level idempotency returns the original
-receipt without mutation or another replay entry. Asset stores and renderer
-asset residency are separate and must be re-established by their owner.
+receipt without mutation or another replay entry. Logical asset references do
+restore because they are ordinary world components. Until their exact bytes
+are admitted, imported, and uploaded again, a dependent observation returns
+typed `AssetUnavailable`. Rehydration changes neither world revision nor
+replay state.
+
+## Asset ownership
+
+Asset admission checks the supplied SHA-256 identity before consuming service
+capacity. Import and upload are separate caller-driven, single-item steps;
+patch processing, frame submission, initialization, and recovery do not perform
+either step. `LocalService` owns decoded CPU records, the renderer owns upload
+reservations and GPU meshes, and `CogniformEngine` passes only immutable upload
+jobs between them. Public status and records contain no source bytes, ECS
+handles, device handles, queues, or GPU buffers.
+
+The service does not locate content by hash. Filesystem/network fetching,
+durable caches, eviction, retries, and scheduling remain caller concerns.
 
 ## Historical recovery forks
 
@@ -138,14 +165,16 @@ must explicitly own and coordinate every fork.
   persistence, automatic startup, snapshot registries, in-place recovery or
   revert, branch management, cross-branch frame allocation, and log rotation
   are not implemented.
-- Asset stores, renderer asset upload, and pure procedures remain separate
-  library APIs. The service does not fetch or resolve external assets.
+- Pure procedures remain a separate library API. The service accepts
+  caller-supplied exact-hash asset bytes but does not fetch external assets,
+  persist them, evict them, or restore their residency automatically.
 - The headless baseline supports controlled DX12 or Vulkan adapters. Browser,
   Metal, OpenGL, and a hosted-GPU CI promise are outside the current contract.
 
 See [ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md),
 [ADR 0012](../adr/0012-complete-in-memory-service-restoration.md),
 [ADR 0013](../adr/0013-versioned-recovery-point-envelope.md),
-[ADR 0014](../adr/0014-exact-revision-historical-recovery-forks.md), the
+[ADR 0014](../adr/0014-exact-revision-historical-recovery-forks.md),
+[ADR 0015](../adr/0015-service-owned-asset-resolution-and-rehydration.md), the
 [gateway guide](local-gateway-and-imagination.md), and the
 [canonical scenario](../getting-started/canonical-scenario.md).

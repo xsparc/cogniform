@@ -184,7 +184,7 @@ GPU layouts are explicit and asserted. `bytemuck::Pod` is used only for types wi
 
 ### 4.2 Assets
 
-Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset. Decoders verify declared and decoded sizes before allocation. CPU decoding and preprocessing happen off the render domain; GPU upload jobs are bounded. Unsupported extensions produce structured diagnostics or approved proxies.
+Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset. Decoders verify declared and decoded sizes before allocation. The local service owns bounded CPU asset state and explicitly forwards immutable upload jobs into renderer-owned residency; neither patches nor frames perform implicit asset work. Recovery preserves logical content references but starts CPU and GPU asset state empty, so callers must rehydrate exact matching bytes before dependent rendering resumes. Unsupported extensions produce structured diagnostics or approved proxies.
 
 USD remains an offline authoring boundary. KTX2, mesh optimization, spatial acceleration, and shared-memory delivery are later measured additions rather than foundation dependencies.
 
@@ -248,6 +248,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Asset safety | Hash mismatch, oversized decode, and unsupported features fail with structured diagnostics |
+| Asset resolution | The local service explicitly imports and uploads bounded content-addressed meshes; recovered logical references remain unavailable until exact-hash rehydration without another world mutation |
 | End to end | Canonical room/table/light/camera scenario passes unattended |
 
 ## 10. Open decisions

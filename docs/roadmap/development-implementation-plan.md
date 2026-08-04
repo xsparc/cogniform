@@ -238,12 +238,36 @@ action. See
 [determinism and replay guide](../architecture/determinism-and-replay.md), and
 the [local service guide](../protocol/local-service.md).
 
+### PR 15 - CF015: Local-service asset resolution and rehydration
+
+Outcome: the local typed service owns bounded asset ingestion and drives
+renderer residency through narrow explicit methods, while logical recovery
+preserves content references and requires exact-hash rehydration.
+
+Gate: a hash mismatch consumes no service asset capacity; one explicit call
+processes at most one CPU import or GPU upload; aggregate status exposes only
+bounded counters; a checked triangle GLB renders with its exact stable entity
+identity; fresh and restored services start with empty CPU/GPU asset state; a
+restored logical reference fails with its exact missing mesh key until the same
+hash is reimported and uploaded; and rehydration changes no world revision,
+logical hash, or replay bytes.
+
+Implemented contract: `LocalServiceConfig` bounds a service-owned
+`AssetStore`; `LocalService` exposes source admission, import processing,
+immutable records, upload admission/processing, and aggregate asset status;
+and `CogniformEngine` forwards immutable upload jobs without exposing renderer
+handles. No path performs implicit decoding, upload, external fetching, or
+asset persistence. See
+[ADR 0015](../adr/0015-service-owned-asset-resolution-and-rehydration.md), the
+[GLB asset guide](../assets/glb-subset.md), and the
+[local service guide](../protocol/local-service.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
-  -> CF014
+  -> CF014 -> CF015
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -312,6 +336,9 @@ Validation expands with capability:
 - CF014: deterministic exact-revision prefixes, typed future-revision
   rejection, source immutability, current-frame-frontier preservation, and
   controlled historical query/observe/append continuation.
+- CF015: exact-hash service admission, explicit single-item import/upload,
+  stable-identity GLB observation, empty recovered asset state, typed missing
+  residency, and revision/hash/replay-preserving rehydration.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

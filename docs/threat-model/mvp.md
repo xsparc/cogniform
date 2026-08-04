@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended for CF014 historical recovery forks on 2026-08-04.
+and extended through CF015 service-owned asset rehydration on 2026-08-04.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -15,7 +15,7 @@ separate transport and identity design violates the assumptions below.
 | Authoritative world | Only complete validated patches change state; stable IDs and revisions remain correct |
 | Accepted-event log and recovery point | Newly accepted patches stay complete, ordered, bounded, integrity checked, and replayable; complete or exact-revision replay bytes remain associated with non-reused frame-continuity state |
 | Observation causality | Payload, camera, frame, revision, and stable identity agree |
-| Asset state | Source identity is exact; malformed or oversized input cannot become decoded or GPU-resident state |
+| Asset state | Source identity is exact; malformed or oversized input cannot become decoded or GPU-resident state; recovered references cannot substitute different bytes |
 | Host resources | CPU, memory, queues, GPU allocations, and waits stay within declared bounds |
 | Process and GPU | Backend failures return controlled errors and do not grant access to world mutation |
 | Repository and release | No credentials, private workflow state, paid calls, or unreviewed artifacts enter public history |
@@ -53,7 +53,7 @@ Residual ratings assume the declared local single-user boundary.
 | Threat | Inherent risk | Controls and evidence | Residual |
 |---|---|---|---|
 | Oversized or deeply nested messages exhaust CPU or memory | High | Pre-decode byte/nesting caps, bounded collections and budgets, fail-before-mutation tests | Low |
-| Malformed or adversarial GLB allocates excessively or reaches GPU state | High | Exact content hash, source/decoded/count limits, strict subset, explicit processing, truncation corpus, unsafe proxy exclusions | Medium |
+| Malformed, substituted, or adversarial GLB allocates excessively or reaches GPU state | High | Service-owned exact-hash admission, source/decoded/count limits, strict subset, explicit one-item processing, empty recovery residency, truncation corpus, unsafe proxy exclusions | Medium |
 | Stale, conflicting, or partially invalid patch mutates part of the world | High | Exact base revision, complete preflight plan, atomic commit, invariant/property tests | Low |
 | Idempotency-key reuse duplicates or substitutes work | High | Retained canonical command fingerprint, transaction identity, conflict error, exact replayed receipt | Low |
 | Queue or readback pressure creates hidden unbounded work | High | Fixed command, idempotency, asset, renderer, and observation capacities with typed rejection/drop/supersession; per-renderer retirement guard keeps final driver destruction off the caller's bounded read path | Low |
@@ -97,6 +97,10 @@ use.
   envelope digest. If both services remain live, their independent counters may
   issue equal future frame numbers; add branch identity or coordinate frame
   allocation outside Cogniform.
+- Rehydrate a recovered asset reference only from caller-approved bytes whose
+  exact hash matches the retained key. `AssetUnavailable` is not permission for
+  Cogniform to discover or download content, and substituting another hash
+  changes the requested logical asset rather than repairing residency.
 - On a repository secret finding, revoke or rotate first and coordinate history
   remediation privately. A later deletion does not remove public exposure.
 

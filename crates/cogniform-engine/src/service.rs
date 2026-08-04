@@ -1,6 +1,11 @@
-use cogniform_protocol::{
-    ImaginationEnvelope, ScenePatch, SceneQuery, SceneQueryResult, SceneRevision,
+use cogniform_assets::{
+    AssetAdmission, AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetStore, AssetStoreConfig,
+    AssetStoreStats,
 };
+use cogniform_protocol::{
+    ContentHash, ImaginationEnvelope, ScenePatch, SceneQuery, SceneQueryResult, SceneRevision,
+};
+use cogniform_renderer::{AssetUploadAdmission, AssetUploadOutcome, RendererAssetStats};
 use cogniform_replay::ReplayVerification;
 use cogniform_world::LogicalSceneHash;
 
@@ -21,6 +26,8 @@ pub struct LocalServiceConfig {
     pub engine: EngineConfig,
     /// Command queue and result-retention configuration.
     pub gateway: GatewayConfig,
+    /// Caller-driven verified source and decoded CPU mesh bounds.
+    pub asset_store: AssetStoreConfig,
 }
 
 impl LocalServiceConfig {
@@ -30,6 +37,7 @@ impl LocalServiceConfig {
         Self {
             engine: EngineConfig::new(width, height),
             gateway: GatewayConfig::default(),
+            asset_store: AssetStoreConfig::default(),
         }
     }
 }
@@ -55,13 +63,23 @@ pub struct LocalServiceStatus {
     pub replay_bytes: u64,
 }
 
-/// Local typed service over one gateway-owned engine.
+/// Aggregate CPU and renderer-owned asset occupancy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalAssetStatus {
+    /// Retained source-record, import-queue, and decoded CPU mesh occupancy.
+    pub store: AssetStoreStats,
+    /// Renderer upload reservations and immutable GPU mesh residency.
+    pub renderer: RendererAssetStats,
+}
+
+/// Local typed service over one gateway-owned engine and bounded asset store.
 ///
 /// The service creates no socket, listener, filesystem persistence, or remote
 /// transport. Callers drive command processing and observation polling through
 /// bounded non-blocking methods.
 pub struct LocalService {
     gateway: LocalGateway,
+    assets: AssetStore,
 }
 
 impl std::fmt::Debug for LocalService {
@@ -69,6 +87,7 @@ impl std::fmt::Debug for LocalService {
         formatter
             .debug_struct("LocalService")
             .field("status", &self.status())
+            .field("asset_status", &self.asset_status())
             .finish_non_exhaustive()
     }
 }
@@ -76,7 +95,11 @@ impl std::fmt::Debug for LocalService {
 impl LocalService {
     /// Initializes the bounded headless engine and local typed gateway.
     pub async fn new(config: LocalServiceConfig) -> Result<Self, LocalServiceError> {
-        let LocalServiceConfig { engine, gateway } = config;
+        let LocalServiceConfig {
+            engine,
+            gateway,
+            asset_store,
+        } = config;
         validate_engine_config(&engine)?;
         validate_gateway_config(
             gateway,
@@ -85,7 +108,10 @@ impl LocalService {
         )?;
         let engine = CogniformEngine::new(engine).await?;
         let gateway = LocalGateway::new(engine, gateway)?;
-        Ok(Self { gateway })
+        Ok(Self {
+            gateway,
+            assets: AssetStore::new(asset_store),
+        })
     }
 
     /// Restores a fresh local service from one complete in-memory recovery point.
@@ -97,7 +123,11 @@ impl LocalService {
         config: LocalServiceConfig,
         recovery: &EngineRecoveryPoint,
     ) -> Result<Self, LocalServiceError> {
-        let LocalServiceConfig { engine, gateway } = config;
+        let LocalServiceConfig {
+            engine,
+            gateway,
+            asset_store,
+        } = config;
         validate_engine_config(&engine)?;
         validate_gateway_config(
             gateway,
@@ -116,13 +146,71 @@ impl LocalService {
         let engine =
             CogniformEngine::restore_prepared(engine, recovery.next_frame_id(), world).await?;
         let gateway = LocalGateway::new(engine, gateway)?;
-        Ok(Self { gateway })
+        Ok(Self {
+            gateway,
+            assets: AssetStore::new(asset_store),
+        })
     }
 
     /// Returns the backend-neutral selected adapter summary for diagnostics.
     #[must_use]
     pub fn adapter(&self) -> &AdapterSummary {
         self.gateway.engine().renderer().adapter()
+    }
+
+    /// Verifies exact source identity and admits bytes to the bounded import queue.
+    ///
+    /// Admission performs no decoding, renderer upload, world mutation, or
+    /// external I/O. The source bytes remain service-owned until one explicit
+    /// import step consumes them.
+    pub fn enqueue_asset_source(
+        &mut self,
+        expected_hash: ContentHash,
+        source: Vec<u8>,
+    ) -> Result<AssetAdmission, LocalServiceError> {
+        self.assets
+            .enqueue(expected_hash, source)
+            .map_err(Into::into)
+    }
+
+    /// Decodes at most one queued asset source into service-owned CPU meshes.
+    pub fn process_next_asset_import(&mut self) -> Option<AssetProcessOutcome> {
+        self.assets.process_next()
+    }
+
+    /// Returns one immutable retained lifecycle record without source bytes.
+    #[must_use]
+    pub fn asset_record(&self, content_hash: ContentHash) -> Option<&AssetRecord> {
+        self.assets.record(content_hash)
+    }
+
+    /// Prepares one ready CPU mesh and reserves renderer upload capacity.
+    ///
+    /// The immutable upload value crosses the engine boundary, but neither the
+    /// asset store nor renderer-owned GPU handles are exposed.
+    pub fn enqueue_asset_upload(
+        &mut self,
+        key: AssetMeshKey,
+    ) -> Result<AssetUploadAdmission, LocalServiceError> {
+        let job = self.assets.upload_job(key)?;
+        self.gateway
+            .engine_mut()
+            .enqueue_asset_upload(job)
+            .map_err(Into::into)
+    }
+
+    /// Processes at most one renderer-owned asset upload.
+    pub fn process_next_asset_upload(&mut self) -> Option<AssetUploadOutcome> {
+        self.gateway.engine_mut().process_next_asset_upload()
+    }
+
+    /// Returns bounded asset occupancy without source bytes or backend handles.
+    #[must_use]
+    pub fn asset_status(&self) -> LocalAssetStatus {
+        LocalAssetStatus {
+            store: self.assets.stats(),
+            renderer: self.gateway.engine().renderer_asset_stats(),
+        }
     }
 
     /// Admits one validated explicit patch under its declared delivery semantic.

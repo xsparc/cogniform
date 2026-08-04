@@ -1,7 +1,8 @@
 # Content-addressed GLB assets
 
 Status: immutable asset records, the approved GLB subset, world references,
-and bounded renderer uploads are implemented by CF007.
+and bounded renderer uploads are implemented by CF007. CF015 composes those
+steps into the local typed service without making them implicit.
 
 ## Ownership and lifecycle
 
@@ -30,6 +31,14 @@ decodes source bytes or processes an upload. An owner should schedule
 `process_next_asset_upload` only on the renderer domain. This library baseline
 does not create workers or make those calls implicitly.
 
+`LocalService` is now the standard in-process owner. Its
+`enqueue_asset_source`, `process_next_asset_import`, `asset_record`,
+`enqueue_asset_upload`, and `process_next_asset_upload` methods preserve the
+same split lifecycle, while `asset_status` returns only aggregate store and
+renderer counters. The engine forwards immutable upload jobs and never exposes
+mutable renderer state or backend handles. The lower-level store and renderer
+APIs remain available for embedders that own those domains directly.
+
 Records are retained as `Queued`, `Ready`, `ProxyReady`, or `Rejected`. The
 original source is retained only while queued. Ready and proxy records retain
 expanded triangle positions for upload. There is no eviction API in this
@@ -39,6 +48,12 @@ The authoritative world stores only `AssetMeshComponent`, containing the
 content hash and zero-based mesh index. That component participates in logical
 snapshots, hashing, replay, and render extraction. It contains no source bytes,
 CPU mesh ownership, ECS handle, or GPU handle.
+
+Fresh and restored local services start with empty source/import state and GPU
+residency. Replay still restores the logical content hash and mesh index. A
+frame that has no resident mesh and no explicit primitive fallback returns
+`AssetUnavailable`; the caller must supply exact matching bytes and explicitly
+drive import and upload. Rehydration does not mutate the world or append replay.
 
 ## Approved GLB subset
 
@@ -147,8 +162,10 @@ on an approved DX12 or Vulkan adapter:
 
 ```text
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal
+cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
 ```
 
-The controlled test creates no window, performs no network call, and uploads no
-artifact. It verifies exact entity identity plus tolerant imported color and
-depth probes.
+The controlled tests create no window, perform no network call, and upload no
+artifact. They verify exact entity identity plus tolerant imported color and
+depth probes, then prove that restored asset references require explicit
+exact-hash CPU/GPU rehydration without another logical mutation.

@@ -21,6 +21,7 @@ store; operators compose those concerns outside the MVP.
 | Recovery stream has any invalid tail or a frame marker behind replay evidence | Reject the complete recovery point before GPU initialization; never adopt only the verified prefix | recovery unit and controlled service-restoration tests |
 | Historical revision is newer than the retained log | Return the requested and latest revisions without changing the source service | exact-revision replay and controlled historical-fork tests |
 | Asset content hash mismatch | Consume no record or queue capacity | asset-store tests |
+| Restored logical asset reference has no CPU/GPU residency | Return the exact entity and mesh key as `AssetUnavailable`; preserve revision, hash, and replay | controlled service-asset rehydration test |
 | Truncated, malformed, over-limit, or unsafe-proxy GLB | Reject without panic or GPU upload; only approved unsupported classes may proxy | asset truncation and classification tests |
 | Renderer target/capability unavailable | Return a structured initialization error | renderer configuration/capability tests |
 | Renderer owner dropped after frame submission | Keep final device/queue destruction on the per-renderer retirement worker so the pending readback reaches its configured deadline | `pending_readback_survives_renderer_drop_after_submission` |
@@ -82,6 +83,17 @@ replay prefix paired with the source renderer's current next frame identity.
 Restore it into a separate fresh service. The operation neither changes the
 source nor authorizes an in-place revert, automatic branch switch, or reuse of
 older frame identities.
+
+### Asset unavailable after recovery
+
+Treat the returned entity ID and content-hash/mesh-index key as a request for
+caller-owned rehydration, not permission to fetch arbitrary content. Obtain the
+expected source bytes through the caller's approved channel, admit them with
+the retained hash, and explicitly process CPU import and GPU upload. A hash
+mismatch must not be retried with a substituted identity because that would no
+longer resolve the world reference. Rehydration leaves the world and replay
+unchanged; fetching, persistence, cache policy, and retry scheduling are not
+implemented by the service.
 
 ### Renderer, readback, or device failure
 
