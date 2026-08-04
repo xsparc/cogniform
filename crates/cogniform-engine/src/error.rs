@@ -2,6 +2,7 @@ use core::fmt;
 
 use cogniform_assets::AssetError;
 use cogniform_compiler::CompileError;
+use cogniform_procedural::ProcedureError;
 use cogniform_protocol::{
     CodecError, FrameId, IdempotencyKey, SceneRevision, StableEntityId, ValidationError,
 };
@@ -249,6 +250,8 @@ impl From<WorldInvariantError> for GatewayError {
 pub enum LocalServiceError {
     /// Asset source admission, import lookup, or upload preparation failed.
     Asset(Box<AssetError>),
+    /// A pure built-in procedure could not produce an ordinary valid patch.
+    Procedure(Box<ProcedureError>),
     /// Command admission, compilation, application, or query failed.
     Gateway(Box<GatewayError>),
     /// Observation, replay, renderer, or engine composition failed.
@@ -259,6 +262,7 @@ impl fmt::Display for LocalServiceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Asset(error) => write!(formatter, "local asset operation failed: {error}"),
+            Self::Procedure(error) => write!(formatter, "local procedure failed: {error}"),
             Self::Gateway(error) => write!(formatter, "local command failed: {error}"),
             Self::Engine(error) => write!(formatter, "local engine failed: {error}"),
         }
@@ -269,6 +273,7 @@ impl std::error::Error for LocalServiceError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Asset(error) => Some(error),
+            Self::Procedure(error) => Some(error),
             Self::Gateway(error) => Some(error),
             Self::Engine(error) => Some(error),
         }
@@ -278,6 +283,12 @@ impl std::error::Error for LocalServiceError {
 impl From<AssetError> for LocalServiceError {
     fn from(value: AssetError) -> Self {
         Self::Asset(Box::new(value))
+    }
+}
+
+impl From<ProcedureError> for LocalServiceError {
+    fn from(value: ProcedureError) -> Self {
+        Self::Procedure(Box::new(value))
     }
 }
 

@@ -13,6 +13,12 @@ use crate::ProcedureError;
 
 const ID_DOMAIN: &[u8] = b"cogniform.builtin-procedure.entity-id\0";
 
+// Schema-v1 logical-size accounting for a patch excluding delivery and for one
+// cuboid create containing transform, primitive, and material components. The
+// ordinary patch validator below remains the final compatibility backstop.
+const PATCH_FIXED_LOGICAL_BYTES: u64 = 71;
+const CUBOID_CREATE_LOGICAL_BYTES: u64 = 101;
+
 /// Explicit output bounds for a built-in procedure invocation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcedureLimits {
@@ -114,10 +120,13 @@ fn execute_grid(
     }
     let operations = entity_count;
     let components = entity_count.saturating_mul(3);
+    validate_delivery_text(request, runtime_limits)?;
     if operations > u64::from(request.patch_budget.max_operations.get())
         || operations > u64::from(runtime_limits.max_operations.get())
+        || request.patch_budget.max_operations.get() > runtime_limits.max_operations.get()
         || components > u64::from(request.patch_budget.max_components.get())
         || components > u64::from(runtime_limits.max_components.get())
+        || request.patch_budget.max_components.get() > runtime_limits.max_components.get()
         || 3 > runtime_limits.max_components_per_entity.get()
     {
         return Err(ProcedureError::PatchCapacityExceeded {
@@ -125,6 +134,7 @@ fn execute_grid(
             components,
         });
     }
+    validate_decoded_size(request, entity_count, runtime_limits)?;
 
     let capacity = usize::try_from(entity_count).expect("bounded u32 entity count fits usize");
     let mut emitted = BTreeSet::new();
@@ -175,6 +185,54 @@ fn execute_grid(
         .validate_with_limits(runtime_limits)
         .map_err(ProcedureError::InvalidPatch)?;
     Ok(ProcedureArtifact { patch, entity_ids })
+}
+
+fn validate_decoded_size(
+    request: &ProcedureRequest,
+    entity_count: u64,
+    runtime_limits: &RuntimeLimits,
+) -> Result<(), ProcedureError> {
+    let delivery = match &request.delivery {
+        DeliverySemantic::LatestWins { supersession_key } => {
+            5_u64.saturating_add(u64::try_from(supersession_key.len_bytes()).unwrap_or(u64::MAX))
+        }
+        DeliverySemantic::MustApply | DeliverySemantic::BestEffort => 1,
+    };
+    let actual = PATCH_FIXED_LOGICAL_BYTES
+        .saturating_add(delivery)
+        .saturating_add(entity_count.saturating_mul(CUBOID_CREATE_LOGICAL_BYTES));
+    let declared = request.patch_budget.max_decoded_bytes.get();
+    let runtime = runtime_limits.max_decoded_bytes.get();
+    if actual > declared || actual > runtime || declared > runtime {
+        return Err(ProcedureError::DecodedCapacityExceeded {
+            actual,
+            declared,
+            runtime,
+        });
+    }
+    Ok(())
+}
+
+fn validate_delivery_text(
+    request: &ProcedureRequest,
+    runtime_limits: &RuntimeLimits,
+) -> Result<(), ProcedureError> {
+    let actual = match &request.delivery {
+        DeliverySemantic::LatestWins { supersession_key } => {
+            u64::try_from(supersession_key.len_bytes()).unwrap_or(u64::MAX)
+        }
+        DeliverySemantic::MustApply | DeliverySemantic::BestEffort => 0,
+    };
+    let declared = request.patch_budget.max_text_bytes.get();
+    let runtime = runtime_limits.max_text_bytes.get();
+    if actual > declared || actual > runtime || declared > runtime {
+        return Err(ProcedureError::TextCapacityExceeded {
+            actual,
+            declared,
+            runtime,
+        });
+    }
+    Ok(())
 }
 
 fn grid_coordinate(

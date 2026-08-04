@@ -2,8 +2,10 @@ use cogniform_assets::{
     AssetAdmission, AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetStore, AssetStoreConfig,
     AssetStoreStats,
 };
+use cogniform_procedural::{ProcedureArtifact, ProcedureRequest, execute};
 use cogniform_protocol::{
     ContentHash, ImaginationEnvelope, ScenePatch, SceneQuery, SceneQueryResult, SceneRevision,
+    StableEntityId,
 };
 use cogniform_renderer::{AssetUploadAdmission, AssetUploadOutcome, RendererAssetStats};
 use cogniform_replay::ReplayVerification;
@@ -70,6 +72,15 @@ pub struct LocalAssetStatus {
     pub store: AssetStoreStats,
     /// Renderer upload reservations and immutable GPU mesh residency.
     pub renderer: RendererAssetStats,
+}
+
+/// Deterministic built-in procedure output admitted as one ordinary patch.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProcedureSubmission {
+    /// Existing gateway admission outcome for the generated patch.
+    pub admission: GatewayAdmission,
+    /// Stable identities in deterministic procedure emission order.
+    pub entity_ids: Vec<StableEntityId>,
 }
 
 /// Local typed service over one gateway-owned engine and bounded asset store.
@@ -229,6 +240,25 @@ impl LocalService {
         self.gateway
             .submit_imagination(imagination)
             .map_err(Into::into)
+    }
+
+    /// Executes one pure bounded built-in procedure and admits its ordinary patch.
+    ///
+    /// Procedure preparation is synchronous, deterministic, and has no ambient
+    /// filesystem, network, clock, entropy, world, or renderer authority. The
+    /// returned gateway admission preserves the patch's delivery and idempotency
+    /// semantics. World mutation still occurs only through [`Self::process_next`].
+    pub fn submit_procedure(
+        &mut self,
+        request: &ProcedureRequest,
+    ) -> Result<ProcedureSubmission, LocalServiceError> {
+        let limits = self.gateway.engine().runtime_limits();
+        let ProcedureArtifact { patch, entity_ids } = execute(request, &limits)?;
+        let admission = self.gateway.submit_patch(patch)?;
+        Ok(ProcedureSubmission {
+            admission,
+            entity_ids,
+        })
     }
 
     /// Processes at most one admitted mutating command.

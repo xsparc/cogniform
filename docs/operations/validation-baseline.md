@@ -2,7 +2,8 @@
 
 Status: controlled CF009 evidence collected on 2026-08-02 and CF011 normal,
 CF012 restoration, CF013 recovery-envelope, CF014 historical-fork, plus CF015
-service-asset rehydration evidence collected on 2026-08-04. This document names
+service-asset rehydration and CF016 service-procedure composition evidence
+collected on 2026-08-04. This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
 
@@ -116,6 +117,25 @@ missing entity and mesh key. Reimporting the same bytes and uploading the mesh
 restored the observation without a world mutation or replay change. This is
 caller-supplied in-memory rehydration evidence, not filesystem/network
 resolution, persistence, eviction, automatic startup, or device recreation.
+
+## Controlled service-procedure command
+
+The following focused CF016 test passed in release mode on the validated
+Windows/Vulkan profile:
+
+```text
+cargo test --release -p cogniform-engine --test service_procedures --locked --offline -- --ignored --exact local_service_procedure_preserves_queue_query_replay_and_restore_idempotency
+```
+
+It rejected an over-budget request without queue or world mutation; admitted a
+2x3 cuboid grid with six deterministic stable IDs; returned `AlreadyQueued` for
+an exact queued repeat and `IdempotencyConflict` for changed output under the
+same key; and applied one ordinary patch. Exact logical query, live/replayed
+hash equality, and a single replay entry then matched. Same-service replay and
+post-restoration resubmission both returned the retained receipt without
+revision or replay growth. This is pure built-in synchronous preparation
+evidence, not a plugin/Wasm host, user-code boundary, background scheduler, or
+external procedure loader.
 
 ## Controlled CPU performance fixture
 

@@ -110,7 +110,7 @@ interfaces; compiler never reads mutable world state.
 
 ### 3.2 Scene patches
 
-`ScenePatch` contains schema version, transaction ID, idempotency key, base revision, conflict policy, ordered operations, and declared limits. Initial operations cover create, delete, set/remove component, and reparent. Asset instantiation, procedures, and observation policy arrive in later versioned additions.
+`ScenePatch` contains schema version, transaction ID, idempotency key, base revision, conflict policy, ordered operations, and declared limits. Initial operations cover create, delete, set/remove component, and reparent. Asset references are ordinary components, and built-in procedures remain pure bounded producers of ordinary patches rather than privileged mutation operations. Observation policy arrives through a separate versioned contract.
 
 Atomic apply follows this contract:
 
@@ -186,6 +186,14 @@ GPU layouts are explicit and asserted. `bytemuck::Pod` is used only for types wi
 
 Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset. Decoders verify declared and decoded sizes before allocation. The local service owns bounded CPU asset state and explicitly forwards immutable upload jobs into renderer-owned residency; neither patches nor frames perform implicit asset work. Recovery preserves logical content references but starts CPU and GPU asset state empty, so callers must rehydrate exact matching bytes before dependent rendering resumes. Unsupported extensions produce structured diagnostics or approved proxies.
 
+Built-in procedures are pure synchronous preparation functions. The local
+service executes a supported typed request under active runtime limits and
+admits its canonical output through the existing patch gateway. Procedure
+requests have no world, renderer, I/O, time, or entropy authority; only the
+accepted output patch and receipt enter replay. Consequently procedure output
+inherits ordinary atomicity, delivery, idempotency, extraction, and recovery
+semantics without creating a second mutation path.
+
 USD remains an offline authoring boundary. KTX2, mesh optimization, spatial acceleration, and shared-memory delivery are later measured additions rather than foundation dependencies.
 
 ## 5. Security and reliability
@@ -216,7 +224,8 @@ Research targets such as 60 Hz, 3 ms p95 CPU engine work, 8 ms p95 GPU time, 8 m
 
 ## 7. External interfaces
 
-The public surface stays small: apply imagination, apply patch, query scene,
+The public surface stays small: apply imagination, apply a supported built-in
+procedure through an ordinary patch, apply patch, query scene,
 request observation, subscribe to bounded feedback, explain compilation,
 capture complete or exact-revision local recovery state, restore it into a
 fresh service, revert live recorded state, and resolve assets. Initial
@@ -249,6 +258,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Asset safety | Hash mismatch, oversized decode, and unsupported features fail with structured diagnostics |
 | Asset resolution | The local service explicitly imports and uploads bounded content-addressed meshes; recovered logical references remain unavailable until exact-hash rehydration without another world mutation |
+| Procedure composition | The local service produces deterministic stable IDs, queues an ordinary generated patch without immediate mutation, and preserves query/replay/hash/idempotency behavior across restoration |
 | End to end | Canonical room/table/light/camera scenario passes unattended |
 
 ## 10. Open decisions

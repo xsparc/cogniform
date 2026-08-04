@@ -13,6 +13,7 @@ store; operators compose those concerns outside the MVP.
 | Empty, stale, conflicting, or invalid patch operation | Preserve revision, ID index, snapshot, and logical hash | `world_contracts` atomic rejection and randomized model tests |
 | Hierarchy cycle, excess depth, or dangling relation | Reject the complete patch; preserve prior derived transforms | `hierarchy_hash` tests |
 | Idempotency key reused for different command content | Return typed conflict without duplicate compile or mutation | gateway and world idempotency tests |
+| Procedure entity, patch, or supersession-text budget is exceeded | Reject before output allocation or gateway admission; preserve revision, queue, hash, and replay | procedure and controlled service-procedure tests |
 | Full command/result/observation queue | Typed reject, explicit drop, or in-place supersession according to declared delivery | gateway, observation-slot, and readback-pressure tests |
 | Replay entry or total-log capacity exhausted | Reject before world mutation | `replay_capacity_rejects_before_world_mutation` |
 | Replay byte truncated, reordered, removed, or modified | Return only the longest verified prefix and a typed tail error | replay contract tests |
@@ -57,6 +58,16 @@ Keep the authoritative revision returned by the last accepted receipt. Correct
 the complete request and resubmit with a fresh transaction/idempotency key and
 the current exact base revision. Do not split an invalid atomic operation list
 unless that changes the intended transaction semantics.
+
+### Procedure rejection
+
+Treat a procedure error as rejection of its complete generated change. Correct
+the request's dimensions or declared entity, operation, component, decoded, and
+text budgets before resubmission. A rejected procedure consumes no gateway
+slot and changes no world or replay state. Reuse an idempotency key only when
+the corrected request produces the same intended canonical output; a different
+output under that key is an explicit conflict. Do not bypass the service by
+granting a procedure mutable world or ambient I/O access.
 
 ### Replay tail failure
 

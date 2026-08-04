@@ -1,14 +1,14 @@
 //! Exact deterministic built-in procedure contracts.
 
-use core::num::NonZeroU32;
+use core::num::{NonZeroU32, NonZeroU64};
 
 use cogniform_procedural::{
     BuiltinProcedure, CuboidGrid, ProcedureError, ProcedureLimits, ProcedureRequest, execute,
 };
 use cogniform_protocol::{
     ColorRgba, DeliverySemantic, FiniteF32, IdempotencyKey, MaterialComponent, PatchBudget,
-    PositiveF32, PositiveVec3, ProcedureId, RuntimeLimits, SceneRevision, TransactionId, UnitF32,
-    Vec3,
+    PositiveF32, PositiveVec3, ProcedureId, RuntimeLimits, SceneRevision, SceneText, TransactionId,
+    UnitF32, Vec3,
 };
 
 fn request(seed: u64) -> ProcedureRequest {
@@ -85,6 +85,56 @@ fn entity_budget_is_checked_before_output_allocation() {
             limit: 5
         })
     ));
+}
+
+#[test]
+fn delivery_text_budget_is_checked_before_output_allocation() {
+    let limits = RuntimeLimits::default();
+    let mut request = request(99);
+    request.delivery = DeliverySemantic::LatestWins {
+        supersession_key: SceneText::new("grid").unwrap(),
+    };
+    request.patch_budget.max_text_bytes = NonZeroU64::new(3).unwrap();
+    assert!(matches!(
+        execute(&request, &limits),
+        Err(ProcedureError::TextCapacityExceeded {
+            actual: 4,
+            declared: 3,
+            runtime: 65_536,
+        })
+    ));
+}
+
+#[test]
+fn decoded_budget_is_checked_before_output_allocation() {
+    let limits = RuntimeLimits::default();
+    let mut request = request(99);
+    request.patch_budget.max_decoded_bytes = NonZeroU64::new(677).unwrap();
+    assert!(matches!(
+        execute(&request, &limits),
+        Err(ProcedureError::DecodedCapacityExceeded {
+            actual: 678,
+            declared: 677,
+            runtime: 4_194_304,
+        })
+    ));
+}
+
+#[test]
+fn all_delivery_semantics_are_preserved_in_the_output_patch() {
+    let limits = RuntimeLimits::default();
+    let deliveries = [
+        DeliverySemantic::MustApply,
+        DeliverySemantic::LatestWins {
+            supersession_key: SceneText::new("grid").unwrap(),
+        },
+        DeliverySemantic::BestEffort,
+    ];
+    for delivery in deliveries {
+        let mut request = request(99);
+        request.delivery = delivery.clone();
+        assert_eq!(execute(&request, &limits).unwrap().patch.delivery, delivery);
+    }
 }
 
 fn finite(value: f32) -> FiniteF32 {

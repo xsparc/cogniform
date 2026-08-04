@@ -1,6 +1,8 @@
 # Core protocol contracts
 
-Status: schema version 1 implemented by CF001 and extended through CF007.
+Status: schema version 1 implemented by CF001 and extended through CF007;
+CF016 composes existing procedure values into the local service without adding
+a protocol or gateway command variant.
 
 `cogniform-protocol` is the dependency-neutral boundary between Cogniform's
 world, render, and service domains. It contains values only: no ECS handles,
@@ -108,6 +110,11 @@ seed, transaction and idempotency identities, base revision, delivery
 semantics, and output budgets. The initial cuboid-grid procedure returns an
 ordinary validated `ScenePatch` in deterministic row-major order; it has no
 world, filesystem, network, clock, entropy, renderer, or mutation access.
+CF016 exposes this preparation through `LocalService::submit_procedure`: the
+service executes the request under active runtime limits and admits the output
+through the ordinary patch gateway. Idempotency and replay therefore describe
+the canonical output patch, not procedure request metadata; no new protocol
+schema is introduced.
 
 ## Canonical JSON and limits
 
