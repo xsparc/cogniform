@@ -9,8 +9,9 @@ scene revision that produced it.
 > Cogniform is an early core, not a complete service or general-purpose 3D
 > engine. Public contracts, the atomic authoritative world, deterministic
 > hierarchy/hash/replay, compact render extraction, bounded headless cuboid
-> rendering, and revision-linked color/depth/entity-ID/visibility observations
-> are implemented. A bounded in-process gateway, exact logical queries, and a
+> rendering, and revision-linked color/depth/entity-ID/visibility plus
+> quantized flat world-space normal observations are implemented. A bounded
+> in-process gateway, exact logical queries, and a
 > deterministic primitive imagination compiler are also available. The current
 > asset baseline adds content-addressed GLB geometry, bounded caller-driven CPU
 > decode and GPU upload, plus pure seeded cuboid-grid procedures. A bounded
@@ -34,7 +35,7 @@ implementations arrive:
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |
-| `cogniform-renderer` | Headless GPU ownership and machine-readable outputs |
+| `cogniform-renderer` | Headless GPU ownership and color/depth/normal/identity outputs |
 | `cogniform-engine` | Bounded orchestration and revision/frame correlation |
 | `cogniform-cli` | Local sample, replay, and diagnostic commands |
 

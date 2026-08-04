@@ -3,8 +3,8 @@
 //! The renderer owns its `wgpu` device and all GPU resources. It renders to
 //! offscreen textures and exposes no window, surface, or backend handle through
 //! its public API. The first reference scene is intentionally small: one
-//! built-in cube, one built-in camera, and color, depth, and renderer-local
-//! entity-ID outputs.
+//! built-in cube, one built-in camera, and color, depth, quantized world-space
+//! normal, and renderer-local entity-ID outputs.
 
 mod asset;
 mod config;

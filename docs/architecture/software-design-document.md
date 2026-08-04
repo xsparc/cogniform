@@ -66,7 +66,7 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-compiler` | Pure seeded primitive imagination normalization and structured explanations | Depends only on protocol and deterministic hashing; owns no world/service state |
 | `cogniform-world` | `hecs` implementation, stable-ID index, validation, atomic commit, hierarchy, transforms, queries | Depends on protocol/math; never renderer or service |
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
-| `cogniform-renderer` | `wgpu` feature negotiation, headless targets, primitive rendering, color/depth/ID outputs, and later normal output | Consumes extracted render data; never mutable world access |
+| `cogniform-renderer` | `wgpu` feature negotiation, headless targets, primitive rendering, and color/depth/normal/ID outputs | Consumes extracted render data; never mutable world access |
 | `cogniform-engine` | Bounded channels, domain lifecycle, frame/revision correlation, composition | Orchestrates through public interfaces; does not absorb domain state |
 | `cogniform-cli` | Local sample client, replay and diagnostic commands | Depends on public engine/protocol interfaces only |
 
@@ -157,7 +157,7 @@ Every feedback envelope includes scene revision, frame ID, camera ID when releva
 
 ### 4.1 Renderer baseline
 
-Use `wgpu` with built-in WGSL and negotiated adapter features/limits. The baseline is a small forward renderer with primitive meshes, camera, depth, color, entity-ID, and later normal output. Headless mode renders to textures without constructing a visible window. Optional `winit` integration is isolated from the headless core.
+Use `wgpu` with built-in WGSL and negotiated adapter features/limits. The baseline is a small forward renderer with primitive meshes, camera, depth, color, entity-ID, and quantized flat world-space normal output. Headless mode renders to textures without constructing a visible window. Optional `winit` integration is isolated from the headless core.
 
 Feature tiers are capability-based:
 
@@ -217,7 +217,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Hierarchy | Cycles/depth violations reject atomically; propagation order is stable |
 | Replay | Repeating accepted canonical events yields the exact logical hash |
 | Headless render | Reference primitive scene renders without a visible window |
-| Machine outputs | Entity-ID probes are exact; color/depth meet declared tolerance; normal output is explicitly post-MVP |
+| Machine outputs | Entity-ID probes are exact; color/depth and quantized flat world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Asset safety | Hash mismatch, oversized decode, and unsupported features fail with structured diagnostics |
@@ -229,7 +229,7 @@ CF009 resolves the initial candidate packaging and validation profile in
 [ADR 0010](../adr/0010-source-first-release-profile.md): source-first, no
 publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
-artifacts, the post-MVP normal/visual-quality surface, remote
+artifacts, smooth normals and the wider visual-quality surface, remote
 protocol/authentication, tenancy, observation retention, and model policy remain
 explicitly open. Defaults in the roadmap are planning assumptions, not
 production commitments.

@@ -58,7 +58,7 @@ pub struct FrameMetadata {
     pub extraction_generation: u64,
 }
 
-/// Completed color, depth, and renderer-local entity-ID outputs.
+/// Completed color, depth, normal, and renderer-local entity-ID outputs.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderedFrame {
     width: u32,
@@ -67,6 +67,7 @@ pub struct RenderedFrame {
     metadata: FrameMetadata,
     color: Vec<[u8; 4]>,
     depth: Vec<f32>,
+    normals: Vec<Option<[f32; 3]>>,
     entity_ids: Vec<u32>,
     stable_entity_ids: Vec<Option<StableEntityId>>,
 }
@@ -108,6 +109,14 @@ impl RenderedFrame {
         &self.depth
     }
 
+    /// Flat world-space unit normals in row-major order.
+    ///
+    /// Background pixels are `None`.
+    #[must_use]
+    pub fn normals(&self) -> &[Option<[f32; 3]>] {
+        &self.normals
+    }
+
     /// Renderer-local entity IDs in row-major order.
     #[must_use]
     pub fn entity_ids(&self) -> &[u32] {
@@ -135,6 +144,13 @@ impl RenderedFrame {
         self.pixel_index(x, y).map(|index| self.depth[index])
     }
 
+    /// Returns the world-space normal at `(x, y)`, or `None` for background
+    /// and coordinates outside the frame.
+    #[must_use]
+    pub fn normal_at(&self, x: u32, y: u32) -> Option<[f32; 3]> {
+        self.pixel_index(x, y).and_then(|index| self.normals[index])
+    }
+
     /// Returns the renderer-local entity ID at `(x, y)`, or `None` when outside the frame.
     #[must_use]
     pub fn entity_id_at(&self, x: u32, y: u32) -> Option<u32> {
@@ -159,6 +175,12 @@ impl RenderedFrame {
     #[must_use]
     pub fn into_depth(self) -> Vec<f32> {
         self.depth
+    }
+
+    /// Consumes the frame and returns flat world-space normals.
+    #[must_use]
+    pub fn into_normals(self) -> Vec<Option<[f32; 3]>> {
+        self.normals
     }
 
     /// Consumes the frame and returns exact stable entity identities.
@@ -209,14 +231,15 @@ impl fmt::Debug for PendingFrame {
 }
 
 impl PendingFrame {
-    /// Waits for this submission, maps its three output buffers, and returns
+    /// Waits for this submission, maps its four output buffers, and returns
     /// tightly packed CPU data.
     pub fn read(mut self) -> Result<RenderedFrame, RendererError> {
         let deadline = Instant::now() + self.timeout;
-        let (sender, receiver) = mpsc::sync_channel(3);
+        let (sender, receiver) = mpsc::sync_channel(4);
         self.readback.begin_mapping();
         schedule_map(self.readback.color(), "color-map", &sender);
         schedule_map(self.readback.depth(), "depth-map", &sender);
+        schedule_map(self.readback.normals(), "normal-map", &sender);
         schedule_map(self.readback.entity_ids(), "entity-id-map", &sender);
         drop(sender);
 
@@ -231,7 +254,7 @@ impl PendingFrame {
                 reason: error.to_string(),
             })?;
 
-        for _ in 0..3 {
+        for _ in 0..4 {
             let remaining = deadline.saturating_duration_since(Instant::now());
             let (stage, result) = receiver.recv_timeout(remaining).map_err(|error| {
                 RendererError::ReadbackFailed {
@@ -247,6 +270,8 @@ impl PendingFrame {
 
         let color_bytes = read_tightly_packed(self.readback.color(), self.layout, "color-range")?;
         let depth_bytes = read_tightly_packed(self.readback.depth(), self.layout, "depth-range")?;
+        let normal_bytes =
+            read_tightly_packed(self.readback.normals(), self.layout, "normal-range")?;
         let entity_id_bytes =
             read_tightly_packed(self.readback.entity_ids(), self.layout, "entity-id-range")?;
 
@@ -263,6 +288,12 @@ impl PendingFrame {
             }
             depth.push(value);
         }
+
+        let normals = normal_bytes
+            .chunks_exact(4)
+            .enumerate()
+            .map(|(pixel_index, bytes)| decode_normal(pixel_index, bytes))
+            .collect::<Result<Vec<_>, _>>()?;
 
         let entity_ids = entity_id_bytes
             .chunks_exact(4)
@@ -291,9 +322,38 @@ impl PendingFrame {
             metadata: self.metadata,
             color,
             depth,
+            normals,
             entity_ids,
             stable_entity_ids,
         })
+    }
+}
+
+fn decode_normal(pixel_index: usize, bytes: &[u8]) -> Result<Option<[f32; 3]>, RendererError> {
+    match bytes[3] {
+        0 => Ok(None),
+        255 => {
+            let mut normal = [0.0_f32; 3];
+            for (target, &encoded) in normal.iter_mut().zip(&bytes[..3]) {
+                *target = (f32::from(encoded) / 255.0).mul_add(2.0, -1.0);
+            }
+            let length_squared = normal.iter().map(|value| value * value).sum::<f32>();
+            if !length_squared.is_finite() || length_squared <= f32::EPSILON {
+                return Err(RendererError::InvalidNormalOutput {
+                    pixel_index,
+                    reason: "direction is zero or non-finite",
+                });
+            }
+            let inverse_length = length_squared.sqrt().recip();
+            for value in &mut normal {
+                *value *= inverse_length;
+            }
+            Ok(Some(normal))
+        }
+        _ => Err(RendererError::InvalidNormalOutput {
+            pixel_index,
+            reason: "alpha marker is neither background nor geometry",
+        }),
     }
 }
 
@@ -332,4 +392,27 @@ fn read_tightly_packed(
     }
     drop(mapped);
     Ok(packed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quantized_normals_are_bounded_and_background_is_explicit() {
+        assert_eq!(decode_normal(0, &[0, 0, 0, 0]).unwrap(), None);
+        let normal = decode_normal(1, &[128, 128, 255, 255])
+            .unwrap()
+            .expect("opaque sample is geometry");
+        assert!(normal[0].abs() <= 0.004);
+        assert!(normal[1].abs() <= 0.004);
+        assert!(normal[2] >= 0.999);
+        assert!(matches!(
+            decode_normal(2, &[128, 128, 255, 1]),
+            Err(RendererError::InvalidNormalOutput {
+                pixel_index: 2,
+                reason: "alpha marker is neither background nor geometry"
+            })
+        ));
+    }
 }

@@ -35,9 +35,9 @@ There are two related bounds:
 
 - `WorldConfig::max_pending_render_changes` limits stable identities awaiting
   extraction. A transaction that would exceed it is rejected atomically.
-- `RendererConfig::readback_capacity` preallocates complete color/depth/ID
-  staging sets. Submission returns `ReadbackPoolExhausted` immediately when no
-  lease is available.
+- `RendererConfig::readback_capacity` preallocates complete
+  color/depth/normal/ID staging sets. Submission returns
+  `ReadbackPoolExhausted` immediately when no lease is available.
 - `RendererConfig::max_draws_per_frame` bounds per-frame uniform and draw work;
   excess extracted primitives fail before GPU allocation.
 
@@ -58,6 +58,8 @@ Each request selects one payload:
 
 - linear RGBA8 color;
 - normalized f32 depth;
+- flat world-space unit normals decoded from quantized signed RGB8, with
+  explicit absent background pixels;
 - exact `Option<StableEntityId>` per pixel, with `None` for background; or
 - stable-ID-sorted visibility counts.
 
@@ -86,9 +88,9 @@ cargo test -p cogniform-engine --test revision_causality --locked --offline -- -
 ```
 
 It renders an extracted cuboid, verifies exact stable entity IDs, color, depth,
-visibility, source revision/frame/camera, revision staleness, and deterministic
-capacity failure. It creates no window, performs no external call, and uploads
-no artifact.
+normal, visibility, source revision/frame/camera, revision staleness, and
+deterministic capacity failure. It creates no window, performs no external
+call, and uploads no artifact.
 
 See [ADR 0006](../adr/0006-coalesced-extraction-and-bounded-observations.md)
 for the selected single-consumer extraction and pooling model.

@@ -18,6 +18,7 @@ use crate::{
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const ENTITY_ID_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
+const NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const BYTES_PER_PIXEL: u32 = 4;
 const COPY_ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 const REFERENCE_VERTEX_COUNT: u32 = 36;
@@ -353,6 +354,14 @@ impl HeadlessRenderer {
         );
         copy_target_to_buffer(
             &mut encoder,
+            &targets.normals,
+            wgpu::TextureAspect::All,
+            readback.normals(),
+            self.readback_layout,
+            size,
+        );
+        copy_target_to_buffer(
+            &mut encoder,
             &targets.entity_ids,
             wgpu::TextureAspect::All,
             readback.entity_ids(),
@@ -488,7 +497,11 @@ async fn create_reference_pipeline(
         bind_group_layouts: &[Some(&draw_layout)],
         immediate_size: 0,
     });
-    let targets = [Some(COLOR_FORMAT.into()), Some(ENTITY_ID_FORMAT.into())];
+    let targets = [
+        Some(COLOR_FORMAT.into()),
+        Some(ENTITY_ID_FORMAT.into()),
+        Some(NORMAL_FORMAT.into()),
+    ];
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("cogniform-reference-scene-pipeline"),
         layout: Some(&layout),
@@ -594,9 +607,9 @@ fn required_limits(
     required.max_texture_dimension_2d = required
         .max_texture_dimension_2d
         .max(config.width.max(config.height));
-    required.max_color_attachments = required.max_color_attachments.max(2);
+    required.max_color_attachments = required.max_color_attachments.max(3);
     required.max_color_attachment_bytes_per_sample =
-        required.max_color_attachment_bytes_per_sample.max(8);
+        required.max_color_attachment_bytes_per_sample.max(12);
     required.max_buffer_size = required.max_buffer_size.max(layout.buffer_size);
     required.max_buffer_size = required
         .max_buffer_size
@@ -623,6 +636,12 @@ fn capability_issues(
     );
     check_texture_usage(adapter, COLOR_FORMAT, RenderTargetKind::Color, &mut issues);
     check_texture_usage(adapter, DEPTH_FORMAT, RenderTargetKind::Depth, &mut issues);
+    check_texture_usage(
+        adapter,
+        NORMAL_FORMAT,
+        RenderTargetKind::Normal,
+        &mut issues,
+    );
     check_texture_usage(
         adapter,
         ENTITY_ID_FORMAT,
@@ -655,9 +674,11 @@ struct RenderTargets {
     color: wgpu::Texture,
     depth: wgpu::Texture,
     entity_ids: wgpu::Texture,
+    normals: wgpu::Texture,
     color_view: wgpu::TextureView,
     depth_view: wgpu::TextureView,
     entity_id_view: wgpu::TextureView,
+    normal_view: wgpu::TextureView,
 }
 
 impl RenderTargets {
@@ -666,16 +687,20 @@ impl RenderTargets {
         let depth = create_target_texture(device, "cogniform-depth-target", size, DEPTH_FORMAT);
         let entity_ids =
             create_target_texture(device, "cogniform-entity-id-target", size, ENTITY_ID_FORMAT);
+        let normals = create_target_texture(device, "cogniform-normal-target", size, NORMAL_FORMAT);
         let color_view = color.create_view(&wgpu::TextureViewDescriptor::default());
         let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
         let entity_id_view = entity_ids.create_view(&wgpu::TextureViewDescriptor::default());
+        let normal_view = normals.create_view(&wgpu::TextureViewDescriptor::default());
         Self {
             color,
             depth,
             entity_ids,
+            normals,
             color_view,
             depth_view,
             entity_id_view,
+            normal_view,
         }
     }
 }
@@ -684,6 +709,7 @@ pub(crate) struct ReadbackBuffers {
     color: wgpu::Buffer,
     depth: wgpu::Buffer,
     entity_ids: wgpu::Buffer,
+    normals: wgpu::Buffer,
 }
 
 impl ReadbackBuffers {
@@ -692,6 +718,7 @@ impl ReadbackBuffers {
             color: create_readback_buffer(device, "cogniform-color-readback", size),
             depth: create_readback_buffer(device, "cogniform-depth-readback", size),
             entity_ids: create_readback_buffer(device, "cogniform-entity-id-readback", size),
+            normals: create_readback_buffer(device, "cogniform-normal-readback", size),
         }
     }
 }
@@ -766,6 +793,10 @@ impl ReadbackLease {
             .entity_ids
     }
 
+    pub(crate) fn normals(&self) -> &wgpu::Buffer {
+        &self.buffers.as_ref().expect("live readback lease").normals
+    }
+
     pub(crate) fn begin_mapping(&mut self) {
         debug_assert!(!self.mapping_started);
         self.mapping_started = true;
@@ -783,6 +814,7 @@ impl ReadbackLease {
         buffers.color.unmap();
         buffers.depth.unmap();
         buffers.entity_ids.unmap();
+        buffers.normals.unmap();
         self.mapping_started = false;
     }
 }
@@ -835,6 +867,15 @@ fn encode_scene_pass(
         }),
         Some(wgpu::RenderPassColorAttachment {
             view: &resources.targets.entity_id_view,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                store: wgpu::StoreOp::Store,
+            },
+        }),
+        Some(wgpu::RenderPassColorAttachment {
+            view: &resources.targets.normal_view,
             depth_slice: None,
             resolve_target: None,
             ops: wgpu::Operations {
@@ -1065,5 +1106,17 @@ mod tests {
             ensure_backends_available(wgpu::Backends::empty()),
             Err(RendererError::BackendUnavailable)
         ));
+    }
+
+    #[test]
+    fn normal_target_capability_is_structured() {
+        let issue = CapabilityIssue::TextureUsage {
+            target: RenderTargetKind::Normal,
+            required: "RENDER_ATTACHMENT | COPY_SRC",
+        };
+        assert_eq!(
+            issue.to_string(),
+            "normal target requires RENDER_ATTACHMENT | COPY_SRC"
+        );
     }
 }

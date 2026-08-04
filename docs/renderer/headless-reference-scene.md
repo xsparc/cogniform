@@ -17,9 +17,10 @@ The initial compiled backend set is:
 
 Metal, OpenGL/GLES, browser WebGPU, and visible windowing are not compiled in
 this slice. Unsupported platforms return a structured backend error. A selected
-adapter must support two color attachments, the configured target and readback
-limits, and render/copy usages for linear `Rgba8Unorm`, `R32Uint`, and
-`Depth32Float`.
+adapter must support three color attachments, twelve color-attachment bytes per
+sample, the configured target and readback limits, and render/copy usages for
+linear `Rgba8Unorm` color, `R32Uint` identity, `Rgba8Unorm` normal, and
+`Depth32Float` depth.
 
 No optional or experimental GPU feature is enabled. The adapter summary records
 the adapter name, backend, device class, and WebGPU-compliance flag for
@@ -29,11 +30,15 @@ diagnostics, but backend handles never leave `cogniform-renderer`.
 
 The built-in scene is a unit cube, renderer-local entity ID `7`, fixed linear
 RGBA color `[51, 153, 230, 255]`, and a fixed orthographic camera with a small
-view shear. The background entity ID is `0` and cleared depth is `1.0`.
+view shear. The background entity ID is `0`, cleared depth is `1.0`, and
+normal alpha `0` marks background.
 
 - entity IDs must match exactly;
 - color channels use an absolute tolerance of 2 units in RGBA8;
 - center depth uses an absolute tolerance of 0.02;
+- geometry normals are flat world-space unit vectors derived from source
+  triangle winding, quantized through signed RGB8, then renormalized after
+  readback; controlled direction comparisons use a 0.99 minimum dot product;
 - cross-adapter bitwise image equality is not claimed.
 
 The `u32` attachment is compact render identity, not `StableEntityId`. CF005
@@ -53,6 +58,7 @@ let pending = renderer.submit_reference_scene()?;
 // Explicit synchronization point. Submission itself does not wait.
 let frame = pending.read()?;
 assert_eq!(frame.entity_id_at(32, 32), Some(7));
+assert!(frame.normal_at(32, 32).is_some());
 # Ok(())
 # }
 ```
@@ -64,9 +70,10 @@ rows; only initialized pixel bytes enter the tightly packed output vectors.
 
 `PendingFrame::read` is intended for conformance tests, the bounded observation
 worker, and diagnostics. It may block its caller for the configured timeout.
-Submission leases one preallocated readback set and fails immediately when the
-fixed pool is exhausted. The engine worker performs the blocking read outside
-renderer submission and releases the lease after completion.
+Submission leases one preallocated color/depth/normal/identity readback set and
+fails immediately when the fixed pool is exhausted. The engine worker performs
+the blocking read outside renderer submission and releases the lease after
+completion.
 
 ## Validation
 
@@ -74,13 +81,14 @@ Run the focused contract explicitly on Windows or Linux with a compatible,
 approved adapter:
 
 ```text
-cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact reference_cube_produces_exact_ids_and_tolerant_color_depth
+cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact reference_cube_produces_exact_ids_and_tolerant_color_depth_normals
 ```
 
 The integration test renders at 64 by 64 pixels, verifies exact object and
-background IDs, probes color and depth using the declared tolerances, validates
-output lengths and bounds behavior, and requires the selected backend to be
-DX12 or Vulkan. Normal workspace CI compiles this test but leaves it ignored;
+background IDs, probes color, depth, and normal output using the declared
+tolerances, validates output lengths and bounds behavior, and requires the
+selected backend to be DX12 or Vulkan. Normal workspace CI compiles this test
+but leaves it ignored;
 the architecture reserves adapter conformance for controlled local or
 self-hosted hardware. The test does not contact a service, create a window,
 upload an artifact, or require a paid runner.

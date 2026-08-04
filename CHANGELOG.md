@@ -14,8 +14,9 @@ release yet; the current workspace version remains `0.0.0`.
 - integrity-chained accepted-event recording, verified-prefix recovery, and
   exact fresh-world replay;
 - bounded headless renderer paths compiled for Vulkan/DX12 with primitive and
-  strict GLB geometry, color/depth/entity-ID readback, structured visibility,
-  and guarded background GPU retirement;
+  strict GLB geometry, color/depth/entity-ID readback, quantized flat
+  world-space normal observations, structured visibility, and guarded
+  background GPU retirement;
 - deterministic primitive imagination compilation and pure seeded built-in
   cuboid-grid procedures;
 - bounded content-addressed GLB admission, CPU decode, renderer upload, and
@@ -32,8 +33,9 @@ release yet; the current workspace version remains `0.0.0`.
   production SLA;
 - the validated full-runtime profile is currently Windows 11 x86_64 with a
   Vulkan discrete GPU; other runtime platforms/backends remain unverified;
-- renderer materials use flat base color, normal output is deferred, and the
-  GLB subset excludes textures, external buffers, compression, scene traversal,
+- renderer materials use flat base color; normal output is flat and quantized,
+  with no smooth imported normals, normal maps, or tangent space; the GLB
+  subset excludes textures, external buffers, compression, scene traversal,
   and most vertex attributes;
 - device-loss restart, durable recovery, binary packaging, signing, provenance,
   and automated release publication are not implemented.

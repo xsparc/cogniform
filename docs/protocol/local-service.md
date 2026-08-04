@@ -50,6 +50,12 @@ dropped. `try_receive_observation` never waits; callers that need a deadline
 must apply a bounded polling policy such as the canonical scenario's per-result
 timeout.
 
+Image requests return owned color, normalized depth, quantized flat world-space
+normal, or exact stable-identity vectors. Normal background pixels are `None`,
+matching the identity payload's explicit absence rather than using a zero
+vector sentinel. Visibility requests return stable-ID-sorted pixel counts and
+remain the only observation kind without dimensions.
+
 ## Replay ownership
 
 The engine applies patches through `RecordedWorld`. Canonical patch encoding

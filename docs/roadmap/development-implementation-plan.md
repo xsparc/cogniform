@@ -143,11 +143,33 @@ and separately authorized. See the
 [failure guide](../operations/failure-and-recovery.md), and
 [release-candidate checklist](../release/release-candidate.md).
 
+### PR 11 - CF011: Revision-linked surface-normal observations
+
+Outcome: the headless renderer and local observation path expose quantized flat
+world-space geometric normals with the same bounded lifecycle and exact
+revision/frame/camera causality as existing image observations.
+
+Gate: geometry pixels decode to finite unit normals within the documented
+RGBA8 quantization tolerance; background pixels are explicitly absent; normals
+follow source triangle winding; existing color/depth/entity-ID/visibility
+contracts remain unchanged; the fourth readback buffer stays inside each fixed
+lease; and unavailable attachment capabilities remain structured.
+
+Implemented contract: schema-v1 metadata accepts the additive `normal` kind;
+the local engine returns owned optional unit vectors; the renderer derives flat
+geometric normals from rasterized world positions, writes signed directions to
+an `Rgba8Unorm` attachment, and decodes and renormalizes them after readback.
+The selected adapter must support three color attachments and twelve color
+bytes per sample. Smooth imported normals, normal maps, tangent space,
+higher-precision targets, remote encoding, and release publication remain
+separate work. See
+[ADR 0011](../adr/0011-quantized-world-space-normal-observations.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
-  -> CF005 -> CF006 -> CF007 -> CF008 -> CF009
+  -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -204,6 +226,9 @@ Validation expands with capability:
 - CF004-CF005: headless integration, shader/layout validation, exact ID and tolerant numeric probes.
 - CF006-CF007: overload, fuzzable decoders, asset/security corpus, deterministic compiler/procedure fixtures.
 - CF008-CF009: unattended end-to-end scenario, controlled performance measurements, fault injection, compatibility and packaging evidence.
+- CF011: additive observation contracts, normal decode boundaries, controlled
+  winding/tolerance probes, and regression coverage for pooled readback and
+  causality.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

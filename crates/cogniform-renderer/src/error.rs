@@ -9,6 +9,8 @@ pub enum RenderTargetKind {
     Color,
     /// 32-bit floating-point depth output.
     Depth,
+    /// Quantized world-space geometric normal output.
+    Normal,
     /// 32-bit unsigned renderer-local entity-ID output.
     EntityId,
 }
@@ -18,6 +20,7 @@ impl std::fmt::Display for RenderTargetKind {
         match self {
             Self::Color => formatter.write_str("color"),
             Self::Depth => formatter.write_str("depth"),
+            Self::Normal => formatter.write_str("normal"),
             Self::EntityId => formatter.write_str("entity-id"),
         }
     }
@@ -218,6 +221,13 @@ pub enum RendererError {
         /// Pixel index containing the invalid value.
         pixel_index: usize,
     },
+    /// A mapped normal sample had an invalid marker or direction.
+    InvalidNormalOutput {
+        /// Pixel index containing the invalid value.
+        pixel_index: usize,
+        /// Stable validation reason.
+        reason: &'static str,
+    },
     /// A non-background attachment value had no stable-ID mapping for the frame.
     UnknownRenderEntityId {
         /// Unrecognized renderer-local attachment value.
@@ -308,6 +318,13 @@ impl std::fmt::Display for RendererError {
                     "depth output at pixel {pixel_index} is not finite or normalized"
                 )
             }
+            Self::InvalidNormalOutput {
+                pixel_index,
+                reason,
+            } => write!(
+                formatter,
+                "normal output at pixel {pixel_index} is invalid: {reason}"
+            ),
             Self::UnknownRenderEntityId { render_entity_id } => write!(
                 formatter,
                 "frame contains unknown renderer entity ID {render_entity_id}"

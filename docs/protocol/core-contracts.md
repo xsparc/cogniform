@@ -59,11 +59,15 @@ semantics. `LatestWins` cannot exist without a non-empty supersession key.
 `ObservationMetadata` always carries observation, revision, frame, and camera
 identity; observation kind and quality; completion timestamp and latency; and
 an exact staleness calculation relative to the latest known revision. Image
-observations require bounded non-zero dimensions. Structured visibility
-metadata has no pixel dimensions.
+observations require bounded non-zero dimensions. Schema v1 recognizes color,
+depth, normal, entity-ID, and visibility kinds. Normal payloads are local owned
+flat world-space unit vectors decoded from signed RGB8; background pixels are
+absent. Structured visibility metadata has no pixel dimensions.
 
-Bulk image bytes are deliberately absent. Later renderer or transport adapters
-must keep payload storage separate from this causal envelope.
+Bulk image bytes and vectors are deliberately absent. Renderer and future
+transport adapters must keep payload storage separate from this causal
+envelope. Older schema-v1 clients that exhaustively enumerate observation kinds
+must update before accepting `normal` metadata.
 
 ## Imaginations and logical queries
 

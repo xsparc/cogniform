@@ -134,6 +134,39 @@ fn wait_for(engine: &CogniformEngine) -> Observation {
     }
 }
 
+fn assert_observation_metadata(
+    observation: &Observation,
+    nonce: u128,
+    camera: StableEntityId,
+    kind: ObservationKind,
+) {
+    let metadata = observation.metadata();
+    assert_eq!(metadata.observation_id, ObservationId::new(nonce).unwrap());
+    assert_eq!(metadata.scene_revision, SceneRevision::new(2));
+    assert_eq!(metadata.camera_id, camera);
+    assert_eq!(metadata.kind, kind);
+    assert_eq!(metadata.quality, ObservationQuality::Low);
+    assert!(metadata.observed_at_unix_micros > 0);
+    assert!(
+        metadata.production_latency_micros
+            <= u64::try_from(Duration::from_secs(10).as_micros()).unwrap()
+    );
+    assert_eq!(
+        metadata.staleness.latest_known_revision,
+        SceneRevision::new(2)
+    );
+    assert_eq!(metadata.staleness.revisions_behind, 0);
+    if kind == ObservationKind::Visibility {
+        assert_eq!(metadata.dimensions, None);
+    } else {
+        let dimensions = metadata
+            .dimensions
+            .expect("image observation must carry dimensions");
+        assert_eq!(dimensions.width.get(), WIDTH);
+        assert_eq!(dimensions.height.get(), HEIGHT);
+    }
+}
+
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn extracted_frames_and_bounded_observations_preserve_revision_causality() {
@@ -196,13 +229,13 @@ fn extracted_frames_and_bounded_observations_preserve_revision_causality() {
         (20, ObservationKind::Visibility),
         (21, ObservationKind::Color),
         (22, ObservationKind::Depth),
+        (23, ObservationKind::Normal),
     ] {
         engine
             .request_observation(request(nonce, camera, kind))
             .unwrap();
         let observation = wait_for(&engine);
-        assert_eq!(observation.metadata().scene_revision, SceneRevision::new(2));
-        assert_eq!(observation.metadata().camera_id, camera);
+        assert_observation_metadata(&observation, nonce, camera, kind);
         match observation.payload() {
             ObservationPayload::Visibility(visible) => {
                 assert_eq!(visible.len(), 1);
@@ -217,6 +250,13 @@ fn extracted_frames_and_bounded_observations_preserve_revision_causality() {
             }
             ObservationPayload::Depth(pixels) => {
                 assert!(pixels.iter().any(|depth| *depth < 1.0));
+            }
+            ObservationPayload::Normal(pixels) => {
+                let center = pixels[((HEIGHT / 2 * WIDTH) + WIDTH / 2) as usize]
+                    .expect("rendered cube center must have a normal");
+                let length = center.iter().map(|value| value * value).sum::<f32>().sqrt();
+                assert!((length - 1.0).abs() <= 1.0e-5);
+                assert!(pixels[0].is_none(), "background normal must be absent");
             }
             ObservationPayload::EntityId(_) => panic!("unexpected entity-ID payload"),
         }

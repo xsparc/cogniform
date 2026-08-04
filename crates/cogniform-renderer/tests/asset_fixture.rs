@@ -2,7 +2,7 @@
 
 #![cfg(any(target_os = "windows", target_os = "linux"))]
 
-use cogniform_assets::{AssetMeshKey, AssetState, AssetStore, content_hash};
+use cogniform_assets::{AssetMeshKey, AssetState, AssetStore, AssetVertex, content_hash};
 use cogniform_protocol::{
     AssetMeshComponent, CameraComponent, ComponentValue, ConflictPolicy, CreateEntity,
     DeliverySemantic, FiniteF32, FrameId, IdempotencyKey, LocalTransform, PatchBudget, PositiveF32,
@@ -17,7 +17,7 @@ const HEIGHT: u32 = 64;
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
-fn approved_glb_fixture_renders_with_exact_identity_and_tolerant_color_depth() {
+fn approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal() {
     let bytes = decode_hex(include_str!("../../../tests/assets/triangle.glb.hex"));
     let content_hash = content_hash(&bytes);
     let key = AssetMeshKey {
@@ -28,6 +28,7 @@ fn approved_glb_fixture_renders_with_exact_identity_and_tolerant_color_depth() {
     assets.enqueue(content_hash, bytes).unwrap();
     assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
     let upload = assets.upload_job(key).unwrap();
+    let expected_normal = triangle_normal(upload.vertices());
 
     let mut renderer =
         pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
@@ -77,6 +78,52 @@ fn approved_glb_fixture_renders_with_exact_identity_and_tolerant_color_depth() {
         depth < 1.0,
         "asset triangle should write depth at the frame center"
     );
+    let normal = frame
+        .normal_at(center.0, center.1)
+        .expect("asset triangle should write a normal at the frame center");
+    let dot = normal
+        .iter()
+        .zip(expected_normal)
+        .map(|(actual, expected)| actual * expected)
+        .sum::<f32>();
+    assert!(
+        dot >= 0.99,
+        "normal must follow triangle winding: {normal:?}"
+    );
+    assert_eq!(frame.normal_at(0, 0), None);
+}
+
+fn triangle_normal(vertices: &[AssetVertex]) -> [f32; 3] {
+    let positions = vertices
+        .iter()
+        .take(3)
+        .map(|vertex| vertex.position.map(cogniform_protocol::FiniteF32::get))
+        .collect::<Vec<_>>();
+    let first = [
+        positions[1][0] - positions[0][0],
+        positions[1][1] - positions[0][1],
+        positions[1][2] - positions[0][2],
+    ];
+    let second = [
+        positions[2][0] - positions[0][0],
+        positions[2][1] - positions[0][1],
+        positions[2][2] - positions[0][2],
+    ];
+    let mut normal = [
+        first[1] * second[2] - first[2] * second[1],
+        first[2] * second[0] - first[0] * second[2],
+        first[0] * second[1] - first[1] * second[0],
+    ];
+    let inverse_length = normal
+        .iter()
+        .map(|value| value * value)
+        .sum::<f32>()
+        .sqrt()
+        .recip();
+    for value in &mut normal {
+        *value *= inverse_length;
+    }
+    normal
 }
 
 fn scene_patch(

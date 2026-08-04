@@ -524,6 +524,8 @@ pub enum ObservationKind {
     Color,
     /// Depth image.
     Depth,
+    /// Quantized geometric surface-normal image.
+    Normal,
     /// Exact stable-entity identity image.
     EntityId,
     /// Structured entity visibility summary without a pixel payload.
