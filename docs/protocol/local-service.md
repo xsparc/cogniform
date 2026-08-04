@@ -1,6 +1,7 @@
 # Local typed service
 
-Status: implemented by CF008 for offline in-process use.
+Status: implemented by CF008 for offline in-process use; complete caller-owned
+in-memory restoration was added by CF012.
 
 `LocalService` composes one bounded `LocalGateway`, authoritative recorded
 world, headless renderer, and observation worker. It is a Rust API, not a
@@ -36,6 +37,8 @@ handle, renderer device, queue, staging buffer, or replay log.
 | `logical_hash` | Hash the current canonical logical world |
 | `replayed_logical_hash` | Replay accepted events into a fresh world and hash the result |
 | `replay_bytes` | Copy the complete bounded version-one replay stream |
+| `recovery_point` | Capture complete replay bytes and the next unreserved renderer frame identity |
+| `restore` | Create a fresh service from one complete validated recovery point |
 
 Patch and imagination admission preserves the gateway's `MustApply`,
 `LatestWins`, `BestEffort`, idempotent replay, and capacity behavior. Admission
@@ -69,6 +72,28 @@ bounds. A caller can compare it with `logical_hash`; the canonical scenario
 treats any difference as failure. Returned replay bytes are a copy. The
 service does not persist, rotate, transmit, or load them automatically.
 
+## In-memory restoration
+
+`recovery_point` captures the complete replay stream together with the source
+renderer's next unreserved frame identity. A caller may retain that owned value,
+drop the source service, and pass it to `LocalService::restore` with reviewed
+bounds. Callers that reconstruct a point with `EngineRecoveryPoint::from_parts`
+own the storage, confidentiality, and atomic association of both parts.
+
+Restoration validates and replays the complete stream before adapter selection
+or GPU initialization. Any invalid tail rejects the point; the service never
+adopts only the longest verified prefix. It reconstructs authoritative state
+and idempotency records, retains the original log for later append, applies one
+final-state extraction to a fresh renderer, and resumes at the captured frame
+identity. A marker behind any replay-recorded estimated-visible frame is
+rejected.
+
+Command queues, cached gateway responses, outstanding observations, and
+readback work start empty. Resubmitting an accepted patch may therefore enter
+the fresh gateway queue, but world-level idempotency returns the original
+receipt without mutation or another replay entry. Asset stores and renderer
+asset residency are separate and must be re-established by their owner.
+
 ## Known limitations
 
 - The boundary is local Rust only; there is no socket, wire compatibility
@@ -77,14 +102,15 @@ service does not persist, rotate, transmit, or load them automatically.
   subscription stream, shutdown protocol, or automatic retry loop.
 - Observation payloads are owned vectors. Shared-memory leases and encoded
   delivery are deferred.
-- Replay is bounded in memory and can be copied out, but snapshotting,
-  persistence, recovery into a running service, revert, and log rotation are
-  not implemented.
+- Recovery is into a fresh service from a complete in-memory point. Filesystem
+  persistence, automatic startup, snapshotting, in-place recovery, revert, and
+  log rotation are not implemented.
 - Asset stores, renderer asset upload, and pure procedures remain separate
   library APIs. The service does not fetch or resolve external assets.
 - The headless baseline supports controlled DX12 or Vulkan adapters. Browser,
   Metal, OpenGL, and a hosted-GPU CI promise are outside the current contract.
 
-See [ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md), the
+See [ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md),
+[ADR 0012](../adr/0012-complete-in-memory-service-restoration.md), the
 [gateway guide](local-gateway-and-imagination.md), and the
 [canonical scenario](../getting-started/canonical-scenario.md).

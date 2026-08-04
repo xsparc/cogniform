@@ -17,5 +17,6 @@ earlier one and links the history.
 | [0009](0009-recorded-engine-and-local-typed-service.md) | Accepted | Record engine mutations and expose a bounded local typed service with a canonical unattended scenario |
 | [0010](0010-source-first-release-profile.md) | Accepted | Prepare a narrow source-first candidate profile without publishing crates, binaries, or a release |
 | [0011](0011-quantized-world-space-normal-observations.md) | Accepted | Add bounded quantized flat world-space normal observations without changing asset contracts |
+| [0012](0012-complete-in-memory-service-restoration.md) | Accepted | Restore a fresh bounded local service from complete verified replay and frame-continuity state |
 
 New records use four sections: context, decision, consequences, and status.

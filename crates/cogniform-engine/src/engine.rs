@@ -1,6 +1,8 @@
 use core::num::NonZeroU32;
 
-use cogniform_protocol::{ApplyReceipt, ApplyStatus, RuntimeLimits, ScenePatch, SceneRevision};
+use cogniform_protocol::{
+    ApplyReceipt, ApplyStatus, FrameId, RuntimeLimits, ScenePatch, SceneRevision,
+};
 use cogniform_renderer::{HeadlessRenderer, RendererConfig};
 use cogniform_replay::{
     RecordedApplyError, RecordedWorld, ReplayConfig, ReplayError, ReplayLog, ReplayVerification,
@@ -42,6 +44,56 @@ impl EngineConfig {
     }
 }
 
+/// Complete in-memory state required to restore engine causality.
+///
+/// Replay bytes preserve accepted authoritative state. The next frame identity
+/// prevents reuse of frames already reserved by the source renderer but not
+/// represented in the replay stream.
+#[derive(Clone, PartialEq, Eq)]
+pub struct EngineRecoveryPoint {
+    replay_bytes: Vec<u8>,
+    next_frame_id: FrameId,
+}
+
+impl EngineRecoveryPoint {
+    /// Creates a caller-owned recovery point for later bounded validation.
+    #[must_use]
+    pub const fn from_parts(replay_bytes: Vec<u8>, next_frame_id: FrameId) -> Self {
+        Self {
+            replay_bytes,
+            next_frame_id,
+        }
+    }
+
+    /// Returns the complete encoded replay stream.
+    #[must_use]
+    pub fn replay_bytes(&self) -> &[u8] {
+        &self.replay_bytes
+    }
+
+    /// Returns the first frame identity available to the restored renderer.
+    #[must_use]
+    pub const fn next_frame_id(&self) -> FrameId {
+        self.next_frame_id
+    }
+
+    /// Splits this point into its complete replay stream and next frame identity.
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<u8>, FrameId) {
+        (self.replay_bytes, self.next_frame_id)
+    }
+}
+
+impl std::fmt::Debug for EngineRecoveryPoint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("EngineRecoveryPoint")
+            .field("replay_byte_count", &self.replay_bytes.len())
+            .field("next_frame_id", &self.next_frame_id)
+            .finish()
+    }
+}
+
 /// Local composition of one authoritative world, renderer, and observation path.
 pub struct CogniformEngine {
     world: RecordedWorld,
@@ -68,6 +120,55 @@ impl CogniformEngine {
         let world =
             RecordedWorld::new(config.world, config.replay).map_err(EngineError::ReplayConfig)?;
         let renderer = HeadlessRenderer::new(config.renderer).await?;
+        let observations = ObservationQueue::new(config.observation_capacity, limits)?;
+        Ok(Self {
+            world,
+            renderer,
+            observations,
+        })
+    }
+
+    /// Restores one complete verified recovery point into fresh bounded domains.
+    ///
+    /// Replay decoding, integrity verification, and authoritative-world replay
+    /// complete before adapter selection or GPU initialization. Any invalid tail
+    /// rejects the whole point; the verified prefix is never adopted here.
+    pub async fn restore(
+        config: EngineConfig,
+        recovery: &EngineRecoveryPoint,
+    ) -> Result<Self, EngineError> {
+        let world = Self::prepare_restore(&config, recovery)?;
+        Self::restore_prepared(config, recovery.next_frame_id(), world).await
+    }
+
+    pub(crate) fn prepare_restore(
+        config: &EngineConfig,
+        recovery: &EngineRecoveryPoint,
+    ) -> Result<RecordedWorld, EngineError> {
+        validate_config(config)?;
+        let limits = config.world.runtime_limits;
+        let loaded = ReplayLog::load_prefix(recovery.replay_bytes(), config.replay, &limits);
+        let (log, tail) = loaded.into_parts();
+        if let Some(error) = tail {
+            return Err(EngineError::Replay(ReplayError::from(error)));
+        }
+        validate_recovery_frame(&log, recovery.next_frame_id())?;
+        RecordedWorld::restore(config.world, log).map_err(EngineError::Replay)
+    }
+
+    pub(crate) async fn restore_prepared(
+        config: EngineConfig,
+        next_frame_id: FrameId,
+        mut world: RecordedWorld,
+    ) -> Result<Self, EngineError> {
+        let limits = config.world.runtime_limits;
+        let mut renderer =
+            HeadlessRenderer::new_with_next_frame_id(config.renderer, next_frame_id).await?;
+        if world.world().revision() != SceneRevision::INITIAL {
+            let extraction = world.take_render_extraction()?;
+            let summary = renderer.apply_extraction(&extraction)?;
+            debug_assert_eq!(summary.scene_revision, world.world().revision());
+        }
         let observations = ObservationQueue::new(config.observation_capacity, limits)?;
         Ok(Self {
             world,
@@ -122,6 +223,14 @@ impl CogniformEngine {
     #[must_use]
     pub fn replay_bytes(&self) -> Vec<u8> {
         self.world.log().to_bytes()
+    }
+
+    /// Captures complete replay bytes and the next unreserved frame identity.
+    pub fn recovery_point(&self) -> Result<EngineRecoveryPoint, EngineError> {
+        Ok(EngineRecoveryPoint::from_parts(
+            self.replay_bytes(),
+            self.renderer.next_frame_id()?,
+        ))
     }
 
     /// Verifies the complete accepted-event hash and revision chain.
@@ -196,6 +305,23 @@ impl CogniformEngine {
     }
 }
 
+fn validate_recovery_frame(log: &ReplayLog, next_frame_id: FrameId) -> Result<(), EngineError> {
+    let recorded_frame_id = log
+        .entries()
+        .iter()
+        .map(cogniform_replay::ReplayEntry::estimated_visible_frame)
+        .max();
+    if let Some(recorded_frame_id) = recorded_frame_id
+        && next_frame_id < recorded_frame_id
+    {
+        return Err(EngineError::RecoveryFrameBehindReplay {
+            next_frame_id,
+            recorded_frame_id,
+        });
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_config(config: &EngineConfig) -> Result<(), EngineError> {
     config
         .replay
@@ -230,6 +356,8 @@ pub(crate) fn validate_config(config: &EngineConfig) -> Result<(), EngineError> 
 
 #[cfg(test)]
 mod tests {
+    use cogniform_replay::ReplayTailErrorKind;
+
     use super::*;
 
     #[test]
@@ -254,5 +382,33 @@ mod tests {
             validate_config(&config),
             Err(EngineError::InvalidConfig { .. })
         ));
+    }
+
+    #[test]
+    fn invalid_recovery_stream_fails_before_renderer_initialization() {
+        let recovery =
+            EngineRecoveryPoint::from_parts(b"invalid".to_vec(), FrameId::new(1).unwrap());
+        let error = pollster::block_on(CogniformEngine::restore(
+            EngineConfig::new(64, 64),
+            &recovery,
+        ))
+        .expect_err("invalid replay bytes must reject the whole recovery point");
+        assert!(matches!(
+            error,
+            EngineError::Replay(ReplayError::Tail(error))
+                if matches!(error.kind(), ReplayTailErrorKind::InvalidHeader)
+        ));
+    }
+
+    #[test]
+    fn recovery_point_debug_redacts_replay_contents() {
+        let recovery = EngineRecoveryPoint::from_parts(
+            b"private-scene-marker".to_vec(),
+            FrameId::new(7).unwrap(),
+        );
+        let debug = format!("{recovery:?}");
+        assert!(!debug.contains("private-scene-marker"));
+        assert!(debug.contains("replay_byte_count: 20"));
+        assert!(debug.contains("next_frame_id"));
     }
 }

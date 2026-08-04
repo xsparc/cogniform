@@ -67,7 +67,7 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-world` | `hecs` implementation, stable-ID index, validation, atomic commit, hierarchy, transforms, queries | Depends on protocol/math; never renderer or service |
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
 | `cogniform-renderer` | `wgpu` feature negotiation, headless targets, primitive rendering, and color/depth/normal/ID outputs | Consumes extracted render data; never mutable world access |
-| `cogniform-engine` | Bounded channels, domain lifecycle, frame/revision correlation, composition | Orchestrates through public interfaces; does not absorb domain state |
+| `cogniform-engine` | Bounded channels, domain lifecycle, frame/revision correlation, composition, and complete in-memory restoration | Orchestrates through public interfaces; does not absorb domain state or perform persistence |
 | `cogniform-cli` | Local sample client, replay and diagnostic commands | Depends on public engine/protocol interfaces only |
 
 CF006 establishes the semantic compiler as a separate pure crate while its
@@ -187,7 +187,11 @@ All agent data, labels, assets, procedures, and transport messages are untrusted
 - append-only replay integrity and secret-free canonical events;
 - optional Wasm/model execution isolated behind explicit capability and resource limits.
 
-Failure behavior is controlled: invalid requests do not mutate state; device loss is restartable or terminates the engine cleanly; corrupt replay stops at the last verified entry; optional observers/models degrade without affecting world or render correctness.
+Failure behavior is controlled: invalid requests do not mutate state; device
+loss terminates the affected instance cleanly; lower-level replay inspection
+stops at the last verified entry; complete service restoration rejects any
+invalid tail before GPU initialization; optional observers/models degrade
+without affecting world or render correctness.
 
 ## 6. Performance and observability
 
@@ -197,7 +201,12 @@ Research targets such as 60 Hz, 3 ms p95 CPU engine work, 8 ms p95 GPU time, 8 m
 
 ## 7. External interfaces
 
-The public surface stays small: apply imagination, apply patch, query scene, request observation, subscribe to bounded feedback, explain compilation, revert recorded state, and resolve assets. Initial implementation can use in-process Rust types and canonical JSON fixtures. Protobuf/gRPC, MCP, local shared memory, and QUIC are adapters introduced after the core semantics are tested.
+The public surface stays small: apply imagination, apply patch, query scene,
+request observation, subscribe to bounded feedback, explain compilation,
+capture or restore complete local recovery state, revert recorded state, and
+resolve assets. Initial implementation can use in-process Rust types and
+canonical JSON fixtures. Protobuf/gRPC, MCP, local shared memory, and QUIC are
+adapters introduced after the core semantics are tested.
 
 Public schemas always declare version, maximum encoded/decoded size, collection/string/nesting limits, unknown-field behavior, and asset references separate from bulk bytes.
 
@@ -216,6 +225,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Idempotency | Repeated key returns the same receipt without duplicate mutation |
 | Hierarchy | Cycles/depth violations reject atomically; propagation order is stable |
 | Replay | Repeating accepted canonical events yields the exact logical hash |
+| Restoration | A complete verified recovery point restores logical/replay state and continues frame/revision causality in a fresh service |
 | Headless render | Reference primitive scene renders without a visible window |
 | Machine outputs | Entity-ID probes are exact; color/depth and quantized flat world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
@@ -230,8 +240,9 @@ CF009 resolves the initial candidate packaging and validation profile in
 publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
 artifacts, smooth normals and the wider visual-quality surface, remote
-protocol/authentication, tenancy, observation retention, and model policy remain
-explicitly open. Defaults in the roadmap are planning assumptions, not
+protocol/authentication, tenancy, observation retention, durable persistence,
+automatic device recreation, snapshots/revert, log rotation, and model policy
+remain explicitly open. Defaults in the roadmap are planning assumptions, not
 production commitments.
 
 ## 11. Verified foundation references

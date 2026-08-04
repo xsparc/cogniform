@@ -5,9 +5,9 @@ use cogniform_replay::ReplayVerification;
 use cogniform_world::LogicalSceneHash;
 
 use crate::{
-    AdapterSummary, CogniformEngine, EngineConfig, GatewayAdmission, GatewayConfig,
-    GatewayQueueStats, GatewayResponse, LocalGateway, LocalServiceError, Observation,
-    ObservationRequest,
+    AdapterSummary, CogniformEngine, EngineConfig, EngineRecoveryPoint, GatewayAdmission,
+    GatewayConfig, GatewayQueueStats, GatewayResponse, LocalGateway, LocalServiceError,
+    Observation, ObservationRequest,
 };
 use crate::{
     engine::validate_config as validate_engine_config,
@@ -84,6 +84,37 @@ impl LocalService {
             engine.world.max_idempotency_records.get(),
         )?;
         let engine = CogniformEngine::new(engine).await?;
+        let gateway = LocalGateway::new(engine, gateway)?;
+        Ok(Self { gateway })
+    }
+
+    /// Restores a fresh local service from one complete in-memory recovery point.
+    ///
+    /// Transient command/result and observation queues intentionally start
+    /// empty. Replay validation and world reconstruction finish before GPU
+    /// initialization, and any invalid tail rejects the complete point.
+    pub async fn restore(
+        config: LocalServiceConfig,
+        recovery: &EngineRecoveryPoint,
+    ) -> Result<Self, LocalServiceError> {
+        let LocalServiceConfig { engine, gateway } = config;
+        validate_engine_config(&engine)?;
+        validate_gateway_config(
+            gateway,
+            &engine.world.runtime_limits,
+            engine.world.max_idempotency_records.get(),
+        )?;
+        let world = CogniformEngine::prepare_restore(&engine, recovery)?;
+        let available_world_records = world.world().max_idempotency_records().saturating_sub(
+            u32::try_from(world.world().idempotency_record_count()).unwrap_or(u32::MAX),
+        );
+        validate_gateway_config(
+            gateway,
+            &engine.world.runtime_limits,
+            available_world_records,
+        )?;
+        let engine =
+            CogniformEngine::restore_prepared(engine, recovery.next_frame_id(), world).await?;
         let gateway = LocalGateway::new(engine, gateway)?;
         Ok(Self { gateway })
     }
@@ -179,6 +210,11 @@ impl LocalService {
     #[must_use]
     pub fn replay_bytes(&self) -> Vec<u8> {
         self.gateway.engine().replay_bytes()
+    }
+
+    /// Captures complete accepted-event bytes and renderer frame continuity.
+    pub fn recovery_point(&self) -> Result<EngineRecoveryPoint, LocalServiceError> {
+        self.gateway.engine().recovery_point().map_err(Into::into)
     }
 }
 

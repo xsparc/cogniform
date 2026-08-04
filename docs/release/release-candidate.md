@@ -12,7 +12,8 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Atomic transaction | Pass | Full preflight, late-operation rejection, randomized model, unchanged revision/hash on failure |
 | Idempotency | Pass | World and gateway replay the retained result; content conflicts reject without mutation |
 | Hierarchy and transforms | Pass | Cycle/depth/dangling rejection and stable parent-before-child sparse propagation |
-| Deterministic replay | Pass | Canonical logical hash, chained entries, verified-prefix recovery, every-byte corruption injection |
+| Deterministic replay | Pass | Canonical logical hash, chained entries, verified-prefix inspection, every-byte corruption injection |
+| Fresh-service restoration | Pass on validated profile | Complete replay and frame state restore revision/hash/query/idempotency and continue observation and append causality |
 | Headless render | Pass on validated profile | No surface/window; Vulkan cube, GLB, readback pressure, renderer-drop retirement, and canonical scenario evidence |
 | Machine outputs | Pass on validated profile | Tolerant color/depth, exact stable entity ID, structured visibility, and quantized flat world-space normals following triangle winding |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
@@ -62,8 +63,8 @@ The GitHub release must be marked prerelease and state:
 
 - source-only, early local evaluation;
 - validated Windows/Vulkan profile and build-only Ubuntu evidence;
-- no remote service, authentication, persistence, production SLA, or semver-
-  stable crates.io API;
+- no remote service, authentication, durable persistence, automatic restart,
+  production SLA, or semver-stable crates.io API;
 - normal output is flat and quantized, with no imported smoothing, normal maps,
   or tangent-space contract; unvalidated platforms/backends remain
   unsupported; and

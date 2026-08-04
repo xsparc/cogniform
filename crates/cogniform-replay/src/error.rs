@@ -211,6 +211,8 @@ impl std::error::Error for RecordedApplyError {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum ReplayError {
+    /// An encoded replay stream contained an invalid or incomplete tail.
+    Tail(ReplayTailError),
     /// The complete in-memory log failed chain verification.
     Integrity(ReplayIntegrityError),
     /// A replayed patch was rejected at the named zero-based entry.
@@ -242,6 +244,7 @@ pub enum ReplayError {
 impl fmt::Display for ReplayError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Tail(error) => error.fmt(formatter),
             Self::Integrity(error) => error.fmt(formatter),
             Self::World { entry_index, .. } => {
                 write!(formatter, "world rejected replay entry {entry_index}")
@@ -268,10 +271,17 @@ impl fmt::Display for ReplayError {
 impl std::error::Error for ReplayError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::Tail(error) => Some(error),
             Self::Integrity(error) => Some(error),
             Self::World { source, .. } => Some(source),
             Self::Invariant { source, .. } => Some(source),
             _ => None,
         }
+    }
+}
+
+impl From<ReplayTailError> for ReplayError {
+    fn from(value: ReplayTailError) -> Self {
+        Self::Tail(value)
     }
 }
