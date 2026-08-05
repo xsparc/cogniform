@@ -192,6 +192,14 @@ Every feedback envelope includes scene revision, frame ID, camera ID when releva
 
 Use `wgpu` with built-in WGSL and negotiated adapter features/limits. The baseline is a small forward renderer with primitive meshes, camera, depth, color, entity-ID, and quantized world-space normal output. Position-only triangles remain flat; approved imported vertex normals are inverse-transformed and interpolated. Headless mode renders to textures without constructing a visible window. Optional `winit` integration is isolated from the headless core.
 
+Built-in cuboids and centered unit XY planes use immutable expanded
+position-plus-normal buffers. Plane triangles wind counter-clockwise toward
+positive Z, remain at local Z = 0, and apply all positive XYZ dimensions
+through the model transform; X/Y set visible extents while Z participates in
+normal transformation without creating thickness. A missing asset uses its
+exact explicit built-in fallback. Sphere topology remains an explicit
+unsupported renderer capability rather than silently selecting a cuboid.
+
 Feature tiers are capability-based:
 
 - Baseline: downlevel/WebGPU-compatible limits, normal bind groups, CPU culling.
@@ -277,7 +285,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Live revert | A quiescent service builds and validates an exact historical replacement before swap, preserves the source frame frontier, clears named transient/asset state, and continues retained idempotency and ordinary branch append |
 | Recovery file | A new immutable local file stores one complete bounded envelope without overwrite; bounded load rejects non-files, growth, corruption, truncation, extension, and over-limit input before restoration |
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
-| Headless render | Reference primitive scene renders without a visible window |
+| Headless render | Reference cuboid and extracted plane scenes render without a visible window |
 | Machine outputs | Entity-ID probes are exact; color/depth and quantized flat or imported-smooth world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |

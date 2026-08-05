@@ -21,7 +21,8 @@ const ENTITY_ID_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 const NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const BYTES_PER_PIXEL: u32 = 4;
 const COPY_ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-const REFERENCE_VERTEX_COUNT: u32 = 36;
+const CUBE_VERTEX_COUNT: u32 = 36;
+const PLANE_VERTEX_COUNT: u32 = 6;
 const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
 const CUBE_POSITIONS: [[f32; 3]; 36] = [
@@ -61,6 +62,14 @@ const CUBE_POSITIONS: [[f32; 3]; 36] = [
     [-0.5, -0.5, 0.5],
     [0.5, -0.5, -0.5],
     [-0.5, -0.5, -0.5],
+];
+const PLANE_POSITIONS: [[f32; 3]; 6] = [
+    [-0.5, -0.5, 0.0],
+    [0.5, -0.5, 0.0],
+    [0.5, 0.5, 0.0],
+    [-0.5, -0.5, 0.0],
+    [0.5, 0.5, 0.0],
+    [-0.5, 0.5, 0.0],
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,6 +133,7 @@ pub struct HeadlessRenderer {
     pipeline: wgpu::RenderPipeline,
     draw_layout: wgpu::BindGroupLayout,
     cube_vertices: wgpu::Buffer,
+    plane_vertices: wgpu::Buffer,
     assets: RendererAssets,
     readback_layout: ReadbackLayout,
     readback_pool: ReadbackPool,
@@ -170,7 +180,10 @@ impl HeadlessRenderer {
             request_device(&adapter, &adapter_summary, &config, readback_layout).await?;
         let gpu_retirement = GpuRetirementGuard::start(device.clone(), queue.clone())?;
         let (pipeline, draw_layout) = create_reference_pipeline(&device).await?;
-        let cube_vertices = create_cube_vertex_buffer(&device);
+        let cube_vertices =
+            create_builtin_vertex_buffer(&device, "cogniform-cube-vertices", &CUBE_POSITIONS);
+        let plane_vertices =
+            create_builtin_vertex_buffer(&device, "cogniform-plane-vertices", &PLANE_POSITIONS);
         let readback_pool = ReadbackPool::new(
             &device,
             readback_layout.buffer_size,
@@ -186,6 +199,7 @@ impl HeadlessRenderer {
             pipeline,
             draw_layout,
             cube_vertices,
+            plane_vertices,
             assets: RendererAssets::new(),
             readback_layout,
             readback_pool,
@@ -344,6 +358,7 @@ impl HeadlessRenderer {
                 pipeline: &self.pipeline,
                 draw_layout: &self.draw_layout,
                 cube_vertices: &self.cube_vertices,
+                plane_vertices: &self.plane_vertices,
                 assets: &self.assets,
                 targets: &targets,
             },
@@ -855,6 +870,7 @@ struct ScenePassResources<'a> {
     pipeline: &'a wgpu::RenderPipeline,
     draw_layout: &'a wgpu::BindGroupLayout,
     cube_vertices: &'a wgpu::Buffer,
+    plane_vertices: &'a wgpu::Buffer,
     assets: &'a RendererAssets,
     targets: &'a RenderTargets,
 }
@@ -935,7 +951,8 @@ fn encode_scene_pass(
             });
         render_pass.set_bind_group(0, &bind_group, &[]);
         let (vertices, vertex_count) = match draw.geometry {
-            PreparedGeometry::Cuboid => (resources.cube_vertices, REFERENCE_VERTEX_COUNT),
+            PreparedGeometry::Cuboid => (resources.cube_vertices, CUBE_VERTEX_COUNT),
+            PreparedGeometry::Plane => (resources.plane_vertices, PLANE_VERTEX_COUNT),
             PreparedGeometry::Asset(key) => {
                 let mesh = resources
                     .assets
@@ -949,11 +966,15 @@ fn encode_scene_pass(
     }
 }
 
-fn create_cube_vertex_buffer(device: &wgpu::Device) -> wgpu::Buffer {
-    let encoded = encode_cube_vertices();
-    let size = u64::try_from(encoded.len()).expect("fixed cube bytes fit u64");
+fn create_builtin_vertex_buffer(
+    device: &wgpu::Device,
+    label: &'static str,
+    positions: &[[f32; 3]],
+) -> wgpu::Buffer {
+    let encoded = encode_winding_vertices(positions);
+    let size = u64::try_from(encoded.len()).expect("fixed built-in bytes fit u64");
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("cogniform-cube-vertices"),
+        label: Some(label),
         size,
         usage: wgpu::BufferUsages::VERTEX,
         mapped_at_creation: true,
@@ -969,9 +990,10 @@ fn create_cube_vertex_buffer(device: &wgpu::Device) -> wgpu::Buffer {
     buffer
 }
 
-fn encode_cube_vertices() -> Vec<u8> {
-    let mut encoded = Vec::with_capacity(CUBE_POSITIONS.len() * 24);
-    for triangle in CUBE_POSITIONS.chunks_exact(3) {
+fn encode_winding_vertices(positions: &[[f32; 3]]) -> Vec<u8> {
+    debug_assert!(!positions.is_empty() && positions.len().is_multiple_of(3));
+    let mut encoded = Vec::with_capacity(positions.len() * 24);
+    for triangle in positions.chunks_exact(3) {
         let edge_a = subtract(triangle[1], triangle[0]);
         let edge_b = subtract(triangle[2], triangle[0]);
         let normal = normalize([
@@ -985,7 +1007,7 @@ fn encode_cube_vertices() -> Vec<u8> {
             }
         }
     }
-    debug_assert_eq!(encoded.len(), CUBE_POSITIONS.len() * 24);
+    debug_assert_eq!(encoded.len(), positions.len() * 24);
     encoded
 }
 
@@ -1140,7 +1162,11 @@ mod tests {
 
     #[test]
     fn cube_vertices_interleave_winding_normals() {
-        let encoded = encode_cube_vertices();
+        let encoded = encode_winding_vertices(&CUBE_POSITIONS);
+        assert_eq!(
+            usize::try_from(CUBE_VERTEX_COUNT).unwrap(),
+            CUBE_POSITIONS.len()
+        );
         assert_eq!(encoded.len(), CUBE_POSITIONS.len() * 24);
         let values = encoded
             .chunks_exact(4)
@@ -1150,6 +1176,24 @@ mod tests {
         assert_eq!(&values[3..6], &[0.0, 0.0, 1.0]);
         assert_eq!(&values[6..9], &CUBE_POSITIONS[1]);
         assert_eq!(&values[9..12], &[0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn plane_vertices_are_centered_counter_clockwise_and_plus_z() {
+        let encoded = encode_winding_vertices(&PLANE_POSITIONS);
+        assert_eq!(
+            usize::try_from(PLANE_VERTEX_COUNT).unwrap(),
+            PLANE_POSITIONS.len()
+        );
+        assert_eq!(encoded.len(), PLANE_POSITIONS.len() * 24);
+        let values = encoded
+            .chunks_exact(4)
+            .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        for (vertex, position) in values.chunks_exact(6).zip(PLANE_POSITIONS) {
+            assert_eq!(&vertex[..3], &position);
+            assert_eq!(&vertex[3..], &[0.0, 0.0, 1.0]);
+        }
     }
 
     #[test]

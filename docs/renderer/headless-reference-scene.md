@@ -33,6 +33,15 @@ RGBA color `[51, 153, 230, 255]`, and a fixed orthographic camera with a small
 view shear. The background entity ID is `0`, cleared depth is `1.0`, and
 normal alpha `0` marks background.
 
+Extracted built-in geometry supports cuboids and planes. A plane is a centered
+unit square at local Z = 0, expanded as two counter-clockwise XY triangles with
+a positive-Z unit normal. Its positive XYZ dimensions scale the full model:
+X and Y control visible size and Z participates in normal transformation without
+creating thickness. One fixed 144-byte plane vertex payload is allocated at
+renderer initialization; frames do not tessellate or upload it. The baseline
+pipeline does not cull the back side and does not flip its source normal.
+Spheres still return `UnsupportedPrimitive` before GPU submission.
+
 - entity IDs must match exactly;
 - color channels use an absolute tolerance of 2 units in RGBA8;
 - center depth uses an absolute tolerance of 0.02;
@@ -84,11 +93,13 @@ approved adapter:
 
 ```text
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact reference_cube_produces_exact_ids_and_tolerant_color_depth_normals
+cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact extracted_plane_produces_color_depth_identity_and_plus_z_normal
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored
 ```
 
 The integration tests render at 64 by 64 pixels, verify exact object and
-background IDs, probe color, depth, position-only winding normals, and smooth
+background IDs, probe cuboid and plane color, depth, position-only winding
+normals, and smooth
 normals under non-uniform scale using the declared tolerances, validate output
 lengths and bounds behavior, and require the selected backend to be DX12 or
 Vulkan. Normal workspace CI compiles these tests
@@ -101,5 +112,7 @@ See [ADR 0005](../adr/0005-bounded-headless-wgpu-baseline.md) for the dependency
 backend, identity, and synchronization decisions.
 See [ADR 0020](../adr/0020-bounded-imported-vertex-normals.md) for the
 position/normal vertex contract and inverse-transpose decision.
+See [ADR 0021](../adr/0021-centered-built-in-plane-rendering.md) for the plane
+geometry, dimension, and fallback convention.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

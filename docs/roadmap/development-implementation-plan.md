@@ -380,12 +380,34 @@ excluded. See [ADR 0020](../adr/0020-bounded-imported-vertex-normals.md), the
 [GLB asset guide](../assets/glb-subset.md), and the
 [renderer guide](../renderer/headless-reference-scene.md).
 
+### PR 21 - CF021: Centered built-in plane rendering
+
+Outcome: the already-public plane primitive renders through the same bounded
+headless color, depth, stable-identity, and world-space-normal path as cuboids.
+
+Gate: one immutable six-vertex buffer encodes a centered unit XY square as two
+counter-clockwise positive-Z triangles in the existing 24-byte vertex layout;
+all positive XYZ dimensions scale the model while local positions remain at
+Z = 0. Scene preparation selects the exact cuboid or plane shape, an unavailable
+asset honors its explicit primitive fallback, resident assets retain
+precedence, and direct or fallback spheres preserve the typed unsupported
+error. Unit tests prove layout, selection, dimensions, precedence, and failure;
+a controlled adapter test proves plane color, finite depth, stable entity ID,
+background, and tolerant positive-Z normal output.
+
+Implemented contract: plane frames add no tessellation, upload job, dependency,
+pipeline, or observation format. Sphere tessellation, subdivisions, UVs,
+tangents, textures, two-sided lighting policy, collision, asset changes,
+transport, persistence, and release action remain excluded. See
+[ADR 0021](../adr/0021-centered-built-in-plane-rendering.md) and the
+[renderer guide](../renderer/headless-reference-scene.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
-  -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020
+  -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -473,6 +495,9 @@ Validation expands with capability:
   deterministic normalization and flat fallback, exact 24-byte CPU/GPU vertex
   accounting, interleaved upload checks, and controlled winding,
   inverse-transpose, interpolation, and observation probes.
+- CF021: exact fixed plane layout/winding, shape and fallback selection,
+  all-axis model scaling, retained sphere rejection, and controlled color,
+  depth, identity, background, and world-space-normal probes.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

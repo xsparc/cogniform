@@ -27,6 +27,9 @@ release yet; the current workspace version remains `0.0.0`.
 - optional finite same-count GLB vertex normals, deterministic winding fallback,
   exact 24-byte position/normal accounting, interleaved GPU upload, and
   inverse-transpose rendering under non-uniform scale;
+- fixed centered XY plane rendering with counter-clockwise positive-Z winding,
+  all-axis model scaling, exact primitive fallback selection, stable identity,
+  and bounded color/depth/normal readback;
 - service-owned asset admission, explicit single-item CPU/GPU processing,
   aggregate residency status, and exact-hash post-recovery rehydration;
 - local typed service and unattended room/table/light/camera scenario;
@@ -68,7 +71,9 @@ release yet; the current workspace version remains `0.0.0`.
 - renderer materials use flat base color; normal output is quantized and the
   imported subset has no normal maps or tangent space; the GLB
   subset excludes textures, external buffers, compression, scene traversal,
-  and most vertex attributes;
+  and most vertex attributes. Built-in geometry supports cuboids and fixed
+  centered XY planes; spheres, subdivisions, thickness, UVs, and two-sided
+  normal policy remain unsupported;
 - recovery points and recovery files do not include queued commands,
   observations, asset bytes, or residency; exact-hash asset sources can be
   stored only as separate caller-mapped files. Files are create-new only and

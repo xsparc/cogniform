@@ -42,6 +42,13 @@ be valid, and an entity cannot directly parent itself. Full hierarchy
 cycle/depth, ownership, asset availability, and authoritative-world checks
 belong to their owning domains.
 
+Built-in dimensions are positive XYZ model scales. Cuboids are centered unit
+boxes. Planes are centered unit squares embedded in local XY at Z = 0, with
+counter-clockwise positive-Z winding and a positive-Z source normal; X and Y
+set visible extents while Z remains part of the complete model and normal
+transform. Sphere remains a valid protocol shape but is not yet implemented by
+the bounded renderer and produces its structured unsupported-primitive error.
+
 Patch validation compares actual counts and declared budgets with
 `RuntimeLimits`. Validation never reorders operations. Atomic commit and
 idempotency storage are world responsibilities; the contract makes their input
