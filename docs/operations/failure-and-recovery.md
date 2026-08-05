@@ -21,6 +21,7 @@ store; operators compose those concerns outside the MVP.
 | Recovery envelope is malformed, over-limit, truncated, extended, or changed at any byte | Return a typed non-sensitive codec error before copying replay bytes or initializing a service | recovery-envelope unit tests |
 | Recovery stream has any invalid tail or a frame marker behind replay evidence | Reject the complete recovery point before GPU initialization; never adopt only the verified prefix | recovery unit and controlled service-restoration tests |
 | Historical revision is newer than the retained log | Return the requested and latest revisions without changing the source service | exact-revision replay and controlled historical-fork tests |
+| Live revert target is current/future or transient work is not drained | Return typed target or exact command/observation/import/upload blockers; preserve world, renderer, frame frontier, replay, hash, queues, and assets | controlled quiescent-revert test |
 | Asset content hash mismatch | Consume no record or queue capacity | asset-store tests |
 | Restored logical asset reference has no CPU/GPU residency | Return the exact entity and mesh key as `AssetUnavailable`; preserve revision, hash, and replay | controlled service-asset rehydration test |
 | Truncated, malformed, over-limit, or unsafe-proxy GLB | Reject without panic or GPU upload; only approved unsupported classes may proxy | asset truncation and classification tests |
@@ -92,8 +93,25 @@ returns a typed `ReplayRevisionError`; do not reinterpret that error as the
 latest available state. A successful historical point is a complete standalone
 replay prefix paired with the source renderer's current next frame identity.
 Restore it into a separate fresh service. The operation neither changes the
-source nor authorizes an in-place revert, automatic branch switch, or reuse of
-older frame identities.
+source nor automatically switches a live service or authorizes reuse of older
+frame identities.
+
+### In-place historical revert
+
+Stop new producers and drain the mutating-command queue, observations, pending
+asset imports, and pending asset uploads before calling
+`revert_to_revision`. A `NotQuiescent` error reports all four counts; do not
+discard work merely to suppress the error unless that loss is an explicit
+caller decision. Equal and future targets are also typed and non-mutating.
+
+The operation creates and validates a complete fresh replacement before swap.
+If replay, world reconstruction, adapter/device initialization, or gateway
+setup fails, retain and continue using the unchanged original service. On
+success, use `LocalRevertReceipt` to account for the removed replay tail and
+cleared result/CPU/GPU asset state. Rehydrate retained logical asset references
+from approved exact-hash bytes before dependent observations. The revert is not
+recorded as a scene event and does not establish authorization, freshness,
+branch identity, persistence, or an automatic rollback policy.
 
 ### Asset unavailable after recovery
 

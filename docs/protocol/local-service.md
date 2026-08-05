@@ -5,7 +5,8 @@ in-memory restoration was added by CF012 and a portable bounded recovery-point
 envelope by CF013. CF014 adds exact-revision recovery points for fresh-service
 historical forks. CF015 adds service-owned bounded asset resolution and
 explicit recovery rehydration. CF016 composes pure built-in procedures through
-ordinary patch admission.
+ordinary patch admission. CF017 adds quiescent in-place historical revert
+through a fully restored replacement.
 
 `LocalService` composes one bounded `LocalGateway`, authoritative recorded
 world, service-owned asset store, headless renderer, and observation worker. It
@@ -54,6 +55,7 @@ handle, renderer device, queue, staging buffer, or replay log.
 | `recovery_point` | Capture complete replay bytes and the next unreserved renderer frame identity |
 | `recovery_point_at_revision` | Capture a complete exact-revision replay prefix with the source's current next frame identity |
 | `restore` | Create a fresh service from one complete validated recovery point |
+| `revert_to_revision` | Replace a quiescent live service with one exact older retained revision after complete fresh restoration |
 
 Patch and imagination admission preserves the gateway's `MustApply`,
 `LatestWins`, `BestEffort`, idempotent replay, and capacity behavior. Admission
@@ -177,6 +179,33 @@ The API does not switch the live source, overwrite later history, retain a
 snapshot catalog, compare branch ancestry, or authenticate freshness. Callers
 must explicitly own and coordinate every fork.
 
+## In-place historical revert
+
+`revert_to_revision` accepts only a strictly older retained revision. A target
+equal to the current revision and a target newer than retained replay return
+typed errors. Commands, observations, asset imports, and asset uploads must be
+quiescent; the typed blocker reports all four current counts and the rejection
+leaves world, renderer, replay, queues, assets, hash, and frame frontier
+unchanged.
+
+The service captures the exact prefix with its current next frame identity and
+constructs a complete fresh replacement under the retained validated
+configuration. Only successful replay/world reconstruction, renderer/device
+initialization, observation setup, and gateway validation permit the final
+assignment. A failed replacement therefore preserves the old live service.
+
+Success records no lifecycle event. Replay and authoritative state end exactly
+at the target; the renderer resumes from the source frame frontier. Command and
+observation state, gateway result caches/counters, CPU asset records, and GPU
+asset residency start empty. `LocalRevertReceipt` reports previous/target
+revision, removed replay entries, next frame, and cleared result/CPU/GPU asset
+counts. Retained logical asset references need exact-hash rehydration.
+
+World idempotency from the retained prefix remains effective without replay
+growth. Keys that existed only in the removed tail are absent and can create an
+ordinary new branch. Callers own authorization, target choice, freshness,
+branch identity, and any external rollback policy.
+
 ## Known limitations
 
 - The boundary is local Rust only; there is no socket, wire compatibility
@@ -186,10 +215,10 @@ must explicitly own and coordinate every fork.
 - Observation payloads are owned vectors. Shared-memory leases and encoded
   delivery are deferred.
 - Recovery is into a fresh service from a complete in-memory point. Exact
-  retained revisions can seed separate historical forks, but filesystem
-  persistence, automatic startup, snapshot registries, in-place recovery or
-  revert, branch management, cross-branch frame allocation, and log rotation
-  are not implemented.
+  retained revisions can seed separate historical forks or replace a quiescent
+  live service, but filesystem persistence, automatic startup, snapshot
+  registries, automatic/scheduled rollback, branch management, cross-branch
+  frame allocation, and log rotation are not implemented.
 - Only the pure built-in cuboid-grid procedure is supported. External
   procedures, plugins, Wasm, and user code are not loaded. The service accepts
   caller-supplied exact-hash asset bytes but does not fetch external assets,
@@ -202,6 +231,7 @@ See [ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md),
 [ADR 0013](../adr/0013-versioned-recovery-point-envelope.md),
 [ADR 0014](../adr/0014-exact-revision-historical-recovery-forks.md),
 [ADR 0015](../adr/0015-service-owned-asset-resolution-and-rehydration.md),
-[ADR 0016](../adr/0016-service-procedure-composition-through-ordinary-patches.md), the
+[ADR 0016](../adr/0016-service-procedure-composition-through-ordinary-patches.md),
+[ADR 0017](../adr/0017-quiescent-live-revert-through-fresh-replacement.md), the
 [gateway guide](local-gateway-and-imagination.md), and the
 [canonical scenario](../getting-started/canonical-scenario.md).

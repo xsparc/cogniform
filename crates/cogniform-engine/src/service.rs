@@ -4,8 +4,8 @@ use cogniform_assets::{
 };
 use cogniform_procedural::{ProcedureArtifact, ProcedureRequest, execute};
 use cogniform_protocol::{
-    ContentHash, ImaginationEnvelope, ScenePatch, SceneQuery, SceneQueryResult, SceneRevision,
-    StableEntityId,
+    ContentHash, FrameId, ImaginationEnvelope, ScenePatch, SceneQuery, SceneQueryResult,
+    SceneRevision, StableEntityId,
 };
 use cogniform_renderer::{AssetUploadAdmission, AssetUploadOutcome, RendererAssetStats};
 use cogniform_replay::ReplayVerification;
@@ -13,8 +13,8 @@ use cogniform_world::LogicalSceneHash;
 
 use crate::{
     AdapterSummary, CogniformEngine, EngineConfig, EngineRecoveryPoint, GatewayAdmission,
-    GatewayConfig, GatewayQueueStats, GatewayResponse, LocalGateway, LocalServiceError,
-    Observation, ObservationRequest,
+    GatewayConfig, GatewayQueueStats, GatewayResponse, LocalGateway, LocalRevertError,
+    LocalServiceError, Observation, ObservationRequest,
 };
 use crate::{
     engine::validate_config as validate_engine_config,
@@ -83,12 +83,36 @@ pub struct ProcedureSubmission {
     pub entity_ids: Vec<StableEntityId>,
 }
 
+/// Explicit effects of one successful in-place historical revert.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalRevertReceipt {
+    /// Source revision replaced by the operation.
+    pub previous_revision: SceneRevision,
+    /// Exact historical revision now authoritative.
+    pub target_revision: SceneRevision,
+    /// Replay entries removed from the live branch tail.
+    pub removed_replay_entries: u64,
+    /// First renderer frame identity available to the replacement.
+    pub next_frame_id: FrameId,
+    /// Gateway response-cache entries intentionally cleared.
+    pub cleared_completed_results: u32,
+    /// Service-owned asset records intentionally cleared.
+    pub cleared_asset_records: u32,
+    /// Service-owned decoded CPU asset bytes intentionally cleared.
+    pub cleared_cpu_asset_bytes: u64,
+    /// Renderer-owned resident asset meshes intentionally cleared.
+    pub cleared_resident_asset_meshes: u32,
+    /// Renderer-owned resident asset bytes intentionally cleared.
+    pub cleared_gpu_asset_bytes: u64,
+}
+
 /// Local typed service over one gateway-owned engine and bounded asset store.
 ///
 /// The service creates no socket, listener, filesystem persistence, or remote
 /// transport. Callers drive command processing and observation polling through
 /// bounded non-blocking methods.
 pub struct LocalService {
+    config: LocalServiceConfig,
     gateway: LocalGateway,
     assets: AssetStore,
 }
@@ -106,6 +130,7 @@ impl std::fmt::Debug for LocalService {
 impl LocalService {
     /// Initializes the bounded headless engine and local typed gateway.
     pub async fn new(config: LocalServiceConfig) -> Result<Self, LocalServiceError> {
+        let retained_config = config.clone();
         let LocalServiceConfig {
             engine,
             gateway,
@@ -120,6 +145,7 @@ impl LocalService {
         let engine = CogniformEngine::new(engine).await?;
         let gateway = LocalGateway::new(engine, gateway)?;
         Ok(Self {
+            config: retained_config,
             gateway,
             assets: AssetStore::new(asset_store),
         })
@@ -134,6 +160,7 @@ impl LocalService {
         config: LocalServiceConfig,
         recovery: &EngineRecoveryPoint,
     ) -> Result<Self, LocalServiceError> {
+        let retained_config = config.clone();
         let LocalServiceConfig {
             engine,
             gateway,
@@ -158,6 +185,7 @@ impl LocalService {
             CogniformEngine::restore_prepared(engine, recovery.next_frame_id(), world).await?;
         let gateway = LocalGateway::new(engine, gateway)?;
         Ok(Self {
+            config: retained_config,
             gateway,
             assets: AssetStore::new(asset_store),
         })
@@ -348,6 +376,56 @@ impl LocalService {
             .engine()
             .recovery_point_at_revision(revision)
             .map_err(Into::into)
+    }
+
+    /// Replaces this service with an exact older retained revision.
+    ///
+    /// The command, observation, import, and upload queues must be quiescent.
+    /// A complete fresh replacement is restored under the retained config
+    /// before assignment, so any validation, replay, adapter, or device failure
+    /// leaves this service unchanged. Successful replacement intentionally
+    /// clears gateway response caches and CPU/GPU asset residency; logical asset
+    /// references remain in replay and require explicit rehydration.
+    pub async fn revert_to_revision(
+        &mut self,
+        revision: SceneRevision,
+    ) -> Result<LocalRevertReceipt, LocalServiceError> {
+        let status = self.status();
+        if revision == status.scene_revision {
+            return Err(LocalRevertError::TargetIsCurrent { revision }.into());
+        }
+        let recovery = self.recovery_point_at_revision(revision)?;
+        let assets = self.asset_status();
+        if status.command_queue.depth != 0
+            || status.outstanding_observations != 0
+            || assets.store.pending_imports != 0
+            || assets.renderer.pending_uploads != 0
+        {
+            return Err(LocalRevertError::NotQuiescent {
+                command_depth: status.command_queue.depth,
+                outstanding_observations: status.outstanding_observations,
+                pending_asset_imports: assets.store.pending_imports,
+                pending_asset_uploads: assets.renderer.pending_uploads,
+            }
+            .into());
+        }
+
+        let receipt = LocalRevertReceipt {
+            previous_revision: status.scene_revision,
+            target_revision: revision,
+            removed_replay_entries: status.scene_revision.get().saturating_sub(revision.get()),
+            next_frame_id: recovery.next_frame_id(),
+            cleared_completed_results: status.completed_results,
+            cleared_asset_records: assets.store.records,
+            cleared_cpu_asset_bytes: assets.store.resident_cpu_bytes,
+            cleared_resident_asset_meshes: assets.renderer.resident_meshes,
+            cleared_gpu_asset_bytes: assets.renderer.resident_bytes,
+        };
+        let replacement = Self::restore(self.config.clone(), &recovery).await?;
+        debug_assert_eq!(replacement.status().scene_revision, revision);
+        debug_assert_eq!(replacement.status().renderer_revision, revision);
+        *self = replacement;
+        Ok(receipt)
     }
 }
 

@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF016 service procedure composition on 2026-08-04.
+and extended through CF017 quiescent local revert on 2026-08-05.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -64,6 +64,7 @@ Residual ratings assume the declared local single-user boundary.
 | Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |
 | Recovery replay bytes and frame marker are separated or accidentally changed | High | Single bounded versioned envelope, exact-length parsing, domain-separated SHA-256 digest, every-byte corruption rejection before replay allocation | Low for accidental corruption; authenticity remains caller-owned |
 | A historical fork reuses a frame identity issued before capture or mutates the live source | High | Exact contiguous replay prefixes are copied with the source's current next frame identity; controlled tests preserve source status/hash/bytes and prove query/observe/append continuation | Low for pre-capture reuse; future cross-branch identity and freshness remain caller-owned |
+| A stale, unintended, or busy live revert silently loses authoritative or transient state | High | Local caller-only API, explicit older revision, exact quiescence blockers, fresh replacement before swap, no event on failure, explicit removed-tail/cache/asset receipt, controlled continuation test | Low inside the local trusted-caller boundary; authorization and freshness remain caller-owned |
 | Scene text or replay data discloses caller secrets | High | No automatic logging, upload, persistence, or release; debug output is aggregate; operator warning and public-repo scan | Medium |
 | Native code or a procedure escapes its authority | High | Unsafe Rust forbidden; no native plugins or user shaders; procedures are pure compiled functions emitting ordinary patches | Low |
 | GPU driver/device failure corrupts authoritative world state | High | World commits precede only immutable extraction; renderer cannot mutate world; errors are typed; fresh-service restoration is documented | Medium |
@@ -98,10 +99,13 @@ use.
   rejected bytes for private diagnosis. Never adopt that prefix as successful
   `LocalService` recovery, skip an entry, or continue after the bad suffix.
 - Treat a historical recovery point as a new branch owned by the caller. Do not
-  present it as an in-place rollback of the source or infer freshness from its
-  envelope digest. If both services remain live, their independent counters may
+  infer freshness from its envelope digest. If both services remain live, their independent counters may
   issue equal future frame numbers; add branch identity or coordinate frame
   allocation outside Cogniform.
+- Authorize and choose a live-revert target outside Cogniform. Drain transient
+  work, review the explicit removed-tail/cache/asset receipt, and rehydrate
+  retained asset references after success. Do not expose this unauthenticated
+  local method as a remote rollback endpoint or treat it as a retention policy.
 - Rehydrate a recovered asset reference only from caller-approved bytes whose
   exact hash matches the retained key. `AssetUnavailable` is not permission for
   Cogniform to discover or download content, and substituting another hash

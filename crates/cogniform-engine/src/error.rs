@@ -245,6 +245,50 @@ impl From<WorldInvariantError> for GatewayError {
     }
 }
 
+/// Typed lifecycle failure for an in-place local historical revert.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalRevertError {
+    /// Reverting to the current revision would not move history backward.
+    TargetIsCurrent {
+        /// Current and requested scene revision.
+        revision: SceneRevision,
+    },
+    /// Caller-driven transient work must be drained before replacement.
+    NotQuiescent {
+        /// Uncommitted mutating commands.
+        command_depth: u32,
+        /// Queued, active, or undelivered observations.
+        outstanding_observations: u32,
+        /// Asset sources awaiting explicit import processing.
+        pending_asset_imports: u32,
+        /// Renderer asset jobs awaiting explicit upload processing.
+        pending_asset_uploads: u32,
+    },
+}
+
+impl fmt::Display for LocalRevertError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TargetIsCurrent { revision } => write!(
+                formatter,
+                "revert target {} is already the current revision",
+                revision.get()
+            ),
+            Self::NotQuiescent {
+                command_depth,
+                outstanding_observations,
+                pending_asset_imports,
+                pending_asset_uploads,
+            } => write!(
+                formatter,
+                "revert requires quiescence; commands={command_depth}, observations={outstanding_observations}, asset_imports={pending_asset_imports}, asset_uploads={pending_asset_uploads}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for LocalRevertError {}
+
 /// Failure at the local typed service boundary.
 #[derive(Debug)]
 pub enum LocalServiceError {
@@ -252,6 +296,8 @@ pub enum LocalServiceError {
     Asset(Box<AssetError>),
     /// A pure built-in procedure could not produce an ordinary valid patch.
     Procedure(Box<ProcedureError>),
+    /// A live historical revert failed its lifecycle preconditions.
+    Revert(Box<LocalRevertError>),
     /// Command admission, compilation, application, or query failed.
     Gateway(Box<GatewayError>),
     /// Observation, replay, renderer, or engine composition failed.
@@ -263,6 +309,7 @@ impl fmt::Display for LocalServiceError {
         match self {
             Self::Asset(error) => write!(formatter, "local asset operation failed: {error}"),
             Self::Procedure(error) => write!(formatter, "local procedure failed: {error}"),
+            Self::Revert(error) => write!(formatter, "local revert failed: {error}"),
             Self::Gateway(error) => write!(formatter, "local command failed: {error}"),
             Self::Engine(error) => write!(formatter, "local engine failed: {error}"),
         }
@@ -274,6 +321,7 @@ impl std::error::Error for LocalServiceError {
         match self {
             Self::Asset(error) => Some(error),
             Self::Procedure(error) => Some(error),
+            Self::Revert(error) => Some(error),
             Self::Gateway(error) => Some(error),
             Self::Engine(error) => Some(error),
         }
@@ -289,6 +337,12 @@ impl From<AssetError> for LocalServiceError {
 impl From<ProcedureError> for LocalServiceError {
     fn from(value: ProcedureError) -> Self {
         Self::Procedure(Box::new(value))
+    }
+}
+
+impl From<LocalRevertError> for LocalServiceError {
+    fn from(value: LocalRevertError) -> Self {
+        Self::Revert(Box::new(value))
     }
 }
 

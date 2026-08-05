@@ -16,6 +16,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Recovery envelope | Pass | Deterministic bounded v1 encoding, exact round trip, typed malformed-input rejection, and every-byte corruption injection |
 | Fresh-service restoration | Pass on validated profile | Complete replay and frame state restore revision/hash/query/idempotency and continue observation and append causality |
 | Historical recovery fork | Pass on validated profile | An exact retained revision restores into a separate fresh service, preserves the source, resumes from the source frame frontier, and continues query/observe/append causality |
+| Quiescent live revert | Pass on validated profile | A fully restored historical replacement swaps only after success, rejects transient blockers without mutation, clears named cache/asset state, preserves frame/prefix idempotency, and continues a new branch |
 | Headless render | Pass on validated profile | No surface/window; Vulkan cube, GLB, readback pressure, renderer-drop retirement, and canonical scenario evidence |
 | Machine outputs | Pass on validated profile | Tolerant color/depth, exact stable entity ID, structured visibility, and quantized flat world-space normals following triangle winding |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
@@ -72,9 +73,10 @@ The GitHub release must be marked prerelease and state:
   production SLA, or semver-stable crates.io API;
 - recovery envelopes detect corruption but provide no encryption,
   authentication, freshness, or rollback protection;
-- historical recovery creates caller-coordinated fresh-service forks, not an
-  in-place revert, automatic branch manager, or global frame namespace across
-  concurrent branches;
+- historical recovery supports caller-coordinated fresh forks and quiescent
+  live replacement, but provides no automatic rollback, authorization,
+  freshness, branch manager, or global frame namespace across concurrent
+  branches;
 - asset bytes, decoded meshes, and GPU residency are not recovery state;
   callers must rehydrate exact matching content, and no filesystem/network
   resolver, durable cache, eviction policy, or automatic asset startup exists;

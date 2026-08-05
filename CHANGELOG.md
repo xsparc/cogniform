@@ -33,6 +33,9 @@ release yet; the current workspace version remains `0.0.0`.
   detection before payload allocation;
 - exact-revision replay prefixes and fresh-service historical recovery forks
   that preserve the source service and carry its current next frame identity;
+- quiescent in-place historical local-service revert through a fully restored
+  replacement, with typed blockers, explicit cache/asset clearing, and frame,
+  replay, idempotency, and branch-continuation evidence;
 - public-repository safeguards, threat model, failure/recovery matrix,
   controlled compatibility/performance baseline, and source-first candidate
   checklist.
@@ -50,8 +53,9 @@ release yet; the current workspace version remains `0.0.0`.
   and most vertex attributes;
 - recovery points do not include queued commands, observations, asset bytes or
   residency, storage, or automatic startup; their envelopes are not encrypted
-  or authenticated; historical recovery creates a separate fresh service, not
-  an in-place revert, and future frame identity across concurrently live
-  branches is caller-coordinated; device-loss recreation, durable recovery,
+  or authenticated; in-place revert requires drained transient work, clears
+  asset residency, and supplies no automatic rollback or freshness policy;
+  future frame identity across concurrently live branches is
+  caller-coordinated; device-loss recreation, durable recovery,
   binary packaging, signing, provenance, and automated release publication are
   not implemented.
