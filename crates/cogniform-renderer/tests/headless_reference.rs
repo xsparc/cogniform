@@ -76,7 +76,10 @@ fn reference_cube_produces_exact_ids_and_tolerant_color_depth_normals() {
         .sum::<f32>()
         .sqrt();
     assert!((normal_length - 1.0).abs() <= 1.0e-5);
-    assert!(center_normal[2].abs() >= 0.99);
+    assert!(
+        center_normal[2] <= -0.99,
+        "reference cuboid's near-face normal must point toward negative Z: {center_normal:?}"
+    );
     assert_eq!(frame.normal_at(0, 0), None);
 
     assert_eq!(frame.color().len(), (WIDTH * HEIGHT) as usize);

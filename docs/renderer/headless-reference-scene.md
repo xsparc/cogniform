@@ -31,7 +31,11 @@ diagnostics, but backend handles never leave `cogniform-renderer`.
 The built-in scene is a unit cube, renderer-local entity ID `7`, fixed linear
 RGBA color `[51, 153, 230, 255]`, and a fixed orthographic camera with a small
 view shear. The background entity ID is `0`, cleared depth is `1.0`, and
-normal alpha `0` marks background.
+normal alpha `0` marks background. The centered cube contains 12
+non-degenerate outward counter-clockwise triangles, 36 expanded vertices, and
+exact axis-aligned source normals in one fixed 864-byte payload. The reference
+projection selects its near negative-Z face at the center, so that probe must
+report an outward negative-Z normal.
 
 Extracted built-in geometry supports cuboids, planes, and spheres. A plane is a
 centered unit square at local Z = 0, expanded as two counter-clockwise XY
@@ -80,12 +84,12 @@ and tone mapping are unsupported.
 - entity IDs must match exactly;
 - color channels use an absolute tolerance of 2 units in RGBA8;
 - center depth uses an absolute tolerance of 0.02;
-- cuboid, plane, and position-only geometry normals are flat unit vectors
-  derived from source triangle winding; sphere radial normals and approved
-  imported vertex normals are inverse-transformed into world space and
-  interpolated before fragment normalization; all paths are quantized through
-  signed RGB8 and renormalized after readback, and controlled comparisons use
-  a 0.99 minimum dot product;
+- cuboid normals are flat outward unit vectors, plane normals retain positive
+  Z, and position-only geometry follows source triangle winding; sphere radial
+  normals and approved imported vertex normals are inverse-transformed into
+  world space and interpolated before fragment normalization; all paths are
+  quantized through signed RGB8 and renormalized after readback, and controlled
+  comparisons use a 0.99 minimum dot product;
 - cross-adapter bitwise image equality is not claimed.
 
 The `u32` attachment is compact render identity, not `StableEntityId`. CF005
@@ -137,11 +141,11 @@ cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ig
 ```
 
 The integration tests render at 64 by 64 pixels, verify exact object and
-background IDs, probe cuboid, plane, sphere, and directional/point-lit color, depth, position-only
-winding normals, curved sphere depth and radial normals, and smooth
-normals under non-uniform scale using the declared tolerances, verify front-
-and back-facing diffuse response plus near/far Point attenuation without
-changing identity/depth/normals, validate output
+background IDs, probe outward cuboid, plane, sphere, and directional/point-lit
+color, depth, position-only winding normals, curved sphere depth and radial
+normals, and smooth normals under non-uniform scale using the declared
+tolerances, verify front- and back-facing diffuse response plus near/far Point
+attenuation without changing identity/depth/normals, validate output
 lengths and bounds behavior, and require the selected backend to be DX12 or
 Vulkan. Normal workspace CI compiles these tests
 but leaves it ignored;
@@ -161,5 +165,7 @@ See [ADR 0023](../adr/0023-bounded-directional-diffuse-lighting.md) for the
 direction, capacity, uniform, shading, and compatibility rules.
 See [ADR 0024](../adr/0024-bounded-point-diffuse-lighting.md) for point
 position, attenuation, capacity, zero-distance, and appended-layout rules.
+See [ADR 0025](../adr/0025-outward-built-in-cuboid-winding.md) for the cuboid
+topology, exterior normal, compatibility, and canonical-lighting correction.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

@@ -481,13 +481,38 @@ persistence, and release action remain excluded. See
 [ADR 0024](../adr/0024-bounded-point-diffuse-lighting.md) and the
 [renderer guide](../renderer/headless-reference-scene.md).
 
+### PR 25 - CF025: Outward built-in cuboid winding
+
+Outcome: built-in cuboid normals and diffuse lighting describe exterior rather
+than interior faces.
+
+Gate: the centered unit cuboid remains exactly six faces, 12 non-degenerate
+triangles, 36 expanded vertices, 24 bytes per vertex, and one immutable
+864-byte initialization payload. Every triangle winds counter-clockwise from
+outside, each face has two triangles, and the synthesized normals are the six
+exact axis-aligned exterior directions. The fixed reference projection reports
+negative Z on its near face; the canonical camera observes the table's
+positive-Z exterior and its Point source produces a positive tolerant color.
+Unlit color, depth, coverage, exact identity, background, observation
+causality, replay, and all non-cuboid geometry remain controlled.
+
+Implemented contract: reverse only the faulty built-in cuboid triangle order.
+Positions, face diagonals, extents, transforms, geometry selection, draw path,
+pipeline, and no-culling policy remain unchanged. Imported triangles retain
+their source winding. Asset rewriting, culling, two-sided normal/lighting
+policy, geometry configuration, wider materials/PBR, textures, shadows,
+protocol/world/hash/replay changes, transport, persistence, dependencies, CI
+expansion, and release action remain excluded. See
+[ADR 0025](../adr/0025-outward-built-in-cuboid-winding.md) and the
+[renderer guide](../renderer/headless-reference-scene.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
-  -> CF022 -> CF023 -> CF024
+  -> CF022 -> CF023 -> CF024 -> CF025
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -589,6 +614,9 @@ Validation expands with capability:
 - CF024: stable point ordering and translation, inactive-definition accounting,
   independent fixed capacity, finite GPU conversion, exact appended uniform,
   zero-distance safety, and controlled near/far/back-facing diffuse evidence.
+- CF025: exact cuboid topology/layout/extents, two triangles per face,
+  non-degeneracy, outward axis-aligned winding/normals, controlled reference
+  near-face orientation, and positive canonical exterior Point-light response.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

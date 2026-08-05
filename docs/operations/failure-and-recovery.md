@@ -38,6 +38,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | Draw or asset-upload residency pressure | Reject before GPU preparation/allocation | renderer scene and asset tests |
 | More than four directional-light definitions or an active degenerate transformed positive-Z axis | Reject before GPU submission; preserve renderer scene state and issue no partial frame | CF023 renderer preparation tests |
 | More than four point-light definitions or an active point translation outside finite GPU-f32 range | Reject before GPU submission; preserve renderer scene state and issue no partial frame | CF024 renderer preparation tests |
+| Built-in cuboid topology or orientation regresses | Initialization-only tests require six faces, two non-degenerate outward triangles per face, exact axis normals, 36 vertices, and the fixed 864-byte payload | CF025 renderer unit and controlled adapter tests |
 | Built-in sphere generation or selection regresses | Initialization-only topology tests require the exact finite 672-vertex payload, outward winding, unit radial normals, direct/fallback selection, and resident-asset precedence; frames never tessellate or substitute another shape | CF022 renderer unit and scene tests |
 | Observation requested from wrong/ahead source | Return typed causal error; do not relabel the frame | revision-causality tests |
 | Public path or credential pattern staged | Fail with rule/path only; never echo the matched value | public-repository safeguard fixtures |
