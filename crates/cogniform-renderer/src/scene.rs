@@ -263,14 +263,14 @@ impl RenderScene {
                     mesh_index: asset_mesh.mesh_index,
                 };
                 if let Some(color) = resolve_asset(key) {
-                    (Ok(PreparedGeometry::Asset(key)), Some(color))
+                    (PreparedGeometry::Asset(key), Some(color))
                 } else if let Some(primitive) = primitive {
-                    (primitive_geometry(entity_id, primitive.shape), None)
+                    (primitive_geometry(primitive.shape), None)
                 } else {
                     return Err(RendererError::AssetUnavailable { entity_id, key });
                 }
             } else if let Some(primitive) = primitive {
-                (primitive_geometry(entity_id, primitive.shape), None)
+                (primitive_geometry(primitive.shape), None)
             } else {
                 continue;
             };
@@ -281,10 +281,9 @@ impl RenderScene {
                     limit: max_draws.get(),
                 });
             }
-            let geometry = geometry?;
             let compact_id = self.compact_ids[&entity_id];
             let mut model = matrix_to_f32(entity.world_transform(), entity_id)?;
-            if matches!(geometry, PreparedGeometry::Cuboid | PreparedGeometry::Plane) {
+            if !matches!(geometry, PreparedGeometry::Asset(_)) {
                 let primitive = primitive.expect("built-in geometry has a primitive");
                 let dimensions = [
                     primitive.dimensions.x.get(),
@@ -331,19 +330,15 @@ pub(crate) struct PreparedDraw {
 pub(crate) enum PreparedGeometry {
     Cuboid,
     Plane,
+    Sphere,
     Asset(AssetMeshKey),
 }
 
-fn primitive_geometry(
-    entity_id: StableEntityId,
-    shape: cogniform_protocol::PrimitiveShape,
-) -> Result<PreparedGeometry, RendererError> {
+fn primitive_geometry(shape: cogniform_protocol::PrimitiveShape) -> PreparedGeometry {
     match shape {
-        cogniform_protocol::PrimitiveShape::Cuboid => Ok(PreparedGeometry::Cuboid),
-        cogniform_protocol::PrimitiveShape::Plane => Ok(PreparedGeometry::Plane),
-        cogniform_protocol::PrimitiveShape::Sphere => {
-            Err(RendererError::UnsupportedPrimitive { entity_id, shape })
-        }
+        cogniform_protocol::PrimitiveShape::Cuboid => PreparedGeometry::Cuboid,
+        cogniform_protocol::PrimitiveShape::Plane => PreparedGeometry::Plane,
+        cogniform_protocol::PrimitiveShape::Sphere => PreparedGeometry::Sphere,
     }
 }
 
@@ -710,7 +705,7 @@ mod tests {
     }
 
     #[test]
-    fn sphere_remains_a_typed_unsupported_primitive() {
+    fn sphere_geometry_preserves_all_bounding_diameters_in_the_model() {
         let mut scene = RenderScene::new(NonZeroU32::new(2).unwrap());
         scene
             .apply(&extraction(
@@ -719,22 +714,28 @@ mod tests {
                 1,
                 vec![
                     RenderChange::upsert(camera(id(1))),
-                    RenderChange::upsert(primitive_entity(id(2), PrimitiveShape::Sphere, [1.0; 3])),
+                    RenderChange::upsert(primitive_entity(
+                        id(2),
+                        PrimitiveShape::Sphere,
+                        [2.0, 3.0, 4.0],
+                    )),
                 ],
             ))
             .unwrap();
 
-        assert!(matches!(
-            scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None),
-            Err(RendererError::UnsupportedPrimitive {
-                entity_id,
-                shape: PrimitiveShape::Sphere,
-            }) if entity_id == id(2)
-        ));
+        let prepared = scene
+            .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None)
+            .unwrap();
+        assert_eq!(prepared.draws.len(), 1);
+        let draw = &prepared.draws[0];
+        assert_eq!(draw.geometry, PreparedGeometry::Sphere);
+        assert_exact_f32(draw.model[0], 2.0);
+        assert_exact_f32(draw.model[5], 3.0);
+        assert_exact_f32(draw.model[10], 4.0);
     }
 
     #[test]
-    fn unavailable_asset_sphere_fallback_remains_typed() {
+    fn unavailable_asset_uses_its_exact_explicit_sphere_fallback() {
         let key = AssetMeshKey {
             content_hash: ContentHash::from_bytes([9; 32]),
             mesh_index: 5,
@@ -742,9 +743,9 @@ mod tests {
         let primitive = PrimitiveComponent {
             shape: PrimitiveShape::Sphere,
             dimensions: PositiveVec3 {
-                x: PositiveF32::new(1.0).unwrap(),
-                y: PositiveF32::new(1.0).unwrap(),
-                z: PositiveF32::new(1.0).unwrap(),
+                x: PositiveF32::new(2.0).unwrap(),
+                y: PositiveF32::new(3.0).unwrap(),
+                z: PositiveF32::new(4.0).unwrap(),
             },
         };
         let mut scene = RenderScene::new(NonZeroU32::new(2).unwrap());
@@ -760,13 +761,23 @@ mod tests {
             ))
             .unwrap();
 
-        assert!(matches!(
-            scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None),
-            Err(RendererError::UnsupportedPrimitive {
-                entity_id,
-                shape: PrimitiveShape::Sphere,
-            }) if entity_id == id(2)
-        ));
+        let fallback = scene
+            .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None)
+            .unwrap();
+        assert_eq!(fallback.draws[0].geometry, PreparedGeometry::Sphere);
+        assert_exact_f32(fallback.draws[0].model[0], 2.0);
+        assert_exact_f32(fallback.draws[0].model[5], 3.0);
+        assert_exact_f32(fallback.draws[0].model[10], 4.0);
+
+        let resident = scene
+            .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |resolved| {
+                (resolved == key).then_some([0.1, 0.2, 0.3, 1.0])
+            })
+            .unwrap();
+        assert_eq!(resident.draws[0].geometry, PreparedGeometry::Asset(key));
+        assert_exact_f32(resident.draws[0].model[0], 1.0);
+        assert_exact_f32(resident.draws[0].model[5], 1.0);
+        assert_exact_f32(resident.draws[0].model[10], 1.0);
     }
 
     #[test]

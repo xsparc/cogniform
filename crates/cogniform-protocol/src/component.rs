@@ -110,7 +110,8 @@ pub enum PrimitiveShape {
     /// Centered unit XY plane with a positive-Z front, scaled by explicit
     /// positive XYZ dimensions while remaining at local Z = 0.
     Plane,
-    /// Unit UV sphere scaled by explicit positive dimensions.
+    /// Centered unit-diameter UV sphere with a positive-Z polar axis, scaled
+    /// by explicit positive XYZ bounding diameters.
     Sphere,
 }
 

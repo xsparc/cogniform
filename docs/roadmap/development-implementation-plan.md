@@ -402,12 +402,38 @@ transport, persistence, and release action remain excluded. See
 [ADR 0021](../adr/0021-centered-built-in-plane-rendering.md) and the
 [renderer guide](../renderer/headless-reference-scene.md).
 
+### PR 22 - CF022: Fixed built-in UV-sphere rendering
+
+Outcome: the final already-public primitive shape renders through the bounded
+headless color, depth, stable-identity, and world-space-normal path.
+
+Gate: a centered unit-diameter sphere with a positive-Z polar axis uses 16
+longitude sectors and 8 latitude bands. Its 224 outward counter-clockwise
+triangles expand to 672 vertices with unit radial normals in the existing
+24-byte layout. The exact 16,128-byte payload is generated once at renderer
+initialization. Positive XYZ dimensions are bounding diameters; direct and
+unavailable-asset fallback spheres select this mesh while resident assets keep
+precedence. CPU tests prove topology, byte count, radius, winding, radial
+normals, selection, precedence, and dimensions. A controlled adapter test
+proves color, curved depth, stable identity, background, and smoothly changing
+world-space normals.
+
+Implemented contract: sphere frames add no tessellation, upload job, index
+buffer, dependency, pipeline, protocol field, or observation format. Fixed
+`f32` trigonometry is confined to renderer initialization and visual outputs
+retain their tolerant contract. Configurable subdivisions, UV attributes,
+tangents, textures, normal maps, LOD, collision, lighting, culling, batching,
+asset changes, transport, persistence, and release action remain excluded. See
+[ADR 0022](../adr/0022-fixed-built-in-uv-sphere-rendering.md) and the
+[renderer guide](../renderer/headless-reference-scene.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
+  -> CF022
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -498,6 +524,10 @@ Validation expands with capability:
 - CF021: exact fixed plane layout/winding, shape and fallback selection,
   all-axis model scaling, retained sphere rejection, and controlled color,
   depth, identity, background, and world-space-normal probes.
+- CF022: exact fixed sphere topology/bytes/radius/winding, radial normals,
+  direct and fallback selection, resident-asset precedence, all-axis bounding
+  diameters, and controlled color, curved-depth, identity, background, and
+  smooth world-space-normal probes.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

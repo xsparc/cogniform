@@ -10,6 +10,8 @@ CF020 optional vertex-normal decode, accounting, fallback, and controlled GPU
 evidence was collected on the same validated profile on 2026-08-05.
 CF021 fixed plane layout, selection, fallback, and controlled GPU evidence was
 collected on that profile on 2026-08-05.
+CF022 fixed sphere topology, selection, and controlled curved-surface evidence
+was collected on that profile on 2026-08-05.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -19,7 +21,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, tolerant color/depth, cuboid and plane quantized unit normals, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, tolerant color/depth, cuboid and plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -54,9 +56,9 @@ cargo test --release -p cogniform-engine --tests --locked --offline -- --ignored
 cargo run --release -p cogniform-cli --locked --offline -- scenario
 ```
 
-The renderer suite passed the built-in cube and extracted plane, bounded four-buffer readback
-pressure, renderer-drop retirement, position-only GLB winding fixture, and
-imported-normal fixture under non-uniform scale. The engine
+The renderer suite passed the built-in cube, extracted plane and sphere,
+bounded four-buffer readback pressure, renderer-drop retirement, position-only
+GLB winding fixture, and imported-normal fixture under non-uniform scale. The engine
 suite passed gateway/idempotency, normal-aware revision causality, complete
 service restoration, and the canonical scenario. The scenario selected Vulkan,
 committed revision 2,
@@ -100,6 +102,24 @@ and absent background normal. CPU tests separately prove two-triangle winding,
 the exact 24-byte layout, all-axis primitive model scaling, cuboid/plane/asset
 selection, resident-asset precedence, exact unavailable-asset plane fallback,
 and the retained direct/fallback sphere error. This adds no supported adapter,
+pipeline, observation format, or performance claim.
+
+## Controlled built-in-sphere command
+
+The focused CF022 adapter check passed in the optimized profile:
+
+```text
+cargo test --release -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact extracted_sphere_produces_curved_depth_identity_and_radial_normals
+```
+
+It rendered the fixed centered sphere through ordinary extracted-scene
+submission and proved the requested RGBA8 color, exact stable entity identity,
+finite foreground depth, a deeper off-axis surface sample, smoothly changing
+radial normals, background identity, and absent background normal. CPU tests
+separately prove the exact 16-sector by 8-band topology, 224 outward triangles,
+672 vertices, 16,128-byte payload, unit-diameter radius, radial normals,
+all-axis bounding-diameter scaling, direct and unavailable-asset fallback
+selection, and resident-asset precedence. This adds no supported adapter,
 pipeline, observation format, or performance claim.
 
 ## Controlled service-restoration command

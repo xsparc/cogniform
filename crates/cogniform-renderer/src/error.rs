@@ -139,7 +139,10 @@ pub enum RendererError {
         /// Affected stable entity.
         entity_id: StableEntityId,
     },
-    /// A built-in primitive is not yet supported by the bounded draw path.
+    /// A built-in primitive is not supported by the bounded draw path.
+    ///
+    /// Retained for source compatibility and future protocol shape evolution;
+    /// every current `PrimitiveShape` has bounded renderer geometry.
     UnsupportedPrimitive {
         /// Affected stable entity.
         entity_id: StableEntityId,

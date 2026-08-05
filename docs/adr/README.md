@@ -27,5 +27,6 @@ earlier one and links the history.
 | [0019](0019-immutable-exact-hash-asset-source-files.md) | Accepted | Persist exact-hash asset sources through separate explicit create-new bounded local files |
 | [0020](0020-bounded-imported-vertex-normals.md) | Accepted | Import bounded optional vertex normals and preserve flat position-only fallback output |
 | [0021](0021-centered-built-in-plane-rendering.md) | Accepted | Render a centered built-in XY plane with explicit winding, dimensions, and fallback semantics |
+| [0022](0022-fixed-built-in-uv-sphere-rendering.md) | Accepted | Render a fixed centered unit-diameter UV sphere with bounded topology and radial normals |
 
 New records use four sections: context, decision, consequences, and status.

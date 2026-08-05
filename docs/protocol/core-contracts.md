@@ -46,8 +46,10 @@ Built-in dimensions are positive XYZ model scales. Cuboids are centered unit
 boxes. Planes are centered unit squares embedded in local XY at Z = 0, with
 counter-clockwise positive-Z winding and a positive-Z source normal; X and Y
 set visible extents while Z remains part of the complete model and normal
-transform. Sphere remains a valid protocol shape but is not yet implemented by
-the bounded renderer and produces its structured unsupported-primitive error.
+transform. Spheres are centered unit-diameter surfaces with a positive-Z polar
+axis and outward radial source normals; their XYZ dimensions are bounding
+diameters and may therefore produce ellipsoids. These conventions do not add
+UV fields or configurable topology to the protocol.
 
 Patch validation compares actual counts and declared budgets with
 `RuntimeLimits`. Validation never reorders operations. Atomic commit and
@@ -70,9 +72,10 @@ identity; observation kind and quality; completion timestamp and latency; and
 an exact staleness calculation relative to the latest known revision. Image
 observations require bounded non-zero dimensions. Schema v1 recognizes color,
 depth, normal, entity-ID, and visibility kinds. Normal payloads are local owned
-world-space unit vectors decoded from signed RGB8; they are flat for built-in
-or position-only triangles and may be interpolated for approved imported
-vertex normals. Background pixels are absent. Structured visibility metadata
+world-space unit vectors decoded from signed RGB8; cuboids, planes, and
+position-only assets use flat winding-derived directions, while spheres use
+interpolated radial directions and approved imported vertex normals may also
+be interpolated. Background pixels are absent. Structured visibility metadata
 has no pixel dimensions.
 
 Bulk image bytes and vectors are deliberately absent. Renderer and future

@@ -30,6 +30,10 @@ release yet; the current workspace version remains `0.0.0`.
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
+- fixed centered unit-diameter sphere rendering with a positive-Z polar axis,
+  16-sector by 8-band initialization-only topology, outward winding, smooth
+  radial normals, bounding-diameter scaling, exact fallback selection, and
+  bounded curved-depth/identity/normal evidence;
 - service-owned asset admission, explicit single-item CPU/GPU processing,
   aggregate residency status, and exact-hash post-recovery rehydration;
 - local typed service and unattended room/table/light/camera scenario;
@@ -71,9 +75,10 @@ release yet; the current workspace version remains `0.0.0`.
 - renderer materials use flat base color; normal output is quantized and the
   imported subset has no normal maps or tangent space; the GLB
   subset excludes textures, external buffers, compression, scene traversal,
-  and most vertex attributes. Built-in geometry supports cuboids and fixed
-  centered XY planes; spheres, subdivisions, thickness, UVs, and two-sided
-  normal policy remain unsupported;
+  and most vertex attributes. Built-in geometry supports cuboids, fixed
+  centered XY planes, and fixed centered unit-diameter spheres; configurable
+  subdivisions, plane thickness, UV attributes, and two-sided normal policy
+  remain unsupported;
 - recovery points and recovery files do not include queued commands,
   observations, asset bytes, or residency; exact-hash asset sources can be
   stored only as separate caller-mapped files. Files are create-new only and

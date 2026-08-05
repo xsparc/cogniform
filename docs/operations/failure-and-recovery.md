@@ -36,7 +36,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | Renderer target/capability unavailable | Return a structured initialization error | renderer configuration/capability tests |
 | Renderer owner dropped after frame submission | Keep final device/queue destruction on the per-renderer retirement worker so the pending readback reaches its configured deadline | `pending_readback_survives_renderer_drop_after_submission` |
 | Draw or asset-upload residency pressure | Reject before GPU preparation/allocation | renderer scene and asset tests |
-| Direct or required fallback sphere reaches frame preparation | Return `UnsupportedPrimitive` with the exact entity and shape before GPU submission; never substitute cuboid or plane geometry | CF021 renderer scene tests |
+| Built-in sphere generation or selection regresses | Initialization-only topology tests require the exact finite 672-vertex payload, outward winding, unit radial normals, direct/fallback selection, and resident-asset precedence; frames never tessellate or substitute another shape | CF022 renderer unit and scene tests |
 | Observation requested from wrong/ahead source | Return typed causal error; do not relabel the frame | revision-causality tests |
 | Public path or credential pattern staged | Fail with rule/path only; never echo the matched value | public-repository safeguard fixtures |
 
