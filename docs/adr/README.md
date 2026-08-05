@@ -24,5 +24,6 @@ earlier one and links the history.
 | [0016](0016-service-procedure-composition-through-ordinary-patches.md) | Accepted | Compose pure built-in procedures into the local service through ordinary patch admission |
 | [0017](0017-quiescent-live-revert-through-fresh-replacement.md) | Accepted | Revert a quiescent local service through an exact fresh replacement before swap |
 | [0018](0018-immutable-bounded-local-recovery-files.md) | Accepted | Persist complete recovery envelopes through explicit create-new bounded local files |
+| [0019](0019-immutable-exact-hash-asset-source-files.md) | Accepted | Persist exact-hash asset sources through separate explicit create-new bounded local files |
 
 New records use four sections: context, decision, consequences, and status.

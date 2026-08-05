@@ -2,9 +2,10 @@
 
 Cogniform fails locally and explicitly. It does not retry durable work,
 truncate responses, skip replay events, or expand a queue behind the caller's
-back. An explicit adapter can create and load immutable local recovery files,
-but the current process has no production supervisor, mutable snapshot store,
-retention policy, or automatic startup; operators compose those concerns.
+back. An explicit adapter can create and load immutable local recovery files
+and separate exact-hash asset-source files, but the current process has no
+production supervisor, mutable snapshot or asset catalog, retention policy,
+or automatic startup/rehydration; operators compose those concerns.
 
 ## Verified failure matrix
 
@@ -24,6 +25,8 @@ retention policy, or automatic startup; operators compose those concerns.
 | Recovery-file target already exists or its parent is absent | Return a path-redacted create-new error; never overwrite the target or create a directory | storage create-new unit tests |
 | Recovery-file write or sync fails | Return the failing operation/error kind and whether the partial file was removed or may remain; never return a success receipt | injected storage write/sync tests |
 | Recovery-file target is non-regular, symlinked, over-limit, growing, truncated, extended, or corrupt | Reject before unbounded allocation or recovery-point return; never accept a verified prefix as a complete file | storage load and envelope-corruption tests |
+| Asset-file source is oversized or does not match its expected hash | Reject before any filesystem operation or target creation | asset-file preflight tests |
+| Asset-file target exists, write/sync fails, or load sees a non-file, symlink, over-limit/growing source, or hash substitution | Never overwrite; report cleanup for a failed create; return no bytes before complete bounded identity validation | asset-file unit and controlled persisted-rehydration tests |
 | Historical revision is newer than the retained log | Return the requested and latest revisions without changing the source service | exact-revision replay and controlled historical-fork tests |
 | Live revert target is current/future or transient work is not drained | Return typed target or exact command/observation/import/upload blockers; preserve world, renderer, frame frontier, replay, hash, queues, and assets | controlled quiescent-revert test |
 | Asset content hash mismatch | Consume no record or queue capacity | asset-store tests |
@@ -112,6 +115,25 @@ hardware survives power loss. Automatic latest-pointer replacement, directory
 sync, retention/rotation, startup, rollback selection, and remote storage need
 separate reviewed protocols.
 
+### Asset-file create or load failure
+
+Authorize the path and its expected logical `ContentHash` outside Cogniform.
+`AssetFileStore::create_new` rejects source size or identity before opening the
+target and otherwise follows the same create-new, sync, and
+`PartialFileCleanup` rules as a recovery file. Do not substitute a different
+hash merely to accept unexpected bytes.
+
+On load, a non-regular or final-component symlink, over-limit metadata,
+post-inspection growth, read failure, or complete hash mismatch returns no
+source bytes. Keep paths out of general logs. A valid hash establishes byte
+identity only: the source remains plaintext, the writer is unauthenticated,
+and the ordinary asset importer must still validate GLB structure and bounds.
+
+Recovery and asset files are independent. Restore the complete recovery point,
+then load only caller-approved sources for its retained logical references and
+explicitly drive import/upload. Cogniform supplies no directory scan, manifest,
+hash-to-path lookup, retry, retention, eviction, or automatic rehydration.
+
 ### Historical fork request
 
 Request only a revision retained by the source replay log. A newer revision
@@ -174,13 +196,14 @@ does not by itself remove public history or downloaded artifacts.
 Actual GPU device removal, operating-system thread-creation failure, allocator
 failure, process termination during a world commit or file write, actual disk
 full, directory-entry loss, and power loss are not deterministically injected.
-CF018 injects ordinary write and sync failures and verifies partial cleanup, but
-does not establish disk crash consistency. Final GPU destruction is kept off
-the bounded caller path, but a stalled driver may strand that per-renderer
+CF018 and CF019 inject ordinary write and sync failures and verify partial
+cleanup, but do not establish disk crash consistency. Final GPU destruction is
+kept off the bounded caller path, but a stalled driver may strand that per-renderer
 retirement worker until process exit. These are Medium residual operational
 risks for local evaluation and become release blockers if automatic
 persistence, production supervision, or remote service claims are introduced.
 
 See the [MVP threat model](../threat-model/mvp.md), the
-[recovery-file guide](../persistence/recovery-files.md), and the
+[recovery-file guide](../persistence/recovery-files.md), the
+[asset-file guide](../persistence/asset-files.md), and the
 [local service contract](../protocol/local-service.md).

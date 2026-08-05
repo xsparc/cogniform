@@ -1,7 +1,8 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF018 immutable recovery files on 2026-08-05.
+and extended through CF019 immutable exact-hash asset-source files on
+2026-08-05.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -15,7 +16,7 @@ separate transport and identity design violates the assumptions below.
 | Authoritative world | Only complete validated patches change state; stable IDs and revisions remain correct |
 | Accepted-event log, recovery point, and recovery file | Newly accepted patches stay complete, ordered, bounded, integrity checked, and replayable; complete or exact-revision replay bytes remain associated with non-reused frame-continuity state; explicit files never overwrite an existing target |
 | Observation causality | Payload, camera, frame, revision, and stable identity agree |
-| Asset state | Source identity is exact; malformed or oversized input cannot become decoded or GPU-resident state; recovered references cannot substitute different bytes |
+| Asset state and source files | Source identity is exact; malformed or oversized input cannot become decoded or GPU-resident state; recovered references and caller-mapped source files cannot substitute different bytes |
 | Host resources | CPU, memory, queues, GPU allocations, and waits stay within declared bounds |
 | Process and GPU | Backend failures return controlled errors and do not grant access to world mutation |
 | Repository and release | No credentials, private workflow state, paid calls, or unreviewed artifacts enter public history |
@@ -30,8 +31,9 @@ snapshots and canonical replay entries.
 1. **Caller to protocol and pure preparation.** Patches, imagination,
    procedures, queries, IDs, labels, limits, and observation requests are
    untrusted typed or JSON-derived data.
-2. **Asset bytes to decoder.** A claimed SHA-256 identity and GLB bytes cross
-   into a strict, separately scheduled parser.
+2. **Asset file/bytes to storage and decoder.** A caller-selected path, claimed
+   SHA-256 identity, and GLB bytes cross bounded file checks before separately
+   crossing into a strict, explicitly scheduled parser.
 3. **World to renderer.** The renderer receives immutable compact extraction,
    never mutable ECS state or an authorization decision.
 4. **Renderer to observation worker.** GPU readback crosses an asynchronous
@@ -44,6 +46,8 @@ snapshots and canonical replay entries.
 6. **Repository to public hosting.** Tracked content, commit metadata, workflow
    definitions, dependencies, and future release artifacts become public.
 
+Exact-hash asset files use the same final-file type, size, growth, create-new,
+cleanup, and path-redaction boundary, followed by complete identity validation.
 The compiler and built-in procedures have no ambient filesystem, network, time,
 world, renderer, or entropy authority. The current local service creates no
 socket, listener, shared-memory segment, automatic persistent file, or model
@@ -67,6 +71,7 @@ Residual ratings assume the declared local single-user boundary.
 | Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |
 | Recovery replay bytes and frame marker are separated or accidentally changed | High | Single bounded versioned envelope, exact-length parsing, domain-separated SHA-256 digest, every-byte corruption rejection before replay allocation | Low for accidental corruption; authenticity remains caller-owned |
 | A recovery path or file causes overwrite, disclosure, unbounded allocation, or partial-state adoption | High | Separate opt-in crate; encode-before-I/O; create-new only; final symlink/non-file rejection; metadata/platform allocation bound; fixed-buffer read and growth probe; complete digest validation; path-redacted errors; injected write/sync cleanup | Medium because parent-path trust, permissions, confidentiality, authenticity, freshness, and crash durability remain caller-owned |
+| An asset path or source file causes overwrite, disclosure, unbounded allocation, substitution, or unsafe implicit rehydration | High | Separate opt-in adapter; source size/hash checks before I/O; create-new only; bounded regular-file load and growth probe; complete expected-hash validation before return; path-redacted errors; explicit later import/upload; injected cleanup and controlled restart evidence | Medium because path mapping, parent trust, permissions, confidentiality, writer authenticity, freshness, retention, and crash durability remain caller-owned |
 | A historical fork reuses a frame identity issued before capture or mutates the live source | High | Exact contiguous replay prefixes are copied with the source's current next frame identity; controlled tests preserve source status/hash/bytes and prove query/observe/append continuation | Low for pre-capture reuse; future cross-branch identity and freshness remain caller-owned |
 | A stale, unintended, or busy live revert silently loses authoritative or transient state | High | Local caller-only API, explicit older revision, exact quiescence blockers, fresh replacement before swap, no event on failure, explicit removed-tail/cache/asset receipt, controlled continuation test | Low inside the local trusted-caller boundary; authorization and freshness remain caller-owned |
 | Scene text or replay data discloses caller secrets | High | No automatic logging, upload, persistence, or release; explicit storage errors/debug omit path and content; operator warning and public-repo scan | Medium |
@@ -104,6 +109,11 @@ transport, or production use.
   freshness, and inspect `PartialFileCleanup::Retained` before reusing a failed
   target. Do not expose path selection as an unauthenticated remote input or
   treat file `sync_all` as a portable directory/power-loss guarantee.
+- Treat asset-file paths and their expected hash mapping as trusted local
+  configuration. Do not scan an untrusted directory as a catalog, infer writer
+  authenticity from SHA-256, or automatically import every stored source.
+  Validate through the ordinary importer and explicitly schedule only the
+  sources required by approved retained logical references.
 - On replay tail failure, inspect only the verified prefix and preserve the
   rejected bytes for private diagnosis. Never adopt that prefix as successful
   `LocalService` recovery, skip an entry, or continue after the bad suffix.
@@ -125,7 +135,8 @@ transport, or production use.
 ## Deferred changes that require a new review
 
 Remote transport, authentication, tenancy, automatic or mutable persistence,
-shared memory, third-party Wasm, model execution, arbitrary shaders, binary
+asset catalogs/eviction/automatic rehydration, shared memory, third-party Wasm,
+model execution, arbitrary shaders, binary
 releases, telemetry export, and production deployment each add a trust
 boundary. None may inherit this local threat assessment without an approved
 design and updated abuse/failure tests.

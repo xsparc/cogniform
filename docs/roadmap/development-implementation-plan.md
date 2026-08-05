@@ -331,12 +331,36 @@ release action. See
 [recovery-file guide](../persistence/recovery-files.md), and the
 [failure guide](../operations/failure-and-recovery.md).
 
+### PR 19 - CF019: Immutable exact-hash asset source files
+
+Outcome: an operator can explicitly persist one exact asset source to a
+separate new local file and later load it by its expected logical hash for
+caller-driven post-recovery rehydration.
+
+Gate: source size and SHA-256 identity validate before the target is touched;
+an existing target is never overwritten; complete writes are synchronized and
+write/sync failures report partial cleanup; load accepts only a regular
+non-symlink final path component, bounds metadata before allocation, detects
+growth, and returns no bytes until the complete file matches the supplied
+hash. A controlled save/drop/load/restore/rehydrate path must preserve exact
+revision, logical hash, replay bytes, reference identity, and observation.
+
+Implemented contract: `cogniform-storage::AssetFileStore` shares only private
+bounded file mechanics with recovery storage. It does not bundle files,
+discover content, map hashes to paths, decode/import/upload automatically, or
+provide directories, overwrite, rename, deletion, catalogs, retention,
+eviction, startup, encryption, authentication, remote storage, deployment, or
+release action. See
+[ADR 0019](../adr/0019-immutable-exact-hash-asset-source-files.md), the
+[asset-file guide](../persistence/asset-files.md), and the
+[GLB asset guide](../assets/glb-subset.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
-  -> CF014 -> CF015 -> CF016 -> CF017 -> CF018
+  -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -417,6 +441,9 @@ Validation expands with capability:
 - CF018: encode-before-I/O, create-new immutability, injected write/sync cleanup,
   path-redacted failures, regular-file and allocation bounds, corruption and
   growth rejection, and controlled persisted restoration continuation.
+- CF019: pre-I/O source-size and exact-hash rejection, create-new immutability,
+  shared write/sync cleanup, bounded regular-file load, growth/substitution
+  rejection, and controlled separate recovery/asset restore and rehydration.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

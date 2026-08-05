@@ -68,12 +68,13 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
 | `cogniform-renderer` | `wgpu` feature negotiation, headless targets, primitive rendering, and color/depth/normal/ID outputs | Consumes extracted render data; never mutable world access |
 | `cogniform-engine` | Bounded channels, domain lifecycle, frame/revision correlation, composition, and complete in-memory restoration | Orchestrates through public interfaces; does not absorb domain state or perform persistence |
-| `cogniform-storage` | Explicit create-new and bounded-load adapters for local recovery envelopes | Depends on public engine recovery values and replay bounds; owns filesystem authority without world, renderer, or replay mutation access |
+| `cogniform-storage` | Explicit create-new and bounded-load adapters for local recovery envelopes and exact-hash asset sources | Depends on public engine recovery values, replay bounds, and asset identities; owns filesystem authority without world, renderer, replay, decode, or upload access |
 | `cogniform-cli` | Local sample client, replay and diagnostic commands | Depends on public engine/protocol interfaces only |
 
 CF006 establishes the semantic compiler as a separate pure crate while its
 offline gateway remains in the engine composition boundary. CF018 establishes
-recovery-file persistence as a separate service-domain adapter. Spatial
+recovery-file persistence as a separate service-domain adapter, and CF019 adds
+separate exact-hash asset-source files without creating a catalog. Spatial
 acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -154,6 +155,13 @@ envelope. The adapter never overwrites, selects, rotates, authenticates, or
 automatically restores a file. Caller-owned path permissions, confidentiality,
 directory durability, retention, and freshness remain outside the engine.
 
+The same adapter boundary may separately retain the exact source bytes for one
+known content hash. Size and identity validate before create-new I/O; bounded
+load returns no bytes until the complete file matches the caller-supplied hash.
+Recovery-to-asset association, path discovery, retention, and explicit
+load/import/upload scheduling remain caller-owned rather than becoming a
+second recovery format or hidden service lifecycle.
+
 Any retained exact revision can also be represented as a complete standalone
 replay prefix and restored into a separate fresh service. The point carries the
 source renderer's current next unreserved frame identity so logical history may
@@ -195,7 +203,7 @@ GPU layouts are explicit and asserted. `bytemuck::Pod` is used only for types wi
 
 ### 4.2 Assets
 
-Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset. Decoders verify declared and decoded sizes before allocation. The local service owns bounded CPU asset state and explicitly forwards immutable upload jobs into renderer-owned residency; neither patches nor frames perform implicit asset work. Recovery preserves logical content references but starts CPU and GPU asset state empty, so callers must rehydrate exact matching bytes before dependent rendering resumes. Unsupported extensions produce structured diagnostics or approved proxies.
+Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset. Decoders verify declared and decoded sizes before allocation. The local service owns bounded CPU asset state and explicitly forwards immutable upload jobs into renderer-owned residency; neither patches nor frames perform implicit asset work. Recovery preserves logical content references but starts CPU and GPU asset state empty, so callers must rehydrate exact matching bytes before dependent rendering resumes. An opt-in storage adapter can retain one exact source in a separate immutable bounded file, but it neither maps that file to recovery state nor decodes, imports, uploads, or schedules the source. Unsupported extensions produce structured diagnostics or approved proxies.
 
 Built-in procedures are pure synchronous preparation functions. The local
 service executes a supported typed request under active runtime limits and
@@ -218,8 +226,8 @@ All agent data, labels, assets, procedures, and transport messages are untrusted
 - scene text treated as data with provenance, never privileged instructions;
 - zero or reinitialize recycled observation buffers before crossing trust scopes;
 - append-only replay integrity, bounded integrity-checked recovery envelopes,
-  create-new bounded recovery files with path-redacted failures, and
-  secret-free canonical events;
+  create-new bounded recovery and exact-hash asset-source files with
+  path-redacted failures, and secret-free canonical events;
 - optional Wasm/model execution isolated behind explicit capability and resource limits.
 
 Failure behavior is controlled: invalid requests do not mutate state; device
@@ -240,8 +248,9 @@ The public surface stays small: apply imagination, apply a supported built-in
 procedure through an ordinary patch, apply patch, query scene,
 request observation, subscribe to bounded feedback, explain compilation,
 capture complete or exact-revision local recovery state, restore it into a
-fresh service, explicitly persist/load one immutable local recovery file,
-revert live recorded state, and resolve assets. Initial
+fresh service, explicitly persist/load one immutable local recovery file or
+one independent exact-hash asset-source file, revert live recorded state, and
+resolve assets. Initial
 implementation can use in-process Rust types and
 canonical JSON fixtures. Protobuf/gRPC, MCP, local shared memory, and QUIC are
 adapters introduced after the core semantics are tested.
@@ -267,6 +276,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Historical fork | An exact retained revision restores into a fresh service without source mutation or reuse of a frame issued before capture, then continues query/observe/append causality |
 | Live revert | A quiescent service builds and validates an exact historical replacement before swap, preserves the source frame frontier, clears named transient/asset state, and continues retained idempotency and ordinary branch append |
 | Recovery file | A new immutable local file stores one complete bounded envelope without overwrite; bounded load rejects non-files, growth, corruption, truncation, extension, and over-limit input before restoration |
+| Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
 | Headless render | Reference primitive scene renders without a visible window |
 | Machine outputs | Entity-ID probes are exact; color/depth and quantized flat world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
@@ -284,7 +294,8 @@ publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
 artifacts, smooth normals and the wider visual-quality surface, remote
 protocol/authentication, tenancy, observation retention, automatic startup,
-mutable/persistent snapshot registries, crash-atomic latest pointers, automatic
+recovery-to-asset catalogs and automatic rehydration, mutable/persistent
+snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
 rotation, and model policy remain explicitly open. Defaults in the roadmap are
 planning assumptions, not production commitments.

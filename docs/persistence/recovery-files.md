@@ -66,8 +66,12 @@ design.
 The adapter provides no directory creation, overwrite, rename, delete, file
 discovery, snapshot catalog, retention/rotation, automatic checkpoint,
 automatic startup/rollback, encryption, signing, key management, remote or
-object storage, asset/transient persistence, or background worker.
+object storage, bundled asset/transient persistence, or background worker.
+Exact-hash asset sources may be persisted independently through
+`AssetFileStore`; Cogniform does not associate those files with a recovery
+point or load them automatically.
 
 See [ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md), the
+[asset-file guide](asset-files.md), the
 [replay guide](../architecture/determinism-and-replay.md), and the
 [failure and recovery guide](../operations/failure-and-recovery.md).

@@ -1,15 +1,14 @@
 use core::fmt;
-use std::{
-    fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
-    path::Path,
-};
+use std::{io, path::Path};
 
 use cogniform_engine::{EngineRecoveryPoint, RecoveryPointCodecError};
 use cogniform_protocol::FrameId;
 use cogniform_replay::ReplayConfig;
 
-const READ_CHUNK_BYTES: usize = 8 * 1_024;
+use crate::{
+    PartialFileCleanup,
+    file_io::{FileError, FileOperation, create_new_synced, read_bounded_file},
+};
 
 /// Filesystem operation associated with a path-redacted storage failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,18 +40,17 @@ impl fmt::Display for RecoveryFileOperation {
     }
 }
 
-/// Cleanup disposition after a new file failed during write or sync.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PartialFileCleanup {
-    /// No file was created by the failed operation.
-    NotRequired,
-    /// The partial file was absent or removed successfully.
-    Removed,
-    /// The partial file may remain and requires caller inspection.
-    Retained {
-        /// Path-redacted filesystem error from the cleanup attempt.
-        kind: io::ErrorKind,
-    },
+impl From<FileOperation> for RecoveryFileOperation {
+    fn from(value: FileOperation) -> Self {
+        match value {
+            FileOperation::Inspect => Self::Inspect,
+            FileOperation::OpenRead => Self::OpenRead,
+            FileOperation::Read => Self::Read,
+            FileOperation::CreateNew => Self::CreateNew,
+            FileOperation::Write => Self::Write,
+            FileOperation::Sync => Self::Sync,
+        }
+    }
 }
 
 /// Explicit result of successfully creating one immutable recovery file.
@@ -159,6 +157,28 @@ impl From<RecoveryPointCodecError> for RecoveryFileError {
     }
 }
 
+impl From<FileError> for RecoveryFileError {
+    fn from(value: FileError) -> Self {
+        match value {
+            FileError::Io {
+                operation,
+                kind,
+                cleanup,
+            } => Self::Io {
+                operation: operation.into(),
+                kind,
+                cleanup,
+            },
+            FileError::NotRegularFile => Self::NotRegularFile,
+            FileError::SizeExceeded { actual, limit } => {
+                Self::EnvelopeSizeExceeded { actual, limit }
+            }
+            FileError::ChangedDuringRead { expected } => Self::FileChangedDuringRead { expected },
+            FileError::AllocationFailed { requested } => Self::AllocationFailed { requested },
+        }
+    }
+}
+
 /// Explicit create-new and bounded-load adapter for recovery envelopes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecoveryFileStore {
@@ -187,7 +207,7 @@ impl RecoveryFileStore {
     /// Encoding and bound validation complete before the filesystem is touched.
     /// The target and parent directory must already be selected and authorized
     /// by the caller. Existing targets are never overwritten. A successful
-    /// result means [`File::sync_all`] completed for the file, not that its
+    /// result means [`std::fs::File::sync_all`] completed for the file, not that its
     /// directory entry or storage hardware has a cross-platform durability
     /// guarantee.
     pub fn create_new(
@@ -197,8 +217,7 @@ impl RecoveryFileStore {
     ) -> Result<RecoveryFileReceipt, RecoveryFileError> {
         let encoded = recovery.to_envelope_bytes(self.replay_config)?;
         debug_assert!(encoded.len() as u64 <= self.envelope_byte_limit);
-        let file = open_new_file(path)?;
-        persist_created_file(path, file, &encoded)?;
+        create_new_synced(path, &encoded)?;
         Ok(RecoveryFileReceipt {
             envelope_bytes: encoded.len() as u64,
             replay_bytes: recovery.replay_bytes().len() as u64,
@@ -213,156 +232,8 @@ impl RecoveryFileStore {
     /// responsibilities. No partial or merely prefix-valid recovery point is
     /// returned.
     pub fn load(&self, path: &Path) -> Result<EngineRecoveryPoint, RecoveryFileError> {
-        let path_metadata = fs::symlink_metadata(path)
-            .map_err(|error| io_error(RecoveryFileOperation::Inspect, &error))?;
-        if path_metadata.file_type().is_symlink() || !path_metadata.is_file() {
-            return Err(RecoveryFileError::NotRegularFile);
-        }
-
-        let mut file =
-            File::open(path).map_err(|error| io_error(RecoveryFileOperation::OpenRead, &error))?;
-        let metadata = file
-            .metadata()
-            .map_err(|error| io_error(RecoveryFileOperation::Inspect, &error))?;
-        if !metadata.is_file() {
-            return Err(RecoveryFileError::NotRegularFile);
-        }
-
-        let effective_limit = self
-            .envelope_byte_limit
-            .min(u64::try_from(usize::MAX).unwrap_or(u64::MAX));
-        let encoded = read_file_snapshot(&mut file, metadata.len(), effective_limit)?;
+        let encoded = read_bounded_file(path, self.envelope_byte_limit)?;
         EngineRecoveryPoint::from_envelope_bytes(&encoded, self.replay_config).map_err(Into::into)
-    }
-}
-
-fn read_file_snapshot(
-    file: &mut File,
-    actual: u64,
-    effective_limit: u64,
-) -> Result<Vec<u8>, RecoveryFileError> {
-    if actual > effective_limit {
-        return Err(RecoveryFileError::EnvelopeSizeExceeded {
-            actual,
-            limit: effective_limit,
-        });
-    }
-    let capacity =
-        usize::try_from(actual).map_err(|_| RecoveryFileError::EnvelopeSizeExceeded {
-            actual,
-            limit: effective_limit,
-        })?;
-    let mut encoded = Vec::new();
-    encoded
-        .try_reserve_exact(capacity)
-        .map_err(|_| RecoveryFileError::AllocationFailed { requested: actual })?;
-    read_declared_bytes(file, &mut encoded, capacity)?;
-    let mut growth_probe = [0_u8; 1];
-    if file
-        .read(&mut growth_probe)
-        .map_err(|error| io_error(RecoveryFileOperation::Read, &error))?
-        != 0
-    {
-        return Err(RecoveryFileError::FileChangedDuringRead { expected: actual });
-    }
-    Ok(encoded)
-}
-
-fn open_new_file(path: &Path) -> Result<File, RecoveryFileError> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    options
-        .open(path)
-        .map_err(|error| io_error(RecoveryFileOperation::CreateNew, &error))
-}
-
-trait SyncFile: Write {
-    fn sync_all(&self) -> io::Result<()>;
-}
-
-impl SyncFile for File {
-    fn sync_all(&self) -> io::Result<()> {
-        File::sync_all(self)
-    }
-}
-
-fn persist_created_file<W: SyncFile>(
-    path: &Path,
-    mut file: W,
-    encoded: &[u8],
-) -> Result<(), RecoveryFileError> {
-    if let Err(error) = file.write_all(encoded) {
-        return Err(created_file_error(
-            path,
-            file,
-            RecoveryFileOperation::Write,
-            &error,
-        ));
-    }
-    if let Err(error) = file.sync_all() {
-        return Err(created_file_error(
-            path,
-            file,
-            RecoveryFileOperation::Sync,
-            &error,
-        ));
-    }
-    Ok(())
-}
-
-fn created_file_error<W>(
-    path: &Path,
-    file: W,
-    operation: RecoveryFileOperation,
-    error: &io::Error,
-) -> RecoveryFileError {
-    let kind = error.kind();
-    drop(file);
-    let cleanup = match fs::remove_file(path) {
-        Ok(()) => PartialFileCleanup::Removed,
-        Err(cleanup_error) if cleanup_error.kind() == io::ErrorKind::NotFound => {
-            PartialFileCleanup::Removed
-        }
-        Err(cleanup_error) => PartialFileCleanup::Retained {
-            kind: cleanup_error.kind(),
-        },
-    };
-    RecoveryFileError::Io {
-        operation,
-        kind,
-        cleanup,
-    }
-}
-
-fn read_declared_bytes(
-    file: &mut File,
-    encoded: &mut Vec<u8>,
-    expected: usize,
-) -> Result<(), RecoveryFileError> {
-    let mut chunk = [0_u8; READ_CHUNK_BYTES];
-    while encoded.len() < expected {
-        let remaining = expected - encoded.len();
-        let read = file
-            .read(&mut chunk[..remaining.min(READ_CHUNK_BYTES)])
-            .map_err(|error| io_error(RecoveryFileOperation::Read, &error))?;
-        if read == 0 {
-            break;
-        }
-        encoded.extend_from_slice(&chunk[..read]);
-    }
-    Ok(())
-}
-
-fn io_error(operation: RecoveryFileOperation, error: &io::Error) -> RecoveryFileError {
-    RecoveryFileError::Io {
-        operation,
-        kind: error.kind(),
-        cleanup: PartialFileCleanup::NotRequired,
     }
 }
 
@@ -372,7 +243,13 @@ mod tests {
         num::NonZeroU32,
         sync::atomic::{AtomicU64, Ordering},
     };
-    use std::path::PathBuf;
+    use std::{
+        fs::{self, File, OpenOptions},
+        io::Write,
+        path::{Path, PathBuf},
+    };
+
+    use crate::file_io::{SyncFile, persist_created_file, read_file_snapshot};
 
     use super::*;
 
@@ -473,7 +350,7 @@ mod tests {
         let mut file = File::open(path).unwrap();
 
         assert_eq!(
-            read_file_snapshot(&mut file, 3, 4),
+            read_file_snapshot(&mut file, 3, 4).map_err(RecoveryFileError::from),
             Err(RecoveryFileError::FileChangedDuringRead { expected: 3 })
         );
     }
@@ -521,6 +398,7 @@ mod tests {
                 .unwrap();
             let error =
                 persist_created_file(&path, FailingFile { file, failure }, b"bounded fixture")
+                    .map_err(RecoveryFileError::from)
                     .unwrap_err();
             assert!(matches!(
                 error,

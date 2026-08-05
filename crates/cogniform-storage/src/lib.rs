@@ -7,9 +7,12 @@
 
 #![forbid(unsafe_code)]
 
+mod asset_file;
+mod file_io;
 mod recovery_file;
 
+pub use asset_file::{AssetFileError, AssetFileOperation, AssetFileReceipt, AssetFileStore};
+pub use file_io::PartialFileCleanup;
 pub use recovery_file::{
-    PartialFileCleanup, RecoveryFileError, RecoveryFileOperation, RecoveryFileReceipt,
-    RecoveryFileStore,
+    RecoveryFileError, RecoveryFileOperation, RecoveryFileReceipt, RecoveryFileStore,
 };

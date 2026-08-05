@@ -2,7 +2,9 @@
 
 Status: immutable asset records, the approved GLB subset, world references,
 and bounded renderer uploads are implemented by CF007. CF015 composes those
-steps into the local typed service without making them implicit.
+steps into the local typed service without making them implicit. CF019 adds an
+independent immutable bounded file for retaining one exact source across a
+restart; import and upload remain explicit.
 
 ## Ownership and lifecycle
 
@@ -54,6 +56,12 @@ residency. Replay still restores the logical content hash and mesh index. A
 frame that has no resident mesh and no explicit primitive fallback returns
 `AssetUnavailable`; the caller must supply exact matching bytes and explicitly
 drive import and upload. Rehydration does not mutate the world or append replay.
+
+`cogniform-storage::AssetFileStore` can create and later load one separate
+exact-hash source file under a caller-selected bound. It does not retain the
+source inside `AssetStore`, associate it with a recovery point, discover a path
+from a hash, decode the GLB, or schedule import/upload. See the
+[asset-file guide](../persistence/asset-files.md).
 
 ## Approved GLB subset
 
@@ -163,9 +171,14 @@ on an approved DX12 or Vulkan adapter:
 ```text
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
+cargo test --release -p cogniform-storage --test asset_file --locked --offline -- --ignored --exact persisted_recovery_and_asset_sources_restore_renderable_state
 ```
 
 The controlled tests create no window, perform no network call, and upload no
 artifact. They verify exact entity identity plus tolerant imported color and
 depth probes, then prove that restored asset references require explicit
-exact-hash CPU/GPU rehydration without another logical mutation.
+exact-hash CPU/GPU rehydration without another logical mutation. The CF019 case
+persists recovery and asset source in separate files, drops the source service,
+restores the logical reference, observes its exact typed absence, and then
+loads/imports/uploads the expected bytes without changing revision, hash, or
+replay.

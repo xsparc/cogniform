@@ -39,6 +39,9 @@ release yet; the current workspace version remains `0.0.0`.
 - explicit create-new local recovery files with pre-write envelope validation,
   write/sync failure cleanup evidence, bounded regular-file loading, path-
   redacted errors, and complete persisted restoration continuation;
+- separate immutable exact-hash asset-source files with pre-I/O size and
+  identity checks, shared create-new/sync/cleanup guarantees, bounded
+  regular-file loading, and explicit restart rehydration evidence;
 - public-repository safeguards, threat model, failure/recovery matrix,
   controlled compatibility/performance baseline, and source-first candidate
   checklist.
@@ -54,11 +57,14 @@ release yet; the current workspace version remains `0.0.0`.
   with no smooth imported normals, normal maps, or tangent space; the GLB
   subset excludes textures, external buffers, compression, scene traversal,
   and most vertex attributes;
-- recovery points and files do not include queued commands, observations, asset
-  bytes, or residency; files are create-new only and provide no automatic
-  startup, overwrite, directory-sync guarantee, encryption, authentication, or
-  key management; in-place revert requires drained transient work, clears
-  asset residency, and supplies no automatic rollback or freshness policy;
+- recovery points and recovery files do not include queued commands,
+  observations, asset bytes, or residency; exact-hash asset sources can be
+  stored only as separate caller-mapped files. Files are create-new only and
+  provide no automatic startup, overwrite, directory-sync guarantee,
+  encryption, authentication, or key management; there is no asset
+  discovery/catalog, retention/eviction, bundle, or automatic rehydration.
+  In-place revert requires drained transient work, clears asset residency, and
+  supplies no automatic rollback or freshness policy;
   future frame identity across concurrently live branches is
   caller-coordinated; device-loss recreation, crash-atomic latest pointers,
   binary packaging, signing, provenance, and automated release publication are

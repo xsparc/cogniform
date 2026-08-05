@@ -23,8 +23,11 @@ scene revision that produced it.
 > complete caller-owned in-memory recovery point. That point has a deterministic
 > bounded envelope for portable corruption detection. An explicit storage
 > adapter can create a new immutable local recovery file and load it within the
-> same bound, without claiming encryption, authentication, automatic startup,
-> or crash-atomic directory updates. A caller can also capture an
+> same bound. It can separately retain one exact-hash asset source in another
+> immutable bounded file so a caller can explicitly rehydrate a restored
+> logical reference. Neither adapter claims encryption, authentication,
+> automatic startup/rehydration, a recovery-to-asset catalog, or crash-atomic
+> directory updates. A caller can also capture an
 > exact retained revision as a fresh-service historical fork without mutating
 > the source or reusing a frame identity issued before capture. A quiescent
 > local service can also revert in place by constructing that exact historical
@@ -53,7 +56,7 @@ implementations arrive:
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |
 | `cogniform-renderer` | Headless GPU ownership and color/depth/normal/identity outputs |
 | `cogniform-engine` | Bounded orchestration and revision/frame correlation |
-| `cogniform-storage` | Explicit create-new and bounded-load recovery files |
+| `cogniform-storage` | Explicit create-new and bounded-load recovery and exact-hash asset-source files |
 | `cogniform-cli` | Local sample, replay, and diagnostic commands |
 
 See the [software design document](docs/architecture/software-design-document.md),
@@ -65,6 +68,8 @@ schema and validation boundary. The
 documents hierarchy, transform, hash, and recovery behavior. The
 [recovery-file guide](docs/persistence/recovery-files.md) documents explicit
 local persistence, bounds, failure cleanup, and path/durability limitations. The
+[asset-file guide](docs/persistence/asset-files.md) documents separate
+exact-hash source persistence and caller-driven rehydration. The
 [headless renderer guide](docs/renderer/headless-reference-scene.md) documents
 the current offscreen targets, backend boundary, probes, and limitations. The
 [extraction and observation guide](docs/renderer/incremental-extraction-and-observations.md)
