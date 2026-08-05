@@ -63,8 +63,10 @@ identity; observation kind and quality; completion timestamp and latency; and
 an exact staleness calculation relative to the latest known revision. Image
 observations require bounded non-zero dimensions. Schema v1 recognizes color,
 depth, normal, entity-ID, and visibility kinds. Normal payloads are local owned
-flat world-space unit vectors decoded from signed RGB8; background pixels are
-absent. Structured visibility metadata has no pixel dimensions.
+world-space unit vectors decoded from signed RGB8; they are flat for built-in
+or position-only triangles and may be interpolated for approved imported
+vertex normals. Background pixels are absent. Structured visibility metadata
+has no pixel dimensions.
 
 Bulk image bytes and vectors are deliberately absent. Renderer and future
 transport adapters must keep payload storage separate from this causal

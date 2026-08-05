@@ -52,7 +52,7 @@ fn approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal() {
     let mut world = AuthoritativeWorld::default();
     world
         .apply_patch(
-            &scene_patch(camera, triangle, content_hash),
+            &scene_patch(camera, triangle, content_hash, [1.0; 3]),
             FrameId::new(1).unwrap(),
         )
         .unwrap();
@@ -93,6 +93,63 @@ fn approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal() {
     assert_eq!(frame.normal_at(0, 0), None);
 }
 
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn imported_normals_are_inverse_transformed_and_observable() {
+    let bytes = smooth_fixture();
+    let content_hash = content_hash(&bytes);
+    let key = AssetMeshKey {
+        content_hash,
+        mesh_index: 0,
+    };
+    let mut assets = AssetStore::default();
+    assets.enqueue(content_hash, bytes).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    let upload = assets.upload_job(key).unwrap();
+    let source_normal = upload.vertices()[0]
+        .normal
+        .map(cogniform_protocol::FiniteF32::get);
+    assert!(source_normal[0] > 0.9 && source_normal[2] < 0.3);
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer.enqueue_asset_upload(upload).unwrap();
+    renderer.process_next_asset_upload().unwrap();
+
+    let camera = StableEntityId::new(1).unwrap();
+    let triangle = StableEntityId::new(2).unwrap();
+    let mut world = AuthoritativeWorld::default();
+    world
+        .apply_patch(
+            &scene_patch(camera, triangle, content_hash, [2.0, 1.0, 1.0]),
+            FrameId::new(1).unwrap(),
+        )
+        .unwrap();
+    renderer
+        .apply_extraction(&world.take_render_extraction().unwrap())
+        .unwrap();
+    let frame = renderer.submit_scene(camera).unwrap().read().unwrap();
+    let normal = frame
+        .normal_at(WIDTH / 2, HEIGHT / 2)
+        .expect("smooth triangle should write a normal at the frame center");
+    let inverse_sqrt_six = 6.0_f32.sqrt().recip();
+    let expected = [inverse_sqrt_six, 2.0 * inverse_sqrt_six, inverse_sqrt_six];
+    let dot = normal
+        .iter()
+        .zip(expected)
+        .map(|(actual, expected)| actual * expected)
+        .sum::<f32>();
+    assert!(
+        dot >= 0.99,
+        "normal must use the model inverse-transpose: {normal:?}"
+    );
+    assert!(
+        normal[2] < 0.6,
+        "imported normal must differ from the +Z face normal"
+    );
+}
+
 fn triangle_normal(vertices: &[AssetVertex]) -> [f32; 3] {
     let positions = vertices
         .iter()
@@ -130,6 +187,7 @@ fn scene_patch(
     camera: StableEntityId,
     triangle: StableEntityId,
     content_hash: cogniform_protocol::ContentHash,
+    triangle_scale: [f32; 3],
 ) -> ScenePatch {
     ScenePatch {
         schema_version: SchemaVersion::V1,
@@ -143,7 +201,7 @@ fn scene_patch(
             SceneOperation::Create(CreateEntity {
                 entity_id: camera,
                 components: vec![
-                    ComponentValue::LocalTransform(transform(3.0)),
+                    ComponentValue::LocalTransform(transform(3.0, [1.0; 3])),
                     ComponentValue::Camera(CameraComponent {
                         vertical_fov_radians: positive(core::f32::consts::FRAC_PI_2),
                         near: positive(0.1),
@@ -154,7 +212,7 @@ fn scene_patch(
             SceneOperation::Create(CreateEntity {
                 entity_id: triangle,
                 components: vec![
-                    ComponentValue::LocalTransform(transform(0.0)),
+                    ComponentValue::LocalTransform(transform(0.0, triangle_scale)),
                     ComponentValue::AssetMesh(AssetMeshComponent {
                         content_hash,
                         mesh_index: 0,
@@ -165,7 +223,7 @@ fn scene_patch(
     }
 }
 
-fn transform(z: f32) -> LocalTransform {
+fn transform(z: f32, scale: [f32; 3]) -> LocalTransform {
     LocalTransform {
         translation: Vec3 {
             x: finite(0.0),
@@ -179,11 +237,47 @@ fn transform(z: f32) -> LocalTransform {
             w: finite(1.0),
         },
         scale: PositiveVec3 {
-            x: positive(1.0),
-            y: positive(1.0),
-            z: positive(1.0),
+            x: positive(scale[0]),
+            y: positive(scale[1]),
+            z: positive(scale[2]),
         },
     }
+}
+
+fn smooth_fixture() -> Vec<u8> {
+    let positions = [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ];
+    let normals = [[4.0_f32, 0.0, 1.0], [4.0, 0.0, 1.0], [0.0, 4.0, 1.0]];
+    let mut binary = Vec::with_capacity(72);
+    for vertex in positions.into_iter().chain(normals) {
+        for value in vertex {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":72}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":36}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"},{"bufferView":1,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"NORMAL":1},"mode":4}]}]}"#;
+    glb_with_json(json, &binary)
+}
+
+fn glb_with_json(json: &str, binary: &[u8]) -> Vec<u8> {
+    let mut json = json.as_bytes().to_vec();
+    json.resize(json.len().next_multiple_of(4), b' ');
+    let mut binary = binary.to_vec();
+    binary.resize(binary.len().next_multiple_of(4), 0);
+    let length = 12 + 8 + json.len() + 8 + binary.len();
+    let mut output = Vec::with_capacity(length);
+    output.extend_from_slice(b"glTF");
+    output.extend_from_slice(&2_u32.to_le_bytes());
+    output.extend_from_slice(&u32::try_from(length).unwrap().to_le_bytes());
+    output.extend_from_slice(&u32::try_from(json.len()).unwrap().to_le_bytes());
+    output.extend_from_slice(&0x4e4f_534a_u32.to_le_bytes());
+    output.extend_from_slice(&json);
+    output.extend_from_slice(&u32::try_from(binary.len()).unwrap().to_le_bytes());
+    output.extend_from_slice(&0x004e_4942_u32.to_le_bytes());
+    output.extend_from_slice(&binary);
+    output
 }
 
 fn decode_hex(value: &str) -> Vec<u8> {

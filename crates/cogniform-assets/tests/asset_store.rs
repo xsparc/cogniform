@@ -42,6 +42,77 @@ fn glb_with_json(json: &str, binary: &[u8]) -> Vec<u8> {
     output
 }
 
+fn glb_with_normals(
+    normals: [[f32; 3]; 3],
+    normal_count: u32,
+    normal_view_length: u32,
+    normalized: bool,
+) -> Vec<u8> {
+    let positions = [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ];
+    let mut binary = Vec::with_capacity(72);
+    for vertex in positions.into_iter().chain(normals) {
+        for value in vertex {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":72}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":{normal_view_length}}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"byteOffset":0,"componentType":5126,"count":{normal_count},"type":"VEC3","normalized":{normalized}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1}},"mode":4}}]}}]}}"#
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn process_with_proxy_policy(bytes: Vec<u8>) -> (AssetStore, cogniform_protocol::ContentHash) {
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::new(AssetStoreConfig {
+        unsupported_policy: UnsupportedAssetPolicy::ProxyCuboid,
+        ..AssetStoreConfig::default()
+    });
+    store.enqueue(hash, bytes).unwrap();
+    store.process_next().unwrap();
+    (store, hash)
+}
+
+fn indexed_glb_with_normals() -> Vec<u8> {
+    let positions = [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+        [0.0, 0.0, 1.0],
+    ];
+    let normals = [
+        [0.0_f32, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+    ];
+    let mut binary = Vec::with_capacity(104);
+    for vertex in positions.into_iter().chain(normals) {
+        for value in vertex {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for index in [2_u16, 0, 1] {
+        binary.extend_from_slice(&index.to_le_bytes());
+    }
+    let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":102}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":48},{"buffer":0,"byteOffset":48,"byteLength":48},{"buffer":0,"byteOffset":96,"byteLength":6}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":4,"type":"VEC3"},{"bufferView":1,"byteOffset":0,"componentType":5126,"count":4,"type":"VEC3"},{"bufferView":2,"byteOffset":0,"componentType":5123,"count":3,"type":"SCALAR"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"NORMAL":1},"indices":2,"mode":4}]}]}"#;
+    glb_with_json(json, &binary)
+}
+
+fn degenerate_position_only_glb() -> Vec<u8> {
+    let mut binary = Vec::with_capacity(36);
+    for vertex in [[0.0_f32; 3], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]] {
+        for value in vertex {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"mode":4}]}]}"#;
+    glb_with_json(json, &binary)
+}
+
 #[test]
 fn verified_fixture_decodes_only_when_explicitly_processed() {
     let bytes = fixture();
@@ -57,7 +128,7 @@ fn verified_fixture_decodes_only_when_explicitly_processed() {
     assert_eq!(outcome.state, AssetState::Ready);
     assert_eq!(outcome.mesh_count, 1);
     assert_eq!(store.stats().pending_imports, 0);
-    assert_eq!(store.stats().resident_cpu_bytes, 36);
+    assert_eq!(store.stats().resident_cpu_bytes, 72);
 
     let upload = store
         .upload_job(AssetMeshKey {
@@ -66,8 +137,130 @@ fn verified_fixture_decodes_only_when_explicitly_processed() {
         })
         .expect("decoded fixture should produce an upload job");
     assert_eq!(upload.vertices().len(), 3);
-    assert_eq!(upload.byte_len(), 36);
+    assert_eq!(upload.byte_len(), 72);
+    for vertex in upload.vertices() {
+        assert_normal(vertex.normal, [0.0, 0.0, 1.0]);
+    }
     assert_color(upload.base_color(), [0.2, 0.6, 0.9, 1.0]);
+}
+
+#[test]
+fn finite_source_normals_are_normalized_and_retained() {
+    let bytes = glb_with_normals([[0.0, 2.0, 2.0]; 3], 3, 36, false);
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_eq!(upload.byte_len(), 72);
+    for vertex in upload.vertices() {
+        assert_normal(
+            vertex.normal,
+            [
+                0.0,
+                core::f32::consts::FRAC_1_SQRT_2,
+                core::f32::consts::FRAC_1_SQRT_2,
+            ],
+        );
+    }
+}
+
+#[test]
+fn indexed_positions_and_normals_expand_with_the_same_source_index() {
+    let bytes = indexed_glb_with_normals();
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_eq!(upload.byte_len(), 72);
+    for (vertex, expected) in
+        upload
+            .vertices()
+            .iter()
+            .zip([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]])
+    {
+        assert_normal(vertex.normal, expected);
+    }
+}
+
+#[test]
+fn invalid_normal_values_and_ranges_never_receive_a_proxy() {
+    let cases = [
+        (
+            glb_with_normals([[0.0; 3], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]], 3, 36, false),
+            AssetDiagnosticCode::InvalidNormal,
+        ),
+        (
+            glb_with_normals(
+                [[f32::NAN, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+                3,
+                36,
+                false,
+            ),
+            AssetDiagnosticCode::InvalidNormal,
+        ),
+        (
+            glb_with_normals([[0.0, 0.0, 1.0]; 3], 2, 36, false),
+            AssetDiagnosticCode::InvalidNormal,
+        ),
+        (
+            glb_with_normals([[0.0, 0.0, 1.0]; 3], 3, 24, false),
+            AssetDiagnosticCode::InvalidBufferRange,
+        ),
+    ];
+    for (bytes, expected) in cases {
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(store.record(hash).unwrap().diagnostics[0].code, expected);
+    }
+}
+
+#[test]
+fn degenerate_position_only_triangle_never_receives_a_proxy() {
+    let (store, hash) = process_with_proxy_policy(degenerate_position_only_glb());
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidNormal
+    );
+}
+
+#[test]
+fn unsupported_normal_encoding_obeys_explicit_proxy_policy() {
+    let bytes = glb_with_normals([[0.0, 0.0, 1.0]; 3], 3, 36, true);
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedAccessor
+    );
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_eq!(upload.byte_len(), 36 * 24);
+    for vertex in upload.vertices() {
+        let length = vertex
+            .normal
+            .iter()
+            .map(|value| value.get() * value.get())
+            .sum::<f32>()
+            .sqrt();
+        assert!((length - 1.0).abs() <= f32::EPSILON);
+    }
 }
 
 #[test]
@@ -198,6 +391,16 @@ fn decoded_vertex_and_pending_source_limits_fail_closed() {
     );
 
     let mut config = AssetStoreConfig::default();
+    config.limits.max_asset_decoded_bytes = NonZeroU64::new(71).unwrap();
+    let mut store = AssetStore::new(config);
+    store.enqueue(hash, bytes.clone()).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::ByteLimitExceeded
+    );
+
+    let mut config = AssetStoreConfig::default();
     config.limits.max_pending_imports = NonZeroU32::new(2).unwrap();
     config.limits.max_pending_source_bytes =
         NonZeroU64::new(u64::try_from(bytes.len()).unwrap()).unwrap();
@@ -213,5 +416,11 @@ fn decoded_vertex_and_pending_source_limits_fail_closed() {
 fn assert_color(actual: [cogniform_protocol::UnitF32; 4], expected: [f32; 4]) {
     for (actual, expected) in actual.into_iter().zip(expected) {
         assert!((actual.get() - expected).abs() <= f32::EPSILON);
+    }
+}
+
+fn assert_normal(actual: [cogniform_protocol::FiniteF32; 3], expected: [f32; 3]) {
+    for (actual, expected) in actual.into_iter().zip(expected) {
+        assert!((actual.get() - expected).abs() <= 1.0e-6);
     }
 }

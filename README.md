@@ -10,11 +10,13 @@ scene revision that produced it.
 > engine. Public contracts, the atomic authoritative world, deterministic
 > hierarchy/hash/replay, compact render extraction, bounded headless cuboid
 > rendering, and revision-linked color/depth/entity-ID/visibility plus
-> quantized flat world-space normal observations are implemented. A bounded
+> quantized world-space normal observations are implemented, including flat
+> winding fallback and bounded imported vertex normals. A bounded
 > in-process gateway, exact logical queries, and a
 > deterministic primitive imagination compiler are also available. The current
-> asset baseline adds content-addressed GLB geometry, bounded caller-driven CPU
-> decode and GPU upload, plus pure seeded cuboid-grid procedures. The local
+> asset baseline adds content-addressed GLB geometry with optional finite
+> vertex normals, exact bounded caller-driven CPU decode and GPU upload, plus
+> pure seeded cuboid-grid procedures. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, and executes supported pure procedures through
 > the ordinary patch admission and replay path. A bounded

@@ -10,7 +10,7 @@ var<uniform> draw: DrawUniform;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
-    @location(0) world_position: vec3<f32>,
+    @location(0) world_normal: vec3<f32>,
 };
 
 struct FragmentOutput {
@@ -20,26 +20,39 @@ struct FragmentOutput {
 };
 
 @vertex
-fn vs_main(@location(0) position: vec3<f32>) -> VertexOutput {
+fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>) -> VertexOutput {
     var output: VertexOutput;
     let world_position = draw.model * vec4(position, 1.0);
+    let model_linear = mat3x3<f32>(draw.model[0].xyz, draw.model[1].xyz, draw.model[2].xyz);
+    let scale_x = max(max(abs(model_linear[0].x), abs(model_linear[0].y)), abs(model_linear[0].z));
+    let scale_y = max(max(abs(model_linear[1].x), abs(model_linear[1].y)), abs(model_linear[1].z));
+    let scale_z = max(max(abs(model_linear[2].x), abs(model_linear[2].y)), abs(model_linear[2].z));
+    let common_scale = min(scale_x, min(scale_y, scale_z));
+    let normalized_x = model_linear[0] / scale_x;
+    let normalized_y = model_linear[1] / scale_y;
+    let normalized_z = model_linear[2] / scale_z;
+    // These cofactor columns equal inverse-transpose columns up to one shared
+    // positive factor. Fragment normalization removes that factor, while the
+    // column pre-scaling avoids avoidable overflow for non-uniform models.
+    let cofactor_x = cross(normalized_y, normalized_z) * (common_scale / scale_x);
+    let cofactor_y = cross(normalized_z, normalized_x) * (common_scale / scale_y);
+    let cofactor_z = cross(normalized_x, normalized_y) * (common_scale / scale_z);
+    let normal_matrix = mat3x3<f32>(
+        cofactor_x,
+        cofactor_y,
+        cofactor_z,
+    );
     output.position = draw.view_projection * world_position;
-    output.world_position = world_position.xyz;
+    output.world_normal = normal_matrix * normal;
     return output;
 }
 
 @fragment
-fn fs_main(input: VertexOutput, @builtin(front_facing) front_facing: bool) -> FragmentOutput {
+fn fs_main(input: VertexOutput) -> FragmentOutput {
     var output: FragmentOutput;
-    var geometric_normal = normalize(cross(dpdx(input.world_position), dpdy(input.world_position)));
-    // Fragment derivatives follow framebuffer coordinates, whose Y direction
-    // reverses the cross-product sign for front-facing triangles. Correct the
-    // sign so the emitted world-space normal follows source triangle winding.
-    if front_facing {
-        geometric_normal = -geometric_normal;
-    }
+    let world_normal = normalize(input.world_normal);
     output.color = draw.color;
     output.entity_id = draw.entity_id.x;
-    output.normal = vec4(geometric_normal * 0.5 + vec3(0.5), 1.0);
+    output.normal = vec4(world_normal * 0.5 + vec3(0.5), 1.0);
     return output;
 }

@@ -354,53 +354,10 @@ fn decode_mesh(
     mesh: &Mesh,
     decoded_bytes: &mut u64,
 ) -> Result<DecodedMesh, AssetDiagnostic> {
-    if mesh.primitives.len() != 1
-        || count(mesh.primitives.len()) > limits.max_primitives_per_mesh.get()
-    {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.meshes[].primitives",
-            Some(mesh_index),
-        ));
-    }
-    let primitive = &mesh.primitives[0];
-    if primitive.mode.unwrap_or(TRIANGLES) != TRIANGLES {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedPrimitiveMode,
-            "glb.json.meshes[].primitives[].mode",
-            Some(mesh_index),
-        ));
-    }
-    if primitive.attributes.len() != 1 || !primitive.attributes.contains_key("POSITION") {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.meshes[].primitives[].attributes",
-            Some(mesh_index),
-        ));
-    }
-
-    let position_index = primitive.attributes["POSITION"];
-    let positions = accessor_layout(root, binary, position_index, AccessorExpectation::Positions)?;
-    let output_count = if let Some(index_accessor) = primitive.indices {
-        let indices = accessor_layout(root, binary, index_accessor, AccessorExpectation::Indices)?;
-        if indices.count > limits.max_indices_per_mesh.get() || indices.count % 3 != 0 {
-            return Err(diagnostic(
-                AssetDiagnosticCode::CollectionLimitExceeded,
-                "glb.json.accessors.indices.count",
-                Some(index_accessor),
-            ));
-        }
-        indices.count
-    } else {
-        if positions.count % 3 != 0 {
-            return Err(diagnostic(
-                AssetDiagnosticCode::UnsupportedPrimitiveMode,
-                "glb.json.accessors.position.count",
-                Some(position_index),
-            ));
-        }
-        positions.count
-    };
+    let primitive = validated_primitive(mesh, limits, mesh_index)?;
+    let (position_index, positions, normals) = vertex_layouts(root, binary, primitive)?;
+    let (indices, output_count) =
+        output_layout(root, binary, primitive, positions, position_index, limits)?;
     if output_count > limits.max_vertices_per_mesh.get() {
         return Err(diagnostic(
             AssetDiagnosticCode::CollectionLimitExceeded,
@@ -408,7 +365,7 @@ fn decode_mesh(
             Some(mesh_index),
         ));
     }
-    let mesh_bytes = u64::from(output_count).checked_mul(12).ok_or_else(|| {
+    let mesh_bytes = u64::from(output_count).checked_mul(24).ok_or_else(|| {
         diagnostic(
             AssetDiagnosticCode::ByteLimitExceeded,
             "glb.decoded.mesh_bytes",
@@ -429,7 +386,7 @@ fn decode_mesh(
             None,
         ));
     }
-    let vertices = decode_vertices(root, binary, primitive, positions, output_count)?;
+    let vertices = decode_vertices(binary, positions, normals, indices, output_count)?;
     let base_color = decode_material(root, primitive.material)?;
     Ok(DecodedMesh {
         vertices: Arc::from(vertices),
@@ -437,9 +394,110 @@ fn decode_mesh(
     })
 }
 
+fn validated_primitive(
+    mesh: &Mesh,
+    limits: AssetLimits,
+    mesh_index: u32,
+) -> Result<&Primitive, AssetDiagnostic> {
+    if mesh.primitives.len() != 1
+        || count(mesh.primitives.len()) > limits.max_primitives_per_mesh.get()
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.meshes[].primitives",
+            Some(mesh_index),
+        ));
+    }
+    let primitive = &mesh.primitives[0];
+    if primitive.mode.unwrap_or(TRIANGLES) != TRIANGLES {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedPrimitiveMode,
+            "glb.json.meshes[].primitives[].mode",
+            Some(mesh_index),
+        ));
+    }
+    let attributes_supported = primitive.attributes.contains_key("POSITION")
+        && (primitive.attributes.len() == 1
+            || (primitive.attributes.len() == 2 && primitive.attributes.contains_key("NORMAL")));
+    if !attributes_supported {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.meshes[].primitives[].attributes",
+            Some(mesh_index),
+        ));
+    }
+    Ok(primitive)
+}
+
+fn vertex_layouts(
+    root: &Root,
+    binary: &[u8],
+    primitive: &Primitive,
+) -> Result<(u32, AccessorLayout, Option<AccessorLayout>), AssetDiagnostic> {
+    let position_index = primitive.attributes["POSITION"];
+    let positions = accessor_layout(root, binary, position_index, AccessorExpectation::Positions)?;
+    let normals = primitive
+        .attributes
+        .get("NORMAL")
+        .copied()
+        .map(|normal_index| {
+            accessor_layout(root, binary, normal_index, AccessorExpectation::Normals)
+                .map(|layout| (normal_index, layout))
+        })
+        .transpose()?;
+    if let Some((normal_index, normals)) = normals
+        && normals.count != positions.count
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidNormal,
+            "glb.json.accessors.normal.count",
+            Some(normal_index),
+        ));
+    }
+    Ok((position_index, positions, normals.map(|(_, layout)| layout)))
+}
+
+fn output_layout(
+    root: &Root,
+    binary: &[u8],
+    primitive: &Primitive,
+    positions: AccessorLayout,
+    position_index: u32,
+    limits: AssetLimits,
+) -> Result<(Option<AccessorLayout>, u32), AssetDiagnostic> {
+    let indices = primitive
+        .indices
+        .map(|index_accessor| {
+            accessor_layout(root, binary, index_accessor, AccessorExpectation::Indices)
+                .map(|layout| (index_accessor, layout))
+        })
+        .transpose()?;
+    let output_count = if let Some((index_accessor, indices)) = indices {
+        if indices.count > limits.max_indices_per_mesh.get() || !indices.count.is_multiple_of(3) {
+            return Err(diagnostic(
+                AssetDiagnosticCode::CollectionLimitExceeded,
+                "glb.json.accessors.indices.count",
+                Some(index_accessor),
+            ));
+        }
+        indices.count
+    } else {
+        if !positions.count.is_multiple_of(3) {
+            return Err(diagnostic(
+                AssetDiagnosticCode::UnsupportedPrimitiveMode,
+                "glb.json.accessors.position.count",
+                Some(position_index),
+            ));
+        }
+        positions.count
+    };
+    Ok((indices.map(|(_, layout)| layout), output_count))
+}
+
 #[derive(Clone, Copy)]
 enum AccessorExpectation {
     Positions,
+    Normals,
     Indices,
 }
 
@@ -495,7 +553,7 @@ fn accessor_format(
     accessor_index: u32,
 ) -> Result<(usize, usize), AssetDiagnostic> {
     match expectation {
-        AccessorExpectation::Positions
+        AccessorExpectation::Positions | AccessorExpectation::Normals
             if accessor.component_type == FLOAT && accessor.kind == "VEC3" =>
         {
             Ok((12, 4))
@@ -511,7 +569,9 @@ fn accessor_format(
             };
             Ok((width, width))
         }
-        AccessorExpectation::Positions | AccessorExpectation::Indices => Err(diagnostic(
+        AccessorExpectation::Positions
+        | AccessorExpectation::Normals
+        | AccessorExpectation::Indices => Err(diagnostic(
             AssetDiagnosticCode::UnsupportedAccessor,
             "glb.json.accessors",
             Some(accessor_index),
@@ -621,16 +681,12 @@ fn accessor_range(
 }
 
 fn decode_vertices(
-    root: &Root,
     binary: &[u8],
-    primitive: &Primitive,
     positions: AccessorLayout,
+    normals: Option<AccessorLayout>,
+    indices: Option<AccessorLayout>,
     output_count: u32,
 ) -> Result<Vec<AssetVertex>, AssetDiagnostic> {
-    let indices = primitive
-        .indices
-        .map(|index| accessor_layout(root, binary, index, AccessorExpectation::Indices))
-        .transpose()?;
     let mut vertices = Vec::with_capacity(usize::try_from(output_count).unwrap_or(usize::MAX));
     for output_index in 0..output_count {
         let position_index = if let Some(indices) = indices {
@@ -645,7 +701,24 @@ fn decode_vertices(
                 Some(output_index),
             ));
         }
-        vertices.push(read_position(binary, positions, position_index)?);
+        let position = read_position(binary, positions, position_index)?;
+        let normal = normals
+            .map(|layout| read_normal(binary, layout, position_index))
+            .transpose()?
+            .unwrap_or([FiniteF32::new(0.0).expect("zero is finite"); 3]);
+        vertices.push(AssetVertex { position, normal });
+    }
+    if normals.is_none() {
+        for triangle in vertices.chunks_exact_mut(3) {
+            let normal = face_normal(
+                triangle[0].position,
+                triangle[1].position,
+                triangle[2].position,
+            )?;
+            for vertex in triangle {
+                vertex.normal = normal;
+            }
+        }
     }
     Ok(vertices)
 }
@@ -691,7 +764,7 @@ fn read_position(
     binary: &[u8],
     layout: AccessorLayout,
     index: u32,
-) -> Result<AssetVertex, AssetDiagnostic> {
+) -> Result<[FiniteF32; 3], AssetDiagnostic> {
     let offset = element_offset(layout, index, "glb.binary.positions")?;
     let mut position = [FiniteF32::new(0.0).expect("zero is finite"); 3];
     for (component, target) in position.iter_mut().enumerate() {
@@ -714,7 +787,97 @@ fn read_position(
             )
         })?;
     }
-    Ok(AssetVertex { position })
+    Ok(position)
+}
+
+fn read_normal(
+    binary: &[u8],
+    layout: AccessorLayout,
+    index: u32,
+) -> Result<[FiniteF32; 3], AssetDiagnostic> {
+    let offset = element_offset(layout, index, "glb.binary.normals")?;
+    let mut normal = [FiniteF32::new(0.0).expect("zero is finite"); 3];
+    for (component, target) in normal.iter_mut().enumerate() {
+        let start = offset + component * 4;
+        let encoded: [u8; 4] = binary
+            .get(start..start + 4)
+            .and_then(|value| value.try_into().ok())
+            .ok_or_else(|| {
+                diagnostic(
+                    AssetDiagnosticCode::InvalidBufferRange,
+                    "glb.binary.normals",
+                    Some(index),
+                )
+            })?;
+        *target = FiniteF32::new(f32::from_le_bytes(encoded)).map_err(|_| {
+            diagnostic(
+                AssetDiagnosticCode::InvalidNormal,
+                "glb.binary.normals",
+                Some(index),
+            )
+        })?;
+    }
+    normalize_vector(normal, "glb.binary.normals", Some(index))
+}
+
+fn face_normal(
+    first: [FiniteF32; 3],
+    second: [FiniteF32; 3],
+    third: [FiniteF32; 3],
+) -> Result<[FiniteF32; 3], AssetDiagnostic> {
+    let first = first.map(|value| f64::from(value.get()));
+    let second = second.map(|value| f64::from(value.get()));
+    let third = third.map(|value| f64::from(value.get()));
+    let edge_a = [
+        second[0] - first[0],
+        second[1] - first[1],
+        second[2] - first[2],
+    ];
+    let edge_b = [
+        third[0] - first[0],
+        third[1] - first[1],
+        third[2] - first[2],
+    ];
+    normalize_f64_vector(
+        [
+            edge_a[1] * edge_b[2] - edge_a[2] * edge_b[1],
+            edge_a[2] * edge_b[0] - edge_a[0] * edge_b[2],
+            edge_a[0] * edge_b[1] - edge_a[1] * edge_b[0],
+        ],
+        "glb.decoded.triangle_normal",
+        None,
+    )
+}
+
+fn normalize_vector(
+    vector: [FiniteF32; 3],
+    location: &'static str,
+    index: Option<u32>,
+) -> Result<[FiniteF32; 3], AssetDiagnostic> {
+    normalize_f64_vector(vector.map(|value| f64::from(value.get())), location, index)
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn normalize_f64_vector(
+    vector: [f64; 3],
+    location: &'static str,
+    index: Option<u32>,
+) -> Result<[FiniteF32; 3], AssetDiagnostic> {
+    let length_squared = vector.iter().map(|value| value * value).sum::<f64>();
+    if !length_squared.is_finite() || length_squared == 0.0 {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidNormal,
+            location,
+            index,
+        ));
+    }
+    let inverse_length = length_squared.sqrt().recip();
+    let mut normalized = [FiniteF32::new(0.0).expect("zero is finite"); 3];
+    for (target, value) in normalized.iter_mut().zip(vector) {
+        *target = FiniteF32::new((value * inverse_length) as f32)
+            .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidNormal, location, index))?;
+    }
+    Ok(normalized)
 }
 
 fn element_offset(
@@ -810,9 +973,16 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
         [-0.5, -0.5, -0.5],
     ];
     let vertices: Vec<_> = POSITIONS
-        .into_iter()
-        .map(|position| AssetVertex {
-            position: position.map(|value| FiniteF32::new(value).expect("proxy is finite")),
+        .chunks_exact(3)
+        .flat_map(|triangle| {
+            let positions = [triangle[0], triangle[1], triangle[2]].map(|position| {
+                position.map(|value| FiniteF32::new(value).expect("proxy is finite"))
+            });
+            let normal = face_normal(positions[0], positions[1], positions[2])
+                .expect("proxy triangles are non-degenerate");
+            positions
+                .into_iter()
+                .map(move |position| AssetVertex { position, normal })
         })
         .collect();
     DecodedAsset {
@@ -825,7 +995,7 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
                 UnitF32::new(1.0).expect("constant is in range"),
             ],
         }],
-        byte_len: 36 * 12,
+        byte_len: 36 * 24,
     }
 }
 

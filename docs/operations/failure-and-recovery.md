@@ -32,6 +32,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | Asset content hash mismatch | Consume no record or queue capacity | asset-store tests |
 | Restored logical asset reference has no CPU/GPU residency | Return the exact entity and mesh key as `AssetUnavailable`; preserve revision, hash, and replay | controlled service-asset rehydration test |
 | Truncated, malformed, over-limit, or unsafe-proxy GLB | Reject without panic or GPU upload; only approved unsupported classes may proxy | asset truncation and classification tests |
+| GLB normal range/count is invalid, a direction is zero or non-finite, or a position-only triangle is degenerate | Reject before decoded/GPU adoption; never substitute a proxy for malformed direction data | CF020 asset normal and proxy-policy tests |
 | Renderer target/capability unavailable | Return a structured initialization error | renderer configuration/capability tests |
 | Renderer owner dropped after frame submission | Keep final device/queue destruction on the per-renderer retirement worker so the pending readback reaches its configured deadline | `pending_readback_survives_renderer_drop_after_submission` |
 | Draw or asset-upload residency pressure | Reject before GPU preparation/allocation | renderer scene and asset tests |

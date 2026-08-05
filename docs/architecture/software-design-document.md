@@ -190,7 +190,7 @@ Every feedback envelope includes scene revision, frame ID, camera ID when releva
 
 ### 4.1 Renderer baseline
 
-Use `wgpu` with built-in WGSL and negotiated adapter features/limits. The baseline is a small forward renderer with primitive meshes, camera, depth, color, entity-ID, and quantized flat world-space normal output. Headless mode renders to textures without constructing a visible window. Optional `winit` integration is isolated from the headless core.
+Use `wgpu` with built-in WGSL and negotiated adapter features/limits. The baseline is a small forward renderer with primitive meshes, camera, depth, color, entity-ID, and quantized world-space normal output. Position-only triangles remain flat; approved imported vertex normals are inverse-transformed and interpolated. Headless mode renders to textures without constructing a visible window. Optional `winit` integration is isolated from the headless core.
 
 Feature tiers are capability-based:
 
@@ -203,7 +203,7 @@ GPU layouts are explicit and asserted. `bytemuck::Pod` is used only for types wi
 
 ### 4.2 Assets
 
-Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset. Decoders verify declared and decoded sizes before allocation. The local service owns bounded CPU asset state and explicitly forwards immutable upload jobs into renderer-owned residency; neither patches nor frames perform implicit asset work. Recovery preserves logical content references but starts CPU and GPU asset state empty, so callers must rehydrate exact matching bytes before dependent rendering resumes. An opt-in storage adapter can retain one exact source in a separate immutable bounded file, but it neither maps that file to recovery state nor decodes, imports, uploads, or schedules the source. Unsupported extensions produce structured diagnostics or approved proxies.
+Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset with finite positions and optional same-count finite vertex normals. Decoders verify declared and decoded sizes before allocation; expanded upload vertices always reserve exactly 24 bytes for position plus unit normal, synthesizing a winding-derived direction when the source omits one. The local service owns bounded CPU asset state and explicitly forwards immutable upload jobs into renderer-owned residency; neither patches nor frames perform implicit asset work. Recovery preserves logical content references but starts CPU and GPU asset state empty, so callers must rehydrate exact matching bytes before dependent rendering resumes. An opt-in storage adapter can retain one exact source in a separate immutable bounded file, but it neither maps that file to recovery state nor decodes, imports, uploads, or schedules the source. Unsupported extensions produce structured diagnostics or approved proxies; malformed normal data cannot proxy.
 
 Built-in procedures are pure synchronous preparation functions. The local
 service executes a supported typed request under active runtime limits and
@@ -278,7 +278,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Recovery file | A new immutable local file stores one complete bounded envelope without overwrite; bounded load rejects non-files, growth, corruption, truncation, extension, and over-limit input before restoration |
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
 | Headless render | Reference primitive scene renders without a visible window |
-| Machine outputs | Entity-ID probes are exact; color/depth and quantized flat world-space normals meet declared tolerance |
+| Machine outputs | Entity-ID probes are exact; color/depth and quantized flat or imported-smooth world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Asset safety | Hash mismatch, oversized decode, and unsupported features fail with structured diagnostics |
@@ -292,7 +292,7 @@ CF009 resolves the initial candidate packaging and validation profile in
 [ADR 0010](../adr/0010-source-first-release-profile.md): source-first, no
 publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
-artifacts, smooth normals and the wider visual-quality surface, remote
+artifacts, textured/tangent-space normals and the wider visual-quality surface, remote
 protocol/authentication, tenancy, observation retention, automatic startup,
 recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic

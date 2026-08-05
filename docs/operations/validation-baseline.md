@@ -6,6 +6,8 @@ service-asset rehydration and CF016 service-procedure composition evidence
 collected on 2026-08-04, plus CF017 quiescent live-revert evidence collected on
 2026-08-05, CF018 immutable recovery-file evidence, and CF019 immutable
 exact-hash asset-source-file evidence collected on 2026-08-05.
+CF020 optional vertex-normal decode, accounting, fallback, and controlled GPU
+evidence was collected on the same validated profile on 2026-08-05.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -15,7 +17,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, tolerant color/depth, quantized unit normal, GLB winding, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, tolerant color/depth, quantized unit normal, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -51,7 +53,8 @@ cargo run --release -p cogniform-cli --locked --offline -- scenario
 ```
 
 The renderer suite passed the built-in cube, bounded four-buffer readback
-pressure, renderer-drop retirement, and GLB asset winding fixture. The engine
+pressure, renderer-drop retirement, position-only GLB winding fixture, and
+imported-normal fixture under non-uniform scale. The engine
 suite passed gateway/idempotency, normal-aware revision causality, complete
 service restoration, and the canonical scenario. The scenario selected Vulkan,
 committed revision 2,
@@ -59,6 +62,26 @@ reported frames 1-3, found the table at the center color/entity-ID pixels,
 reported 72 visible table pixels, and replayed two entries to logical hash
 `db23b22d98da433d6050c0cd863f3a736832c7bae2ca674cdbee3dae8ed25106`.
 Pixel coverage is visual evidence for this adapter, not a cross-GPU exact value.
+
+## Controlled vertex-normal commands
+
+The focused CF020 adapter and service checks passed in the optimized profile:
+
+```text
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored
+cargo test --release -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact reference_cube_produces_exact_ids_and_tolerant_color_depth_normals
+cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
+```
+
+The first command proves that the original position-only fixture still emits
+its winding-derived normal and that an imported direction is transformed by
+the model inverse-transpose under non-uniform scale before reaching the
+quantized observation. The second protects the built-in cube's flat-normal
+output. CPU tests separately cover finite normalization, zero/non-finite/count/
+range rejection, unsafe-proxy exclusion, exact 24-byte accounting, and
+position/normal GPU interleaving. The service regression proves the unchanged
+position-only import, observation, recovery, and explicit rehydration path.
+This does not add another supported adapter.
 
 ## Controlled service-restoration command
 

@@ -22,9 +22,9 @@ const NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const BYTES_PER_PIXEL: u32 = 4;
 const COPY_ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 const REFERENCE_VERTEX_COUNT: u32 = 36;
-const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 1] =
-    wgpu::vertex_attr_array![0 => Float32x3];
-const CUBE_VERTICES: [[f32; 3]; 36] = [
+const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+const CUBE_POSITIONS: [[f32; 3]; 36] = [
     [-0.5, -0.5, -0.5],
     [0.5, -0.5, -0.5],
     [0.5, 0.5, -0.5],
@@ -170,8 +170,7 @@ impl HeadlessRenderer {
             request_device(&adapter, &adapter_summary, &config, readback_layout).await?;
         let gpu_retirement = GpuRetirementGuard::start(device.clone(), queue.clone())?;
         let (pipeline, draw_layout) = create_reference_pipeline(&device).await?;
-        let cube_vertices =
-            create_vertex_buffer(&device, "cogniform-cube-vertices", &CUBE_VERTICES);
+        let cube_vertices = create_cube_vertex_buffer(&device);
         let readback_pool = ReadbackPool::new(
             &device,
             readback_layout.buffer_size,
@@ -525,7 +524,7 @@ async fn create_reference_pipeline(
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[Some(wgpu::VertexBufferLayout {
-                array_stride: 12,
+                array_stride: 24,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &ASSET_VERTEX_ATTRIBUTES,
             })],
@@ -950,17 +949,11 @@ fn encode_scene_pass(
     }
 }
 
-fn create_vertex_buffer(
-    device: &wgpu::Device,
-    label: &'static str,
-    vertices: &[[f32; 3]],
-) -> wgpu::Buffer {
-    let size = u64::try_from(vertices.len())
-        .expect("vertex count fits u64")
-        .checked_mul(12)
-        .expect("fixed cube bytes fit u64");
+fn create_cube_vertex_buffer(device: &wgpu::Device) -> wgpu::Buffer {
+    let encoded = encode_cube_vertices();
+    let size = u64::try_from(encoded.len()).expect("fixed cube bytes fit u64");
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some(label),
+        label: Some("cogniform-cube-vertices"),
         size,
         usage: wgpu::BufferUsages::VERTEX,
         mapped_at_creation: true,
@@ -970,14 +963,44 @@ fn create_vertex_buffer(
             .slice(..)
             .get_mapped_range_mut()
             .expect("newly created mapped buffer is writable");
-        let encoded = vertices
-            .iter()
-            .flat_map(|vertex| vertex.iter().flat_map(|value| value.to_le_bytes()))
-            .collect::<Vec<_>>();
         mapped.copy_from_slice(&encoded);
     }
     buffer.unmap();
     buffer
+}
+
+fn encode_cube_vertices() -> Vec<u8> {
+    let mut encoded = Vec::with_capacity(CUBE_POSITIONS.len() * 24);
+    for triangle in CUBE_POSITIONS.chunks_exact(3) {
+        let edge_a = subtract(triangle[1], triangle[0]);
+        let edge_b = subtract(triangle[2], triangle[0]);
+        let normal = normalize([
+            edge_a[1] * edge_b[2] - edge_a[2] * edge_b[1],
+            edge_a[2] * edge_b[0] - edge_a[0] * edge_b[2],
+            edge_a[0] * edge_b[1] - edge_a[1] * edge_b[0],
+        ]);
+        for position in triangle {
+            for value in position.iter().chain(&normal) {
+                encoded.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+    }
+    debug_assert_eq!(encoded.len(), CUBE_POSITIONS.len() * 24);
+    encoded
+}
+
+fn subtract(left: [f32; 3], right: [f32; 3]) -> [f32; 3] {
+    [left[0] - right[0], left[1] - right[1], left[2] - right[2]]
+}
+
+fn normalize(vector: [f32; 3]) -> [f32; 3] {
+    let inverse_length = vector
+        .iter()
+        .map(|value| value * value)
+        .sum::<f32>()
+        .sqrt()
+        .recip();
+    vector.map(|value| value * inverse_length)
 }
 
 fn encode_draw_uniform(draw: &PreparedDraw) -> Vec<u8> {
@@ -1113,6 +1136,20 @@ mod tests {
         assert_eq!(layout.buffer_size, 1_536);
         assert_eq!(layout.pixel_count(), 195);
         assert_eq!(layout.unpadded_size(), 780);
+    }
+
+    #[test]
+    fn cube_vertices_interleave_winding_normals() {
+        let encoded = encode_cube_vertices();
+        assert_eq!(encoded.len(), CUBE_POSITIONS.len() * 24);
+        let values = encoded
+            .chunks_exact(4)
+            .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(&values[..3], &CUBE_POSITIONS[0]);
+        assert_eq!(&values[3..6], &[0.0, 0.0, 1.0]);
+        assert_eq!(&values[6..9], &CUBE_POSITIONS[1]);
+        assert_eq!(&values[9..12], &[0.0, 0.0, 1.0]);
     }
 
     #[test]

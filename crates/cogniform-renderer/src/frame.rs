@@ -177,7 +177,7 @@ impl RenderedFrame {
         self.depth
     }
 
-    /// Consumes the frame and returns flat world-space normals.
+    /// Consumes the frame and returns quantized world-space normals.
     #[must_use]
     pub fn into_normals(self) -> Vec<Option<[f32; 3]>> {
         self.normals
