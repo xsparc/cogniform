@@ -117,6 +117,8 @@ pub enum AssetDiagnosticCode {
     UnsupportedPrimitiveMode,
     /// A decoded position is non-finite.
     NonFiniteVertex,
+    /// A decoded normal is non-finite, zero-length, or inconsistent with its positions.
+    InvalidNormal,
     /// A decoded index is outside its position accessor.
     InvalidIndex,
     /// A configured mesh, primitive, vertex, or index count was exceeded.
@@ -162,11 +164,13 @@ impl AssetDiagnostic {
     }
 }
 
-/// One finite decoded position used by the baseline asset pipeline.
+/// One finite decoded position and unit normal used by the asset pipeline.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssetVertex {
     /// XYZ position in mesh-local units.
     pub position: [FiniteF32; 3],
+    /// Normalized XYZ normal in mesh-local units.
+    pub normal: [FiniteF32; 3],
 }
 
 /// Stable key for one mesh inside immutable source bytes.
@@ -217,12 +221,12 @@ impl AssetUploadJob {
         self.base_color
     }
 
-    /// Returns exact GPU vertex bytes required by this baseline mesh.
+    /// Returns exact GPU vertex bytes required by this interleaved mesh.
     #[must_use]
     pub fn byte_len(&self) -> u64 {
         u64::try_from(self.vertices.len())
             .unwrap_or(u64::MAX)
-            .saturating_mul(12)
+            .saturating_mul(24)
     }
 }
 

@@ -58,8 +58,9 @@ Each request selects one payload:
 
 - linear RGBA8 color;
 - normalized f32 depth;
-- flat world-space unit normals decoded from quantized signed RGB8, with
-  explicit absent background pixels;
+- world-space unit normals decoded from quantized signed RGB8, flat for
+  built-in and position-only triangles and interpolated for approved imported
+  vertex normals, with explicit absent background pixels;
 - exact `Option<StableEntityId>` per pixel, with `None` for background; or
 - stable-ID-sorted visibility counts.
 
@@ -68,11 +69,12 @@ camera, quality, completion time, latency, and staleness against the latest
 known world revision. An observation cannot claim a revision newer than its
 frame input.
 
-The extracted draw path currently supports cuboids and perspective cameras.
+The extracted draw path currently supports cuboids, explicitly resident
+approved GLB meshes, and perspective cameras.
 Plane and sphere records are retained by renderer state but frame submission
 returns a structured unsupported-primitive error until their bounded mesh
-paths land. Lighting, assets, encoding, shared memory, remote delivery, and
-service APIs remain later slices.
+paths land. Texture/material lighting, encoding, shared memory, and remote
+delivery remain later slices.
 
 ## Validation
 
@@ -93,4 +95,6 @@ deterministic capacity failure. It creates no window, performs no external
 call, and uploads no artifact.
 
 See [ADR 0006](../adr/0006-coalesced-extraction-and-bounded-observations.md)
-for the selected single-consumer extraction and pooling model.
+for the selected single-consumer extraction and pooling model. See
+[ADR 0020](../adr/0020-bounded-imported-vertex-normals.md) for imported normal
+validation and rendering.

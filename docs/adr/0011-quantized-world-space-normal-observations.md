@@ -1,6 +1,6 @@
 # ADR 0011: Quantized world-space normal observations
 
-- Status: Accepted
+- Status: Accepted; flat-only normal-source decision superseded by ADR 0020
 - Date: 2026-08-04
 - Task: CF011
 
@@ -65,3 +65,7 @@ not byte identity. Cross-adapter bitwise normal equality is not promised.
 - Smooth imported normals, normal maps, tangent space, higher-precision normal
   targets, encoding, shared memory, remote delivery, and shading changes remain
   separate decisions.
+
+The observation and quantization decision remains active. [ADR 0020](0020-bounded-imported-vertex-normals.md)
+later supersedes only the flat-only geometry source and position-only upload
+parts of this record.

@@ -25,5 +25,6 @@ earlier one and links the history.
 | [0017](0017-quiescent-live-revert-through-fresh-replacement.md) | Accepted | Revert a quiescent local service through an exact fresh replacement before swap |
 | [0018](0018-immutable-bounded-local-recovery-files.md) | Accepted | Persist complete recovery envelopes through explicit create-new bounded local files |
 | [0019](0019-immutable-exact-hash-asset-source-files.md) | Accepted | Persist exact-hash asset sources through separate explicit create-new bounded local files |
+| [0020](0020-bounded-imported-vertex-normals.md) | Accepted | Import bounded optional vertex normals and preserve flat position-only fallback output |
 
 New records use four sections: context, decision, consequences, and status.

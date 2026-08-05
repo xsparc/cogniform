@@ -355,12 +355,37 @@ release action. See
 [asset-file guide](../persistence/asset-files.md), and the
 [GLB asset guide](../assets/glb-subset.md).
 
+### PR 20 - CF020: Bounded imported vertex normals
+
+Outcome: an approved GLB can carry finite smooth vertex normals through strict
+decode, exact CPU/GPU accounting, model transformation, interpolation, and the
+existing quantized world-space normal observation.
+
+Gate: a primitive accepts exactly `POSITION` alone or `POSITION` plus a
+same-count non-normalized f32 `VEC3` `NORMAL`; accepted directions normalize
+deterministically and expand with the same index, while invalid ranges,
+non-finite or zero values, count mismatches, and degenerate fallback triangles
+reject without proxy adoption. Position-only geometry synthesizes one
+winding-derived normal per expanded triangle. Admission reserves exactly 24
+bytes per vertex before allocation, the renderer interleaves both attributes,
+and controlled GPU tests prove inverse-transpose behavior under non-uniform
+scale while preserving the position-only GLB and cube outputs.
+
+Implemented contract: `AssetVertex` now carries position plus a unit normal;
+the renderer transforms and interpolates that direction into the unchanged
+signed RGBA8 observation target. UVs, tangents, textures, normal maps, material
+lighting, alternate normal encodings, scene traversal, compression, automatic
+asset work, persistence/catalog changes, transport, and release action remain
+excluded. See [ADR 0020](../adr/0020-bounded-imported-vertex-normals.md), the
+[GLB asset guide](../assets/glb-subset.md), and the
+[renderer guide](../renderer/headless-reference-scene.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
-  -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019
+  -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -444,6 +469,10 @@ Validation expands with capability:
 - CF019: pre-I/O source-size and exact-hash rejection, create-new immutability,
   shared write/sync cleanup, bounded regular-file load, growth/substitution
   rejection, and controlled separate recovery/asset restore and rehydration.
+- CF020: strict optional-normal accessor/count/value/range validation,
+  deterministic normalization and flat fallback, exact 24-byte CPU/GPU vertex
+  accounting, interleaved upload checks, and controlled winding,
+  inverse-transpose, interpolation, and observation probes.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

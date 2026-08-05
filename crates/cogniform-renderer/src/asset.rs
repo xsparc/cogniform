@@ -178,16 +178,8 @@ impl RendererAssets {
                 .slice(..)
                 .get_mapped_range_mut()
                 .expect("newly created mapped buffer is writable");
-            let encoded = job
-                .vertices()
-                .iter()
-                .flat_map(|vertex| {
-                    vertex
-                        .position
-                        .iter()
-                        .flat_map(|value| value.get().to_le_bytes())
-                })
-                .collect::<Vec<_>>();
+            let encoded = encode_vertices(job.vertices());
+            debug_assert_eq!(u64::try_from(encoded.len()).ok(), Some(byte_len));
             mapped.copy_from_slice(&encoded);
         }
         buffer.unmap();
@@ -237,6 +229,19 @@ impl RendererAssets {
     }
 }
 
+fn encode_vertices(vertices: &[cogniform_assets::AssetVertex]) -> Vec<u8> {
+    vertices
+        .iter()
+        .flat_map(|vertex| {
+            vertex
+                .position
+                .iter()
+                .chain(&vertex.normal)
+                .flat_map(|value| value.get().to_le_bytes())
+        })
+        .collect()
+}
+
 impl std::fmt::Debug for RendererAssets {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -248,7 +253,7 @@ impl std::fmt::Debug for RendererAssets {
 
 #[cfg(test)]
 mod tests {
-    use core::num::NonZeroU32;
+    use core::num::{NonZeroU32, NonZeroU64};
 
     use cogniform_assets::{AssetMeshKey, AssetStore, content_hash};
 
@@ -271,6 +276,44 @@ mod tests {
             Err(RendererError::AssetUploadCapacityExceeded { capacity: 1 })
         ));
         assert_eq!(assets.stats().pending_uploads, 1);
+        assert_eq!(assets.stats().resident_meshes, 0);
+    }
+
+    #[test]
+    fn upload_vertices_are_interleaved_position_then_normal() {
+        let upload = fixture_upload(false);
+        let encoded = encode_vertices(upload.vertices());
+        assert_eq!(u64::try_from(encoded.len()).unwrap(), upload.byte_len());
+        let values = encoded
+            .chunks_exact(4)
+            .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        let first = upload.vertices()[0];
+        let expected = first
+            .position
+            .iter()
+            .chain(&first.normal)
+            .map(|value| value.get())
+            .collect::<Vec<_>>();
+        assert_eq!(&values[..6], expected);
+    }
+
+    #[test]
+    fn exact_interleaved_bytes_are_rejected_before_gpu_allocation() {
+        let upload = fixture_upload(false);
+        assert_eq!(upload.byte_len(), 72);
+        let config =
+            RendererConfig::new(64, 64).with_max_asset_mesh_bytes(NonZeroU64::new(71).unwrap());
+        let mut assets = RendererAssets::new();
+        assert!(matches!(
+            assets.enqueue(upload, &config),
+            Err(RendererError::AssetMeshBytesExceeded {
+                actual: 72,
+                limit: 71,
+                ..
+            })
+        ));
+        assert_eq!(assets.stats().pending_uploads, 0);
         assert_eq!(assets.stats().resident_meshes, 0);
     }
 

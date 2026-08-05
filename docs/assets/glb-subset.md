@@ -4,7 +4,8 @@ Status: immutable asset records, the approved GLB subset, world references,
 and bounded renderer uploads are implemented by CF007. CF015 composes those
 steps into the local typed service without making them implicit. CF019 adds an
 independent immutable bounded file for retaining one exact source across a
-restart; import and upload remain explicit.
+restart; import and upload remain explicit. CF020 adds bounded optional vertex
+normals without expanding the texture, material, or scene-graph surface.
 
 ## Ownership and lifecycle
 
@@ -43,7 +44,7 @@ APIs remain available for embedders that own those domains directly.
 
 Records are retained as `Queued`, `Ready`, `ProxyReady`, or `Rejected`. The
 original source is retained only while queued. Ready and proxy records retain
-expanded triangle positions for upload. There is no eviction API in this
+expanded triangle positions and unit normals for upload. There is no eviction API in this
 baseline; dropping the store or renderer releases its respective residency.
 
 The authoritative world stores only `AssetMeshComponent`, containing the
@@ -72,22 +73,29 @@ The importer accepts only the following baseline:
 - one embedded buffer with no URI;
 - one or more meshes, with exactly one primitive per mesh;
 - triangle-list mode, either explicit mode `4` or the glTF default;
-- exactly one vertex attribute, `POSITION`;
+- exactly `POSITION`, or exactly `POSITION` plus `NORMAL`;
 - finite non-normalized f32 `VEC3` positions;
+- optional non-normalized f32 `VEC3` normals with the same source count as
+  positions; each direction must be finite and non-zero;
 - optional non-normalized scalar u16 or u32 indices;
 - tightly packed or valid component-aligned buffer-view strides up to 252
   bytes; and
 - an optional material `pbrMetallicRoughness.baseColorFactor`. Metallic and
   roughness factors are range-validated but are not rendered yet.
 
-Indexed geometry is expanded into a triangle vertex stream. Every referenced
-range and index is checked before use. A primitive without indices must contain
-a multiple of three positions; an indexed primitive must contain a multiple of
-three indices.
+Indexed geometry is expanded into a triangle vertex stream, using the same
+source index for position and normal. Accepted source normals are normalized
+deterministically. When `NORMAL` is absent, each expanded triangle receives one
+unit cross-product normal following its winding; degenerate triangles reject.
+Every output vertex is an interleaved position and normal and consumes exactly
+24 decoded and GPU bytes. Every referenced range and index is checked before
+use, and the complete expanded byte requirement is checked before allocation.
+A primitive without indices must contain a multiple of three positions; an
+indexed primitive must contain a multiple of three indices.
 
 The strict schema rejects unknown fields after recognized unsupported feature
 declarations are classified. External buffers, data URIs, additional GLB
-chunks, sparse accessors, normalized accessors, imported normals, UVs, tangents,
+chunks, sparse accessors, normalized or non-f32 normal accessors, UVs, tangents,
 colors, morph targets, multiple primitives, non-triangle modes, images,
 samplers, textures, nodes, scenes, cameras, animations, skins, and extensions
 are not supported. There is no compressed geometry or texture decompression
@@ -109,9 +117,11 @@ magenta unit-cube `ProxyReady` record:
 - unsupported primitive mode.
 
 Invalid GLB framing or lengths, malformed or type-invalid JSON, invalid buffer
-ranges or indices, non-finite positions, and collection or byte-limit failures
-always produce `Rejected`. A proxy therefore never masks malformed or
-over-limit input.
+ranges or indices, non-finite positions, zero or non-finite normals, normal
+count mismatches, degenerate fallback triangles, and collection or byte-limit
+failures always produce `Rejected`. A proxy therefore never masks malformed or
+over-limit input. A syntactically valid but unsupported normal accessor format
+remains an `UnsupportedAccessor` and may proxy only under explicit policy.
 
 At draw time, a resident mesh uses its imported base color unless the world
 entity has an explicit material, which overrides it. If the referenced mesh is
@@ -157,8 +167,9 @@ resident-byte limits.
 
 The default offline suite verifies exact hash admission, every truncated prefix
 of the checked fixture, malformed extension declarations, proxy eligibility,
-range and capacity failure, procedure replay, world extraction, and renderer
-upload reservation:
+normal normalization/count/value/range failures, winding fallback, exact
+24-byte accounting, range and capacity failure, procedure replay, world
+extraction, and renderer upload reservation:
 
 ```text
 cargo test -p cogniform-assets -p cogniform-procedural --locked --offline
@@ -170,13 +181,15 @@ on an approved DX12 or Vulkan adapter:
 
 ```text
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal
+cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_normals_are_inverse_transformed_and_observable
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
 cargo test --release -p cogniform-storage --test asset_file --locked --offline -- --ignored --exact persisted_recovery_and_asset_sources_restore_renderable_state
 ```
 
 The controlled tests create no window, perform no network call, and upload no
-artifact. They verify exact entity identity plus tolerant imported color and
-depth probes, then prove that restored asset references require explicit
+artifact. They verify exact entity identity plus tolerant imported color,
+depth, position-only winding normals, and imported normals under non-uniform
+scale, then prove that restored asset references require explicit
 exact-hash CPU/GPU rehydration without another logical mutation. The CF019 case
 persists recovery and asset source in separate files, drops the source service,
 restores the logical reference, observes its exact typed absence, and then

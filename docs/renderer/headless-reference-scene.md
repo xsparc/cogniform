@@ -36,9 +36,11 @@ normal alpha `0` marks background.
 - entity IDs must match exactly;
 - color channels use an absolute tolerance of 2 units in RGBA8;
 - center depth uses an absolute tolerance of 0.02;
-- geometry normals are flat world-space unit vectors derived from source
-  triangle winding, quantized through signed RGB8, then renormalized after
-  readback; controlled direction comparisons use a 0.99 minimum dot product;
+- built-in and position-only geometry normals are flat unit vectors derived
+  from source triangle winding; approved imported vertex normals are
+  inverse-transformed into world space and interpolated before fragment
+  normalization; both paths are quantized through signed RGB8 and renormalized
+  after readback, and controlled comparisons use a 0.99 minimum dot product;
 - cross-adapter bitwise image equality is not claimed.
 
 The `u32` attachment is compact render identity, not `StableEntityId`. CF005
@@ -82,12 +84,14 @@ approved adapter:
 
 ```text
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact reference_cube_produces_exact_ids_and_tolerant_color_depth_normals
+cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored
 ```
 
-The integration test renders at 64 by 64 pixels, verifies exact object and
-background IDs, probes color, depth, and normal output using the declared
-tolerances, validates output lengths and bounds behavior, and requires the
-selected backend to be DX12 or Vulkan. Normal workspace CI compiles this test
+The integration tests render at 64 by 64 pixels, verify exact object and
+background IDs, probe color, depth, position-only winding normals, and smooth
+normals under non-uniform scale using the declared tolerances, validate output
+lengths and bounds behavior, and require the selected backend to be DX12 or
+Vulkan. Normal workspace CI compiles these tests
 but leaves it ignored;
 the architecture reserves adapter conformance for controlled local or
 self-hosted hardware. The test does not contact a service, create a window,
@@ -95,5 +99,7 @@ upload an artifact, or require a paid runner.
 
 See [ADR 0005](../adr/0005-bounded-headless-wgpu-baseline.md) for the dependency,
 backend, identity, and synchronization decisions.
+See [ADR 0020](../adr/0020-bounded-imported-vertex-normals.md) for the
+position/normal vertex contract and inverse-transpose decision.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

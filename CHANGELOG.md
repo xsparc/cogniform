@@ -14,8 +14,9 @@ release yet; the current workspace version remains `0.0.0`.
 - integrity-chained accepted-event recording, verified-prefix recovery, and
   exact fresh-world replay;
 - bounded headless renderer paths compiled for Vulkan/DX12 with primitive and
-  strict GLB geometry, color/depth/entity-ID readback, quantized flat
-  world-space normal observations, structured visibility, and guarded
+  strict GLB geometry, color/depth/entity-ID readback, quantized world-space
+  normal observations from flat fallback or imported vertex directions,
+  structured visibility, and guarded
   background GPU retirement;
 - deterministic primitive imagination compilation and pure seeded built-in
   cuboid-grid procedures;
@@ -23,6 +24,9 @@ release yet; the current workspace version remains `0.0.0`.
   admission, idempotency, processing, query, replay, and restoration;
 - bounded content-addressed GLB admission, CPU decode, renderer upload, and
   explicit unsupported/proxy policy;
+- optional finite same-count GLB vertex normals, deterministic winding fallback,
+  exact 24-byte position/normal accounting, interleaved GPU upload, and
+  inverse-transpose rendering under non-uniform scale;
 - service-owned asset admission, explicit single-item CPU/GPU processing,
   aggregate residency status, and exact-hash post-recovery rehydration;
 - local typed service and unattended room/table/light/camera scenario;
@@ -46,6 +50,14 @@ release yet; the current workspace version remains `0.0.0`.
   controlled compatibility/performance baseline, and source-first candidate
   checklist.
 
+### Changed
+
+- `AssetVertex` now requires a public unit-normal field and
+  `AssetUploadJob::byte_len` accounts 24 rather than 12 bytes per expanded
+  vertex. This is a source-breaking Rust API and capacity-planning change in
+  the still-unpublished `0.0.0` workspace; no version or release action was
+  taken.
+
 ### Known limitations
 
 - no supported release, stable crates.io API, remote transport, authentication,
@@ -53,8 +65,8 @@ release yet; the current workspace version remains `0.0.0`.
   integration, deployment, or production SLA;
 - the validated full-runtime profile is currently Windows 11 x86_64 with a
   Vulkan discrete GPU; other runtime platforms/backends remain unverified;
-- renderer materials use flat base color; normal output is flat and quantized,
-  with no smooth imported normals, normal maps, or tangent space; the GLB
+- renderer materials use flat base color; normal output is quantized and the
+  imported subset has no normal maps or tangent space; the GLB
   subset excludes textures, external buffers, compression, scene traversal,
   and most vertex attributes;
 - recovery points and recovery files do not include queued commands,

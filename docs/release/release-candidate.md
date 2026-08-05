@@ -20,10 +20,10 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Historical recovery fork | Pass on validated profile | An exact retained revision restores into a separate fresh service, preserves the source, resumes from the source frame frontier, and continues query/observe/append causality |
 | Quiescent live revert | Pass on validated profile | A fully restored historical replacement swaps only after success, rejects transient blockers without mutation, clears named cache/asset state, preserves frame/prefix idempotency, and continues a new branch |
 | Headless render | Pass on validated profile | No surface/window; Vulkan cube, GLB, readback pressure, renderer-drop retirement, and canonical scenario evidence |
-| Machine outputs | Pass on validated profile | Tolerant color/depth, exact stable entity ID, structured visibility, and quantized flat world-space normals following triangle winding |
+| Machine outputs | Pass on validated profile | Tolerant color/depth, exact stable entity ID, structured visibility, and quantized world-space normals from position-only winding or approved imported directions |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
-| Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, truncation corpus, typed unsupported/proxy policy |
+| Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, finite non-zero same-count normals, exact decoded/GPU bytes, truncation corpus, typed unsupported/proxy policy |
 | Service asset resolution | Pass on validated profile | Explicit one-item import/upload renders an exact stable ID; recovery retains logical references and exact-hash rehydration resumes rendering without replay mutation |
 | Service procedure composition | Pass on validated profile | A bounded 2x3 built-in procedure follows ordinary queue, idempotency, query, replay/hash, and restored world-idempotency behavior |
 | End to end | Pass on validated profile | Room/table/light/camera create and atomic restyle, exact query, three observations, same replay hash |
@@ -92,8 +92,9 @@ The GitHub release must be marked prerelease and state:
   mutable cache, eviction policy, or automatic asset startup exists;
 - only compiled pure built-in procedures are supported; no external procedure
   loading, user-code execution, native plugin, or Wasm host is included;
-- normal output is flat and quantized, with no imported smoothing, normal maps,
-  or tangent-space contract; unvalidated platforms/backends remain
+- normal output is quantized and accepts the documented imported smoothing
+  subset, with no normal maps or tangent-space contract; unvalidated
+  platforms/backends remain
   unsupported; and
 - performance figures are one-machine informational measurements.
 
