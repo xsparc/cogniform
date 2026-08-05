@@ -5,9 +5,9 @@
 use core::num::{NonZeroU32, NonZeroU64};
 
 use cogniform_protocol::{
-    CameraComponent, ColorRgba, MaterialComponent, PositiveF32, PositiveVec3, PrimitiveComponent,
-    PrimitiveShape, RenderChange, RenderComponents, RenderEntity, RenderExtraction, SceneRevision,
-    StableEntityId, UnitF32,
+    CameraComponent, ColorRgb, ColorRgba, LightComponent, LightKind, MaterialComponent,
+    NonNegativeF32, PositiveF32, PositiveVec3, PrimitiveComponent, PrimitiveShape, RenderChange,
+    RenderComponents, RenderEntity, RenderExtraction, SceneRevision, StableEntityId, UnitF32,
 };
 use cogniform_renderer::{
     HeadlessRenderer, REFERENCE_COLOR, REFERENCE_ENTITY_ID, RendererConfig, RendererError,
@@ -219,6 +219,148 @@ fn extracted_plane_produces_color_depth_identity_and_plus_z_normal() {
     assert!(normal[2] >= 0.99);
     assert_eq!(frame.stable_entity_id_at(0, 0), None);
     assert_eq!(frame.normal_at(0, 0), None);
+}
+
+fn directional_light_entity(world_transform: [f64; 16], generation: u64) -> RenderEntity {
+    let unit = |value| UnitF32::new(value).unwrap();
+    RenderEntity::new(
+        StableEntityId::new(3).unwrap(),
+        world_transform,
+        generation,
+        RenderComponents {
+            light: Some(LightComponent {
+                kind: LightKind::Directional,
+                color: ColorRgb {
+                    r: unit(1.0),
+                    g: unit(1.0),
+                    b: unit(1.0),
+                },
+                intensity: NonNegativeF32::new(0.5).unwrap(),
+            }),
+            ..RenderComponents::default()
+        },
+    )
+    .unwrap()
+}
+
+fn directional_light_fixture() -> RenderExtraction {
+    let camera_id = StableEntityId::new(1).unwrap();
+    let plane_id = StableEntityId::new(2).unwrap();
+    let positive = |value| PositiveF32::new(value).unwrap();
+    let unit = |value| UnitF32::new(value).unwrap();
+    let identity = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ];
+    let mut camera_world = identity;
+    camera_world[14] = 3.0;
+    let camera = RenderEntity::new(
+        camera_id,
+        camera_world,
+        1,
+        RenderComponents {
+            camera: Some(CameraComponent {
+                vertical_fov_radians: positive(core::f32::consts::FRAC_PI_2),
+                near: positive(0.1),
+                far: positive(100.0),
+            }),
+            ..RenderComponents::default()
+        },
+    )
+    .unwrap();
+    let plane = RenderEntity::new(
+        plane_id,
+        identity,
+        1,
+        RenderComponents {
+            primitive: Some(PrimitiveComponent {
+                shape: PrimitiveShape::Plane,
+                dimensions: PositiveVec3 {
+                    x: positive(1.5),
+                    y: positive(0.75),
+                    z: positive(2.0),
+                },
+            }),
+            material: Some(MaterialComponent {
+                base_color: ColorRgba {
+                    r: unit(0.8),
+                    g: unit(0.4),
+                    b: unit(0.2),
+                    a: unit(1.0),
+                },
+                metallic: unit(0.0),
+                roughness: unit(0.5),
+            }),
+            ..RenderComponents::default()
+        },
+    )
+    .unwrap();
+    RenderExtraction::new(
+        NonZeroU64::new(1).unwrap(),
+        SceneRevision::INITIAL,
+        SceneRevision::new(1),
+        vec![
+            RenderChange::upsert(camera),
+            RenderChange::upsert(plane),
+            RenderChange::upsert(directional_light_entity(identity, 1)),
+        ],
+    )
+    .unwrap()
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn directional_light_modulates_front_and_back_facing_diffuse_color() {
+    let camera_id = StableEntityId::new(1).unwrap();
+    let plane_id = StableEntityId::new(2).unwrap();
+    let initial = directional_light_fixture();
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer.apply_extraction(&initial).unwrap();
+    let front = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+    let center = (WIDTH / 2, HEIGHT / 2);
+    assert_eq!(
+        front.stable_entity_id_at(center.0, center.1),
+        Some(plane_id)
+    );
+    for (actual, expected) in front
+        .color_at(center.0, center.1)
+        .unwrap()
+        .into_iter()
+        .zip([102, 51, 26, 255])
+    {
+        assert!(actual.abs_diff(expected) <= 2);
+    }
+    let front_depth = front.depth_at(center.0, center.1).unwrap();
+    let front_normal = front.normal_at(center.0, center.1).unwrap();
+
+    let back_facing = [
+        -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ];
+    let rotated = RenderExtraction::new(
+        NonZeroU64::new(2).unwrap(),
+        SceneRevision::new(1),
+        SceneRevision::new(2),
+        vec![RenderChange::upsert(directional_light_entity(
+            back_facing,
+            2,
+        ))],
+    )
+    .unwrap();
+    renderer.apply_extraction(&rotated).unwrap();
+    let back = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+
+    assert_eq!(back.stable_entity_id_at(center.0, center.1), Some(plane_id));
+    assert_eq!(back.color_at(center.0, center.1), Some([0, 0, 0, 255]));
+    let back_depth = back.depth_at(center.0, center.1).unwrap();
+    assert!((back_depth - front_depth).abs() <= f32::EPSILON);
+    let back_normal = back.normal_at(center.0, center.1).unwrap();
+    for (actual, expected) in back_normal.into_iter().zip(front_normal) {
+        assert!((actual - expected).abs() <= f32::EPSILON);
+    }
+    assert_eq!(back.stable_entity_id_at(0, 0), None);
+    assert_eq!(back.normal_at(0, 0), None);
 }
 
 #[test]

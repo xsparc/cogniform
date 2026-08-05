@@ -12,7 +12,10 @@ use crate::{
     MAX_TARGET_PIXELS, PendingFrame, REFERENCE_COLOR, REFERENCE_ENTITY_ID, RenderTargetKind,
     RendererAssetStats, RendererConfig, RendererError, SceneUpdateError, SceneUpdateSummary,
     asset::RendererAssets,
-    scene::{PreparedDraw, PreparedGeometry, PreparedScene, RenderScene},
+    scene::{
+        MAX_DIRECTIONAL_LIGHTS, PreparedDirectionalLight, PreparedDraw, PreparedGeometry,
+        PreparedScene, RenderScene,
+    },
 };
 
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -307,6 +310,7 @@ impl HeadlessRenderer {
                 color: REFERENCE_COLOR.map(|channel| f32::from(channel) / 255.0),
                 compact_id: REFERENCE_ENTITY_ID,
             }],
+            directional_lights: Vec::new(),
             id_lookup: [(REFERENCE_ENTITY_ID, entity_id)].into_iter().collect(),
         };
         self.submit_prepared(camera_id, SceneRevision::INITIAL, 0, prepared)
@@ -372,6 +376,7 @@ impl HeadlessRenderer {
                 targets: &targets,
             },
             &prepared.draws,
+            &prepared.directional_lights,
         );
 
         copy_target_to_buffer(
@@ -889,6 +894,7 @@ fn encode_scene_pass(
     encoder: &mut wgpu::CommandEncoder,
     resources: &ScenePassResources<'_>,
     draws: &[PreparedDraw],
+    directional_lights: &[PreparedDirectionalLight],
 ) {
     let color_attachments = [
         Some(wgpu::RenderPassColorAttachment {
@@ -941,7 +947,7 @@ fn encode_scene_pass(
     });
     render_pass.set_pipeline(resources.pipeline);
     for draw in draws {
-        let bytes = encode_draw_uniform(draw);
+        let bytes = encode_draw_uniform(draw, directional_lights);
         let buffer = resources.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cogniform-draw-uniform"),
             size: u64::try_from(bytes.len()).expect("uniform length fits u64"),
@@ -1109,8 +1115,15 @@ fn normalize(vector: [f32; 3]) -> [f32; 3] {
     vector.map(|value| value * inverse_length)
 }
 
-fn encode_draw_uniform(draw: &PreparedDraw) -> Vec<u8> {
-    const UNIFORM_BYTES: usize = (16 + 16 + 4 + 4) * 4;
+fn encode_draw_uniform(
+    draw: &PreparedDraw,
+    directional_lights: &[PreparedDirectionalLight],
+) -> Vec<u8> {
+    const BASE_FLOATS: usize = 16 + 16 + 4 + 4 + 4;
+    const FLOATS_PER_DIRECTIONAL_LIGHT: usize = 8;
+    const UNIFORM_BYTES: usize =
+        (BASE_FLOATS + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT) * 4;
+    debug_assert!(directional_lights.len() <= MAX_DIRECTIONAL_LIGHTS);
     let mut bytes = Vec::with_capacity(UNIFORM_BYTES);
     for value in draw.model {
         bytes.extend_from_slice(&value.to_le_bytes());
@@ -1125,6 +1138,32 @@ fn encode_draw_uniform(draw: &PreparedDraw) -> Vec<u8> {
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(
+        &u32::try_from(directional_lights.len())
+            .expect("fixed directional-light count fits u32")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    for index in 0..MAX_DIRECTIONAL_LIGHTS {
+        let light = directional_lights
+            .get(index)
+            .copied()
+            .unwrap_or(PreparedDirectionalLight {
+                surface_to_light: [0.0; 3],
+                color: [0.0; 3],
+                intensity: 0.0,
+            });
+        for value in light.surface_to_light {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+        for value in light.color {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&light.intensity.to_le_bytes());
+    }
     debug_assert_eq!(bytes.len(), UNIFORM_BYTES);
     bytes
 }
@@ -1278,6 +1317,58 @@ mod tests {
             assert_eq!(&vertex[..3], &position);
             assert_eq!(&vertex[3..], &[0.0, 0.0, 1.0]);
         }
+    }
+
+    #[test]
+    fn draw_uniform_has_exact_fixed_directional_light_layout_and_zero_padding() {
+        let draw = PreparedDraw {
+            geometry: PreparedGeometry::Plane,
+            model: [1.0; 16],
+            view_projection: [2.0; 16],
+            color: [0.25, 0.5, 0.75, 1.0],
+            compact_id: 42,
+        };
+        let lights = [
+            PreparedDirectionalLight {
+                surface_to_light: [0.0, 0.0, 1.0],
+                color: [1.0, 0.5, 0.25],
+                intensity: 0.75,
+            },
+            PreparedDirectionalLight {
+                surface_to_light: [0.6, 0.8, 0.0],
+                color: [0.1, 0.2, 0.3],
+                intensity: 0.4,
+            },
+        ];
+
+        let bytes = encode_draw_uniform(&draw, &lights);
+        assert_eq!(bytes.len(), 304);
+        let words = bytes
+            .chunks_exact(4)
+            .map(|word| <[u8; 4]>::try_from(word).unwrap())
+            .collect::<Vec<_>>();
+        let float = |index: usize| f32::from_le_bytes(words[index]);
+        let unsigned = |index: usize| u32::from_le_bytes(words[index]);
+
+        assert_eq!(float(0).to_bits(), 1.0_f32.to_bits());
+        assert_eq!(float(16).to_bits(), 2.0_f32.to_bits());
+        assert_eq!(
+            (32..36).map(float).collect::<Vec<_>>(),
+            vec![0.25, 0.5, 0.75, 1.0]
+        );
+        assert_eq!(unsigned(36), 42);
+        assert_eq!((37..40).map(unsigned).collect::<Vec<_>>(), vec![0; 3]);
+        assert_eq!(unsigned(40), 2);
+        assert_eq!((41..44).map(unsigned).collect::<Vec<_>>(), vec![0; 3]);
+        assert_eq!(
+            (44..52).map(float).collect::<Vec<_>>(),
+            vec![0.0, 0.0, 1.0, 0.0, 1.0, 0.5, 0.25, 0.75]
+        );
+        assert_eq!(
+            (52..60).map(float).collect::<Vec<_>>(),
+            vec![0.6, 0.8, 0.0, 0.0, 0.1, 0.2, 0.3, 0.4]
+        );
+        assert!(words[60..].iter().all(|word| *word == [0; 4]));
     }
 
     #[test]

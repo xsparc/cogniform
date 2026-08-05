@@ -153,7 +153,10 @@ pub struct CameraComponent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LightKind {
-    /// Directional light whose transform supplies its direction.
+    /// Directional light whose local negative-Z axis emits light.
+    ///
+    /// The transformed local positive-Z axis therefore points from a shaded
+    /// surface toward the light source.
     Directional,
     /// Omnidirectional point light.
     Point,

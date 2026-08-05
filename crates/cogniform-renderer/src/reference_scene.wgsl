@@ -1,8 +1,15 @@
+struct DirectionalLight {
+    surface_to_light: vec4<f32>,
+    color_intensity: vec4<f32>,
+};
+
 struct DrawUniform {
     model: mat4x4<f32>,
     view_projection: mat4x4<f32>,
     color: vec4<f32>,
     entity_id: vec4<u32>,
+    directional_light_count: vec4<u32>,
+    directional_lights: array<DirectionalLight, 4>,
 };
 
 @group(0) @binding(0)
@@ -51,7 +58,20 @@ fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>) -> 
 fn fs_main(input: VertexOutput) -> FragmentOutput {
     var output: FragmentOutput;
     let world_normal = normalize(input.world_normal);
-    output.color = draw.color;
+    var light_factor = vec3(1.0);
+    if draw.directional_light_count.x > 0u {
+        light_factor = vec3(0.0);
+        for (var index = 0u; index < draw.directional_light_count.x; index = index + 1u) {
+            let light = draw.directional_lights[index];
+            let diffuse = max(dot(world_normal, light.surface_to_light.xyz), 0.0);
+            let contribution = min(
+                light.color_intensity.rgb * light.color_intensity.a * diffuse,
+                vec3(1.0),
+            );
+            light_factor = min(light_factor + contribution, vec3(1.0));
+        }
+    }
+    output.color = vec4(draw.color.rgb * light_factor, draw.color.a);
     output.entity_id = draw.entity_id.x;
     output.normal = vec4(world_normal * 0.5 + vec3(0.5), 1.0);
     return output;

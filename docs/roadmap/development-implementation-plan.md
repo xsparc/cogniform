@@ -427,13 +427,38 @@ asset changes, transport, persistence, and release action remain excluded. See
 [ADR 0022](../adr/0022-fixed-built-in-uv-sphere-rendering.md) and the
 [renderer guide](../renderer/headless-reference-scene.md).
 
+### PR 23 - CF023: Bounded directional diffuse lighting
+
+Outcome: the already-public directional light produces deterministic bounded
+diffuse color through the existing headless render and observation path.
+
+Gate: transformed local positive Z is the normalized surface-to-light
+direction, matching negative-Z emission. Directional definitions are processed
+in stable entity-ID order and limited to four per scene; zero-intensity
+definitions count toward that limit but are inactive. A fifth definition or
+an active degenerate direction fails before GPU submission. Active lights sum
+clamped Lambert RGB contributions, clamp the result to the unit interval,
+multiply material base RGB, and preserve alpha. No active directional light,
+including a point-only scene, preserves exact unlit output. CPU tests prove
+ordering, direction, inactive-kind behavior, errors, and the exact 304-byte
+uniform; controlled GPU tests prove front/back diffuse response while retaining
+identity, depth, normals, background, and every prior renderer output.
+
+Implemented contract: four fixed directional-light slots extend the existing
+per-draw bind group and pipeline. Point shading/attenuation, ambient,
+metallic/roughness response, specular/PBR/IBL, shadows, emissive, textures,
+normal maps, HDR/tone mapping, lighting configuration, culling, clustering,
+asset work, transport, persistence, and release action remain excluded. See
+[ADR 0023](../adr/0023-bounded-directional-diffuse-lighting.md) and the
+[renderer guide](../renderer/headless-reference-scene.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
-  -> CF022
+  -> CF022 -> CF023
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.

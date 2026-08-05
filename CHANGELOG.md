@@ -34,6 +34,9 @@ release yet; the current workspace version remains `0.0.0`.
   16-sector by 8-band initialization-only topology, outward winding, smooth
   radial normals, bounding-diameter scaling, exact fallback selection, and
   bounded curved-depth/identity/normal evidence;
+- stable-ID-ordered directional diffuse lighting with a fixed four-definition
+  limit, negative-Z emission convention, exact unlit compatibility, typed
+  capacity/direction failures, and controlled front/back adapter evidence;
 - service-owned asset admission, explicit single-item CPU/GPU processing,
   aggregate residency status, and exact-hash post-recovery rehydration;
 - local typed service and unattended room/table/light/camera scenario;
@@ -72,8 +75,11 @@ release yet; the current workspace version remains `0.0.0`.
   integration, deployment, or production SLA;
 - the validated full-runtime profile is currently Windows 11 x86_64 with a
   Vulkan discrete GPU; other runtime platforms/backends remain unverified;
-- renderer materials use flat base color; normal output is quantized and the
-  imported subset has no normal maps or tangent space; the GLB
+- renderer materials support only base color multiplied by bounded directional
+  Lambert diffuse; point lights, ambient, metallic/roughness response,
+  specular/PBR, shadows, emissive, HDR/tone mapping, and lighting configuration
+  are not implemented. Normal output is quantized and the imported subset has
+  no normal maps or tangent space; the GLB
   subset excludes textures, external buffers, compression, scene traversal,
   and most vertex attributes. Built-in geometry supports cuboids, fixed
   centered XY planes, and fixed centered unit-diameter spheres; configurable
