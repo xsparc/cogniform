@@ -8,8 +8,8 @@ scene revision that produced it.
 > [!IMPORTANT]
 > Cogniform is an early core, not a complete service or general-purpose 3D
 > engine. Public contracts, the atomic authoritative world, deterministic
-> hierarchy/hash/replay, compact render extraction, bounded headless cuboid and
-> centered-plane
+> hierarchy/hash/replay, compact render extraction, bounded headless cuboid,
+> centered-plane, and fixed-sphere
 > rendering, and revision-linked color/depth/entity-ID/visibility plus
 > quantized world-space normal observations are implemented, including flat
 > winding fallback and bounded imported vertex normals. A bounded
@@ -74,7 +74,7 @@ local persistence, bounds, failure cleanup, and path/durability limitations. The
 [asset-file guide](docs/persistence/asset-files.md) documents separate
 exact-hash source persistence and caller-driven rehydration. The
 [headless renderer guide](docs/renderer/headless-reference-scene.md) documents
-the current offscreen targets, built-in cuboid/plane geometry, backend
+the current offscreen targets, built-in cuboid/plane/sphere geometry, backend
 boundary, probes, and limitations. The
 [extraction and observation guide](docs/renderer/incremental-extraction-and-observations.md)
 documents sparse world updates, frame causality, pressure behavior, and owned

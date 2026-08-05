@@ -59,8 +59,9 @@ Each request selects one payload:
 - linear RGBA8 color;
 - normalized f32 depth;
 - world-space unit normals decoded from quantized signed RGB8, flat for
-  built-in and position-only triangles and interpolated for approved imported
-  vertex normals, with explicit absent background pixels;
+  cuboids, planes, and position-only assets, and interpolated from radial
+  sphere or approved imported vertex directions, with explicit absent
+  background pixels;
 - exact `Option<StableEntityId>` per pixel, with `None` for background; or
 - stable-ID-sorted visibility counts.
 
@@ -69,13 +70,14 @@ camera, quality, completion time, latency, and staleness against the latest
 known world revision. An observation cannot claim a revision newer than its
 frame input.
 
-The extracted draw path currently supports cuboids, centered XY planes,
-explicitly resident approved GLB meshes, and perspective cameras. An
-unavailable asset uses its exact explicit primitive fallback, so a plane no
-longer silently selects cuboid geometry. Sphere records remain retained by
-renderer state, but direct or fallback sphere submission returns the structured
-unsupported-primitive error. Texture/material lighting, encoding, shared
-memory, and remote delivery remain later slices.
+The extracted draw path currently supports cuboids, centered XY planes, fixed
+unit-diameter spheres, explicitly resident approved GLB meshes, and perspective
+cameras. An unavailable asset uses its exact explicit primitive fallback;
+resident assets retain precedence. All three current `PrimitiveShape` values
+therefore select their named geometry without a silent cuboid substitution.
+The public unsupported-primitive renderer error remains reserved for
+compatibility and future shape evolution. Texture/material lighting, encoding,
+shared memory, and remote delivery remain later slices.
 
 ## Validation
 
@@ -101,3 +103,6 @@ for the selected single-consumer extraction and pooling model. See
 validation and rendering.
 See [ADR 0021](../adr/0021-centered-built-in-plane-rendering.md) for built-in
 plane geometry and fallback selection.
+See [ADR 0022](../adr/0022-fixed-built-in-uv-sphere-rendering.md) for fixed
+sphere geometry, radial normals, bounding-diameter scaling, and fallback
+selection.

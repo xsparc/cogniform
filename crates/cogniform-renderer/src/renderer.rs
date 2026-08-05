@@ -21,8 +21,13 @@ const ENTITY_ID_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 const NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const BYTES_PER_PIXEL: u32 = 4;
 const COPY_ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+const VERTEX_BYTES: usize = 24;
 const CUBE_VERTEX_COUNT: u32 = 36;
 const PLANE_VERTEX_COUNT: u32 = 6;
+const SPHERE_LONGITUDE_SECTORS: u16 = 16;
+const SPHERE_LATITUDE_BANDS: u16 = 8;
+const SPHERE_VERTEX_COUNT: u32 = 672;
+const SPHERE_RADIUS: f32 = 0.5;
 const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
 const CUBE_POSITIONS: [[f32; 3]; 36] = [
@@ -134,6 +139,7 @@ pub struct HeadlessRenderer {
     draw_layout: wgpu::BindGroupLayout,
     cube_vertices: wgpu::Buffer,
     plane_vertices: wgpu::Buffer,
+    sphere_vertices: wgpu::Buffer,
     assets: RendererAssets,
     readback_layout: ReadbackLayout,
     readback_pool: ReadbackPool,
@@ -184,6 +190,7 @@ impl HeadlessRenderer {
             create_builtin_vertex_buffer(&device, "cogniform-cube-vertices", &CUBE_POSITIONS);
         let plane_vertices =
             create_builtin_vertex_buffer(&device, "cogniform-plane-vertices", &PLANE_POSITIONS);
+        let sphere_vertices = create_sphere_vertex_buffer(&device);
         let readback_pool = ReadbackPool::new(
             &device,
             readback_layout.buffer_size,
@@ -200,6 +207,7 @@ impl HeadlessRenderer {
             draw_layout,
             cube_vertices,
             plane_vertices,
+            sphere_vertices,
             assets: RendererAssets::new(),
             readback_layout,
             readback_pool,
@@ -359,6 +367,7 @@ impl HeadlessRenderer {
                 draw_layout: &self.draw_layout,
                 cube_vertices: &self.cube_vertices,
                 plane_vertices: &self.plane_vertices,
+                sphere_vertices: &self.sphere_vertices,
                 assets: &self.assets,
                 targets: &targets,
             },
@@ -871,6 +880,7 @@ struct ScenePassResources<'a> {
     draw_layout: &'a wgpu::BindGroupLayout,
     cube_vertices: &'a wgpu::Buffer,
     plane_vertices: &'a wgpu::Buffer,
+    sphere_vertices: &'a wgpu::Buffer,
     assets: &'a RendererAssets,
     targets: &'a RenderTargets,
 }
@@ -953,6 +963,7 @@ fn encode_scene_pass(
         let (vertices, vertex_count) = match draw.geometry {
             PreparedGeometry::Cuboid => (resources.cube_vertices, CUBE_VERTEX_COUNT),
             PreparedGeometry::Plane => (resources.plane_vertices, PLANE_VERTEX_COUNT),
+            PreparedGeometry::Sphere => (resources.sphere_vertices, SPHERE_VERTEX_COUNT),
             PreparedGeometry::Asset(key) => {
                 let mesh = resources
                     .assets
@@ -972,6 +983,19 @@ fn create_builtin_vertex_buffer(
     positions: &[[f32; 3]],
 ) -> wgpu::Buffer {
     let encoded = encode_winding_vertices(positions);
+    create_vertex_buffer(device, label, &encoded)
+}
+
+fn create_sphere_vertex_buffer(device: &wgpu::Device) -> wgpu::Buffer {
+    let encoded = encode_sphere_vertices();
+    create_vertex_buffer(device, "cogniform-sphere-vertices", &encoded)
+}
+
+fn create_vertex_buffer(
+    device: &wgpu::Device,
+    label: &'static str,
+    encoded: &[u8],
+) -> wgpu::Buffer {
     let size = u64::try_from(encoded.len()).expect("fixed built-in bytes fit u64");
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
@@ -984,7 +1008,7 @@ fn create_builtin_vertex_buffer(
             .slice(..)
             .get_mapped_range_mut()
             .expect("newly created mapped buffer is writable");
-        mapped.copy_from_slice(&encoded);
+        mapped.copy_from_slice(encoded);
     }
     buffer.unmap();
     buffer
@@ -992,7 +1016,7 @@ fn create_builtin_vertex_buffer(
 
 fn encode_winding_vertices(positions: &[[f32; 3]]) -> Vec<u8> {
     debug_assert!(!positions.is_empty() && positions.len().is_multiple_of(3));
-    let mut encoded = Vec::with_capacity(positions.len() * 24);
+    let mut encoded = Vec::with_capacity(positions.len() * VERTEX_BYTES);
     for triangle in positions.chunks_exact(3) {
         let edge_a = subtract(triangle[1], triangle[0]);
         let edge_b = subtract(triangle[2], triangle[0]);
@@ -1002,13 +1026,73 @@ fn encode_winding_vertices(positions: &[[f32; 3]]) -> Vec<u8> {
             edge_a[0] * edge_b[1] - edge_a[1] * edge_b[0],
         ]);
         for position in triangle {
-            for value in position.iter().chain(&normal) {
-                encoded.extend_from_slice(&value.to_le_bytes());
-            }
+            encode_vertex(&mut encoded, *position, normal);
         }
     }
-    debug_assert_eq!(encoded.len(), positions.len() * 24);
+    debug_assert_eq!(encoded.len(), positions.len() * VERTEX_BYTES);
     encoded
+}
+
+fn encode_sphere_vertices() -> Vec<u8> {
+    let expected_vertices = usize::try_from(SPHERE_VERTEX_COUNT).expect("fixed count fits usize");
+    let mut encoded = Vec::with_capacity(expected_vertices * VERTEX_BYTES);
+    let bottom = [0.0, 0.0, -1.0];
+    let top = [0.0, 0.0, 1.0];
+
+    for longitude in 0..SPHERE_LONGITUDE_SECTORS {
+        let current = sphere_direction(1, longitude);
+        let next = sphere_direction(1, longitude + 1);
+        encode_sphere_triangle(&mut encoded, [bottom, next, current]);
+    }
+
+    for lower_band in 1..(SPHERE_LATITUDE_BANDS - 1) {
+        for longitude in 0..SPHERE_LONGITUDE_SECTORS {
+            let lower_current = sphere_direction(lower_band, longitude);
+            let lower_next = sphere_direction(lower_band, longitude + 1);
+            let upper_current = sphere_direction(lower_band + 1, longitude);
+            let upper_next = sphere_direction(lower_band + 1, longitude + 1);
+            encode_sphere_triangle(&mut encoded, [lower_current, lower_next, upper_current]);
+            encode_sphere_triangle(&mut encoded, [lower_next, upper_next, upper_current]);
+        }
+    }
+
+    let top_band = SPHERE_LATITUDE_BANDS - 1;
+    for longitude in 0..SPHERE_LONGITUDE_SECTORS {
+        let current = sphere_direction(top_band, longitude);
+        let next = sphere_direction(top_band, longitude + 1);
+        encode_sphere_triangle(&mut encoded, [current, next, top]);
+    }
+
+    debug_assert_eq!(encoded.len(), expected_vertices * VERTEX_BYTES);
+    encoded
+}
+
+fn sphere_direction(latitude_band: u16, longitude_sector: u16) -> [f32; 3] {
+    debug_assert!(latitude_band > 0 && latitude_band < SPHERE_LATITUDE_BANDS);
+    let latitude = -core::f32::consts::FRAC_PI_2
+        + core::f32::consts::PI * f32::from(latitude_band) / f32::from(SPHERE_LATITUDE_BANDS);
+    let wrapped_longitude = longitude_sector % SPHERE_LONGITUDE_SECTORS;
+    let longitude =
+        core::f32::consts::TAU * f32::from(wrapped_longitude) / f32::from(SPHERE_LONGITUDE_SECTORS);
+    let (latitude_sine, latitude_cosine) = latitude.sin_cos();
+    let (longitude_sine, longitude_cosine) = longitude.sin_cos();
+    [
+        latitude_cosine * longitude_cosine,
+        latitude_cosine * longitude_sine,
+        latitude_sine,
+    ]
+}
+
+fn encode_sphere_triangle(encoded: &mut Vec<u8>, normals: [[f32; 3]; 3]) {
+    for normal in normals {
+        encode_vertex(encoded, normal.map(|value| value * SPHERE_RADIUS), normal);
+    }
+}
+
+fn encode_vertex(encoded: &mut Vec<u8>, position: [f32; 3], normal: [f32; 3]) {
+    for value in position.iter().chain(&normal) {
+        encoded.extend_from_slice(&value.to_le_bytes());
+    }
 }
 
 fn subtract(left: [f32; 3], right: [f32; 3]) -> [f32; 3] {
@@ -1193,6 +1277,87 @@ mod tests {
         for (vertex, position) in values.chunks_exact(6).zip(PLANE_POSITIONS) {
             assert_eq!(&vertex[..3], &position);
             assert_eq!(&vertex[3..], &[0.0, 0.0, 1.0]);
+        }
+    }
+
+    #[test]
+    fn sphere_vertices_are_fixed_unit_diameter_smooth_and_outward() {
+        assert_eq!(SPHERE_LONGITUDE_SECTORS, 16);
+        assert_eq!(SPHERE_LATITUDE_BANDS, 8);
+        assert_eq!(SPHERE_VERTEX_COUNT, 672);
+        assert_eq!(SPHERE_RADIUS.to_bits(), 0.5_f32.to_bits());
+        let encoded = encode_sphere_vertices();
+        let expected_vertices = usize::try_from(SPHERE_VERTEX_COUNT).unwrap();
+        let expected_triangles =
+            2 * usize::from(SPHERE_LONGITUDE_SECTORS) * usize::from(SPHERE_LATITUDE_BANDS - 1);
+        assert_eq!(expected_triangles, 224);
+        assert_eq!(encoded.len(), 16_128);
+        assert_eq!(encoded.len(), expected_vertices * VERTEX_BYTES);
+        let values = encoded
+            .chunks_exact(4)
+            .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        let vertices = values
+            .chunks_exact(6)
+            .map(|vertex| <[f32; 6]>::try_from(vertex).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(vertices.len(), expected_vertices);
+        assert_eq!(vertices.len() / 3, expected_triangles);
+        assert_eq!(
+            [
+                vertices[0][3].to_bits(),
+                vertices[0][4].to_bits(),
+                vertices[0][5].to_bits(),
+            ],
+            [0.0_f32.to_bits(), 0.0_f32.to_bits(), (-1.0_f32).to_bits()]
+        );
+        let last = vertices.last().unwrap();
+        assert_eq!(
+            [last[3].to_bits(), last[4].to_bits(), last[5].to_bits()],
+            [0.0_f32.to_bits(), 0.0_f32.to_bits(), 1.0_f32.to_bits()]
+        );
+
+        for vertex in &vertices {
+            let position = [vertex[0], vertex[1], vertex[2]];
+            let normal = [vertex[3], vertex[4], vertex[5]];
+            let position_length = position
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>()
+                .sqrt();
+            let normal_length = normal.iter().map(|value| value * value).sum::<f32>().sqrt();
+            let radial_alignment = position
+                .iter()
+                .zip(normal)
+                .map(|(position, normal)| position * normal)
+                .sum::<f32>();
+            assert!((position_length - SPHERE_RADIUS).abs() <= 1.0e-5);
+            assert!((normal_length - 1.0).abs() <= 1.0e-5);
+            assert!((radial_alignment - SPHERE_RADIUS).abs() <= 1.0e-5);
+        }
+
+        for triangle in vertices.chunks_exact(3) {
+            let first = [triangle[0][0], triangle[0][1], triangle[0][2]];
+            let second = [triangle[1][0], triangle[1][1], triangle[1][2]];
+            let third = [triangle[2][0], triangle[2][1], triangle[2][2]];
+            let edge_a = subtract(second, first);
+            let edge_b = subtract(third, first);
+            let winding_normal = [
+                edge_a[1] * edge_b[2] - edge_a[2] * edge_b[1],
+                edge_a[2] * edge_b[0] - edge_a[0] * edge_b[2],
+                edge_a[0] * edge_b[1] - edge_a[1] * edge_b[0],
+            ];
+            let centroid = [
+                (first[0] + second[0] + third[0]) / 3.0,
+                (first[1] + second[1] + third[1]) / 3.0,
+                (first[2] + second[2] + third[2]) / 3.0,
+            ];
+            let outward = winding_normal
+                .iter()
+                .zip(centroid)
+                .map(|(normal, center)| normal * center)
+                .sum::<f32>();
+            assert!(outward > 1.0e-6, "triangle winding must face outward");
         }
     }
 

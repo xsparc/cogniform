@@ -220,3 +220,104 @@ fn extracted_plane_produces_color_depth_identity_and_plus_z_normal() {
     assert_eq!(frame.stable_entity_id_at(0, 0), None);
     assert_eq!(frame.normal_at(0, 0), None);
 }
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn extracted_sphere_produces_curved_depth_identity_and_radial_normals() {
+    let camera_id = StableEntityId::new(1).unwrap();
+    let sphere_id = StableEntityId::new(2).unwrap();
+    let positive = |value| PositiveF32::new(value).unwrap();
+    let unit = |value| UnitF32::new(value).unwrap();
+    let identity = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ];
+    let mut camera_world = identity;
+    camera_world[14] = 3.0;
+    let camera = RenderEntity::new(
+        camera_id,
+        camera_world,
+        1,
+        RenderComponents {
+            camera: Some(CameraComponent {
+                vertical_fov_radians: positive(core::f32::consts::FRAC_PI_2),
+                near: positive(0.1),
+                far: positive(100.0),
+            }),
+            ..RenderComponents::default()
+        },
+    )
+    .unwrap();
+    let sphere = RenderEntity::new(
+        sphere_id,
+        identity,
+        1,
+        RenderComponents {
+            primitive: Some(PrimitiveComponent {
+                shape: PrimitiveShape::Sphere,
+                dimensions: PositiveVec3 {
+                    x: positive(1.5),
+                    y: positive(1.5),
+                    z: positive(1.5),
+                },
+            }),
+            material: Some(MaterialComponent {
+                base_color: ColorRgba {
+                    r: unit(0.9),
+                    g: unit(0.3),
+                    b: unit(0.2),
+                    a: unit(1.0),
+                },
+                metallic: unit(0.0),
+                roughness: unit(0.5),
+            }),
+            ..RenderComponents::default()
+        },
+    )
+    .unwrap();
+    let extraction = RenderExtraction::new(
+        NonZeroU64::new(1).unwrap(),
+        SceneRevision::INITIAL,
+        SceneRevision::new(1),
+        vec![RenderChange::upsert(camera), RenderChange::upsert(sphere)],
+    )
+    .unwrap();
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer.apply_extraction(&extraction).unwrap();
+    let frame = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+    let center = (WIDTH / 2, HEIGHT / 2);
+
+    assert_eq!(
+        frame.stable_entity_id_at(center.0, center.1),
+        Some(sphere_id)
+    );
+    for (actual, expected) in frame
+        .color_at(center.0, center.1)
+        .unwrap()
+        .into_iter()
+        .zip([230, 77, 51, 255])
+    {
+        assert!(actual.abs_diff(expected) <= 2);
+    }
+    let center_depth = frame.depth_at(center.0, center.1).unwrap();
+    assert!(center_depth.is_finite() && center_depth < 1.0);
+    let center_normal = frame.normal_at(center.0, center.1).unwrap();
+    assert!(center_normal[0].abs() <= 0.2);
+    assert!(center_normal[1].abs() <= 0.2);
+    assert!(center_normal[2] >= 0.95);
+
+    let right_foreground = ((center.0 + 1)..WIDTH)
+        .filter(|&x| frame.stable_entity_id_at(x, center.1) == Some(sphere_id))
+        .collect::<Vec<_>>();
+    assert!(right_foreground.len() >= 3);
+    let curved_x = right_foreground[right_foreground.len() / 2];
+    let curved_depth = frame.depth_at(curved_x, center.1).unwrap();
+    let curved_normal = frame.normal_at(curved_x, center.1).unwrap();
+    assert!(curved_depth > center_depth);
+    assert!(curved_normal[0] > center_normal[0] + 0.1);
+    assert!(curved_normal[2] > 0.1);
+    assert_eq!(frame.stable_entity_id_at(0, 0), None);
+    assert_eq!(frame.normal_at(0, 0), None);
+}

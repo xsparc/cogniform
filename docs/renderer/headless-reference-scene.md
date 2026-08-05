@@ -33,23 +33,33 @@ RGBA color `[51, 153, 230, 255]`, and a fixed orthographic camera with a small
 view shear. The background entity ID is `0`, cleared depth is `1.0`, and
 normal alpha `0` marks background.
 
-Extracted built-in geometry supports cuboids and planes. A plane is a centered
-unit square at local Z = 0, expanded as two counter-clockwise XY triangles with
-a positive-Z unit normal. Its positive XYZ dimensions scale the full model:
-X and Y control visible size and Z participates in normal transformation without
-creating thickness. One fixed 144-byte plane vertex payload is allocated at
-renderer initialization; frames do not tessellate or upload it. The baseline
-pipeline does not cull the back side and does not flip its source normal.
-Spheres still return `UnsupportedPrimitive` before GPU submission.
+Extracted built-in geometry supports cuboids, planes, and spheres. A plane is a
+centered unit square at local Z = 0, expanded as two counter-clockwise XY
+triangles with a positive-Z unit normal. Its positive XYZ dimensions scale the
+full model: X and Y control visible size and Z participates in normal
+transformation without creating thickness. One fixed 144-byte plane vertex
+payload is allocated at renderer initialization; frames do not tessellate or
+upload it. The baseline pipeline does not cull the back side and does not flip
+its source normal.
+
+A sphere is centered, unit diameter, and uses a positive-Z polar axis. Its
+fixed 16 longitude sectors and 8 latitude bands form 224 non-degenerate
+outward counter-clockwise triangles, expanded to 672 vertices with unit radial
+normals in the same 24-byte layout. The exact 16,128-byte payload is generated
+once at renderer initialization. XYZ dimensions are bounding diameters, so
+non-uniform values produce an ellipsoid and the existing inverse-transpose
+normal path preserves the smooth direction. Sphere topology supplies no UV
+attribute, and frames perform no built-in tessellation or upload.
 
 - entity IDs must match exactly;
 - color channels use an absolute tolerance of 2 units in RGBA8;
 - center depth uses an absolute tolerance of 0.02;
-- built-in and position-only geometry normals are flat unit vectors derived
-  from source triangle winding; approved imported vertex normals are
-  inverse-transformed into world space and interpolated before fragment
-  normalization; both paths are quantized through signed RGB8 and renormalized
-  after readback, and controlled comparisons use a 0.99 minimum dot product;
+- cuboid, plane, and position-only geometry normals are flat unit vectors
+  derived from source triangle winding; sphere radial normals and approved
+  imported vertex normals are inverse-transformed into world space and
+  interpolated before fragment normalization; all paths are quantized through
+  signed RGB8 and renormalized after readback, and controlled comparisons use
+  a 0.99 minimum dot product;
 - cross-adapter bitwise image equality is not claimed.
 
 The `u32` attachment is compact render identity, not `StableEntityId`. CF005
@@ -94,12 +104,13 @@ approved adapter:
 ```text
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact reference_cube_produces_exact_ids_and_tolerant_color_depth_normals
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact extracted_plane_produces_color_depth_identity_and_plus_z_normal
+cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact extracted_sphere_produces_curved_depth_identity_and_radial_normals
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored
 ```
 
 The integration tests render at 64 by 64 pixels, verify exact object and
-background IDs, probe cuboid and plane color, depth, position-only winding
-normals, and smooth
+background IDs, probe cuboid, plane, and sphere color, depth, position-only
+winding normals, curved sphere depth and radial normals, and smooth
 normals under non-uniform scale using the declared tolerances, validate output
 lengths and bounds behavior, and require the selected backend to be DX12 or
 Vulkan. Normal workspace CI compiles these tests
@@ -114,5 +125,7 @@ See [ADR 0020](../adr/0020-bounded-imported-vertex-normals.md) for the
 position/normal vertex contract and inverse-transpose decision.
 See [ADR 0021](../adr/0021-centered-built-in-plane-rendering.md) for the plane
 geometry, dimension, and fallback convention.
+See [ADR 0022](../adr/0022-fixed-built-in-uv-sphere-rendering.md) for the fixed
+sphere topology, dimension, normal, and allocation convention.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.
