@@ -21,14 +21,16 @@ scene revision that produced it.
 > local typed service and CLI now run the canonical unattended MVP flow,
 > verify replay to the same logical hash, and restore a fresh service from a
 > complete caller-owned in-memory recovery point. That point has a deterministic
-> bounded envelope for portable corruption detection, without claiming
-> encryption, authentication, or durable storage. A caller can also capture an
+> bounded envelope for portable corruption detection. An explicit storage
+> adapter can create a new immutable local recovery file and load it within the
+> same bound, without claiming encryption, authentication, automatic startup,
+> or crash-atomic directory updates. A caller can also capture an
 > exact retained revision as a fresh-service historical fork without mutating
 > the source or reusing a frame identity issued before capture. A quiescent
 > local service can also revert in place by constructing that exact historical
 > replacement before swap; queued work blocks the operation and asset residency
-> is explicitly cleared. Automatic rollback, cross-branch frame coordination,
-> remote transport, durable persistence, and release packaging have not landed
+> is explicitly cleared. Automatic rollback, snapshot retention, cross-branch
+> frame coordination, remote transport, and release packaging have not landed
 > yet.
 > The current
 > hardening baseline adds a
@@ -51,6 +53,7 @@ implementations arrive:
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |
 | `cogniform-renderer` | Headless GPU ownership and color/depth/normal/identity outputs |
 | `cogniform-engine` | Bounded orchestration and revision/frame correlation |
+| `cogniform-storage` | Explicit create-new and bounded-load recovery files |
 | `cogniform-cli` | Local sample, replay, and diagnostic commands |
 
 See the [software design document](docs/architecture/software-design-document.md),
@@ -60,6 +63,8 @@ The [core contract guide](docs/protocol/core-contracts.md) documents the current
 schema and validation boundary. The
 [determinism and replay guide](docs/architecture/determinism-and-replay.md)
 documents hierarchy, transform, hash, and recovery behavior. The
+[recovery-file guide](docs/persistence/recovery-files.md) documents explicit
+local persistence, bounds, failure cleanup, and path/durability limitations. The
 [headless renderer guide](docs/renderer/headless-reference-scene.md) documents
 the current offscreen targets, backend boundary, probes, and limitations. The
 [extraction and observation guide](docs/renderer/incremental-extraction-and-observations.md)

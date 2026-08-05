@@ -1,0 +1,20 @@
+[package]
+name = "cogniform-storage"
+description = "Explicit bounded storage adapters for Cogniform recovery state"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+cogniform-engine.workspace = true
+cogniform-protocol.workspace = true
+cogniform-replay.workspace = true
+
+[dev-dependencies]
+pollster = "=0.4.0"

@@ -36,6 +36,9 @@ release yet; the current workspace version remains `0.0.0`.
 - quiescent in-place historical local-service revert through a fully restored
   replacement, with typed blockers, explicit cache/asset clearing, and frame,
   replay, idempotency, and branch-continuation evidence;
+- explicit create-new local recovery files with pre-write envelope validation,
+  write/sync failure cleanup evidence, bounded regular-file loading, path-
+  redacted errors, and complete persisted restoration continuation;
 - public-repository safeguards, threat model, failure/recovery matrix,
   controlled compatibility/performance baseline, and source-first candidate
   checklist.
@@ -43,19 +46,20 @@ release yet; the current workspace version remains `0.0.0`.
 ### Known limitations
 
 - no supported release, stable crates.io API, remote transport, authentication,
-  persistence composition, shared memory, model integration, deployment, or
-  production SLA;
+  automatic persistence/startup, snapshot retention, shared memory, model
+  integration, deployment, or production SLA;
 - the validated full-runtime profile is currently Windows 11 x86_64 with a
   Vulkan discrete GPU; other runtime platforms/backends remain unverified;
 - renderer materials use flat base color; normal output is flat and quantized,
   with no smooth imported normals, normal maps, or tangent space; the GLB
   subset excludes textures, external buffers, compression, scene traversal,
   and most vertex attributes;
-- recovery points do not include queued commands, observations, asset bytes or
-  residency, storage, or automatic startup; their envelopes are not encrypted
-  or authenticated; in-place revert requires drained transient work, clears
+- recovery points and files do not include queued commands, observations, asset
+  bytes, or residency; files are create-new only and provide no automatic
+  startup, overwrite, directory-sync guarantee, encryption, authentication, or
+  key management; in-place revert requires drained transient work, clears
   asset residency, and supplies no automatic rollback or freshness policy;
   future frame identity across concurrently live branches is
-  caller-coordinated; device-loss recreation, durable recovery,
+  caller-coordinated; device-loss recreation, crash-atomic latest pointers,
   binary packaging, signing, provenance, and automated release publication are
   not implemented.

@@ -6,13 +6,14 @@ envelope by CF013. CF014 adds exact-revision recovery points for fresh-service
 historical forks. CF015 adds service-owned bounded asset resolution and
 explicit recovery rehydration. CF016 composes pure built-in procedures through
 ordinary patch admission. CF017 adds quiescent in-place historical revert
-through a fully restored replacement.
+through a fully restored replacement. CF018 adds a separate explicit adapter
+for immutable bounded local recovery files.
 
 `LocalService` composes one bounded `LocalGateway`, authoritative recorded
 world, service-owned asset store, headless renderer, and observation worker. It
-is a Rust API, not a network listener or daemon. No method performs
-authentication, remote I/O, filesystem persistence, deployment, model access,
-or a paid service call.
+is a Rust API, not a network listener or daemon. No service method performs
+authentication, remote I/O, automatic filesystem persistence, deployment,
+model access, or a paid service call.
 
 ## Lifecycle and configuration
 
@@ -111,6 +112,8 @@ also applies every recorded patch to a fresh world using the original world
 bounds. A caller can compare it with `logical_hash`; the canonical scenario
 treats any difference as failure. Returned replay bytes are a copy. The
 service does not persist, rotate, transmit, or load them automatically.
+A caller may compose `cogniform-storage::RecoveryFileStore` to create and load
+one immutable bounded envelope file outside this service boundary.
 
 ## In-memory restoration
 
@@ -121,7 +124,8 @@ bounds. `EngineRecoveryPoint::to_envelope_bytes` and `from_envelope_bytes` let a
 caller preserve both parts as one deterministic, versioned byte sequence under
 the same replay bound. Decoding checks header, version, exact length, non-zero
 frame, and SHA-256 integrity before copying replay bytes. Callers still own
-storage, confidentiality, authenticity, freshness, and atomic replacement.
+storage-path selection, confidentiality, authenticity, freshness, and atomic
+replacement policy.
 
 Restoration validates and replays the complete stream before adapter selection
 or GPU initialization. Any invalid tail rejects the point; the service never
@@ -216,9 +220,10 @@ branch identity, and any external rollback policy.
   delivery are deferred.
 - Recovery is into a fresh service from a complete in-memory point. Exact
   retained revisions can seed separate historical forks or replace a quiescent
-  live service, but filesystem persistence, automatic startup, snapshot
-  registries, automatic/scheduled rollback, branch management, cross-branch
-  frame allocation, and log rotation are not implemented.
+  live service. A separate adapter can create/load immutable recovery files,
+  but automatic startup, overwrite, mutable snapshot registries, retention,
+  automatic/scheduled rollback, branch management, cross-branch frame
+  allocation, and log rotation are not implemented.
 - Only the pure built-in cuboid-grid procedure is supported. External
   procedures, plugins, Wasm, and user code are not loaded. The service accepts
   caller-supplied exact-hash asset bytes but does not fetch external assets,
@@ -232,6 +237,8 @@ See [ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md),
 [ADR 0014](../adr/0014-exact-revision-historical-recovery-forks.md),
 [ADR 0015](../adr/0015-service-owned-asset-resolution-and-rehydration.md),
 [ADR 0016](../adr/0016-service-procedure-composition-through-ordinary-patches.md),
-[ADR 0017](../adr/0017-quiescent-live-revert-through-fresh-replacement.md), the
-[gateway guide](local-gateway-and-imagination.md), and the
+[ADR 0017](../adr/0017-quiescent-live-revert-through-fresh-replacement.md),
+[ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md), the
+[gateway guide](local-gateway-and-imagination.md), the
+[recovery-file guide](../persistence/recovery-files.md), and the
 [canonical scenario](../getting-started/canonical-scenario.md).

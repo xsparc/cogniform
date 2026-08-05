@@ -306,12 +306,37 @@ device-loss recovery, or release action is added. See
 the [replay guide](../architecture/determinism-and-replay.md), and the
 [local service guide](../protocol/local-service.md).
 
+### PR 18 - CF018: Immutable bounded local recovery files
+
+Outcome: an operator can explicitly persist one complete recovery envelope to
+a new local file and load it later without moving filesystem authority into the
+engine, world, renderer, or replay domains.
+
+Gate: encoding and bounds validation finish before the target is touched; an
+existing target is never overwritten; complete writes are synchronized and
+write/sync failures report whether partial cleanup succeeded; load accepts only
+a regular non-symlink final path component, bounds metadata before allocation,
+detects growth after that snapshot, and returns no recovery point until the
+complete envelope digest validates. A controlled save/drop/load/restore path
+must preserve exact query/hash/replay/frame state and continue observe/append
+causality.
+
+Implemented contract: `cogniform-storage::RecoveryFileStore` is an opt-in,
+caller-driven service adapter over the public recovery envelope and replay
+bounds. It creates no directories, chooses no paths, and provides no overwrite,
+rotation, latest-pointer, automatic checkpoint/startup/rollback, encryption,
+authentication, remote storage, asset/transient persistence, deployment, or
+release action. See
+[ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md), the
+[recovery-file guide](../persistence/recovery-files.md), and the
+[failure guide](../operations/failure-and-recovery.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
-  -> CF014 -> CF015 -> CF016 -> CF017
+  -> CF014 -> CF015 -> CF016 -> CF017 -> CF018
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -389,6 +414,9 @@ Validation expands with capability:
 - CF017: quiescence rejection without mutation, fresh-before-swap revert,
   explicit cache/asset clearing, exact prefix/query/hash/renderer restoration,
   source-frame continuity, retained idempotency, and removed-tail continuation.
+- CF018: encode-before-I/O, create-new immutability, injected write/sync cleanup,
+  path-redacted failures, regular-file and allocation bounds, corruption and
+  growth rejection, and controlled persisted restoration continuation.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

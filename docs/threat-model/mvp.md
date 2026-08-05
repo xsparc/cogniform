@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF017 quiescent local revert on 2026-08-05.
+and extended through CF018 immutable recovery files on 2026-08-05.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -13,7 +13,7 @@ separate transport and identity design violates the assumptions below.
 | Asset | Objective |
 |---|---|
 | Authoritative world | Only complete validated patches change state; stable IDs and revisions remain correct |
-| Accepted-event log and recovery point | Newly accepted patches stay complete, ordered, bounded, integrity checked, and replayable; complete or exact-revision replay bytes remain associated with non-reused frame-continuity state |
+| Accepted-event log, recovery point, and recovery file | Newly accepted patches stay complete, ordered, bounded, integrity checked, and replayable; complete or exact-revision replay bytes remain associated with non-reused frame-continuity state; explicit files never overwrite an existing target |
 | Observation causality | Payload, camera, frame, revision, and stable identity agree |
 | Asset state | Source identity is exact; malformed or oversized input cannot become decoded or GPU-resident state; recovered references cannot substitute different bytes |
 | Host resources | CPU, memory, queues, GPU allocations, and waits stay within declared bounds |
@@ -36,8 +36,9 @@ snapshots and canonical replay entries.
    never mutable ECS state or an authorization decision.
 4. **Renderer to observation worker.** GPU readback crosses an asynchronous
    fixed-capacity lease and returns owned validated payloads.
-5. **Recovery envelope and replay bytes to recovery.** Portable bytes are
-   untrusted until envelope header/version/bounds/length/frame/digest and replay
+5. **Recovery file/envelope and replay bytes to recovery.** Caller-selected
+   paths and portable bytes are untrusted until regular-file/size/growth checks,
+   envelope header/version/bounds/length/frame/digest, and replay
    protocol/revision/scene-hash/predecessor/entry-hash chains have been
    independently verified.
 6. **Repository to public hosting.** Tracked content, commit metadata, workflow
@@ -45,7 +46,9 @@ snapshots and canonical replay entries.
 
 The compiler and built-in procedures have no ambient filesystem, network, time,
 world, renderer, or entropy authority. The current local service creates no
-socket, listener, shared-memory segment, persistent file, or model call.
+socket, listener, shared-memory segment, automatic persistent file, or model
+call. The separate storage adapter touches only an explicit caller-selected
+path when directly invoked.
 
 ## Threat and control matrix
 
@@ -63,9 +66,10 @@ Residual ratings assume the declared local single-user boundary.
 | Observation from an old camera or revision is accepted as current | High | Camera/frame/revision metadata, explicit staleness, source-ahead rejection, canonical scenario proof | Low |
 | Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |
 | Recovery replay bytes and frame marker are separated or accidentally changed | High | Single bounded versioned envelope, exact-length parsing, domain-separated SHA-256 digest, every-byte corruption rejection before replay allocation | Low for accidental corruption; authenticity remains caller-owned |
+| A recovery path or file causes overwrite, disclosure, unbounded allocation, or partial-state adoption | High | Separate opt-in crate; encode-before-I/O; create-new only; final symlink/non-file rejection; metadata/platform allocation bound; fixed-buffer read and growth probe; complete digest validation; path-redacted errors; injected write/sync cleanup | Medium because parent-path trust, permissions, confidentiality, authenticity, freshness, and crash durability remain caller-owned |
 | A historical fork reuses a frame identity issued before capture or mutates the live source | High | Exact contiguous replay prefixes are copied with the source's current next frame identity; controlled tests preserve source status/hash/bytes and prove query/observe/append continuation | Low for pre-capture reuse; future cross-branch identity and freshness remain caller-owned |
 | A stale, unintended, or busy live revert silently loses authoritative or transient state | High | Local caller-only API, explicit older revision, exact quiescence blockers, fresh replacement before swap, no event on failure, explicit removed-tail/cache/asset receipt, controlled continuation test | Low inside the local trusted-caller boundary; authorization and freshness remain caller-owned |
-| Scene text or replay data discloses caller secrets | High | No automatic logging, upload, persistence, or release; debug output is aggregate; operator warning and public-repo scan | Medium |
+| Scene text or replay data discloses caller secrets | High | No automatic logging, upload, persistence, or release; explicit storage errors/debug omit path and content; operator warning and public-repo scan | Medium |
 | Native code or a procedure escapes its authority | High | Unsafe Rust forbidden; no native plugins or user shaders; procedures are pure compiled functions emitting ordinary patches | Low |
 | GPU driver/device failure corrupts authoritative world state | High | World commits precede only immutable extraction; renderer cannot mutate world; errors are typed; fresh-service restoration is documented | Medium |
 | Dependency or workflow supply chain introduces unreviewed code | High | Exact lockfile, checked-in vendor sources, pinned action digest, read-only workflow permissions, cargo-deny policy | Medium |
@@ -74,8 +78,8 @@ Residual ratings assume the declared local single-user boundary.
 
 No Critical or High residual risk remains inside the declared profile. Medium
 residuals are accepted for an early local source candidate and must be revisited
-before broader platform support, persistence, plugins, transport, or production
-use.
+before automatic/mutable persistence, broader platform support, plugins,
+transport, or production use.
 
 ## Abuse cases and required operator behavior
 
@@ -90,11 +94,16 @@ use.
   procedure code or grant a procedure filesystem, network, clock, renderer, or
   mutable-world access under this threat model.
 - On renderer/device failure, stop the affected service instance. If a complete
-  recovery point was captured, retain the point or its single envelope only in
-  an operator-approved location and restore a fresh service. The envelope is
-  plaintext and unauthenticated; protect it according to the scene's
+  recovery point was captured, retain the point or explicitly create a new file
+  only in an operator-approved location and restore a fresh service. The file
+  is plaintext and unauthenticated; protect it according to the scene's
   sensitivity and trust only an approved writer. In-place or automatic device
   recreation is not implemented.
+- Accept recovery-file paths only from the trusted local operator. Review parent
+  ACLs/permissions, never rely on the digest for writer authentication or
+  freshness, and inspect `PartialFileCleanup::Retained` before reusing a failed
+  target. Do not expose path selection as an unauthenticated remote input or
+  treat file `sync_all` as a portable directory/power-loss guarantee.
 - On replay tail failure, inspect only the verified prefix and preserve the
   rejected bytes for private diagnosis. Never adopt that prefix as successful
   `LocalService` recovery, skip an entry, or continue after the bad suffix.
@@ -115,11 +124,11 @@ use.
 
 ## Deferred changes that require a new review
 
-Remote transport, authentication, tenancy, persistent replay loading, shared
-memory, third-party Wasm, model execution, arbitrary shaders, binary releases,
-telemetry export, and production deployment each add a trust boundary. None may
-inherit this local threat assessment without an approved design and updated
-abuse/failure tests.
+Remote transport, authentication, tenancy, automatic or mutable persistence,
+shared memory, third-party Wasm, model execution, arbitrary shaders, binary
+releases, telemetry export, and production deployment each add a trust
+boundary. None may inherit this local threat assessment without an approved
+design and updated abuse/failure tests.
 
 See the [failure and recovery guide](../operations/failure-and-recovery.md),
 [validation baseline](../operations/validation-baseline.md), and
