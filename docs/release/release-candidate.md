@@ -19,8 +19,8 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Fresh-service restoration | Pass on validated profile | Complete replay and frame state restore revision/hash/query/idempotency and continue observation and append causality |
 | Historical recovery fork | Pass on validated profile | An exact retained revision restores into a separate fresh service, preserves the source, resumes from the source frame frontier, and continues query/observe/append causality |
 | Quiescent live revert | Pass on validated profile | A fully restored historical replacement swaps only after success, rejects transient blockers without mutation, clears named cache/asset state, preserves frame/prefix idempotency, and continues a new branch |
-| Headless render | Pass on validated profile | No surface/window; Vulkan cube, centered plane, fixed sphere, GLB, readback pressure, renderer-drop retirement, and canonical scenario evidence |
-| Machine outputs | Pass on validated profile | Tolerant color/depth, exact stable entity ID, structured visibility, and quantized world-space normals from flat winding, sphere radial directions, or approved imported directions |
+| Headless render | Pass on validated profile | No surface/window; Vulkan cube, centered plane, fixed sphere, bounded directional diffuse, GLB, readback pressure, renderer-drop retirement, and canonical scenario evidence |
+| Machine outputs | Pass on validated profile | Tolerant unlit/directional-diffuse color and depth, exact stable entity ID, structured visibility, and quantized world-space normals from flat winding, sphere radial directions, or approved imported directions |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, finite non-zero same-count normals, exact decoded/GPU bytes, truncation corpus, typed unsupported/proxy policy |
@@ -100,6 +100,10 @@ The GitHub release must be marked prerelease and state:
   centered unit-diameter spheres; configurable subdivisions, plane thickness,
   UV attributes, and two-sided normal policy are not implemented;
   and
+- lighting supports at most four stable-ordered directional definitions with
+  diffuse-only base-color modulation; point shading, ambient,
+  metallic/roughness response, specular/PBR, shadows, emissive, HDR/tone
+  mapping, textures, and lighting configuration are not implemented; and
 - performance figures are one-machine informational measurements.
 
 If a candidate is defective, close or supersede its release entry as

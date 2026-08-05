@@ -51,6 +51,23 @@ non-uniform values produce an ellipsoid and the existing inverse-transpose
 normal path preserves the smooth direction. Sphere topology supplies no UV
 attribute, and frames perform no built-in tessellation or upload.
 
+Directional lighting is a fixed diffuse baseline. A light emits along its
+transformed local negative-Z axis; transformed positive Z is normalized as the
+surface-to-light direction. Up to four definitions are processed in stable
+entity-ID order. Zero-intensity definitions count toward capacity but are
+inactive; point-light records are retained without visual effect. Active
+directional lights sum `color * intensity * max(dot(normal, direction), 0)`,
+clamp RGB to the unit interval, multiply base RGB, and preserve material alpha.
+If none are active, the shader uses an exact factor of one and preserves the
+previous unlit color output. A fifth definition and a degenerate active
+positive-Z direction return typed errors before GPU submission.
+
+The existing bind group carries one fixed 304-byte per-draw uniform with an
+active count and four zero-padded 32-byte light slots. This adds no light
+buffer, alternate pipeline, runtime configuration, or observation payload.
+Point attenuation, ambient, emissive, metallic/roughness response,
+specular/PBR, shadows, textures, HDR, and tone mapping are unsupported.
+
 - entity IDs must match exactly;
 - color channels use an absolute tolerance of 2 units in RGBA8;
 - center depth uses an absolute tolerance of 0.02;
@@ -105,13 +122,15 @@ approved adapter:
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact reference_cube_produces_exact_ids_and_tolerant_color_depth_normals
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact extracted_plane_produces_color_depth_identity_and_plus_z_normal
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact extracted_sphere_produces_curved_depth_identity_and_radial_normals
+cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact directional_light_modulates_front_and_back_facing_diffuse_color
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored
 ```
 
 The integration tests render at 64 by 64 pixels, verify exact object and
-background IDs, probe cuboid, plane, and sphere color, depth, position-only
+background IDs, probe cuboid, plane, sphere, and directional-lit color, depth, position-only
 winding normals, curved sphere depth and radial normals, and smooth
-normals under non-uniform scale using the declared tolerances, validate output
+normals under non-uniform scale using the declared tolerances, verify front-
+and back-facing diffuse response without changing identity/depth/normals, validate output
 lengths and bounds behavior, and require the selected backend to be DX12 or
 Vulkan. Normal workspace CI compiles these tests
 but leaves it ignored;
@@ -127,5 +146,7 @@ See [ADR 0021](../adr/0021-centered-built-in-plane-rendering.md) for the plane
 geometry, dimension, and fallback convention.
 See [ADR 0022](../adr/0022-fixed-built-in-uv-sphere-rendering.md) for the fixed
 sphere topology, dimension, normal, and allocation convention.
+See [ADR 0023](../adr/0023-bounded-directional-diffuse-lighting.md) for the
+direction, capacity, uniform, shading, and compatibility rules.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

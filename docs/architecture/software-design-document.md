@@ -204,6 +204,18 @@ generated once at renderer initialization; no frame performs tessellation.
 A missing asset uses its exact explicit built-in fallback, and a resident
 asset retains precedence.
 
+The baseline shades material base RGB with up to four directional-light
+definitions in stable entity-ID order. Local negative Z is the emission axis,
+so transformed positive Z points from the surface toward the source. Active
+lights contribute clamped Lambert diffuse color and leave alpha unchanged;
+zero-intensity definitions count toward capacity but are inactive. With no
+active directional light, including point-only scenes, the output remains the
+exact prior unlit base color. Point attenuation, ambient, emissive,
+metallic/roughness response, specular/PBR, shadows, textures, HDR, and tone
+mapping are outside this baseline. A fixed 304-byte per-draw uniform contains
+the count and four padded light slots; a fifth definition or a degenerate
+active direction fails before GPU submission.
+
 Feature tiers are capability-based:
 
 - Baseline: downlevel/WebGPU-compatible limits, normal bind groups, CPU culling.
@@ -289,8 +301,8 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Live revert | A quiescent service builds and validates an exact historical replacement before swap, preserves the source frame frontier, clears named transient/asset state, and continues retained idempotency and ordinary branch append |
 | Recovery file | A new immutable local file stores one complete bounded envelope without overwrite; bounded load rejects non-files, growth, corruption, truncation, extension, and over-limit input before restoration |
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
-| Headless render | Reference cuboid plus extracted plane and sphere scenes render without a visible window |
-| Machine outputs | Entity-ID probes are exact; color/depth and quantized flat or imported-smooth world-space normals meet declared tolerance |
+| Headless render | Reference cuboid plus extracted plane, sphere, and bounded directional-lit scenes render without a visible window |
+| Machine outputs | Entity-ID probes are exact; unlit and directional-diffuse color/depth plus quantized flat or imported-smooth world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Asset safety | Hash mismatch, oversized decode, and unsupported features fail with structured diagnostics |

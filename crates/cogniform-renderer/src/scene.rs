@@ -3,11 +3,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cogniform_assets::AssetMeshKey;
 use cogniform_protocol::{
-    CameraComponent, ColorRgba, RenderChange, RenderEntity, RenderExtraction, SceneRevision,
-    StableEntityId,
+    CameraComponent, ColorRgba, LightKind, RenderChange, RenderEntity, RenderExtraction,
+    SceneRevision, StableEntityId,
 };
 
 use crate::RendererError;
+
+pub(crate) const MAX_DIRECTIONAL_LIGHTS: usize = 4;
 
 /// Non-zero compact identity owned exclusively by one renderer instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -253,6 +255,7 @@ impl RenderScene {
             .camera()
             .ok_or(RendererError::CameraUnavailable { camera_id })?;
         let view_projection = camera_view_projection(camera_entity, camera, width, height)?;
+        let directional_lights = self.prepare_directional_lights()?;
         let mut draws = Vec::new();
         let mut id_lookup = BTreeMap::new();
         for (&entity_id, entity) in &self.entities {
@@ -309,13 +312,61 @@ impl RenderScene {
             });
             id_lookup.insert(compact_id.get(), entity_id);
         }
-        Ok(PreparedScene { draws, id_lookup })
+        Ok(PreparedScene {
+            draws,
+            directional_lights,
+            id_lookup,
+        })
+    }
+
+    fn prepare_directional_lights(&self) -> Result<Vec<PreparedDirectionalLight>, RendererError> {
+        let mut definition_count = 0_usize;
+        let mut prepared = Vec::with_capacity(MAX_DIRECTIONAL_LIGHTS);
+        for entity in self.entities.values() {
+            let Some(light) = entity.light() else {
+                continue;
+            };
+            if light.kind == LightKind::Point {
+                continue;
+            }
+            definition_count = definition_count.saturating_add(1);
+            if definition_count > MAX_DIRECTIONAL_LIGHTS {
+                return Err(RendererError::DirectionalLightCapacityExceeded {
+                    actual: u32::try_from(definition_count)
+                        .expect("bounded directional-light count fits u32"),
+                    limit: u32::try_from(MAX_DIRECTIONAL_LIGHTS)
+                        .expect("fixed directional-light limit fits u32"),
+                });
+            }
+            let intensity = light.intensity.get();
+            if intensity.to_bits() == 0 {
+                continue;
+            }
+            prepared.push(PreparedDirectionalLight {
+                surface_to_light: normalized_positive_z(entity)?,
+                color: [
+                    light.color.r.get(),
+                    light.color.g.get(),
+                    light.color.b.get(),
+                ],
+                intensity,
+            });
+        }
+        Ok(prepared)
     }
 }
 
 pub(crate) struct PreparedScene {
     pub(crate) draws: Vec<PreparedDraw>,
+    pub(crate) directional_lights: Vec<PreparedDirectionalLight>,
     pub(crate) id_lookup: BTreeMap<u32, StableEntityId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PreparedDirectionalLight {
+    pub(crate) surface_to_light: [f32; 3],
+    pub(crate) color: [f32; 3],
+    pub(crate) intensity: f32,
 }
 
 pub(crate) struct PreparedDraw {
@@ -344,6 +395,30 @@ fn primitive_geometry(shape: cogniform_protocol::PrimitiveShape) -> PreparedGeom
 
 fn color_values(color: ColorRgba) -> [f32; 4] {
     [color.r.get(), color.g.get(), color.b.get(), color.a.get()]
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn normalized_positive_z(entity: &RenderEntity) -> Result<[f32; 3], RendererError> {
+    let matrix = entity.world_transform();
+    let direction = [matrix[8], matrix[9], matrix[10]];
+    let scale = direction
+        .iter()
+        .map(|value| value.abs())
+        .fold(0.0, f64::max);
+    if scale.to_bits() == 0 {
+        return Err(RendererError::DirectionalLightDirectionInvalid {
+            entity_id: entity.entity_id(),
+        });
+    }
+    let scaled = direction.map(|value| value / scale);
+    let length = scaled.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let normalized = scaled.map(|value| (value / length) as f32);
+    if !normalized.iter().all(|value| value.is_finite()) {
+        return Err(RendererError::DirectionalLightDirectionInvalid {
+            entity_id: entity.entity_id(),
+        });
+    }
+    Ok(normalized)
 }
 
 fn camera_view_projection(
@@ -476,8 +551,9 @@ fn multiply_matrices(left: &[f64; 16], right: &[f64; 16]) -> [f64; 16] {
 mod tests {
     use super::*;
     use cogniform_protocol::{
-        AssetMeshComponent, CameraComponent, ColorRgba, ContentHash, MaterialComponent,
-        PositiveF32, PositiveVec3, PrimitiveComponent, PrimitiveShape, RenderComponents, UnitF32,
+        AssetMeshComponent, CameraComponent, ColorRgb, ColorRgba, ContentHash, LightComponent,
+        MaterialComponent, NonNegativeF32, PositiveF32, PositiveVec3, PrimitiveComponent,
+        PrimitiveShape, RenderComponents, UnitF32,
     };
 
     fn id(value: u128) -> StableEntityId {
@@ -542,6 +618,34 @@ mod tests {
                     vertical_fov_radians: PositiveF32::new(core::f32::consts::FRAC_PI_2).unwrap(),
                     near: PositiveF32::new(0.1).unwrap(),
                     far: PositiveF32::new(100.0).unwrap(),
+                }),
+                ..RenderComponents::default()
+            },
+        )
+        .unwrap()
+    }
+
+    fn light_entity(
+        entity_id: StableEntityId,
+        kind: LightKind,
+        world_transform: [f64; 16],
+        color: [f32; 3],
+        intensity: f32,
+    ) -> RenderEntity {
+        let unit = |value| UnitF32::new(value).unwrap();
+        RenderEntity::new(
+            entity_id,
+            world_transform,
+            1,
+            RenderComponents {
+                light: Some(LightComponent {
+                    kind,
+                    color: ColorRgb {
+                        r: unit(color[0]),
+                        g: unit(color[1]),
+                        b: unit(color[2]),
+                    },
+                    intensity: NonNegativeF32::new(intensity).unwrap(),
                 }),
                 ..RenderComponents::default()
             },
@@ -644,6 +748,142 @@ mod tests {
         assert!(matches!(
             scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None),
             Err(RendererError::DrawCapacityExceeded { limit: 1 })
+        ));
+    }
+
+    #[test]
+    fn directional_lights_are_prepared_in_stable_order_and_inactive_kinds_are_ignored() {
+        let identity = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let mut plus_x_plus_y = identity;
+        plus_x_plus_y[8] = 3.0;
+        plus_x_plus_y[9] = 4.0;
+        plus_x_plus_y[10] = 0.0;
+        let mut degenerate = identity;
+        degenerate[8] = 0.0;
+        degenerate[9] = 0.0;
+        degenerate[10] = 0.0;
+        let mut scene = RenderScene::new(NonZeroU32::new(6).unwrap());
+        scene
+            .apply(&extraction(
+                1,
+                0,
+                1,
+                vec![
+                    RenderChange::upsert(camera(id(1))),
+                    RenderChange::upsert(entity(id(2))),
+                    RenderChange::upsert(light_entity(
+                        id(3),
+                        LightKind::Point,
+                        identity,
+                        [1.0; 3],
+                        1.0,
+                    )),
+                    RenderChange::upsert(light_entity(
+                        id(4),
+                        LightKind::Directional,
+                        degenerate,
+                        [1.0; 3],
+                        0.0,
+                    )),
+                    RenderChange::upsert(light_entity(
+                        id(5),
+                        LightKind::Directional,
+                        plus_x_plus_y,
+                        [0.0, 1.0, 0.0],
+                        0.5,
+                    )),
+                    RenderChange::upsert(light_entity(
+                        id(9),
+                        LightKind::Directional,
+                        identity,
+                        [1.0, 0.0, 0.0],
+                        0.25,
+                    )),
+                ],
+            ))
+            .unwrap();
+
+        let prepared = scene
+            .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None)
+            .unwrap();
+        assert_eq!(
+            prepared.directional_lights,
+            vec![
+                PreparedDirectionalLight {
+                    surface_to_light: [0.6, 0.8, 0.0],
+                    color: [0.0, 1.0, 0.0],
+                    intensity: 0.5,
+                },
+                PreparedDirectionalLight {
+                    surface_to_light: [0.0, 0.0, 1.0],
+                    color: [1.0, 0.0, 0.0],
+                    intensity: 0.25,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn fifth_directional_light_definition_is_rejected_before_gpu_submission() {
+        let identity = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let mut changes = vec![
+            RenderChange::upsert(camera(id(1))),
+            RenderChange::upsert(entity(id(2))),
+        ];
+        for entity_id in 3..=7 {
+            changes.push(RenderChange::upsert(light_entity(
+                id(entity_id),
+                LightKind::Directional,
+                identity,
+                [1.0; 3],
+                if entity_id < 7 { 0.0 } else { 1.0 },
+            )));
+        }
+        let mut scene = RenderScene::new(NonZeroU32::new(7).unwrap());
+        scene.apply(&extraction(1, 0, 1, changes)).unwrap();
+
+        assert!(matches!(
+            scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None),
+            Err(RendererError::DirectionalLightCapacityExceeded {
+                actual: 5,
+                limit: 4,
+            })
+        ));
+    }
+
+    #[test]
+    fn active_directional_light_requires_a_non_degenerate_positive_z_axis() {
+        let degenerate = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let mut scene = RenderScene::new(NonZeroU32::new(3).unwrap());
+        scene
+            .apply(&extraction(
+                1,
+                0,
+                1,
+                vec![
+                    RenderChange::upsert(camera(id(1))),
+                    RenderChange::upsert(entity(id(2))),
+                    RenderChange::upsert(light_entity(
+                        id(3),
+                        LightKind::Directional,
+                        degenerate,
+                        [1.0; 3],
+                        1.0,
+                    )),
+                ],
+            ))
+            .unwrap();
+
+        assert!(matches!(
+            scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None),
+            Err(RendererError::DirectionalLightDirectionInvalid { entity_id })
+                if entity_id == id(3)
         ));
     }
 

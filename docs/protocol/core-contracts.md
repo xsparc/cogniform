@@ -51,6 +51,14 @@ axis and outward radial source normals; their XYZ dimensions are bounding
 diameters and may therefore produce ellipsoids. These conventions do not add
 UV fields or configurable topology to the protocol.
 
+For `LightKind::Directional`, local negative Z is the emission direction and
+transformed local positive Z points from a shaded surface toward the source.
+The current renderer consumes at most four stable-ID-ordered directional
+definitions. Zero intensity is inactive but still counts toward that renderer
+capacity; a point light remains valid authoritative and extracted state but is
+not yet shaded. These are renderer semantics over the existing version-one
+light component, not new protocol fields or logical-hash rules.
+
 Patch validation compares actual counts and declared budgets with
 `RuntimeLimits`. Validation never reorders operations. Atomic commit and
 idempotency storage are world responsibilities; the contract makes their input

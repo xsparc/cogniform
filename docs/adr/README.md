@@ -28,5 +28,6 @@ earlier one and links the history.
 | [0020](0020-bounded-imported-vertex-normals.md) | Accepted | Import bounded optional vertex normals and preserve flat position-only fallback output |
 | [0021](0021-centered-built-in-plane-rendering.md) | Accepted | Render a centered built-in XY plane with explicit winding, dimensions, and fallback semantics |
 | [0022](0022-fixed-built-in-uv-sphere-rendering.md) | Accepted | Render a fixed centered unit-diameter UV sphere with bounded topology and radial normals |
+| [0023](0023-bounded-directional-diffuse-lighting.md) | Accepted | Render up to four stable-ordered directional lights with bounded diffuse shading and exact unlit compatibility |
 
 New records use four sections: context, decision, consequences, and status.

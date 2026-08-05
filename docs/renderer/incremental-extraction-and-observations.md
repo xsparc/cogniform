@@ -40,6 +40,9 @@ There are two related bounds:
   `ReadbackPoolExhausted` immediately when no lease is available.
 - `RendererConfig::max_draws_per_frame` bounds per-frame uniform and draw work;
   excess extracted primitives fail before GPU allocation.
+- The renderer accepts at most four directional-light definitions in stable
+  entity-ID order. Zero-intensity definitions count toward the fixed limit but
+  are omitted from shading; a fifth definition fails before GPU submission.
 
 `EngineConfig::observation_capacity` cannot exceed the readback pool or active
 protocol queue limit. One permit is held while a request is queued, read back,
@@ -76,8 +79,12 @@ cameras. An unavailable asset uses its exact explicit primitive fallback;
 resident assets retain precedence. All three current `PrimitiveShape` values
 therefore select their named geometry without a silent cuboid substitution.
 The public unsupported-primitive renderer error remains reserved for
-compatibility and future shape evolution. Texture/material lighting, encoding,
-shared memory, and remote delivery remain later slices.
+compatibility and future shape evolution. Directional lights use transformed
+local positive Z as the surface-to-light direction and apply bounded Lambert
+diffuse RGB through the same draw path. No active directional light preserves
+exact unlit output, while point lights remain retained but visually inactive.
+Textures, point attenuation, wider material/PBR lighting, encoding, shared
+memory, and remote delivery remain later slices.
 
 ## Validation
 
@@ -106,3 +113,5 @@ plane geometry and fallback selection.
 See [ADR 0022](../adr/0022-fixed-built-in-uv-sphere-rendering.md) for fixed
 sphere geometry, radial normals, bounding-diameter scaling, and fallback
 selection.
+See [ADR 0023](../adr/0023-bounded-directional-diffuse-lighting.md) for the
+direction, capacity, combination, and exact unlit-compatibility rules.

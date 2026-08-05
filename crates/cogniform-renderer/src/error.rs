@@ -139,6 +139,18 @@ pub enum RendererError {
         /// Affected stable entity.
         entity_id: StableEntityId,
     },
+    /// A directional light's transformed local positive-Z axis is degenerate.
+    DirectionalLightDirectionInvalid {
+        /// Affected stable light entity.
+        entity_id: StableEntityId,
+    },
+    /// The extracted scene contains more directional-light definitions than supported.
+    DirectionalLightCapacityExceeded {
+        /// Supplied directional-light definition count.
+        actual: u32,
+        /// Fixed renderer maximum.
+        limit: u32,
+    },
     /// A built-in primitive is not supported by the bounded draw path.
     ///
     /// Retained for source compatibility and future protocol shape evolution;
@@ -304,6 +316,10 @@ impl std::fmt::Display for RendererError {
                 formatter,
                 "entity {entity_id} has a transform outside finite GPU f32 range"
             ),
+            error @ (Self::DirectionalLightDirectionInvalid { .. }
+            | Self::DirectionalLightCapacityExceeded { .. }) => {
+                format_directional_light_error(error, formatter)
+            }
             Self::UnsupportedPrimitive { entity_id, shape } => write!(
                 formatter,
                 "entity {entity_id} uses unsupported primitive {shape:?}"
@@ -333,6 +349,23 @@ impl std::fmt::Display for RendererError {
                 "frame contains unknown renderer entity ID {render_entity_id}"
             ),
         }
+    }
+}
+
+fn format_directional_light_error(
+    error: &RendererError,
+    formatter: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match error {
+        RendererError::DirectionalLightDirectionInvalid { entity_id } => write!(
+            formatter,
+            "directional light {entity_id} has a degenerate transformed positive-Z axis"
+        ),
+        RendererError::DirectionalLightCapacityExceeded { actual, limit } => write!(
+            formatter,
+            "frame contains {actual} directional-light definitions, exceeding limit {limit}"
+        ),
+        _ => unreachable!("only directional-light errors are delegated"),
     }
 }
 
