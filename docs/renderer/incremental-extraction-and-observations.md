@@ -40,9 +40,10 @@ There are two related bounds:
   `ReadbackPoolExhausted` immediately when no lease is available.
 - `RendererConfig::max_draws_per_frame` bounds per-frame uniform and draw work;
   excess extracted primitives fail before GPU allocation.
-- The renderer accepts at most four directional-light definitions in stable
-  entity-ID order. Zero-intensity definitions count toward the fixed limit but
-  are omitted from shading; a fifth definition fails before GPU submission.
+- The renderer accepts independently bounded sets of at most four directional
+  and four point definitions in stable entity-ID order. Zero-intensity
+  definitions count toward their kind's fixed limit but are omitted from
+  shading; a fifth definition fails before GPU submission.
 
 `EngineConfig::observation_capacity` cannot exceed the readback pool or active
 protocol queue limit. One permit is held while a request is queued, read back,
@@ -80,10 +81,11 @@ resident assets retain precedence. All three current `PrimitiveShape` values
 therefore select their named geometry without a silent cuboid substitution.
 The public unsupported-primitive renderer error remains reserved for
 compatibility and future shape evolution. Directional lights use transformed
-local positive Z as the surface-to-light direction and apply bounded Lambert
-diffuse RGB through the same draw path. No active directional light preserves
-exact unlit output, while point lights remain retained but visually inactive.
-Textures, point attenuation, wider material/PBR lighting, encoding, shared
+local positive Z as the surface-to-light direction. Point lights use extracted
+world translation with capped inverse-square attenuation and exact-zero
+distance safety. Both apply bounded Lambert RGB through the same draw path; no
+active light of either kind preserves exact unlit output. Textures,
+configurable point range/radius, wider material/PBR lighting, encoding, shared
 memory, and remote delivery remain later slices.
 
 ## Validation
@@ -115,3 +117,5 @@ sphere geometry, radial normals, bounding-diameter scaling, and fallback
 selection.
 See [ADR 0023](../adr/0023-bounded-directional-diffuse-lighting.md) for the
 direction, capacity, combination, and exact unlit-compatibility rules.
+See [ADR 0024](../adr/0024-bounded-point-diffuse-lighting.md) for Point
+translation, attenuation, independent capacity, and zero-distance rules.

@@ -43,11 +43,13 @@ nanosecond through sixty seconds, so it cannot overflow or become an unbounded
 wait. The default two-slot observation pool is never overcommitted.
 
 The scenario requires a newly initialized empty service. It is a conformance
-flow, not a scene import command. Its room and table are built-in cuboids, and
-the current reference renderer displays flat material colors rather than
-lighting the scene. Pixel coverage can vary within the renderer's declared
-visual tolerance; stable identity, revision causality, and logical replay hash
-remain exact.
+flow, not a scene import command. Its room and table are built-in cuboids. The
+Point source participates in bounded diffuse shading; the center sample is
+black because the existing visible cuboid winding normal is back-facing to
+that source. The focused renderer Point fixture separately proves positive
+near/far attenuation on a positive-Z plane. Pixel coverage can vary within the
+renderer tolerance; stable identity, revision causality, and logical replay
+hash remain exact.
 
 The controlled integration equivalent is intentionally ignored by ordinary
 workspace tests because standard hosted CI does not promise a compatible GPU.

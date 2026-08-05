@@ -37,6 +37,11 @@ release yet; the current workspace version remains `0.0.0`.
 - stable-ID-ordered directional diffuse lighting with a fixed four-definition
   limit, negative-Z emission convention, exact unlit compatibility, typed
   capacity/direction failures, and controlled front/back adapter evidence;
+- stable-ID-ordered point diffuse lighting with an independent fixed
+  four-definition limit, world-translation sources, capped inverse-square
+  attenuation, exact-zero and finite-input distance-overflow safety, typed
+  capacity/range failures, and controlled near/far/back-facing adapter
+  evidence;
 - service-owned asset admission, explicit single-item CPU/GPU processing,
   aggregate residency status, and exact-hash post-recovery rehydration;
 - local typed service and unattended room/table/light/camera scenario;
@@ -62,6 +67,10 @@ release yet; the current workspace version remains `0.0.0`.
 
 ### Changed
 
+- `RendererError` now includes the source-breaking
+  `PointLightCapacityExceeded` variant for exhaustive Rust matches. The
+  workspace remains unpublished at `0.0.0`; no version or release action was
+  taken.
 - `AssetVertex` now requires a public unit-normal field and
   `AssetUploadJob::byte_len` accounts 24 rather than 12 bytes per expanded
   vertex. This is a source-breaking Rust API and capacity-planning change in
@@ -76,9 +85,10 @@ release yet; the current workspace version remains `0.0.0`.
 - the validated full-runtime profile is currently Windows 11 x86_64 with a
   Vulkan discrete GPU; other runtime platforms/backends remain unverified;
 - renderer materials support only base color multiplied by bounded directional
-  Lambert diffuse; point lights, ambient, metallic/roughness response,
-  specular/PBR, shadows, emissive, HDR/tone mapping, and lighting configuration
-  are not implemented. Normal output is quantized and the imported subset has
+  and point Lambert diffuse; configurable point range/radius/cutoff, spot
+  lights, ambient, metallic/roughness response, specular/PBR, shadows,
+  emissive, HDR/tone mapping, and lighting configuration are not implemented.
+  Normal output is quantized and the imported subset has
   no normal maps or tangent space; the GLB
   subset excludes textures, external buffers, compression, scene traversal,
   and most vertex attributes. Built-in geometry supports cuboids, fixed

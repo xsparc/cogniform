@@ -151,6 +151,13 @@ pub enum RendererError {
         /// Fixed renderer maximum.
         limit: u32,
     },
+    /// The extracted scene contains more point-light definitions than supported.
+    PointLightCapacityExceeded {
+        /// Supplied point-light definition count.
+        actual: u32,
+        /// Fixed renderer maximum.
+        limit: u32,
+    },
     /// A built-in primitive is not supported by the bounded draw path.
     ///
     /// Retained for source compatibility and future protocol shape evolution;
@@ -317,9 +324,8 @@ impl std::fmt::Display for RendererError {
                 "entity {entity_id} has a transform outside finite GPU f32 range"
             ),
             error @ (Self::DirectionalLightDirectionInvalid { .. }
-            | Self::DirectionalLightCapacityExceeded { .. }) => {
-                format_directional_light_error(error, formatter)
-            }
+            | Self::DirectionalLightCapacityExceeded { .. }
+            | Self::PointLightCapacityExceeded { .. }) => format_light_error(error, formatter),
             Self::UnsupportedPrimitive { entity_id, shape } => write!(
                 formatter,
                 "entity {entity_id} uses unsupported primitive {shape:?}"
@@ -352,7 +358,7 @@ impl std::fmt::Display for RendererError {
     }
 }
 
-fn format_directional_light_error(
+fn format_light_error(
     error: &RendererError,
     formatter: &mut std::fmt::Formatter<'_>,
 ) -> std::fmt::Result {
@@ -365,7 +371,11 @@ fn format_directional_light_error(
             formatter,
             "frame contains {actual} directional-light definitions, exceeding limit {limit}"
         ),
-        _ => unreachable!("only directional-light errors are delegated"),
+        RendererError::PointLightCapacityExceeded { actual, limit } => write!(
+            formatter,
+            "frame contains {actual} point-light definitions, exceeding limit {limit}"
+        ),
+        _ => unreachable!("only light errors are delegated"),
     }
 }
 
