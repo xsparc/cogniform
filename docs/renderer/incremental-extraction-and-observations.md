@@ -63,9 +63,9 @@ Each request selects one payload:
 - linear RGBA8 color;
 - normalized f32 depth;
 - world-space unit normals decoded from quantized signed RGB8, flat for
-  cuboids, planes, and position-only assets, and interpolated from radial
-  sphere or approved imported vertex directions, with explicit absent
-  background pixels;
+  outward cuboids, positive-Z planes, and source-wound position-only assets,
+  and interpolated from radial sphere or approved imported vertex directions,
+  with explicit absent background pixels;
 - exact `Option<StableEntityId>` per pixel, with `None` for background; or
 - stable-ID-sorted visibility counts.
 
@@ -119,3 +119,5 @@ See [ADR 0023](../adr/0023-bounded-directional-diffuse-lighting.md) for the
 direction, capacity, combination, and exact unlit-compatibility rules.
 See [ADR 0024](../adr/0024-bounded-point-diffuse-lighting.md) for Point
 translation, attenuation, independent capacity, and zero-distance rules.
+See [ADR 0025](../adr/0025-outward-built-in-cuboid-winding.md) for the fixed
+cuboid's outward winding and corrected normal/lighting compatibility behavior.

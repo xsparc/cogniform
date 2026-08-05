@@ -8,9 +8,10 @@ scene revision that produced it.
 > [!IMPORTANT]
 > Cogniform is an early core, not a complete service or general-purpose 3D
 > engine. Public contracts, the atomic authoritative world, deterministic
-> hierarchy/hash/replay, compact render extraction, bounded headless cuboid,
-> centered-plane, fixed-sphere, and independently bounded directional/point diffuse
-> rendering, and revision-linked color/depth/entity-ID/visibility plus
+> hierarchy/hash/replay, compact render extraction, outward-wound headless
+> cuboid, centered-plane, fixed-sphere, and independently bounded
+> directional/point diffuse rendering, and revision-linked
+> color/depth/entity-ID/visibility plus
 > quantized world-space normal observations are implemented, including flat
 > winding fallback and bounded imported vertex normals. A bounded
 > in-process gateway, exact logical queries, and a

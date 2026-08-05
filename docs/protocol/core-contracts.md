@@ -43,13 +43,14 @@ cycle/depth, ownership, asset availability, and authoritative-world checks
 belong to their owning domains.
 
 Built-in dimensions are positive XYZ model scales. Cuboids are centered unit
-boxes. Planes are centered unit squares embedded in local XY at Z = 0, with
-counter-clockwise positive-Z winding and a positive-Z source normal; X and Y
-set visible extents while Z remains part of the complete model and normal
-transform. Spheres are centered unit-diameter surfaces with a positive-Z polar
-axis and outward radial source normals; their XYZ dimensions are bounding
-diameters and may therefore produce ellipsoids. These conventions do not add
-UV fields or configurable topology to the protocol.
+boxes with 12 outward counter-clockwise triangles and exact axis-aligned
+exterior source normals. Planes are centered unit squares embedded in local XY
+at Z = 0, with counter-clockwise positive-Z winding and a positive-Z source
+normal; X and Y set visible extents while Z remains part of the complete model
+and normal transform. Spheres are centered unit-diameter surfaces with a
+positive-Z polar axis and outward radial source normals; their XYZ dimensions
+are bounding diameters and may therefore produce ellipsoids. These conventions
+do not add UV fields or configurable topology to the protocol.
 
 For `LightKind::Directional`, local negative Z is the emission direction and
 transformed local positive Z points from a shaded surface toward the source.
@@ -84,10 +85,11 @@ identity; observation kind and quality; completion timestamp and latency; and
 an exact staleness calculation relative to the latest known revision. Image
 observations require bounded non-zero dimensions. Schema v1 recognizes color,
 depth, normal, entity-ID, and visibility kinds. Normal payloads are local owned
-world-space unit vectors decoded from signed RGB8; cuboids, planes, and
-position-only assets use flat winding-derived directions, while spheres use
-interpolated radial directions and approved imported vertex normals may also
-be interpolated. Background pixels are absent. Structured visibility metadata
+world-space unit vectors decoded from signed RGB8; cuboids use outward flat
+directions, planes use their positive-Z source direction, and position-only
+assets follow source winding. Spheres use interpolated radial directions and
+approved imported vertex normals may also be interpolated. Background pixels
+are absent. Structured visibility metadata
 has no pixel dimensions.
 
 Bulk image bytes and vectors are deliberately absent. Renderer and future

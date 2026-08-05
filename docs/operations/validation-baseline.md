@@ -17,6 +17,8 @@ evidence was collected on that profile on 2026-08-05.
 CF024 fixed-capacity point diffuse lighting, inverse-square attenuation, and
 mixed-light compatibility evidence was collected on that profile on
 2026-08-05.
+CF025 outward cuboid topology, exterior-normal, and corrected canonical
+Point-light evidence was collected on that profile on 2026-08-06.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -26,7 +28,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, tolerant unlit and directional/point-diffuse color and depth, cuboid and plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, tolerant unlit and directional/point-diffuse color and depth, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -72,6 +74,8 @@ committed revision 2,
 reported frames 1-3, found the table at the center color/entity-ID pixels,
 reported 72 visible table pixels, and replayed two entries to logical hash
 `db23b22d98da433d6050c0cd863f3a736832c7bae2ca674cdbee3dae8ed25106`.
+The corrected outward table face produced center color `#af5d21ff` on this
+profile under the existing two-unit-per-channel tolerance.
 Pixel coverage is visual evidence for this adapter, not a cross-GPU exact value.
 
 ## Controlled vertex-normal commands
@@ -87,8 +91,8 @@ cargo test --release -p cogniform-engine --test service_assets --locked --offlin
 The first command proves that the original position-only fixture still emits
 its winding-derived normal and that an imported direction is transformed by
 the model inverse-transpose under non-uniform scale before reaching the
-quantized observation. The second protects the built-in cube's flat-normal
-output. CPU tests separately cover finite normalization, zero/non-finite/count/
+quantized observation. The second protects the built-in cube's flat exterior-
+normal output. CPU tests separately cover finite normalization, zero/non-finite/count/
 range rejection, unsafe-proxy exclusion, exact 24-byte accounting, and
 position/normal GPU interleaving. The service regression proves the unchanged
 position-only import, observation, recovery, and explicit rehydration path.
@@ -173,6 +177,27 @@ the independent four-definition boundary, active position f32 conversion,
 and the exact zero-padded 448-byte uniform whose first 304 bytes preserve the
 directional layout. This adds no supported adapter, pipeline, observation
 format, range/radius, PBR claim, or performance claim.
+
+## Controlled outward-cuboid commands
+
+The focused CF025 adapter and canonical checks passed in the optimized profile:
+
+```text
+cargo test --release -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact reference_cube_produces_exact_ids_and_tolerant_color_depth_normals
+cargo test --release -p cogniform-engine --test canonical_mvp --locked --offline -- --ignored --exact canonical_scenario_preserves_revision_observation_and_replay_causality
+```
+
+The reference projection selected the cuboid's near negative-Z face and
+reported an outward negative-Z unit normal while preserving unlit color,
+depth, identity, and background. The canonical camera selected the table's
+positive-Z exterior; its existing Point source produced `[175, 93, 33, 255]`
+on this profile while revision 2, frames, stable table identity, 72 visible
+pixels, two replay entries, and live/replayed hash equality remained intact.
+CPU tests separately pin six faces, two non-degenerate triangles per face, 36
+vertices, the 24-byte interleaved layout, exact 864-byte payload, coordinates
+at plus or minus `0.5`, outward centroid/winding alignment, and the six exact
+axis normals. Imported assets retain source winding. This adds no supported
+adapter, culling/two-sided policy, pipeline, schema, or performance claim.
 
 ## Controlled service-restoration command
 

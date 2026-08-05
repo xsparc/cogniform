@@ -35,41 +35,41 @@ const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
 const CUBE_POSITIONS: [[f32; 3]; 36] = [
     [-0.5, -0.5, -0.5],
+    [0.5, 0.5, -0.5],
     [0.5, -0.5, -0.5],
-    [0.5, 0.5, -0.5],
-    [-0.5, -0.5, -0.5],
-    [0.5, 0.5, -0.5],
-    [-0.5, 0.5, -0.5],
-    [0.5, -0.5, 0.5],
-    [-0.5, -0.5, 0.5],
-    [-0.5, 0.5, 0.5],
-    [0.5, -0.5, 0.5],
-    [-0.5, 0.5, 0.5],
-    [0.5, 0.5, 0.5],
-    [-0.5, -0.5, 0.5],
     [-0.5, -0.5, -0.5],
     [-0.5, 0.5, -0.5],
-    [-0.5, -0.5, 0.5],
-    [-0.5, 0.5, -0.5],
-    [-0.5, 0.5, 0.5],
-    [0.5, -0.5, -0.5],
+    [0.5, 0.5, -0.5],
     [0.5, -0.5, 0.5],
-    [0.5, 0.5, 0.5],
-    [0.5, -0.5, -0.5],
-    [0.5, 0.5, 0.5],
-    [0.5, 0.5, -0.5],
-    [-0.5, 0.5, -0.5],
-    [0.5, 0.5, -0.5],
-    [0.5, 0.5, 0.5],
-    [-0.5, 0.5, -0.5],
-    [0.5, 0.5, 0.5],
     [-0.5, 0.5, 0.5],
     [-0.5, -0.5, 0.5],
     [0.5, -0.5, 0.5],
-    [0.5, -0.5, -0.5],
+    [0.5, 0.5, 0.5],
+    [-0.5, 0.5, 0.5],
     [-0.5, -0.5, 0.5],
-    [0.5, -0.5, -0.5],
+    [-0.5, 0.5, -0.5],
     [-0.5, -0.5, -0.5],
+    [-0.5, -0.5, 0.5],
+    [-0.5, 0.5, 0.5],
+    [-0.5, 0.5, -0.5],
+    [0.5, -0.5, -0.5],
+    [0.5, 0.5, 0.5],
+    [0.5, -0.5, 0.5],
+    [0.5, -0.5, -0.5],
+    [0.5, 0.5, -0.5],
+    [0.5, 0.5, 0.5],
+    [-0.5, 0.5, -0.5],
+    [0.5, 0.5, 0.5],
+    [0.5, 0.5, -0.5],
+    [-0.5, 0.5, -0.5],
+    [-0.5, 0.5, 0.5],
+    [0.5, 0.5, 0.5],
+    [-0.5, -0.5, 0.5],
+    [0.5, -0.5, -0.5],
+    [0.5, -0.5, 0.5],
+    [-0.5, -0.5, 0.5],
+    [-0.5, -0.5, -0.5],
+    [0.5, -0.5, -0.5],
 ];
 const PLANE_POSITIONS: [[f32; 3]; 6] = [
     [-0.5, -0.5, 0.0],
@@ -1320,21 +1320,103 @@ mod tests {
     }
 
     #[test]
-    fn cube_vertices_interleave_winding_normals() {
+    fn cube_vertices_are_centered_fixed_layout_and_outward() {
         let encoded = encode_winding_vertices(&CUBE_POSITIONS);
         assert_eq!(
             usize::try_from(CUBE_VERTEX_COUNT).unwrap(),
             CUBE_POSITIONS.len()
         );
-        assert_eq!(encoded.len(), CUBE_POSITIONS.len() * 24);
+        assert_eq!(CUBE_POSITIONS.len() / 3, 12);
+        assert_eq!(encoded.len(), 864);
+        assert_eq!(encoded.len(), CUBE_POSITIONS.len() * VERTEX_BYTES);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
-        assert_eq!(&values[..3], &CUBE_POSITIONS[0]);
-        assert_eq!(&values[3..6], &[0.0, 0.0, 1.0]);
-        assert_eq!(&values[6..9], &CUBE_POSITIONS[1]);
-        assert_eq!(&values[9..12], &[0.0, 0.0, 1.0]);
+        let vertices = values
+            .chunks_exact(6)
+            .map(|vertex| <[f32; 6]>::try_from(vertex).unwrap())
+            .collect::<Vec<_>>();
+        let mut face_triangle_counts = [0_u8; 6];
+
+        for vertex in &vertices {
+            assert!(
+                vertex[..3]
+                    .iter()
+                    .all(|value| value.to_bits() & 0x7fff_ffff == 0.5_f32.to_bits())
+            );
+        }
+
+        for triangle in vertices.chunks_exact(3) {
+            let first = [triangle[0][0], triangle[0][1], triangle[0][2]];
+            let second = [triangle[1][0], triangle[1][1], triangle[1][2]];
+            let third = [triangle[2][0], triangle[2][1], triangle[2][2]];
+            let normal = [triangle[0][3], triangle[0][4], triangle[0][5]];
+            assert_eq!(&triangle[1][3..], normal.as_slice());
+            assert_eq!(&triangle[2][3..], normal.as_slice());
+
+            let edge_a = subtract(second, first);
+            let edge_b = subtract(third, first);
+            let winding_normal = [
+                edge_a[1] * edge_b[2] - edge_a[2] * edge_b[1],
+                edge_a[2] * edge_b[0] - edge_a[0] * edge_b[2],
+                edge_a[0] * edge_b[1] - edge_a[1] * edge_b[0],
+            ];
+            let winding_length_squared = winding_normal
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>();
+            assert!(
+                winding_length_squared > 0.0,
+                "cuboid triangle is degenerate"
+            );
+            let canonical_bits = |value: f32| {
+                let bits = value.to_bits();
+                if bits.trailing_zeros() >= 31 { 0 } else { bits }
+            };
+            let normal_bits = normal.map(canonical_bits);
+            assert_eq!(normalize(winding_normal).map(canonical_bits), normal_bits);
+
+            let centroid = [
+                (first[0] + second[0] + third[0]) / 3.0,
+                (first[1] + second[1] + third[1]) / 3.0,
+                (first[2] + second[2] + third[2]) / 3.0,
+            ];
+            let outward = winding_normal
+                .iter()
+                .zip(centroid)
+                .map(|(direction, center)| direction * center)
+                .sum::<f32>();
+            assert!(outward > 0.0, "cuboid triangle winding must face outward");
+
+            let negative_one = (-1.0_f32).to_bits();
+            let positive_one = 1.0_f32.to_bits();
+            let negative_half = (-0.5_f32).to_bits();
+            let positive_half = 0.5_f32.to_bits();
+            let (face_index, axis, coordinate_bits) = if normal_bits == [negative_one, 0, 0] {
+                (0, 0, negative_half)
+            } else if normal_bits == [positive_one, 0, 0] {
+                (1, 0, positive_half)
+            } else if normal_bits == [0, negative_one, 0] {
+                (2, 1, negative_half)
+            } else if normal_bits == [0, positive_one, 0] {
+                (3, 1, positive_half)
+            } else if normal_bits == [0, 0, negative_one] {
+                (4, 2, negative_half)
+            } else if normal_bits == [0, 0, positive_one] {
+                (5, 2, positive_half)
+            } else {
+                panic!("cuboid normal is not axis-aligned: {normal:?}");
+            };
+            assert!(
+                triangle
+                    .iter()
+                    .all(|vertex| vertex[axis].to_bits() == coordinate_bits)
+            );
+            face_triangle_counts[face_index] += 1;
+        }
+
+        assert_eq!(face_triangle_counts, [2; 6]);
     }
 
     #[test]

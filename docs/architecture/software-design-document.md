@@ -193,10 +193,13 @@ Every feedback envelope includes scene revision, frame ID, camera ID when releva
 Use `wgpu` with built-in WGSL and negotiated adapter features/limits. The baseline is a small forward renderer with primitive meshes, camera, depth, color, entity-ID, and quantized world-space normal output. Position-only triangles remain flat; approved imported vertex normals are inverse-transformed and interpolated. Headless mode renders to textures without constructing a visible window. Optional `winit` integration is isolated from the headless core.
 
 Built-in cuboids, centered unit XY planes, and centered unit-diameter spheres
-use immutable expanded position-plus-normal buffers. Plane triangles wind
-counter-clockwise toward positive Z, remain at local Z = 0, and apply all
-positive XYZ dimensions through the model transform; X/Y set visible extents
-while Z participates in normal transformation without creating thickness.
+use immutable expanded position-plus-normal buffers. A cuboid is a centered
+unit box with 12 outward counter-clockwise triangles, 36 expanded vertices,
+and exact axis-aligned exterior normals in one fixed 864-byte payload. Plane
+triangles wind counter-clockwise toward positive Z, remain at local Z = 0, and
+apply all positive XYZ dimensions through the model transform; X/Y set visible
+extents while Z participates in normal transformation without creating
+thickness.
 The sphere has a positive-Z polar axis, fixed 16-sector by 8-band topology,
 outward counter-clockwise triangles, and unit radial normals. Its XYZ
 dimensions are bounding diameters. The fixed 672-vertex sphere payload is
@@ -308,8 +311,8 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Live revert | A quiescent service builds and validates an exact historical replacement before swap, preserves the source frame frontier, clears named transient/asset state, and continues retained idempotency and ordinary branch append |
 | Recovery file | A new immutable local file stores one complete bounded envelope without overwrite; bounded load rejects non-files, growth, corruption, truncation, extension, and over-limit input before restoration |
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
-| Headless render | Reference cuboid plus extracted plane, sphere, and bounded directional/point-lit scenes render without a visible window |
-| Machine outputs | Entity-ID probes are exact; unlit and directional/point-diffuse color/depth plus quantized flat or imported-smooth world-space normals meet declared tolerance |
+| Headless render | Outward-wound reference cuboid plus extracted plane, sphere, and bounded directional/point-lit scenes render without a visible window |
+| Machine outputs | Entity-ID probes are exact; unlit and directional/point-diffuse color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Asset safety | Hash mismatch, oversized decode, and unsupported features fail with structured diagnostics |

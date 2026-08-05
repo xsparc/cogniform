@@ -44,12 +44,14 @@ wait. The default two-slot observation pool is never overcommitted.
 
 The scenario requires a newly initialized empty service. It is a conformance
 flow, not a scene import command. Its room and table are built-in cuboids. The
-Point source participates in bounded diffuse shading; the center sample is
-black because the existing visible cuboid winding normal is back-facing to
-that source. The focused renderer Point fixture separately proves positive
-near/far attenuation on a positive-Z plane. Pixel coverage can vary within the
-renderer tolerance; stable identity, revision causality, and logical replay
-hash remain exact.
+Point source participates in bounded diffuse shading against the table's
+outward positive-Z face. On the validated Vulkan profile the center sample is
+`#af5d21ff` (`[175, 93, 33, 255]`), checked with the renderer's existing
+two-unit-per-channel RGBA8 tolerance. The focused renderer Point fixture
+separately proves near/far attenuation and back-facing rejection on a
+positive-Z plane.
+Pixel coverage and tolerant color can vary within the renderer contract;
+stable identity, revision causality, and logical replay hash remain exact.
 
 The controlled integration equivalent is intentionally ignored by ordinary
 workspace tests because standard hosted CI does not promise a compatible GPU.

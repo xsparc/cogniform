@@ -67,3 +67,6 @@ causality, and 0.99 controlled dot-product tolerance do not change.
 Accepted and implemented by CF020. Controlled DX12/Vulkan-profile tests must
 continue to cover the position-only fallback, built-in cube, imported normal,
 and non-uniform model-transform paths.
+[ADR 0025](0025-outward-built-in-cuboid-winding.md) later corrects the built-in
+cube's source triangles to outward winding without changing the imported-asset
+contract selected here.

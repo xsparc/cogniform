@@ -67,6 +67,13 @@ release yet; the current workspace version remains `0.0.0`.
 
 ### Changed
 
+- the fixed built-in cuboid now uses 12 outward counter-clockwise triangles and
+  exact axis-aligned exterior normals while preserving its 36 vertices,
+  24-byte interleaved layout, 864-byte initialization payload, extents, and
+  no-culling pipeline. Cuboid normal observations and diffuse color
+  intentionally replace the prior inward-facing result; the canonical
+  Point-lit table center is now positive. The unpublished `0.0.0` workspace
+  receives no version or release action;
 - `RendererError` now includes the source-breaking
   `PointLightCapacityExceeded` variant for exhaustive Rust matches. The
   workspace remains unpublished at `0.0.0`; no version or release action was

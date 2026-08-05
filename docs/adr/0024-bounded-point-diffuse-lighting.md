@@ -76,3 +76,6 @@ and finite-input distance-overflow output while preserving identity, depth,
 normals, and background. The
 canonical point-light scenario records its
 existing cuboid winding-normal response without changing scene geometry.
+[ADR 0025](0025-outward-built-in-cuboid-winding.md) later corrects that
+built-in cuboid geometry and intentionally replaces the canonical black sample
+with an exterior-lit positive color without changing this Point-light rule.
