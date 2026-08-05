@@ -53,10 +53,14 @@ UV fields or configurable topology to the protocol.
 
 For `LightKind::Directional`, local negative Z is the emission direction and
 transformed local positive Z points from a shaded surface toward the source.
-The current renderer consumes at most four stable-ID-ordered directional
-definitions. Zero intensity is inactive but still counts toward that renderer
-capacity; a point light remains valid authoritative and extracted state but is
-not yet shaded. These are renderer semantics over the existing version-one
+For `LightKind::Point`, the source is the extracted world translation and its
+non-negative intensity receives capped unit-distance inverse-square
+attenuation. The current renderer consumes independently bounded sets of at
+most four stable-ID-ordered definitions for each kind. Zero intensity is
+inactive but still counts toward that kind's renderer capacity. Active point
+positions must fit finite GPU f32; exact source/fragment coincidence contributes
+zero, as does a derived f32 squared distance that overflows from otherwise
+finite inputs. These are renderer semantics over the existing version-one
 light component, not new protocol fields or logical-hash rules.
 
 Patch validation compares actual counts and declared budgets with

@@ -13,8 +13,8 @@ use crate::{
     RendererAssetStats, RendererConfig, RendererError, SceneUpdateError, SceneUpdateSummary,
     asset::RendererAssets,
     scene::{
-        MAX_DIRECTIONAL_LIGHTS, PreparedDirectionalLight, PreparedDraw, PreparedGeometry,
-        PreparedScene, RenderScene,
+        MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, PreparedDirectionalLight, PreparedDraw,
+        PreparedGeometry, PreparedPointLight, PreparedScene, RenderScene,
     },
 };
 
@@ -311,6 +311,7 @@ impl HeadlessRenderer {
                 compact_id: REFERENCE_ENTITY_ID,
             }],
             directional_lights: Vec::new(),
+            point_lights: Vec::new(),
             id_lookup: [(REFERENCE_ENTITY_ID, entity_id)].into_iter().collect(),
         };
         self.submit_prepared(camera_id, SceneRevision::INITIAL, 0, prepared)
@@ -377,6 +378,7 @@ impl HeadlessRenderer {
             },
             &prepared.draws,
             &prepared.directional_lights,
+            &prepared.point_lights,
         );
 
         copy_target_to_buffer(
@@ -895,6 +897,7 @@ fn encode_scene_pass(
     resources: &ScenePassResources<'_>,
     draws: &[PreparedDraw],
     directional_lights: &[PreparedDirectionalLight],
+    point_lights: &[PreparedPointLight],
 ) {
     let color_attachments = [
         Some(wgpu::RenderPassColorAttachment {
@@ -947,7 +950,7 @@ fn encode_scene_pass(
     });
     render_pass.set_pipeline(resources.pipeline);
     for draw in draws {
-        let bytes = encode_draw_uniform(draw, directional_lights);
+        let bytes = encode_draw_uniform(draw, directional_lights, point_lights);
         let buffer = resources.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cogniform-draw-uniform"),
             size: u64::try_from(bytes.len()).expect("uniform length fits u64"),
@@ -1118,12 +1121,19 @@ fn normalize(vector: [f32; 3]) -> [f32; 3] {
 fn encode_draw_uniform(
     draw: &PreparedDraw,
     directional_lights: &[PreparedDirectionalLight],
+    point_lights: &[PreparedPointLight],
 ) -> Vec<u8> {
     const BASE_FLOATS: usize = 16 + 16 + 4 + 4 + 4;
     const FLOATS_PER_DIRECTIONAL_LIGHT: usize = 8;
-    const UNIFORM_BYTES: usize =
-        (BASE_FLOATS + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT) * 4;
+    const POINT_COUNT_FLOATS: usize = 4;
+    const FLOATS_PER_POINT_LIGHT: usize = 8;
+    const UNIFORM_BYTES: usize = (BASE_FLOATS
+        + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT
+        + POINT_COUNT_FLOATS
+        + MAX_POINT_LIGHTS * FLOATS_PER_POINT_LIGHT)
+        * 4;
     debug_assert!(directional_lights.len() <= MAX_DIRECTIONAL_LIGHTS);
+    debug_assert!(point_lights.len() <= MAX_POINT_LIGHTS);
     let mut bytes = Vec::with_capacity(UNIFORM_BYTES);
     for value in draw.model {
         bytes.extend_from_slice(&value.to_le_bytes());
@@ -1156,6 +1166,32 @@ fn encode_draw_uniform(
                 intensity: 0.0,
             });
         for value in light.surface_to_light {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+        for value in light.color {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&light.intensity.to_le_bytes());
+    }
+    bytes.extend_from_slice(
+        &u32::try_from(point_lights.len())
+            .expect("fixed point-light count fits u32")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    for index in 0..MAX_POINT_LIGHTS {
+        let light = point_lights
+            .get(index)
+            .copied()
+            .unwrap_or(PreparedPointLight {
+                position: [0.0; 3],
+                color: [0.0; 3],
+                intensity: 0.0,
+            });
+        for value in light.position {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         bytes.extend_from_slice(&0.0_f32.to_le_bytes());
@@ -1320,7 +1356,7 @@ mod tests {
     }
 
     #[test]
-    fn draw_uniform_has_exact_fixed_directional_light_layout_and_zero_padding() {
+    fn draw_uniform_has_exact_fixed_light_layout_and_zero_padding() {
         let draw = PreparedDraw {
             geometry: PreparedGeometry::Plane,
             model: [1.0; 16],
@@ -1340,9 +1376,14 @@ mod tests {
                 intensity: 0.4,
             },
         ];
+        let point_lights = [PreparedPointLight {
+            position: [3.0, 4.0, 5.0],
+            color: [0.9, 0.8, 0.7],
+            intensity: 0.6,
+        }];
 
-        let bytes = encode_draw_uniform(&draw, &lights);
-        assert_eq!(bytes.len(), 304);
+        let bytes = encode_draw_uniform(&draw, &lights, &point_lights);
+        assert_eq!(bytes.len(), 448);
         let words = bytes
             .chunks_exact(4)
             .map(|word| <[u8; 4]>::try_from(word).unwrap())
@@ -1368,7 +1409,14 @@ mod tests {
             (52..60).map(float).collect::<Vec<_>>(),
             vec![0.6, 0.8, 0.0, 0.0, 0.1, 0.2, 0.3, 0.4]
         );
-        assert!(words[60..].iter().all(|word| *word == [0; 4]));
+        assert!(words[60..76].iter().all(|word| *word == [0; 4]));
+        assert_eq!(unsigned(76), 1);
+        assert_eq!((77..80).map(unsigned).collect::<Vec<_>>(), vec![0; 3]);
+        assert_eq!(
+            (80..88).map(float).collect::<Vec<_>>(),
+            vec![3.0, 4.0, 5.0, 0.0, 0.9, 0.8, 0.7, 0.6]
+        );
+        assert!(words[88..].iter().all(|word| *word == [0; 4]));
     }
 
     #[test]

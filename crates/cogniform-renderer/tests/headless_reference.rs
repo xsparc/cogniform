@@ -10,7 +10,8 @@ use cogniform_protocol::{
     RenderComponents, RenderEntity, RenderExtraction, SceneRevision, StableEntityId, UnitF32,
 };
 use cogniform_renderer::{
-    HeadlessRenderer, REFERENCE_COLOR, REFERENCE_ENTITY_ID, RendererConfig, RendererError,
+    HeadlessRenderer, REFERENCE_COLOR, REFERENCE_ENTITY_ID, RenderedFrame, RendererConfig,
+    RendererError,
 };
 
 const WIDTH: u32 = 64;
@@ -221,15 +222,29 @@ fn extracted_plane_produces_color_depth_identity_and_plus_z_normal() {
     assert_eq!(frame.normal_at(0, 0), None);
 }
 
-fn directional_light_entity(world_transform: [f64; 16], generation: u64) -> RenderEntity {
+fn light_entity(kind: LightKind, world_transform: [f64; 16], generation: u64) -> RenderEntity {
+    light_entity_with_id(
+        StableEntityId::new(3).unwrap(),
+        kind,
+        world_transform,
+        generation,
+    )
+}
+
+fn light_entity_with_id(
+    entity_id: StableEntityId,
+    kind: LightKind,
+    world_transform: [f64; 16],
+    generation: u64,
+) -> RenderEntity {
     let unit = |value| UnitF32::new(value).unwrap();
     RenderEntity::new(
-        StableEntityId::new(3).unwrap(),
+        entity_id,
         world_transform,
         generation,
         RenderComponents {
             light: Some(LightComponent {
-                kind: LightKind::Directional,
+                kind,
                 color: ColorRgb {
                     r: unit(1.0),
                     g: unit(1.0),
@@ -243,7 +258,7 @@ fn directional_light_entity(world_transform: [f64; 16], generation: u64) -> Rend
     .unwrap()
 }
 
-fn directional_light_fixture() -> RenderExtraction {
+fn light_fixture(kind: LightKind, light_world: [f64; 16]) -> RenderExtraction {
     let camera_id = StableEntityId::new(1).unwrap();
     let plane_id = StableEntityId::new(2).unwrap();
     let positive = |value| PositiveF32::new(value).unwrap();
@@ -301,10 +316,43 @@ fn directional_light_fixture() -> RenderExtraction {
         vec![
             RenderChange::upsert(camera),
             RenderChange::upsert(plane),
-            RenderChange::upsert(directional_light_entity(identity, 1)),
+            RenderChange::upsert(light_entity(kind, light_world, 1)),
         ],
     )
     .unwrap()
+}
+
+fn translated_z(z: f64) -> [f64; 16] {
+    [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, z, 1.0,
+    ]
+}
+
+fn assert_color_near(frame: &RenderedFrame, x: u32, y: u32, expected: [u8; 4]) {
+    for (actual, expected) in frame.color_at(x, y).unwrap().into_iter().zip(expected) {
+        assert!(
+            actual.abs_diff(expected) <= 2,
+            "color channel {actual} differs from {expected}"
+        );
+    }
+}
+
+fn assert_same_center_geometry(actual: &RenderedFrame, expected: &RenderedFrame) {
+    let center = (WIDTH / 2, HEIGHT / 2);
+    assert_eq!(
+        actual.stable_entity_id_at(center.0, center.1),
+        expected.stable_entity_id_at(center.0, center.1)
+    );
+    assert_eq!(
+        actual.depth_at(center.0, center.1),
+        expected.depth_at(center.0, center.1)
+    );
+    assert_eq!(
+        actual.normal_at(center.0, center.1),
+        expected.normal_at(center.0, center.1)
+    );
+    assert_eq!(actual.stable_entity_id_at(0, 0), None);
+    assert_eq!(actual.normal_at(0, 0), None);
 }
 
 #[test]
@@ -312,7 +360,7 @@ fn directional_light_fixture() -> RenderExtraction {
 fn directional_light_modulates_front_and_back_facing_diffuse_color() {
     let camera_id = StableEntityId::new(1).unwrap();
     let plane_id = StableEntityId::new(2).unwrap();
-    let initial = directional_light_fixture();
+    let initial = light_fixture(LightKind::Directional, translated_z(0.0));
 
     let mut renderer =
         pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
@@ -342,7 +390,8 @@ fn directional_light_modulates_front_and_back_facing_diffuse_color() {
         NonZeroU64::new(2).unwrap(),
         SceneRevision::new(1),
         SceneRevision::new(2),
-        vec![RenderChange::upsert(directional_light_entity(
+        vec![RenderChange::upsert(light_entity(
+            LightKind::Directional,
             back_facing,
             2,
         ))],
@@ -361,6 +410,89 @@ fn directional_light_modulates_front_and_back_facing_diffuse_color() {
     }
     assert_eq!(back.stable_entity_id_at(0, 0), None);
     assert_eq!(back.normal_at(0, 0), None);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn point_light_applies_bounded_distance_and_facing_diffuse_shading() {
+    let camera_id = StableEntityId::new(1).unwrap();
+    let plane_id = StableEntityId::new(2).unwrap();
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer
+        .apply_extraction(&light_fixture(LightKind::Point, translated_z(1.0)))
+        .unwrap();
+    let near = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+    let center = (WIDTH / 2, HEIGHT / 2);
+    assert_eq!(near.stable_entity_id_at(center.0, center.1), Some(plane_id));
+    assert_color_near(&near, center.0, center.1, [102, 51, 26, 255]);
+
+    let far_update = RenderExtraction::new(
+        NonZeroU64::new(2).unwrap(),
+        SceneRevision::new(1),
+        SceneRevision::new(2),
+        vec![RenderChange::upsert(light_entity(
+            LightKind::Point,
+            translated_z(2.0),
+            2,
+        ))],
+    )
+    .unwrap();
+    renderer.apply_extraction(&far_update).unwrap();
+    let far = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+    assert_color_near(&far, center.0, center.1, [26, 13, 6, 255]);
+    assert_same_center_geometry(&far, &near);
+
+    let mixed_update = RenderExtraction::new(
+        NonZeroU64::new(3).unwrap(),
+        SceneRevision::new(2),
+        SceneRevision::new(3),
+        vec![RenderChange::upsert(light_entity_with_id(
+            StableEntityId::new(4).unwrap(),
+            LightKind::Directional,
+            translated_z(0.0),
+            1,
+        ))],
+    )
+    .unwrap();
+    renderer.apply_extraction(&mixed_update).unwrap();
+    let mixed = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+    assert_color_near(&mixed, center.0, center.1, [128, 64, 32, 255]);
+    assert_same_center_geometry(&mixed, &near);
+
+    let back_update = RenderExtraction::new(
+        NonZeroU64::new(4).unwrap(),
+        SceneRevision::new(3),
+        SceneRevision::new(4),
+        vec![
+            RenderChange::upsert(light_entity(LightKind::Point, translated_z(-1.0), 3)),
+            RenderChange::remove(StableEntityId::new(4).unwrap()),
+        ],
+    )
+    .unwrap();
+    renderer.apply_extraction(&back_update).unwrap();
+    let back = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+    assert_eq!(back.color_at(center.0, center.1), Some([0, 0, 0, 255]));
+    assert_same_center_geometry(&back, &near);
+
+    let mut overflow_position = translated_z(1.0);
+    overflow_position[12] = f64::from(f32::MAX);
+    let overflow_update = RenderExtraction::new(
+        NonZeroU64::new(5).unwrap(),
+        SceneRevision::new(4),
+        SceneRevision::new(5),
+        vec![RenderChange::upsert(light_entity(
+            LightKind::Point,
+            overflow_position,
+            4,
+        ))],
+    )
+    .unwrap();
+    renderer.apply_extraction(&overflow_update).unwrap();
+    let overflow = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+    assert_eq!(overflow.color_at(center.0, center.1), Some([0, 0, 0, 255]));
+    assert_same_center_geometry(&overflow, &near);
 }
 
 #[test]

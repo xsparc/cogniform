@@ -3,6 +3,11 @@ struct DirectionalLight {
     color_intensity: vec4<f32>,
 };
 
+struct PointLight {
+    position: vec4<f32>,
+    color_intensity: vec4<f32>,
+};
+
 struct DrawUniform {
     model: mat4x4<f32>,
     view_projection: mat4x4<f32>,
@@ -10,6 +15,8 @@ struct DrawUniform {
     entity_id: vec4<u32>,
     directional_light_count: vec4<u32>,
     directional_lights: array<DirectionalLight, 4>,
+    point_light_count: vec4<u32>,
+    point_lights: array<PointLight, 4>,
 };
 
 @group(0) @binding(0)
@@ -18,6 +25,7 @@ var<uniform> draw: DrawUniform;
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) world_normal: vec3<f32>,
+    @location(1) world_position: vec3<f32>,
 };
 
 struct FragmentOutput {
@@ -51,6 +59,7 @@ fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>) -> 
     );
     output.position = draw.view_projection * world_position;
     output.world_normal = normal_matrix * normal;
+    output.world_position = world_position.xyz;
     return output;
 }
 
@@ -59,7 +68,7 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
     var output: FragmentOutput;
     let world_normal = normalize(input.world_normal);
     var light_factor = vec3(1.0);
-    if draw.directional_light_count.x > 0u {
+    if draw.directional_light_count.x > 0u || draw.point_light_count.x > 0u {
         light_factor = vec3(0.0);
         for (var index = 0u; index < draw.directional_light_count.x; index = index + 1u) {
             let light = draw.directional_lights[index];
@@ -69,6 +78,27 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
                 vec3(1.0),
             );
             light_factor = min(light_factor + contribution, vec3(1.0));
+        }
+        for (var index = 0u; index < draw.point_light_count.x; index = index + 1u) {
+            let light = draw.point_lights[index];
+            let to_light = light.position.xyz - input.world_position;
+            let distance_squared = dot(to_light, to_light);
+            if distance_squared > 0.0 {
+                let inverse_distance = inverseSqrt(distance_squared);
+                if inverse_distance > 0.0 {
+                    let surface_to_light = to_light * inverse_distance;
+                    let diffuse = max(dot(world_normal, surface_to_light), 0.0);
+                    let attenuated_intensity = min(
+                        light.color_intensity.a / max(distance_squared, 1e-6),
+                        1.0,
+                    );
+                    let contribution = min(
+                        light.color_intensity.rgb * attenuated_intensity * diffuse,
+                        vec3(1.0),
+                    );
+                    light_factor = min(light_factor + contribution, vec3(1.0));
+                }
+            }
         }
     }
     output.color = vec4(draw.color.rgb * light_factor, draw.color.a);

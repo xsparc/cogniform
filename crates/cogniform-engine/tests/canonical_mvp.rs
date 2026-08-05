@@ -34,6 +34,7 @@ fn canonical_scenario_preserves_revision_observation_and_replay_causality() {
         }
         assert!(report.color.frame_id < report.entity_id.frame_id);
         assert!(report.entity_id.frame_id < report.visibility.frame_id);
+        assert_eq!(report.center_color, [0, 0, 0, 255]);
         assert_eq!(report.center_entity_id, report.table_id);
         assert!(report.table_visible_pixels > 0);
         assert_eq!(report.logical_hash, report.replayed_logical_hash);

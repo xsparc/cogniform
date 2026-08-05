@@ -452,13 +452,42 @@ asset work, transport, persistence, and release action remain excluded. See
 [ADR 0023](../adr/0023-bounded-directional-diffuse-lighting.md) and the
 [renderer guide](../renderer/headless-reference-scene.md).
 
+### PR 24 - CF024: Bounded point diffuse lighting
+
+Outcome: the remaining public point-light kind produces deterministic bounded
+diffuse color through the existing headless render and observation path.
+
+Gate: a Point source uses its extracted finite GPU-f32 world translation.
+Definitions are processed in stable entity-ID order and limited to four per
+scene independently of the directional limit; zero intensity counts but is
+inactive. A fifth definition or out-of-range active position fails before GPU
+submission. Non-coincident fragments use capped unit-distance inverse-square
+attenuation and Lambert facing; exact coincidence or a finite-input derived
+f32 squared-distance overflow contributes zero. Point and directional
+contributions share one clamped RGB sum, multiply material base RGB, and
+preserve alpha. With neither kind active, exact unlit output remains;
+without active Point definitions, CF023 directional output remains exact. CPU
+tests prove ordering, capacity, finite conversion, and the exact appended
+448-byte uniform. Controlled GPU tests prove near/far/back-facing Point output
+while retaining identity, depth, normals, background, prior renderer behavior,
+and the canonical scenario.
+
+Implemented contract: a point count and four fixed position/color-intensity
+slots append to the existing directional per-draw bind group and pipeline.
+Configurable range/cutoff/radius, spot lights, ambient, metallic/roughness
+response, specular/PBR/IBL, shadows, emissive, textures, normal maps, HDR/tone
+mapping, lighting configuration, culling, clustering, asset work, transport,
+persistence, and release action remain excluded. See
+[ADR 0024](../adr/0024-bounded-point-diffuse-lighting.md) and the
+[renderer guide](../renderer/headless-reference-scene.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
-  -> CF022 -> CF023
+  -> CF022 -> CF023 -> CF024
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -553,6 +582,13 @@ Validation expands with capability:
   direct and fallback selection, resident-asset precedence, all-axis bounding
   diameters, and controlled color, curved-depth, identity, background, and
   smooth world-space-normal probes.
+- CF023: stable directional ordering, normalized positive-Z direction,
+  inactive-definition accounting, fixed capacity and uniform layout, typed
+  rejection, exact unlit compatibility, and controlled front/back diffuse
+  evidence.
+- CF024: stable point ordering and translation, inactive-definition accounting,
+  independent fixed capacity, finite GPU conversion, exact appended uniform,
+  zero-distance safety, and controlled near/far/back-facing diffuse evidence.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

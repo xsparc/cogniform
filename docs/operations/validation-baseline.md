@@ -14,6 +14,9 @@ CF022 fixed sphere topology, selection, and controlled curved-surface evidence
 was collected on that profile on 2026-08-05.
 CF023 fixed-capacity directional diffuse lighting and exact unlit-compatibility
 evidence was collected on that profile on 2026-08-05.
+CF024 fixed-capacity point diffuse lighting, inverse-square attenuation, and
+mixed-light compatibility evidence was collected on that profile on
+2026-08-05.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -23,7 +26,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, tolerant unlit/directional-diffuse color and depth, cuboid and plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, tolerant unlit and directional/point-diffuse color and depth, cuboid and plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -59,7 +62,8 @@ cargo run --release -p cogniform-cli --locked --offline -- scenario
 ```
 
 The renderer suite passed the built-in cube, extracted plane and sphere,
-front/back directional diffuse response,
+front/back directional diffuse response, near/far/back-facing point diffuse
+response,
 bounded four-buffer readback pressure, renderer-drop retirement, position-only
 GLB winding fixture, and imported-normal fixture under non-uniform scale. The engine
 suite passed gateway/idempotency, normal-aware revision causality, complete
@@ -139,10 +143,36 @@ degrees about Y produced black while alpha, exact stable identity, depth,
 quantized world normal, and background remained unchanged. The complete
 renderer conformance suite also preserved every prior no-directional-light
 output. CPU tests separately prove stable-ID order, positive-Z normalization,
-point and zero-intensity inactivity, the four-definition boundary, degenerate
-active-direction rejection, and the exact zero-padded 304-byte uniform. This
+zero-intensity inactivity, the four-definition boundary, degenerate
+active-direction rejection, and the exact zero-padded 304-byte directional
+prefix. This
 adds no supported adapter, pipeline, observation format, PBR claim, or
 performance claim.
+
+## Controlled point-light command
+
+The focused CF024 adapter check passed in the optimized profile:
+
+```text
+cargo test --release -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact point_light_applies_bounded_distance_and_facing_diffuse_shading
+```
+
+It rendered one centered positive-Z plane with a white half-intensity Point
+source. Unit distance produced half the material base RGB; doubling the
+distance produced one eighth of base RGB; moving the source behind the plane
+produced black. Adding a half-intensity directional source to the far Point
+frame produced their expected summed factor. Alpha, exact stable identity,
+depth, quantized world normal, and background remained unchanged. A finite
+maximum-f32 source position whose squared distance overflowed also produced
+black without corrupting those auxiliary outputs. The complete
+renderer conformance suite
+also preserved every prior output, and the canonical engine scenario passed
+with its existing Point definition and measured winding-normal response. CPU
+tests separately prove stable-ID order, zero-intensity capacity accounting,
+the independent four-definition boundary, active position f32 conversion,
+and the exact zero-padded 448-byte uniform whose first 304 bytes preserve the
+directional layout. This adds no supported adapter, pipeline, observation
+format, range/radius, PBR claim, or performance claim.
 
 ## Controlled service-restoration command
 

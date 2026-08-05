@@ -10,6 +10,7 @@ use cogniform_protocol::{
 use crate::RendererError;
 
 pub(crate) const MAX_DIRECTIONAL_LIGHTS: usize = 4;
+pub(crate) const MAX_POINT_LIGHTS: usize = 4;
 
 /// Non-zero compact identity owned exclusively by one renderer instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -256,6 +257,7 @@ impl RenderScene {
             .ok_or(RendererError::CameraUnavailable { camera_id })?;
         let view_projection = camera_view_projection(camera_entity, camera, width, height)?;
         let directional_lights = self.prepare_directional_lights()?;
+        let point_lights = self.prepare_point_lights()?;
         let mut draws = Vec::new();
         let mut id_lookup = BTreeMap::new();
         for (&entity_id, entity) in &self.entities {
@@ -315,6 +317,7 @@ impl RenderScene {
         Ok(PreparedScene {
             draws,
             directional_lights,
+            point_lights,
             id_lookup,
         })
     }
@@ -354,17 +357,61 @@ impl RenderScene {
         }
         Ok(prepared)
     }
+
+    fn prepare_point_lights(&self) -> Result<Vec<PreparedPointLight>, RendererError> {
+        let mut definition_count = 0_usize;
+        let mut prepared = Vec::with_capacity(MAX_POINT_LIGHTS);
+        for entity in self.entities.values() {
+            let Some(light) = entity.light() else {
+                continue;
+            };
+            if light.kind == LightKind::Directional {
+                continue;
+            }
+            definition_count = definition_count.saturating_add(1);
+            if definition_count > MAX_POINT_LIGHTS {
+                return Err(RendererError::PointLightCapacityExceeded {
+                    actual: u32::try_from(definition_count)
+                        .expect("bounded point-light count fits u32"),
+                    limit: u32::try_from(MAX_POINT_LIGHTS)
+                        .expect("fixed point-light limit fits u32"),
+                });
+            }
+            let intensity = light.intensity.get();
+            if intensity.to_bits() == 0 {
+                continue;
+            }
+            prepared.push(PreparedPointLight {
+                position: point_position(entity)?,
+                color: [
+                    light.color.r.get(),
+                    light.color.g.get(),
+                    light.color.b.get(),
+                ],
+                intensity,
+            });
+        }
+        Ok(prepared)
+    }
 }
 
 pub(crate) struct PreparedScene {
     pub(crate) draws: Vec<PreparedDraw>,
     pub(crate) directional_lights: Vec<PreparedDirectionalLight>,
+    pub(crate) point_lights: Vec<PreparedPointLight>,
     pub(crate) id_lookup: BTreeMap<u32, StableEntityId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PreparedDirectionalLight {
     pub(crate) surface_to_light: [f32; 3],
+    pub(crate) color: [f32; 3],
+    pub(crate) intensity: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PreparedPointLight {
+    pub(crate) position: [f32; 3],
     pub(crate) color: [f32; 3],
     pub(crate) intensity: f32,
 }
@@ -419,6 +466,18 @@ fn normalized_positive_z(entity: &RenderEntity) -> Result<[f32; 3], RendererErro
         });
     }
     Ok(normalized)
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn point_position(entity: &RenderEntity) -> Result<[f32; 3], RendererError> {
+    let matrix = entity.world_transform();
+    let position = [matrix[12] as f32, matrix[13] as f32, matrix[14] as f32];
+    if !position.iter().all(|value| value.is_finite()) {
+        return Err(RendererError::GpuTransformOutOfRange {
+            entity_id: entity.entity_id(),
+        });
+    }
+    Ok(position)
 }
 
 fn camera_view_projection(
@@ -752,7 +811,7 @@ mod tests {
     }
 
     #[test]
-    fn directional_lights_are_prepared_in_stable_order_and_inactive_kinds_are_ignored() {
+    fn directional_and_point_lights_are_prepared_in_stable_order() {
         let identity = [
             1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
@@ -764,7 +823,15 @@ mod tests {
         degenerate[8] = 0.0;
         degenerate[9] = 0.0;
         degenerate[10] = 0.0;
-        let mut scene = RenderScene::new(NonZeroU32::new(6).unwrap());
+        let mut first_point = identity;
+        first_point[12] = 1.0;
+        first_point[13] = 2.0;
+        first_point[14] = 3.0;
+        let mut second_point = identity;
+        second_point[12] = -4.0;
+        second_point[13] = 5.0;
+        second_point[14] = 6.0;
+        let mut scene = RenderScene::new(NonZeroU32::new(7).unwrap());
         scene
             .apply(&extraction(
                 1,
@@ -776,8 +843,8 @@ mod tests {
                     RenderChange::upsert(light_entity(
                         id(3),
                         LightKind::Point,
-                        identity,
-                        [1.0; 3],
+                        first_point,
+                        [1.0, 0.0, 0.5],
                         1.0,
                     )),
                     RenderChange::upsert(light_entity(
@@ -792,6 +859,13 @@ mod tests {
                         LightKind::Directional,
                         plus_x_plus_y,
                         [0.0, 1.0, 0.0],
+                        0.5,
+                    )),
+                    RenderChange::upsert(light_entity(
+                        id(8),
+                        LightKind::Point,
+                        second_point,
+                        [0.25, 0.5, 0.75],
                         0.5,
                     )),
                     RenderChange::upsert(light_entity(
@@ -820,6 +894,21 @@ mod tests {
                     surface_to_light: [0.0, 0.0, 1.0],
                     color: [1.0, 0.0, 0.0],
                     intensity: 0.25,
+                },
+            ]
+        );
+        assert_eq!(
+            prepared.point_lights,
+            vec![
+                PreparedPointLight {
+                    position: [1.0, 2.0, 3.0],
+                    color: [1.0, 0.0, 0.5],
+                    intensity: 1.0,
+                },
+                PreparedPointLight {
+                    position: [-4.0, 5.0, 6.0],
+                    color: [0.25, 0.5, 0.75],
+                    intensity: 0.5,
                 },
             ]
         );
@@ -852,6 +941,69 @@ mod tests {
                 actual: 5,
                 limit: 4,
             })
+        ));
+    }
+
+    #[test]
+    fn fifth_point_light_definition_is_rejected_before_gpu_submission() {
+        let identity = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let mut changes = vec![
+            RenderChange::upsert(camera(id(1))),
+            RenderChange::upsert(entity(id(2))),
+        ];
+        for entity_id in 3..=7 {
+            changes.push(RenderChange::upsert(light_entity(
+                id(entity_id),
+                LightKind::Point,
+                identity,
+                [1.0; 3],
+                if entity_id < 7 { 0.0 } else { 1.0 },
+            )));
+        }
+        let mut scene = RenderScene::new(NonZeroU32::new(7).unwrap());
+        scene.apply(&extraction(1, 0, 1, changes)).unwrap();
+
+        assert!(matches!(
+            scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None),
+            Err(RendererError::PointLightCapacityExceeded {
+                actual: 5,
+                limit: 4,
+            })
+        ));
+    }
+
+    #[test]
+    fn active_point_light_requires_a_finite_gpu_position() {
+        let mut out_of_range = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        out_of_range[12] = f64::MAX;
+        let mut scene = RenderScene::new(NonZeroU32::new(3).unwrap());
+        scene
+            .apply(&extraction(
+                1,
+                0,
+                1,
+                vec![
+                    RenderChange::upsert(camera(id(1))),
+                    RenderChange::upsert(entity(id(2))),
+                    RenderChange::upsert(light_entity(
+                        id(3),
+                        LightKind::Point,
+                        out_of_range,
+                        [1.0; 3],
+                        1.0,
+                    )),
+                ],
+            ))
+            .unwrap();
+
+        assert!(matches!(
+            scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None),
+            Err(RendererError::GpuTransformOutOfRange { entity_id })
+                if entity_id == id(3)
         ));
     }
 

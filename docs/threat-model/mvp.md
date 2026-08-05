@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF020 bounded imported vertex normals on 2026-08-05.
+and extended through CF024 bounded point diffuse lighting on 2026-08-05.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -65,7 +65,7 @@ Residual ratings assume the declared local single-user boundary.
 | Idempotency-key reuse duplicates or substitutes work | High | Retained canonical command fingerprint, transaction identity, conflict error, exact replayed receipt | Low |
 | Adversarial procedure dimensions or text allocate unbounded output or bypass mutation controls | High | Pure built-in implementation, entity/patch/decoded/text preflight under active runtime limits, ordinary gateway admission and atomic patch processing, controlled restoration test | Low |
 | Queue or readback pressure creates hidden unbounded work | High | Fixed command, idempotency, asset, renderer, and observation capacities with typed rejection/drop/supersession; per-renderer retirement guard keeps final driver destruction off the caller's bounded read path | Low |
-| Adversarial light definitions create unbounded per-frame GPU work or invalid directions | High | Four-definition directional cap, stable preparation, zero-padded fixed uniform, finite protocol values, degenerate active-direction rejection, and pre-submit tests | Low |
+| Adversarial light definitions create unbounded per-frame GPU work, invalid directions, or non-finite source positions | High | Independent four-definition directional/point caps, stable preparation, zero-padded fixed uniform, finite protocol values, degenerate active-direction and out-of-range active-position rejection, exact-zero and derived-distance-overflow handling, and pre-submit tests | Low |
 | Renderer-local IDs escape as authoritative identity | High | Frame-local compact mapping, stable IDs in public observations, exact center-pixel tests | Low |
 | Observation from an old camera or revision is accepted as current | High | Camera/frame/revision metadata, explicit staleness, source-ahead rejection, canonical scenario proof | Low |
 | Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |

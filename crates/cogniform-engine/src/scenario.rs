@@ -29,7 +29,7 @@ const UPDATE_IDEMPOTENCY_KEY: u128 = 0x2_001;
 const COLOR_OBSERVATION_ID: u128 = 0x3_001;
 const ENTITY_ID_OBSERVATION_ID: u128 = 0x3_002;
 const VISIBILITY_OBSERVATION_ID: u128 = 0x3_003;
-const EXPECTED_TABLE_COLOR: [u8; 4] = [230, 128, 51, 255];
+const EXPECTED_TABLE_COLOR: [u8; 4] = [0, 0, 0, 255];
 const MAX_OBSERVATION_TIMEOUT: Duration = Duration::from_mins(1);
 
 struct ScenarioReplayEvidence {
@@ -266,7 +266,7 @@ pub fn run_canonical_scenario(
         .zip(EXPECTED_TABLE_COLOR)
         .any(|(actual, expected)| actual.abs_diff(expected) > 2)
     {
-        return contract("color observation center pixel is not the updated table material");
+        return contract("color observation center pixel violates canonical point lighting");
     }
 
     let entity_observation = request_and_wait(
