@@ -15,6 +15,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Deterministic replay | Pass | Canonical logical hash, chained entries, verified-prefix inspection, every-byte corruption injection |
 | Recovery envelope | Pass | Deterministic bounded v1 encoding, exact round trip, typed malformed-input rejection, and every-byte corruption injection |
 | Immutable recovery file | Pass on validated profile | Encode-before-I/O create-new storage, non-overwrite, bounded regular-file load, corruption/growth rejection, injected write/sync cleanup, and persisted restoration continuation |
+| Immutable asset source file | Pass on validated profile | Pre-I/O source-size/hash validation, create-new non-overwrite, bounded regular-file load, substitution/growth rejection, injected cleanup, and separate persisted rehydration continuation |
 | Fresh-service restoration | Pass on validated profile | Complete replay and frame state restore revision/hash/query/idempotency and continue observation and append causality |
 | Historical recovery fork | Pass on validated profile | An exact retained revision restores into a separate fresh service, preserves the source, resumes from the source frame frontier, and continues query/observe/append causality |
 | Quiescent live revert | Pass on validated profile | A fully restored historical replacement swaps only after success, rejects transient blockers without mutation, clears named cache/asset state, preserves frame/prefix idempotency, and continues a new branch |
@@ -46,7 +47,8 @@ This does not make the current `0.0.0` workspace a supported release.
 - [ ] Re-run `measure-world` in release mode and append rather than overwrite
       the dated baseline if hardware, fixture, or result materially changes.
 - [ ] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
-      matrix, recovery-envelope and recovery-file formats/limitations, known
+      matrix, recovery-envelope, recovery-file, and asset-file
+      formats/limitations, known
       limitations, and license from the exact candidate tree.
 - [ ] Change the shared workspace version from `0.0.0` to the explicitly
       approved candidate version without changing `publish = false`.
@@ -77,13 +79,17 @@ The GitHub release must be marked prerelease and state:
 - local recovery files are explicit create-new plaintext artifacts with no
   overwrite, latest-pointer, retention, directory-sync, power-loss,
   authentication, or remote-storage guarantee;
+- exact-hash asset sources are separate create-new plaintext artifacts with no
+  recovery manifest, content discovery, catalog, retention/eviction, automatic
+  rehydration, writer authentication, or remote-storage guarantee;
 - historical recovery supports caller-coordinated fresh forks and quiescent
   live replacement, but provides no automatic rollback, authorization,
   freshness, branch manager, or global frame namespace across concurrent
   branches;
 - asset bytes, decoded meshes, and GPU residency are not recovery state;
-  callers must rehydrate exact matching content, and no filesystem/network
-  resolver, durable cache, eviction policy, or automatic asset startup exists;
+  callers may map retained hashes to separate approved files but must rehydrate
+  exact matching content explicitly; no filesystem/network resolver, durable
+  mutable cache, eviction policy, or automatic asset startup exists;
 - only compiled pure built-in procedures are supported; no external procedure
   loading, user-code execution, native plugin, or Wasm host is included;
 - normal output is flat and quantized, with no imported smoothing, normal maps,
@@ -103,5 +109,6 @@ release-candidate preparation task. No tag or release is created by CF009.
 See [ADR 0010](../adr/0010-source-first-release-profile.md), the
 [validation baseline](../operations/validation-baseline.md), the
 [failure guide](../operations/failure-and-recovery.md), the
-[recovery-file guide](../persistence/recovery-files.md), and the
+[recovery-file guide](../persistence/recovery-files.md), the
+[asset-file guide](../persistence/asset-files.md), and the
 [MVP threat model](../threat-model/mvp.md).

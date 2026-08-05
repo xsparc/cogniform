@@ -196,6 +196,7 @@ dependencies = [
 name = "cogniform-storage"
 version = "0.0.0"
 dependencies = [
+ "cogniform-assets",
  "cogniform-engine",
  "cogniform-protocol",
  "cogniform-replay",

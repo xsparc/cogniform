@@ -7,7 +7,9 @@ historical forks. CF015 adds service-owned bounded asset resolution and
 explicit recovery rehydration. CF016 composes pure built-in procedures through
 ordinary patch admission. CF017 adds quiescent in-place historical revert
 through a fully restored replacement. CF018 adds a separate explicit adapter
-for immutable bounded local recovery files.
+for immutable bounded local recovery files. CF019 extends that separate
+adapter with immutable exact-hash asset-source files for caller-driven
+rehydration.
 
 `LocalService` composes one bounded `LocalGateway`, authoritative recorded
 world, service-owned asset store, headless renderer, and observation worker. It
@@ -155,8 +157,11 @@ reservations and GPU meshes, and `CogniformEngine` passes only immutable upload
 jobs between them. Public status and records contain no source bytes, ECS
 handles, device handles, queues, or GPU buffers.
 
-The service does not locate content by hash. Filesystem/network fetching,
-durable caches, eviction, retries, and scheduling remain caller concerns.
+The service does not locate content by hash. A caller may compose
+`cogniform-storage::AssetFileStore` to create or bounded-load one independently
+mapped exact-hash source, then pass the returned bytes through the ordinary
+explicit service methods. Filesystem/network discovery, recovery manifests,
+mutable caches, eviction, retries, and scheduling remain caller concerns.
 
 ## Historical recovery forks
 
@@ -220,14 +225,16 @@ branch identity, and any external rollback policy.
   delivery are deferred.
 - Recovery is into a fresh service from a complete in-memory point. Exact
   retained revisions can seed separate historical forks or replace a quiescent
-  live service. A separate adapter can create/load immutable recovery files,
+  live service. A separate adapter can create/load immutable recovery files
+  and independently mapped exact-hash asset-source files,
   but automatic startup, overwrite, mutable snapshot registries, retention,
   automatic/scheduled rollback, branch management, cross-branch frame
   allocation, and log rotation are not implemented.
 - Only the pure built-in cuboid-grid procedure is supported. External
   procedures, plugins, Wasm, and user code are not loaded. The service accepts
-  caller-supplied exact-hash asset bytes but does not fetch external assets,
-  persist them, evict them, or restore their residency automatically.
+  caller-supplied exact-hash asset bytes but does not discover external assets,
+  associate source files with recovery state, evict them, or restore their
+  residency automatically.
 - The headless baseline supports controlled DX12 or Vulkan adapters. Browser,
   Metal, OpenGL, and a hosted-GPU CI promise are outside the current contract.
 
@@ -238,7 +245,9 @@ See [ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md),
 [ADR 0015](../adr/0015-service-owned-asset-resolution-and-rehydration.md),
 [ADR 0016](../adr/0016-service-procedure-composition-through-ordinary-patches.md),
 [ADR 0017](../adr/0017-quiescent-live-revert-through-fresh-replacement.md),
-[ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md), the
+[ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md),
+[ADR 0019](../adr/0019-immutable-exact-hash-asset-source-files.md), the
 [gateway guide](local-gateway-and-imagination.md), the
-[recovery-file guide](../persistence/recovery-files.md), and the
+[recovery-file guide](../persistence/recovery-files.md), the
+[asset-file guide](../persistence/asset-files.md), and the
 [canonical scenario](../getting-started/canonical-scenario.md).

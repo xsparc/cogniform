@@ -4,7 +4,8 @@ Status: controlled CF009 evidence collected on 2026-08-02 and CF011 normal,
 CF012 restoration, CF013 recovery-envelope, CF014 historical-fork, plus CF015
 service-asset rehydration and CF016 service-procedure composition evidence
 collected on 2026-08-04, plus CF017 quiescent live-revert evidence collected on
-2026-08-05 and CF018 immutable recovery-file evidence collected on 2026-08-05.
+2026-08-05, CF018 immutable recovery-file evidence, and CF019 immutable
+exact-hash asset-source-file evidence collected on 2026-08-05.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -184,6 +185,31 @@ failure cleanup. This is explicit local-file evidence, not automatic
 checkpoint/startup/rollback, mutable snapshot retention, encryption,
 authentication, directory-entry crash consistency, actual disk-full, remote
 storage, asset/transient persistence, or device-loss recovery.
+
+## Controlled asset-source-file command
+
+The following focused CF019 test passed in release mode on the validated
+Windows/Vulkan profile:
+
+```text
+cargo test --release -p cogniform-storage --test asset_file --locked --offline -- --ignored --exact persisted_recovery_and_asset_sources_restore_renderable_state
+```
+
+It created separate immutable recovery and exact-hash GLB source files,
+synchronized them, dropped the source service and in-memory bytes, and loaded
+both within independent bounds. The restored service retained exact revision,
+logical hash, replay bytes, query reference, and frame frontier while first
+returning the expected `AssetUnavailable`. Explicit load, import, and upload
+then restored the same triangle observation without revision, hash, or replay
+change.
+
+CPU tests separately prove source-size and hash rejection before I/O,
+create-new non-overwrite, regular-file and metadata bounds, complete identity
+validation, growth detection, path-redacted errors, and injected write/sync
+cleanup. This is caller-mapped local-file evidence, not a bundle, content
+discovery, asset catalog, retention/eviction, automatic rehydration,
+authentication, encryption, directory-entry crash consistency, remote storage,
+or device-loss recovery.
 
 ## Controlled CPU performance fixture
 
