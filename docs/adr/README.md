@@ -26,5 +26,6 @@ earlier one and links the history.
 | [0018](0018-immutable-bounded-local-recovery-files.md) | Accepted | Persist complete recovery envelopes through explicit create-new bounded local files |
 | [0019](0019-immutable-exact-hash-asset-source-files.md) | Accepted | Persist exact-hash asset sources through separate explicit create-new bounded local files |
 | [0020](0020-bounded-imported-vertex-normals.md) | Accepted | Import bounded optional vertex normals and preserve flat position-only fallback output |
+| [0021](0021-centered-built-in-plane-rendering.md) | Accepted | Render a centered built-in XY plane with explicit winding, dimensions, and fallback semantics |
 
 New records use four sections: context, decision, consequences, and status.

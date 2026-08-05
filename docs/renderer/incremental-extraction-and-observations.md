@@ -69,12 +69,13 @@ camera, quality, completion time, latency, and staleness against the latest
 known world revision. An observation cannot claim a revision newer than its
 frame input.
 
-The extracted draw path currently supports cuboids, explicitly resident
-approved GLB meshes, and perspective cameras.
-Plane and sphere records are retained by renderer state but frame submission
-returns a structured unsupported-primitive error until their bounded mesh
-paths land. Texture/material lighting, encoding, shared memory, and remote
-delivery remain later slices.
+The extracted draw path currently supports cuboids, centered XY planes,
+explicitly resident approved GLB meshes, and perspective cameras. An
+unavailable asset uses its exact explicit primitive fallback, so a plane no
+longer silently selects cuboid geometry. Sphere records remain retained by
+renderer state, but direct or fallback sphere submission returns the structured
+unsupported-primitive error. Texture/material lighting, encoding, shared
+memory, and remote delivery remain later slices.
 
 ## Validation
 
@@ -98,3 +99,5 @@ See [ADR 0006](../adr/0006-coalesced-extraction-and-bounded-observations.md)
 for the selected single-consumer extraction and pooling model. See
 [ADR 0020](../adr/0020-bounded-imported-vertex-normals.md) for imported normal
 validation and rendering.
+See [ADR 0021](../adr/0021-centered-built-in-plane-rendering.md) for built-in
+plane geometry and fallback selection.
