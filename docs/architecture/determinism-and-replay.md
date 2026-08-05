@@ -3,7 +3,7 @@
 Status: hierarchy, derived transforms, logical hashing, in-memory replay, a
 portable recovery-point envelope, and exact-revision recovery forks are
 implemented through CF014; CF017 adds quiescent live replacement from an exact
-prefix.
+prefix, and CF018 adds explicit immutable bounded local recovery files.
 
 ## Hierarchy and transforms
 
@@ -89,8 +89,31 @@ plaintext caller data.
 After decoding, `LocalService::restore` still performs complete replay-format,
 protocol, hash-chain, world-transition, and frame-continuity validation before
 adapter selection. The envelope neither accepts a verified prefix nor performs
-filesystem I/O, automatic startup, encryption, or authentication. See
+filesystem I/O, automatic startup, encryption, or authentication by itself. See
 [ADR 0013](../adr/0013-versioned-recovery-point-envelope.md).
+
+## Immutable local recovery files
+
+`cogniform-storage::RecoveryFileStore` composes the envelope with explicit
+filesystem I/O without giving that authority to the engine. `create_new`
+encodes and validates before touching the path, never overwrites an existing
+target or creates its parent directory, writes all bytes, synchronizes the file,
+and reports typed partial-cleanup disposition after injected write/sync failure.
+
+`load` accepts only a regular non-symlink final component at inspection time.
+It bounds metadata against `EngineRecoveryPoint::envelope_byte_limit` and the
+platform address space before reserving exactly that snapshot size, reads
+through a fixed stack buffer, and rejects growth with an extra-byte probe. The
+complete envelope must then pass exact length and digest validation; a verified
+replay prefix is never returned as file-load success.
+
+Errors retain operation and standard error kind but no path or content. Files
+remain plaintext and unauthenticated. The caller owns parent-directory trust,
+permissions, confidentiality, freshness, retention, and cleanup of a reported
+partial file. File synchronization is not a cross-platform directory-entry or
+power-loss guarantee. See the
+[recovery-file guide](../persistence/recovery-files.md) and
+[ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md).
 
 ## Historical recovery forks
 

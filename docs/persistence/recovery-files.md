@@ -1,0 +1,73 @@
+# Immutable local recovery files
+
+Status: implemented by CF018 for explicit caller-driven local persistence.
+
+`cogniform-storage` keeps filesystem authority outside `cogniform-engine`.
+It persists the existing `EngineRecoveryPoint` envelope; it does not define a
+second replay, snapshot, or restoration format.
+
+## Create-new workflow
+
+Construct `RecoveryFileStore` with the same reviewed `ReplayConfig` used by the
+service. Capture an `EngineRecoveryPoint`, then pass a caller-authorized path
+whose parent directory already exists:
+
+```rust
+let store = RecoveryFileStore::new(config.engine.replay)?;
+let point = service.recovery_point()?;
+let receipt = store.create_new(Path::new("state/checkpoint-0001.cnfr"), &point)?;
+```
+
+The adapter completes envelope encoding and configured-size validation before
+opening the path. The final file is opened with create-new semantics, so an
+existing file, directory, or final symlink is not overwritten. Every envelope
+byte is written before `sync_all` is attempted. `RecoveryFileReceipt` reports
+only bounded envelope/replay byte counts and the stored next frame identity; it
+does not retain or reveal the path.
+
+Unix creation requests owner read/write mode (`0600`) subject to the process
+umask. Windows applies the parent directory's inherited ACL. Operators must
+review parent permissions for the sensitivity of scene labels and replay data.
+
+If write or sync fails, the file handle is closed and the exact path created by
+the call is removed when possible. `PartialFileCleanup::Removed` confirms it is
+absent; `Retained` reports only the cleanup error kind and means the caller must
+inspect or remove that path before reuse. The adapter never retries, chooses a
+replacement name, or silently accepts a partial file.
+
+## Bounded load and restoration
+
+`load` inspects the final path component and rejects symlinks and non-regular
+files. It snapshots file metadata and rejects a length above the configured
+envelope maximum or platform-addressable capacity before allocating. The read
+accepts at most that snapshotted length through a fixed stack buffer. One
+additional-byte probe rejects a file that grew after inspection.
+
+The complete bytes then pass through `EngineRecoveryPoint` header, version,
+bound, exact-length, frame, and SHA-256 digest validation. Truncated, extended,
+or changed content returns an error and no partial recovery point. Passing the
+loaded point to `LocalService::restore` still performs complete replay, world,
+hash-chain, renderer-revision, and frame-continuity validation.
+
+## Security and durability boundary
+
+Filesystem paths are caller authority. Do not accept a path from an untrusted
+remote request, and do not place a recovery file in a shared directory whose
+writers are not trusted. The final-component symlink check is defense in depth;
+parent-directory symlinks and path races are not sandboxed by this API.
+
+Recovery files are plaintext and their digest is not a signature. Protect them
+as scene data, authenticate the writer outside Cogniform, and choose freshness
+outside Cogniform. File `sync_all` completion does not provide a portable
+directory-entry or power-loss guarantee. A production latest-pointer protocol
+needs a separately reviewed atomic replacement and directory-synchronization
+design.
+
+The adapter provides no directory creation, overwrite, rename, delete, file
+discovery, snapshot catalog, retention/rotation, automatic checkpoint,
+automatic startup/rollback, encryption, signing, key management, remote or
+object storage, asset/transient persistence, or background worker.
+
+See [ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md), the
+[replay guide](../architecture/determinism-and-replay.md), and the
+[failure and recovery guide](../operations/failure-and-recovery.md).

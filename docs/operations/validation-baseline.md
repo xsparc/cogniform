@@ -4,7 +4,8 @@ Status: controlled CF009 evidence collected on 2026-08-02 and CF011 normal,
 CF012 restoration, CF013 recovery-envelope, CF014 historical-fork, plus CF015
 service-asset rehydration and CF016 service-procedure composition evidence
 collected on 2026-08-04, plus CF017 quiescent live-revert evidence collected on
-2026-08-05. This document names
+2026-08-05 and CF018 immutable recovery-file evidence collected on 2026-08-05.
+This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
 
@@ -98,8 +99,8 @@ revision 3 with matching live/replayed hash. CPU replay tests covered revision
 zero, every retained revision, repeatable prefix encoding, full-stream prefix
 relationships, and future-revision rejection. That CF014 case is
 fresh-service branching evidence; CF017 live-revert evidence is recorded
-below. Neither case proves persistence, branch management, or rollback
-protection.
+below. Those cases do not by themselves prove persistence, branch management,
+or rollback protection.
 
 ## Controlled service-asset command
 
@@ -159,6 +160,30 @@ idempotency added no event; and the removed revision-2 patch applied normally
 on the new branch. This is quiescent local lifecycle evidence, not persistence,
 automatic rollback, transient migration, asset preservation, authentication,
 or device-loss recovery.
+
+## Controlled recovery-file command
+
+The following focused CF018 test passed in release mode on the validated
+Windows/Vulkan profile:
+
+```text
+cargo test --release -p cogniform-storage --test recovery_file --locked --offline -- --ignored --exact persisted_recovery_restores_and_continues_exact_causality
+```
+
+It ran the canonical service to revision 2, encoded and created one new local
+recovery file, synchronized it, dropped the source, loaded the exact complete
+point, and restored matching world/renderer revisions, replay bytes, logical
+and replayed hashes, query state, and source frame frontier. The restored
+service returned an entity-ID observation at that frame and appended revision
+3 with a valid replay chain and matching hashes.
+
+CPU tests separately prove create-new non-overwrite, encode-before-I/O, no
+implicit directory creation, regular-file and metadata-size checks, complete
+digest rejection, path-redacted error/debug values, and injected write/sync
+failure cleanup. This is explicit local-file evidence, not automatic
+checkpoint/startup/rollback, mutable snapshot retention, encryption,
+authentication, directory-entry crash consistency, actual disk-full, remote
+storage, asset/transient persistence, or device-loss recovery.
 
 ## Controlled CPU performance fixture
 

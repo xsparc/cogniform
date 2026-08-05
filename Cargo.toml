@@ -9,6 +9,7 @@ members = [
     "crates/cogniform-protocol",
     "crates/cogniform-renderer",
     "crates/cogniform-replay",
+    "crates/cogniform-storage",
     "crates/cogniform-world",
 ]
 
@@ -27,6 +28,7 @@ cogniform-procedural = { version = "=0.0.0", path = "crates/cogniform-procedural
 cogniform-protocol = { version = "=0.0.0", path = "crates/cogniform-protocol" }
 cogniform-renderer = { version = "=0.0.0", path = "crates/cogniform-renderer" }
 cogniform-replay = { version = "=0.0.0", path = "crates/cogniform-replay" }
+cogniform-storage = { version = "=0.0.0", path = "crates/cogniform-storage" }
 cogniform-world = { version = "=0.0.0", path = "crates/cogniform-world" }
 hecs = { version = "=0.11.1", default-features = false, features = ["std"] }
 serde = { version = "=1.0.229", features = ["derive"] }

@@ -193,6 +193,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cogniform-storage"
+version = "0.0.0"
+dependencies = [
+ "cogniform-engine",
+ "cogniform-protocol",
+ "cogniform-replay",
+ "pollster",
+]
+
+[[package]]
 name = "cogniform-world"
 version = "0.0.0"
 dependencies = [

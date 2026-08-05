@@ -68,10 +68,12 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
 | `cogniform-renderer` | `wgpu` feature negotiation, headless targets, primitive rendering, and color/depth/normal/ID outputs | Consumes extracted render data; never mutable world access |
 | `cogniform-engine` | Bounded channels, domain lifecycle, frame/revision correlation, composition, and complete in-memory restoration | Orchestrates through public interfaces; does not absorb domain state or perform persistence |
+| `cogniform-storage` | Explicit create-new and bounded-load adapters for local recovery envelopes | Depends on public engine recovery values and replay bounds; owns filesystem authority without world, renderer, or replay mutation access |
 | `cogniform-cli` | Local sample client, replay and diagnostic commands | Depends on public engine/protocol interfaces only |
 
 CF006 establishes the semantic compiler as a separate pure crate while its
-offline gateway remains in the engine composition boundary. Assets, spatial
+offline gateway remains in the engine composition boundary. CF018 establishes
+recovery-file persistence as a separate service-domain adapter. Spatial
 acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -87,9 +89,9 @@ protocol <- world <- replay
     +---- render extraction -> renderer
     ^                              |
     +---------- engine ------------+
-                   ^
-                   |
-                  CLI
+                   ^       ^
+                   |       |
+                  CLI    storage
 ```
 
 The diagram shows allowed information flow, not permission to create circular Cargo dependencies. Shared render DTOs belong in a dependency-neutral boundary rather than making world depend on renderer.
@@ -144,6 +146,13 @@ envelope containing the portable replay stream and next unreserved frame
 identity. Its deterministic SHA-256 digest detects corruption before payload
 allocation, but does not provide authenticity or confidentiality. Complete
 replay and frame validation remain mandatory before restoration.
+
+An opt-in storage adapter may persist the complete envelope to one new local
+regular file. Encoding and bounds validation happen before filesystem mutation;
+loading is bounded before allocation and returns only a complete digest-valid
+envelope. The adapter never overwrites, selects, rotates, authenticates, or
+automatically restores a file. Caller-owned path permissions, confidentiality,
+directory durability, retention, and freshness remain outside the engine.
 
 Any retained exact revision can also be represented as a complete standalone
 replay prefix and restored into a separate fresh service. The point carries the
@@ -209,7 +218,8 @@ All agent data, labels, assets, procedures, and transport messages are untrusted
 - scene text treated as data with provenance, never privileged instructions;
 - zero or reinitialize recycled observation buffers before crossing trust scopes;
 - append-only replay integrity, bounded integrity-checked recovery envelopes,
-  and secret-free canonical events;
+  create-new bounded recovery files with path-redacted failures, and
+  secret-free canonical events;
 - optional Wasm/model execution isolated behind explicit capability and resource limits.
 
 Failure behavior is controlled: invalid requests do not mutate state; device
@@ -230,7 +240,8 @@ The public surface stays small: apply imagination, apply a supported built-in
 procedure through an ordinary patch, apply patch, query scene,
 request observation, subscribe to bounded feedback, explain compilation,
 capture complete or exact-revision local recovery state, restore it into a
-fresh service, revert live recorded state, and resolve assets. Initial
+fresh service, explicitly persist/load one immutable local recovery file,
+revert live recorded state, and resolve assets. Initial
 implementation can use in-process Rust types and
 canonical JSON fixtures. Protobuf/gRPC, MCP, local shared memory, and QUIC are
 adapters introduced after the core semantics are tested.
@@ -255,6 +266,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Restoration | A bounded integrity-checked recovery envelope round-trips exact replay/frame state; the decoded complete point restores logical/replay state and continues frame/revision causality in a fresh service |
 | Historical fork | An exact retained revision restores into a fresh service without source mutation or reuse of a frame issued before capture, then continues query/observe/append causality |
 | Live revert | A quiescent service builds and validates an exact historical replacement before swap, preserves the source frame frontier, clears named transient/asset state, and continues retained idempotency and ordinary branch append |
+| Recovery file | A new immutable local file stores one complete bounded envelope without overwrite; bounded load rejects non-files, growth, corruption, truncation, extension, and over-limit input before restoration |
 | Headless render | Reference primitive scene renders without a visible window |
 | Machine outputs | Entity-ID probes are exact; color/depth and quantized flat world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
@@ -271,11 +283,11 @@ CF009 resolves the initial candidate packaging and validation profile in
 publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
 artifacts, smooth normals and the wider visual-quality surface, remote
-protocol/authentication, tenancy, observation retention, durable persistence,
-automatic device recreation, persistent snapshot registries, in-place revert
-automation and branch coordination, log rotation, and model policy remain
-explicitly open. Defaults in the roadmap are planning assumptions, not
-production commitments.
+protocol/authentication, tenancy, observation retention, automatic startup,
+mutable/persistent snapshot registries, crash-atomic latest pointers, automatic
+device recreation, in-place revert automation and branch coordination, log
+rotation, and model policy remain explicitly open. Defaults in the roadmap are
+planning assumptions, not production commitments.
 
 ## 11. Verified foundation references
 

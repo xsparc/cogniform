@@ -2,8 +2,9 @@
 
 Cogniform fails locally and explicitly. It does not retry durable work,
 truncate responses, skip replay events, or expand a queue behind the caller's
-back. The current process has no production supervisor or persistent service
-store; operators compose those concerns outside the MVP.
+back. An explicit adapter can create and load immutable local recovery files,
+but the current process has no production supervisor, mutable snapshot store,
+retention policy, or automatic startup; operators compose those concerns.
 
 ## Verified failure matrix
 
@@ -20,6 +21,9 @@ store; operators compose those concerns outside the MVP.
 | Any one replay byte flipped | Reject before the affected entry; verify and replay only the intact prefix | `every_single_byte_corruption_stops_before_the_unverified_entry` |
 | Recovery envelope is malformed, over-limit, truncated, extended, or changed at any byte | Return a typed non-sensitive codec error before copying replay bytes or initializing a service | recovery-envelope unit tests |
 | Recovery stream has any invalid tail or a frame marker behind replay evidence | Reject the complete recovery point before GPU initialization; never adopt only the verified prefix | recovery unit and controlled service-restoration tests |
+| Recovery-file target already exists or its parent is absent | Return a path-redacted create-new error; never overwrite the target or create a directory | storage create-new unit tests |
+| Recovery-file write or sync fails | Return the failing operation/error kind and whether the partial file was removed or may remain; never return a success receipt | injected storage write/sync tests |
+| Recovery-file target is non-regular, symlinked, over-limit, growing, truncated, extended, or corrupt | Reject before unbounded allocation or recovery-point return; never accept a verified prefix as a complete file | storage load and envelope-corruption tests |
 | Historical revision is newer than the retained log | Return the requested and latest revisions without changing the source service | exact-revision replay and controlled historical-fork tests |
 | Live revert target is current/future or transient work is not drained | Return typed target or exact command/observation/import/upload blockers; preserve world, renderer, frame frontier, replay, hash, queues, and assets | controlled quiescent-revert test |
 | Asset content hash mismatch | Consume no record or queue capacity | asset-store tests |
@@ -86,6 +90,28 @@ authenticate a writer. A header, version, bound, exact-length, frame, or digest
 failure rejects the complete envelope; do not trim a suffix or extract its
 replay payload manually.
 
+### Recovery-file create or load failure
+
+Choose and authorize the parent directory outside Cogniform. `create_new`
+validates the complete envelope before opening the target and never overwrites
+an existing path or creates a missing parent. If write or sync fails, inspect
+`PartialFileCleanup`: `Removed` means the exact new path is absent, while
+`Retained` means an operator must inspect or remove the partial file before
+reusing that name. Do not treat file existence as successful persistence.
+
+On load, treat paths and file contents as untrusted local input. A non-regular
+or final-component symlink, over-limit metadata, post-inspection growth, read
+failure, length mismatch, or digest failure returns no recovery point. Keep the
+path out of general logs; errors intentionally report only the operation and
+standard error kind. A successfully loaded envelope is still plaintext,
+unauthenticated, and not proof of freshness, and `LocalService::restore` must
+perform its complete replay/world/frame validation before use.
+
+File `sync_all` is not a portable guarantee that the directory entry or storage
+hardware survives power loss. Automatic latest-pointer replacement, directory
+sync, retention/rotation, startup, rollback selection, and remote storage need
+separate reviewed protocols.
+
 ### Historical fork request
 
 Request only a revision retained by the source replay log. A newer revision
@@ -128,11 +154,12 @@ implemented by the service.
 
 Stop admitting work to the affected instance. If a complete
 `EngineRecoveryPoint` was captured while the source renderer was available,
-retain it or its single encoded envelope only in an approved location, drop the
-service to release the device and worker channels, decode if needed, and
-restore a fresh instance. Re-establish asset residency separately. The MVP does
-not promise in-place device recreation, automatic command retry, queued-result
-recovery, or observation continuity across restart.
+retain it or explicitly create one immutable recovery file in an approved
+location, drop the service to release the device and worker channels, load if
+needed, and restore a fresh instance. Re-establish asset residency separately.
+The MVP does not promise in-place device recreation, automatic command retry,
+queued-result recovery, startup selection, or observation continuity across
+restart.
 
 ### Secret or private-data finding
 
@@ -145,13 +172,15 @@ does not by itself remove public history or downloaded artifacts.
 ## Known injection gaps
 
 Actual GPU device removal, operating-system thread-creation failure, allocator
-failure, process termination during a world commit, and disk-full persistence
-are not deterministically injected. There is no built-in persistence write, so
-disk crash consistency is outside the current process. Final GPU destruction is
-kept off the bounded caller path, but a stalled driver may strand that
-per-renderer retirement worker until process exit. These are Medium residual
-operational risks for local evaluation and become release blockers if automatic
+failure, process termination during a world commit or file write, actual disk
+full, directory-entry loss, and power loss are not deterministically injected.
+CF018 injects ordinary write and sync failures and verifies partial cleanup, but
+does not establish disk crash consistency. Final GPU destruction is kept off
+the bounded caller path, but a stalled driver may strand that per-renderer
+retirement worker until process exit. These are Medium residual operational
+risks for local evaluation and become release blockers if automatic
 persistence, production supervision, or remote service claims are introduced.
 
-See the [MVP threat model](../threat-model/mvp.md) and
+See the [MVP threat model](../threat-model/mvp.md), the
+[recovery-file guide](../persistence/recovery-files.md), and the
 [local service contract](../protocol/local-service.md).

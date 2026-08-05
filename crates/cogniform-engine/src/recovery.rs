@@ -26,6 +26,14 @@ pub struct EngineRecoveryPoint {
 }
 
 impl EngineRecoveryPoint {
+    /// Returns the maximum encoded envelope bytes for one replay configuration.
+    pub fn envelope_byte_limit(
+        replay_config: ReplayConfig,
+    ) -> Result<u64, RecoveryPointCodecError> {
+        validate_replay_config(replay_config)?;
+        Ok(u64::from(replay_config.max_log_bytes.get()) + ENVELOPE_OVERHEAD_BYTES as u64)
+    }
+
     /// Creates a caller-owned recovery point for later bounded validation.
     #[must_use]
     pub const fn from_parts(replay_bytes: Vec<u8>, next_frame_id: FrameId) -> Self {
@@ -413,6 +421,10 @@ mod tests {
             EngineRecoveryPoint::from_envelope_bytes(&encoded, tight_config),
             Err(RecoveryPointCodecError::EnvelopeSizeExceeded { .. })
         ));
+        assert_eq!(
+            EngineRecoveryPoint::envelope_byte_limit(tight_config).unwrap(),
+            u64::from(tight_config.max_log_bytes.get()) + ENVELOPE_OVERHEAD_BYTES as u64
+        );
 
         let mut declared_over_limit =
             EngineRecoveryPoint::from_parts(b"12345678".to_vec(), FrameId::new(1).unwrap())
