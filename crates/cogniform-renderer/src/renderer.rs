@@ -22,6 +22,7 @@ const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const ENTITY_ID_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 const NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const ASSET_BASE_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const BYTES_PER_PIXEL: u32 = 4;
 const COPY_ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 // The shared ABI constant is fixed at 32 and fits every supported pointer width.
@@ -142,6 +143,9 @@ pub struct HeadlessRenderer {
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
     draw_layout: wgpu::BindGroupLayout,
+    _white_base_color_texture: wgpu::Texture,
+    white_base_color_view: wgpu::TextureView,
+    base_color_sampler: wgpu::Sampler,
     cube_vertices: wgpu::Buffer,
     plane_vertices: wgpu::Buffer,
     sphere_vertices: wgpu::Buffer,
@@ -191,6 +195,8 @@ impl HeadlessRenderer {
             request_device(&adapter, &adapter_summary, &config, readback_layout).await?;
         let gpu_retirement = GpuRetirementGuard::start(device.clone(), queue.clone())?;
         let (pipeline, draw_layout) = create_reference_pipeline(&device).await?;
+        let (white_base_color_texture, white_base_color_view, base_color_sampler) =
+            create_base_color_resources(&device, &queue);
         let cube_vertices =
             create_builtin_vertex_buffer(&device, "cogniform-cube-vertices", &CUBE_POSITIONS);
         let plane_vertices =
@@ -210,6 +216,9 @@ impl HeadlessRenderer {
             queue,
             pipeline,
             draw_layout,
+            _white_base_color_texture: white_base_color_texture,
+            white_base_color_view,
+            base_color_sampler,
             cube_vertices,
             plane_vertices,
             sphere_vertices,
@@ -284,7 +293,7 @@ impl HeadlessRenderer {
     /// This method never decodes source assets and is never called implicitly by
     /// frame submission.
     pub fn process_next_asset_upload(&mut self) -> Option<AssetUploadOutcome> {
-        self.assets.process_next(&self.device)
+        self.assets.process_next(&self.device, &self.queue)
     }
 
     /// Returns aggregate upload and GPU residency occupancy.
@@ -313,6 +322,7 @@ impl HeadlessRenderer {
                 camera_position: [0.0, 0.0, 3.0],
                 metallic: 0.0,
                 roughness: 0.8,
+                use_imported_texture: false,
                 compact_id: REFERENCE_ENTITY_ID,
             }],
             directional_lights: Vec::new(),
@@ -375,6 +385,8 @@ impl HeadlessRenderer {
                 queue: &self.queue,
                 pipeline: &self.pipeline,
                 draw_layout: &self.draw_layout,
+                white_base_color_view: &self.white_base_color_view,
+                base_color_sampler: &self.base_color_sampler,
                 cube_vertices: &self.cube_vertices,
                 plane_vertices: &self.plane_vertices,
                 sphere_vertices: &self.sphere_vertices,
@@ -531,16 +543,34 @@ async fn create_reference_pipeline(
     });
     let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("cogniform-draw-bind-group-layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        }],
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("cogniform-reference-scene-layout"),
@@ -636,6 +666,16 @@ fn validate_config(config: &RendererConfig) -> Result<(), RendererError> {
             reason: "resident asset bytes must admit at least one maximum-size asset mesh",
         });
     }
+    if config.max_asset_texture_bytes.get() > config.max_pending_asset_texture_bytes.get() {
+        return Err(RendererError::InvalidAssetConfig {
+            reason: "pending texture bytes must admit at least one maximum-size texture",
+        });
+    }
+    if config.max_asset_texture_bytes.get() > config.max_resident_asset_texture_bytes.get() {
+        return Err(RendererError::InvalidAssetConfig {
+            reason: "resident texture bytes must admit at least one maximum-size texture",
+        });
+    }
     Ok(())
 }
 
@@ -654,9 +694,12 @@ fn required_limits(
 ) -> wgpu::Limits {
     let supported = adapter.limits();
     let mut required = wgpu::Limits::downlevel_defaults().or_worse_values_from(&supported);
-    required.max_texture_dimension_2d = required
-        .max_texture_dimension_2d
-        .max(config.width.max(config.height));
+    required.max_texture_dimension_2d = required.max_texture_dimension_2d.max(
+        config
+            .width
+            .max(config.height)
+            .max(config.max_asset_texture_dimension_2d.get()),
+    );
     required.max_color_attachments = required.max_color_attachments.max(3);
     required.max_color_attachment_bytes_per_sample =
         required.max_color_attachment_bytes_per_sample.max(12);
@@ -698,7 +741,23 @@ fn capability_issues(
         RenderTargetKind::EntityId,
         &mut issues,
     );
+    check_sampled_texture_usage(adapter, &mut issues);
     issues
+}
+
+fn check_sampled_texture_usage(adapter: &wgpu::Adapter, issues: &mut Vec<CapabilityIssue>) {
+    let features = adapter.get_texture_format_features(ASSET_BASE_COLOR_FORMAT);
+    let required = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
+    if !features.allowed_usages.contains(required)
+        || !features
+            .flags
+            .contains(wgpu::TextureFormatFeatureFlags::FILTERABLE)
+    {
+        issues.push(CapabilityIssue::TextureUsage {
+            target: RenderTargetKind::AssetBaseColor,
+            required: "TEXTURE_BINDING | COPY_DST with linear filtering",
+        });
+    }
 }
 
 fn check_texture_usage(
@@ -890,6 +949,8 @@ struct ScenePassResources<'a> {
     queue: &'a wgpu::Queue,
     pipeline: &'a wgpu::RenderPipeline,
     draw_layout: &'a wgpu::BindGroupLayout,
+    white_base_color_view: &'a wgpu::TextureView,
+    base_color_sampler: &'a wgpu::Sampler,
     cube_vertices: &'a wgpu::Buffer,
     plane_vertices: &'a wgpu::Buffer,
     sphere_vertices: &'a wgpu::Buffer,
@@ -955,6 +1016,7 @@ fn encode_scene_pass(
     });
     render_pass.set_pipeline(resources.pipeline);
     for draw in draws {
+        let (vertices, vertex_count, base_color_view) = draw_resources(draw, resources);
         let bytes = encode_draw_uniform(draw, directional_lights, point_lights);
         let buffer = resources.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cogniform-draw-uniform"),
@@ -968,27 +1030,114 @@ fn encode_scene_pass(
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("cogniform-draw-bind-group"),
                 layout: resources.draw_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                }],
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(base_color_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(resources.base_color_sampler),
+                    },
+                ],
             });
         render_pass.set_bind_group(0, &bind_group, &[]);
-        let (vertices, vertex_count) = match draw.geometry {
-            PreparedGeometry::Cuboid => (resources.cube_vertices, CUBE_VERTEX_COUNT),
-            PreparedGeometry::Plane => (resources.plane_vertices, PLANE_VERTEX_COUNT),
-            PreparedGeometry::Sphere => (resources.sphere_vertices, SPHERE_VERTEX_COUNT),
-            PreparedGeometry::Asset(key) => {
-                let mesh = resources
-                    .assets
-                    .mesh(key)
-                    .expect("prepared asset geometry remains resident until renderer drop");
-                (mesh.buffer(), mesh.vertex_count())
-            }
-        };
         render_pass.set_vertex_buffer(0, vertices.slice(..));
         render_pass.draw(0..vertex_count, 0..1);
     }
+}
+
+fn draw_resources<'a>(
+    draw: &PreparedDraw,
+    resources: &'a ScenePassResources<'_>,
+) -> (&'a wgpu::Buffer, u32, &'a wgpu::TextureView) {
+    match draw.geometry {
+        PreparedGeometry::Cuboid => (
+            resources.cube_vertices,
+            CUBE_VERTEX_COUNT,
+            resources.white_base_color_view,
+        ),
+        PreparedGeometry::Plane => (
+            resources.plane_vertices,
+            PLANE_VERTEX_COUNT,
+            resources.white_base_color_view,
+        ),
+        PreparedGeometry::Sphere => (
+            resources.sphere_vertices,
+            SPHERE_VERTEX_COUNT,
+            resources.white_base_color_view,
+        ),
+        PreparedGeometry::Asset(key) => {
+            let mesh = resources
+                .assets
+                .mesh(key)
+                .expect("prepared asset geometry remains resident until renderer drop");
+            let view = if draw.use_imported_texture {
+                resources
+                    .assets
+                    .texture_view(key.content_hash)
+                    .expect("textured resident mesh retains its shared GPU texture")
+            } else {
+                resources.white_base_color_view
+            };
+            (mesh.buffer(), mesh.vertex_count(), view)
+        }
+    }
+}
+
+fn create_base_color_resources(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("cogniform-white-base-color"),
+        size: wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: ASSET_BASE_COLOR_FORMAT,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &[255, 255, 255, 255],
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4),
+            rows_per_image: Some(1),
+        },
+        wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("cogniform-base-color-repeat-linear"),
+        address_mode_u: wgpu::AddressMode::Repeat,
+        address_mode_v: wgpu::AddressMode::Repeat,
+        address_mode_w: wgpu::AddressMode::Repeat,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        ..wgpu::SamplerDescriptor::default()
+    });
+    (texture, view, sampler)
 }
 
 fn create_builtin_vertex_buffer(
@@ -1322,6 +1471,20 @@ mod tests {
             ),
             Err(RendererError::InvalidReadbackTimeout)
         ));
+        assert!(matches!(
+            validate_config(
+                &RendererConfig::new(64, 64)
+                    .with_max_pending_asset_texture_bytes(core::num::NonZeroU64::new(1).unwrap())
+            ),
+            Err(RendererError::InvalidAssetConfig { .. })
+        ));
+        assert!(matches!(
+            validate_config(
+                &RendererConfig::new(64, 64)
+                    .with_max_resident_asset_texture_bytes(core::num::NonZeroU64::new(1).unwrap())
+            ),
+            Err(RendererError::InvalidAssetConfig { .. })
+        ));
     }
 
     #[test]
@@ -1465,6 +1628,7 @@ mod tests {
             camera_position: [6.0, 7.0, 8.0],
             metallic: 0.9,
             roughness: 0.2,
+            use_imported_texture: false,
             compact_id: 42,
         };
         let lights = [

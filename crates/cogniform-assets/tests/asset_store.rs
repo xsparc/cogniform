@@ -68,6 +68,72 @@ fn triangle_glb_without_material() -> Vec<u8> {
     glb_with_json(json, &triangle_binary())
 }
 
+fn encode_png(
+    width: u32,
+    height: u32,
+    color: png::ColorType,
+    depth: png::BitDepth,
+    pixels: &[u8],
+) -> Vec<u8> {
+    let mut png_bytes = Vec::new();
+    {
+        let mut png_encoder = png::Encoder::new(&mut png_bytes, width, height);
+        png_encoder.set_color(color);
+        png_encoder.set_depth(depth);
+        let mut writer = png_encoder.write_header().unwrap();
+        writer.write_image_data(pixels).unwrap();
+    }
+    png_bytes
+}
+
+fn textured_triangle_glb(
+    png: &[u8],
+    pbr_fields: &str,
+    texture_items: &str,
+    image_items: &str,
+    root_fields: &str,
+    include_texcoords: bool,
+) -> Vec<u8> {
+    let mut binary = triangle_binary();
+    for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let image_offset = binary.len();
+    binary.extend_from_slice(png);
+    let attributes = if include_texcoords {
+        r#""POSITION":0,"TEXCOORD_0":1"#
+    } else {
+        r#""POSITION":0"#
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{{pbr_fields}}}}}],"textures":[{texture_items}],"images":[{image_items}]{root_fields},"meshes":[{{"primitives":[{{"attributes":{{{attributes}}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        image_length = png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn rgba_texture_glb(pixels: &[[u8; 4]], width: u32, height: u32) -> Vec<u8> {
+    let rgba = pixels.iter().flatten().copied().collect::<Vec<_>>();
+    let png = encode_png(
+        width,
+        height,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &rgba,
+    );
+    textured_triangle_glb(
+        &png,
+        r#""baseColorFactor":[0.5,0.25,1.0,0.75],"baseColorTexture":{"index":0}"#,
+        r#"{"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        "",
+        true,
+    )
+}
+
 fn glb_with_normals(
     normals: [[f32; 3]; 3],
     normal_count: u32,
@@ -271,6 +337,271 @@ fn explicit_material_defaults_and_no_material_fallback_are_retained() {
         0.8_f32.to_bits()
     );
     assert_eq!(explicit_upload.byte_len(), unmaterialed_upload.byte_len());
+}
+
+#[test]
+fn embedded_rgba_and_rgb_base_color_textures_are_bounded_and_retained() {
+    let rgba = rgba_texture_glb(
+        &[
+            [255, 0, 0, 255],
+            [0, 255, 0, 128],
+            [0, 0, 255, 64],
+            [255, 255, 255, 0],
+        ],
+        2,
+        2,
+    );
+    let rgba_hash = content_hash(&rgba);
+    let mut rgba_store = AssetStore::default();
+    rgba_store.enqueue(rgba_hash, rgba).unwrap();
+    assert_eq!(rgba_store.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(rgba_store.record(rgba_hash).unwrap().decoded_bytes, 112);
+    assert_eq!(rgba_store.stats().resident_cpu_bytes, 112);
+    let upload = rgba_store
+        .upload_job(AssetMeshKey {
+            content_hash: rgba_hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert!(upload.material().has_base_color_texture());
+    let texture = upload.base_color_texture().unwrap();
+    assert_eq!(
+        (texture.width(), texture.height(), texture.byte_len()),
+        (2, 2, 16)
+    );
+    assert_eq!(
+        texture.rgba8(),
+        [
+            255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 64, 255, 255, 255, 0,
+        ]
+    );
+
+    let rgb_png = encode_png(
+        2,
+        1,
+        png::ColorType::Rgb,
+        png::BitDepth::Eight,
+        &[10, 20, 30, 40, 50, 60],
+    );
+    let expanded = textured_triangle_glb(
+        &rgb_png,
+        r#""baseColorTexture":{"index":0,"texCoord":0}"#,
+        r#"{"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        "",
+        true,
+    );
+    let expanded_hash = content_hash(&expanded);
+    let mut expanded_store = AssetStore::default();
+    expanded_store.enqueue(expanded_hash, expanded).unwrap();
+    assert_eq!(
+        expanded_store.process_next().unwrap().state,
+        AssetState::Ready
+    );
+    assert_eq!(
+        expanded_store
+            .upload_job(AssetMeshKey {
+                content_hash: expanded_hash,
+                mesh_index: 0,
+            })
+            .unwrap()
+            .base_color_texture()
+            .unwrap()
+            .rgba8(),
+        [10, 20, 30, 255, 40, 50, 60, 255]
+    );
+}
+
+#[test]
+fn texture_resource_shape_and_coordinate_contract_is_typed() {
+    let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
+    let cases = [
+        textured_triangle_glb(
+            &png,
+            r#""baseColorTexture":{"index":0,"texCoord":1}"#,
+            r#"{"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"}"#,
+            "",
+            true,
+        ),
+        textured_triangle_glb(
+            &png,
+            r#""baseColorTexture":{"index":0}"#,
+            r#"{"sampler":0,"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"}"#,
+            r#","samplers":[{}]"#,
+            true,
+        ),
+        textured_triangle_glb(
+            &png,
+            r#""baseColorTexture":{"index":0}"#,
+            r#"{"source":0}"#,
+            r#"{"uri":"data:image/png;base64,AA==","mimeType":"image/png"}"#,
+            "",
+            true,
+        ),
+        textured_triangle_glb(
+            &png,
+            r#""baseColorTexture":{"index":0}"#,
+            r#"{"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/jpeg"}"#,
+            "",
+            true,
+        ),
+        textured_triangle_glb(
+            &png,
+            r#""baseColorTexture":{"index":0},"metallicRoughnessTexture":{"index":0}"#,
+            r#"{"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"}"#,
+            "",
+            true,
+        ),
+    ];
+    for bytes in cases {
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::UnsupportedFeature
+        );
+        assert!(
+            !store
+                .upload_job(AssetMeshKey {
+                    content_hash: hash,
+                    mesh_index: 0,
+                })
+                .unwrap()
+                .material()
+                .has_base_color_texture()
+        );
+    }
+
+    let missing_coordinates = textured_triangle_glb(
+        &png,
+        r#""baseColorTexture":{"index":0}"#,
+        r#"{"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        "",
+        false,
+    );
+    let (store, hash) = process_with_proxy_policy(missing_coordinates);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidTexcoord
+    );
+}
+
+#[test]
+fn multiple_texture_or_image_resources_fail_closed() {
+    let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
+    for bytes in [
+        textured_triangle_glb(
+            &png,
+            r#""baseColorTexture":{"index":0}"#,
+            r#"{"source":0},{"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"}"#,
+            "",
+            true,
+        ),
+        textured_triangle_glb(
+            &png,
+            r#""baseColorTexture":{"index":0}"#,
+            r#"{"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
+            "",
+            true,
+        ),
+    ] {
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::CollectionLimitExceeded
+        );
+    }
+}
+
+#[test]
+fn malformed_and_truncated_png_never_receive_a_proxy() {
+    let png = encode_png(2, 2, png::ColorType::Rgba, png::BitDepth::Eight, &[7; 16]);
+    for end in [0, 7, 28, png.len() - 1] {
+        let bytes = textured_triangle_glb(
+            &png[..end],
+            r#""baseColorTexture":{"index":0}"#,
+            r#"{"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"}"#,
+            "",
+            true,
+        );
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidImage
+        );
+    }
+    let mut trailing = png.clone();
+    trailing.extend_from_slice(b"junk");
+    let bytes = textured_triangle_glb(
+        &trailing,
+        r#""baseColorTexture":{"index":0}"#,
+        r#"{"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        "",
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidImage
+    );
+}
+
+#[test]
+fn texture_dimension_pixel_and_decoded_byte_limits_fail_before_adoption() {
+    let bytes = rgba_texture_glb(&[[9; 4]; 4], 2, 2);
+    let hash = content_hash(&bytes);
+    let cases = [
+        ("dimension", 1_u64),
+        ("pixels", 3_u64),
+        ("texture_bytes", 15_u64),
+        ("decoder_bytes", 1_u64),
+        ("asset_bytes", 111_u64),
+        ("resident_bytes", 111_u64),
+    ];
+    for (kind, limit) in cases {
+        let mut config = AssetStoreConfig::default();
+        match kind {
+            "dimension" => {
+                config.limits.max_texture_dimension_2d =
+                    NonZeroU32::new(u32::try_from(limit).unwrap()).unwrap();
+            }
+            "pixels" => config.limits.max_texture_pixels = NonZeroU64::new(limit).unwrap(),
+            "texture_bytes" => {
+                config.limits.max_texture_decoded_bytes = NonZeroU64::new(limit).unwrap();
+            }
+            "decoder_bytes" => {
+                config.limits.max_texture_decoder_bytes = NonZeroU64::new(limit).unwrap();
+            }
+            "asset_bytes" => {
+                config.limits.max_asset_decoded_bytes = NonZeroU64::new(limit).unwrap();
+            }
+            "resident_bytes" => {
+                config.limits.max_resident_cpu_bytes = NonZeroU64::new(limit).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let mut store = AssetStore::new(config);
+        store.enqueue(hash, bytes.clone()).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Rejected);
+        assert_eq!(store.stats().resident_cpu_bytes, 0);
+        assert!(matches!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::CollectionLimitExceeded | AssetDiagnosticCode::ByteLimitExceeded
+        ));
+    }
 }
 
 #[test]

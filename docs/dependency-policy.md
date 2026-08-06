@@ -31,6 +31,34 @@ accepted by default.
 Automated license output is evidence, not legal advice. Contributors must also
 inspect unusual license files, notices, and bundled native or generated code.
 
+## Approved PNG decoder
+
+CF029 admits exact-pinned `png` 0.18.1 as a runtime dependency only inside
+`cogniform-assets` for the strict embedded base-color image boundary;
+`cogniform-renderer` and `cogniform-engine` use it only to generate test
+fixtures. It is dual licensed `MIT OR Apache-2.0`, uses the pure-Rust miniz
+backend with the direct crate's default features disabled, and requires no
+runtime filesystem, network, telemetry, paid service, native library, or proc
+macro. The locked seven-package addition is `png`, `crc32fast`, `fdeflate`,
+`flate2`, `miniz_oxide`, `adler2`, and `simd-adler32`; the already-reviewed
+`bitflags` and `cfg-if` packages are reused. All exact registry checksums and
+sources are committed in `Cargo.lock` and `vendor/`.
+
+The review records one transitive build script: `crc32fast` invokes the
+configured Rust compiler with `--version` and emits only the ARM-intrinsic cfg
+for supported compiler versions. The `png`, `fdeflate`, `miniz_oxide`, and
+`adler2` crates forbid unsafe code. `crc32fast`, `simd-adler32`, and the
+pure-Rust `flate2` compatibility layer contain guarded unsafe SIMD or pointer
+implementations; no native backend is selected and no first-party unsafe code
+is admitted. These optimized checksum/decompression paths remain inside the
+same exact-pinned parser boundary.
+
+Decoder identity transformations, ignored text/ICC payloads, checked PNG
+framing/checksums, a fixed RGB/RGBA subset, and project-owned dimension, pixel,
+working-memory, decoded-byte, and residency limits constrain the parser. The
+optional `zlib-rs` feature is not enabled. Wider image formats, decoder
+features, or backend changes require a new review.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

@@ -1,11 +1,12 @@
-use std::{collections::BTreeMap, sync::Arc};
+use core::num::NonZeroU32;
+use std::{collections::BTreeMap, io::Cursor, sync::Arc};
 
 use cogniform_protocol::{FiniteF32, UnitF32};
 use serde::Deserialize;
 
 use crate::types::{
     ASSET_VERTEX_BYTES, AssetDiagnostic, AssetDiagnosticCode, AssetLimits, AssetMaterial,
-    AssetVertex, DecodedAsset, DecodedMesh,
+    AssetTexture, AssetVertex, DecodedAsset, DecodedMesh,
 };
 
 const GLB_MAGIC: [u8; 4] = *b"glTF";
@@ -16,6 +17,11 @@ const FLOAT: u32 = 5_126;
 const UNSIGNED_SHORT: u32 = 5_123;
 const UNSIGNED_INT: u32 = 5_125;
 const TRIANGLES: u32 = 4;
+const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
+const PNG_IHDR_LENGTH: u32 = 13;
+const PNG_IEND: [u8; 12] = [0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xae, 0x42, 0x60, 0x82];
+const PNG_RGB: u8 = 2;
+const PNG_RGBA: u8 = 6;
 
 pub(crate) fn decode_glb(
     bytes: &[u8],
@@ -157,16 +163,7 @@ fn remove_declared_extensions_and_features(
             ));
         }
     }
-    for field in [
-        "animations",
-        "cameras",
-        "images",
-        "nodes",
-        "samplers",
-        "scenes",
-        "skins",
-        "textures",
-    ] {
+    for field in ["animations", "cameras", "nodes", "scenes", "skins"] {
         if let Some(feature) = root.remove(field) {
             if !feature.is_array() {
                 return Err(diagnostic(
@@ -201,7 +198,92 @@ fn remove_declared_extensions_and_features(
         });
     }
     remove_nested_extensions(value, &mut unsupported)?;
+    remove_unsupported_material_features(value, &mut unsupported)?;
     Ok(unsupported)
+}
+
+fn remove_unsupported_material_features(
+    value: &mut serde_json::Value,
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<(), AssetDiagnostic> {
+    let Some(materials) = value
+        .as_object_mut()
+        .and_then(|root| root.get_mut("materials"))
+    else {
+        return Ok(());
+    };
+    let Some(materials) = materials.as_array_mut() else {
+        return Ok(());
+    };
+    for material in materials {
+        let Some(material) = material.as_object_mut() else {
+            continue;
+        };
+        for (field, expected) in [
+            ("normalTexture", JsonKind::Object),
+            ("occlusionTexture", JsonKind::Object),
+            ("emissiveTexture", JsonKind::Object),
+            ("emissiveFactor", JsonKind::Array),
+            ("alphaMode", JsonKind::String),
+            ("alphaCutoff", JsonKind::Number),
+            ("doubleSided", JsonKind::Bool),
+        ] {
+            remove_typed_unsupported(material, field, expected, unsupported)?;
+        }
+        if let Some(pbr) = material.get_mut("pbrMetallicRoughness")
+            && let Some(pbr) = pbr.as_object_mut()
+        {
+            remove_typed_unsupported(
+                pbr,
+                "metallicRoughnessTexture",
+                JsonKind::Object,
+                unsupported,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum JsonKind {
+    Object,
+    Array,
+    String,
+    Number,
+    Bool,
+}
+
+fn remove_typed_unsupported(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+    field: &str,
+    expected: JsonKind,
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<(), AssetDiagnostic> {
+    let Some(value) = object.remove(field) else {
+        return Ok(());
+    };
+    let valid = match expected {
+        JsonKind::Object => value.is_object(),
+        JsonKind::Array => value.is_array(),
+        JsonKind::String => value.is_string(),
+        JsonKind::Number => value.is_number(),
+        JsonKind::Bool => value.is_boolean(),
+    };
+    if !valid {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            "glb.json.materials",
+            None,
+        ));
+    }
+    unsupported.get_or_insert_with(|| {
+        diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.materials",
+            None,
+        )
+    });
+    Ok(())
 }
 
 fn remove_nested_extensions(
@@ -247,7 +329,8 @@ fn validate_root(
     limits: AssetLimits,
 ) -> Result<DecodedAsset, AssetDiagnostic> {
     validate_root_header(root, binary, limits)?;
-    let mut decoded_bytes = 0_u64;
+    let texture = decode_base_color_texture(root, binary, limits)?;
+    let mut decoded_bytes = texture.as_ref().map_or(0, AssetTexture::byte_len);
     let mut meshes = Vec::with_capacity(root.meshes.len());
     for (mesh_index, mesh) in root.meshes.iter().enumerate() {
         meshes.push(decode_mesh(
@@ -266,8 +349,20 @@ fn validate_root(
             None,
         ));
     }
+    if texture.is_some()
+        && !meshes
+            .iter()
+            .any(|mesh| mesh.material.has_base_color_texture())
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.materials.baseColorTexture",
+            None,
+        ));
+    }
     Ok(DecodedAsset {
         meshes,
+        texture,
         byte_len: decoded_bytes,
     })
 }
@@ -344,7 +439,300 @@ fn validate_root_header(
             ));
         }
     }
+    if root.images.len() > 1 || root.textures.len() > 1 {
+        return Err(diagnostic(
+            AssetDiagnosticCode::CollectionLimitExceeded,
+            "glb.json.textures",
+            None,
+        ));
+    }
+    if !root.samplers.is_empty() {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.samplers",
+            None,
+        ));
+    }
     Ok(())
+}
+
+fn decode_base_color_texture(
+    root: &Root,
+    binary: &[u8],
+    limits: AssetLimits,
+) -> Result<Option<AssetTexture>, AssetDiagnostic> {
+    let references_texture = root.materials.iter().any(|material| {
+        material
+            .pbr_metallic_roughness
+            .as_ref()
+            .and_then(|pbr| pbr.base_color_texture.as_ref())
+            .is_some()
+    });
+    if !references_texture {
+        if root.textures.is_empty() && root.images.is_empty() {
+            return Ok(None);
+        }
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.textures",
+            None,
+        ));
+    }
+    validate_texture_references(root)?;
+    decode_png(embedded_image_bytes(root, binary)?, limits).map(Some)
+}
+
+fn validate_texture_references(root: &Root) -> Result<(), AssetDiagnostic> {
+    if root.textures.len() != 1 || root.images.len() != 1 {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidBufferRange,
+            "glb.json.textures",
+            None,
+        ));
+    }
+    for material in &root.materials {
+        let Some(info) = material
+            .pbr_metallic_roughness
+            .as_ref()
+            .and_then(|pbr| pbr.base_color_texture.as_ref())
+        else {
+            continue;
+        };
+        if info.tex_coord.unwrap_or(0) != 0 {
+            return Err(diagnostic(
+                AssetDiagnosticCode::UnsupportedFeature,
+                "glb.json.materials.baseColorTexture.texCoord",
+                None,
+            ));
+        }
+        if info.index != 0 {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidBufferRange,
+                "glb.json.materials.baseColorTexture.index",
+                Some(info.index),
+            ));
+        }
+    }
+    let texture = &root.textures[0];
+    if texture.sampler.is_some() {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.textures[0].sampler",
+            Some(0),
+        ));
+    }
+    let source = texture.source.ok_or_else(|| {
+        diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            "glb.json.textures[0].source",
+            Some(0),
+        )
+    })?;
+    if source != 0 {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidBufferRange,
+            "glb.json.textures[0].source",
+            Some(source),
+        ));
+    }
+    Ok(())
+}
+
+fn embedded_image_bytes<'a>(root: &Root, binary: &'a [u8]) -> Result<&'a [u8], AssetDiagnostic> {
+    let image = &root.images[0];
+    if image.uri.is_some() || image.mime_type.as_deref() != Some("image/png") {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.images[0]",
+            Some(0),
+        ));
+    }
+    let view_index = image.buffer_view.ok_or_else(|| {
+        diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            "glb.json.images[0].bufferView",
+            Some(0),
+        )
+    })?;
+    let view = get(&root.buffer_views, view_index, "glb.json.bufferViews")?;
+    if view.buffer != 0 {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidBufferRange,
+            "glb.json.images[0].bufferView",
+            Some(view_index),
+        ));
+    }
+    if view.byte_stride.is_some() {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.images[0].bufferView.byteStride",
+            Some(view_index),
+        ));
+    }
+    let start = usize::try_from(view.byte_offset).map_err(|_| {
+        diagnostic(
+            AssetDiagnosticCode::InvalidBufferRange,
+            "glb.json.images[0].bufferView",
+            Some(view_index),
+        )
+    })?;
+    let length = usize::try_from(view.byte_length).map_err(|_| {
+        diagnostic(
+            AssetDiagnosticCode::InvalidBufferRange,
+            "glb.json.images[0].bufferView",
+            Some(view_index),
+        )
+    })?;
+    let end = start.checked_add(length).ok_or_else(|| {
+        diagnostic(
+            AssetDiagnosticCode::InvalidBufferRange,
+            "glb.json.images[0].bufferView",
+            Some(view_index),
+        )
+    })?;
+    binary.get(start..end).ok_or_else(|| {
+        diagnostic(
+            AssetDiagnosticCode::InvalidBufferRange,
+            "glb.json.images[0].bufferView",
+            Some(view_index),
+        )
+    })
+}
+
+fn decode_png(bytes: &[u8], limits: AssetLimits) -> Result<AssetTexture, AssetDiagnostic> {
+    validate_png_framing(bytes)?;
+    let width = read_be_u32(bytes, 16)
+        .and_then(NonZeroU32::new)
+        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::InvalidImage))?;
+    let height = read_be_u32(bytes, 20)
+        .and_then(NonZeroU32::new)
+        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::InvalidImage))?;
+    decode_png_image(bytes, width, height, limits)
+}
+
+fn validate_png_framing(bytes: &[u8]) -> Result<(), AssetDiagnostic> {
+    if bytes.len() < 33
+        || bytes.get(..8) != Some(&PNG_SIGNATURE)
+        || !bytes.ends_with(&PNG_IEND)
+        || read_be_u32(bytes, 8) != Some(PNG_IHDR_LENGTH)
+        || bytes.get(12..16) != Some(b"IHDR")
+    {
+        return Err(image_diagnostic(AssetDiagnosticCode::InvalidImage));
+    }
+    Ok(())
+}
+
+fn decode_png_image(
+    bytes: &[u8],
+    width: NonZeroU32,
+    height: NonZeroU32,
+    limits: AssetLimits,
+) -> Result<AssetTexture, AssetDiagnostic> {
+    if width.get() > limits.max_texture_dimension_2d.get()
+        || height.get() > limits.max_texture_dimension_2d.get()
+    {
+        return Err(image_diagnostic(
+            AssetDiagnosticCode::CollectionLimitExceeded,
+        ));
+    }
+    let pixels = u64::from(width.get())
+        .checked_mul(u64::from(height.get()))
+        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded))?;
+    if pixels > limits.max_texture_pixels.get() {
+        return Err(image_diagnostic(
+            AssetDiagnosticCode::CollectionLimitExceeded,
+        ));
+    }
+    let rgba_bytes = pixels
+        .checked_mul(4)
+        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded))?;
+    if rgba_bytes > limits.max_texture_decoded_bytes.get()
+        || rgba_bytes > limits.max_asset_decoded_bytes.get()
+    {
+        return Err(image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded));
+    }
+    let bit_depth = bytes[24];
+    let color_type = bytes[25];
+    if bit_depth != 8 || !matches!(color_type, PNG_RGB | PNG_RGBA) || bytes[26..29] != [0, 0, 0] {
+        return Err(image_diagnostic(AssetDiagnosticCode::UnsupportedFeature));
+    }
+
+    let decoder_limit =
+        usize::try_from(limits.max_texture_decoder_bytes.get()).unwrap_or(usize::MAX);
+    let mut decoder = png::Decoder::new_with_limits(
+        Cursor::new(bytes),
+        png::Limits {
+            bytes: decoder_limit,
+        },
+    );
+    decoder.set_transformations(png::Transformations::IDENTITY);
+    decoder.set_ignore_text_chunk(true);
+    decoder.set_ignore_iccp_chunk(true);
+    let mut reader = decoder
+        .read_info()
+        .map_err(|error| png_diagnostic(&error))?;
+    if reader.info().animation_control.is_some() {
+        return Err(image_diagnostic(AssetDiagnosticCode::UnsupportedFeature));
+    }
+    if reader.info().trns.is_some() {
+        return Err(image_diagnostic(AssetDiagnosticCode::UnsupportedFeature));
+    }
+    let channels = if color_type == PNG_RGB { 3_u64 } else { 4_u64 };
+    let raw_bytes = pixels
+        .checked_mul(channels)
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded))?;
+    if reader.output_buffer_size() != Some(raw_bytes) {
+        return Err(image_diagnostic(AssetDiagnosticCode::InvalidImage));
+    }
+    let mut raw = vec![0_u8; raw_bytes];
+    let output = reader
+        .next_frame(&mut raw)
+        .map_err(|error| png_diagnostic(&error))?;
+    let expected_color = if color_type == PNG_RGB {
+        png::ColorType::Rgb
+    } else {
+        png::ColorType::Rgba
+    };
+    if output.width != width.get()
+        || output.height != height.get()
+        || output.bit_depth != png::BitDepth::Eight
+        || output.color_type != expected_color
+        || output.buffer_size() != raw_bytes
+    {
+        return Err(image_diagnostic(AssetDiagnosticCode::InvalidImage));
+    }
+    reader.finish().map_err(|error| png_diagnostic(&error))?;
+    let rgba8 = if color_type == PNG_RGBA {
+        raw
+    } else {
+        let capacity = usize::try_from(rgba_bytes)
+            .map_err(|_| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded))?;
+        let mut rgba8 = Vec::with_capacity(capacity);
+        for rgb in raw.chunks_exact(3) {
+            rgba8.extend_from_slice(rgb);
+            rgba8.push(255);
+        }
+        rgba8
+    };
+    Ok(AssetTexture::new(width, height, Arc::from(rgba8)))
+}
+
+fn read_be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+    let encoded: [u8; 4] = bytes.get(offset..offset.checked_add(4)?)?.try_into().ok()?;
+    Some(u32::from_be_bytes(encoded))
+}
+
+const fn image_diagnostic(code: AssetDiagnosticCode) -> AssetDiagnostic {
+    diagnostic(code, "glb.binary.image.png", Some(0))
+}
+
+fn png_diagnostic(error: &png::DecodingError) -> AssetDiagnostic {
+    if matches!(error, png::DecodingError::LimitsExceeded) {
+        image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded)
+    } else {
+        image_diagnostic(AssetDiagnosticCode::InvalidImage)
+    }
 }
 
 fn decode_mesh(
@@ -394,6 +782,13 @@ fn decode_mesh(
     }
     let vertices = decode_vertices(binary, positions, normals, texcoords, indices, output_count)?;
     let material = decode_material(root, primitive.material)?;
+    if material.has_base_color_texture() && texcoords.is_none() {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidTexcoord,
+            "glb.json.meshes[].primitives[].attributes.TEXCOORD_0",
+            Some(mesh_index),
+        ));
+    }
     Ok(DecodedMesh {
         vertices: Arc::from(vertices),
         material,
@@ -1024,11 +1419,23 @@ fn decode_material(
             )
         })
     };
-    Ok(AssetMaterial::new(
+    let material = AssetMaterial::new(
         color,
         material_scalar(metallic_value)?,
         material_scalar(roughness_value)?,
-    ))
+    );
+    let has_base_color_texture = material_index.is_some_and(|index| {
+        root.materials
+            .get(usize::try_from(index).unwrap_or(usize::MAX))
+            .and_then(|material| material.pbr_metallic_roughness.as_ref())
+            .and_then(|pbr| pbr.base_color_texture.as_ref())
+            .is_some()
+    });
+    Ok(if has_base_color_texture {
+        material.with_base_color_texture()
+    } else {
+        material
+    })
 }
 
 pub(crate) fn proxy_asset() -> DecodedAsset {
@@ -1099,6 +1506,7 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
                 UnitF32::new(0.8).expect("constant is in range"),
             ),
         }],
+        texture: None,
         byte_len: 36 * ASSET_VERTEX_BYTES,
     }
 }
@@ -1145,6 +1553,12 @@ struct Root {
     meshes: Vec<Mesh>,
     #[serde(default)]
     materials: Vec<Material>,
+    #[serde(default)]
+    images: Vec<Image>,
+    #[serde(default)]
+    samplers: Vec<serde_json::Value>,
+    #[serde(default)]
+    textures: Vec<Texture>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1223,4 +1637,34 @@ struct PbrMetallicRoughness {
     metallic: Option<f32>,
     #[serde(rename = "roughnessFactor", default)]
     roughness: Option<f32>,
+    #[serde(rename = "baseColorTexture", default)]
+    base_color_texture: Option<TextureInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TextureInfo {
+    index: u32,
+    #[serde(default)]
+    tex_coord: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Texture {
+    #[serde(default)]
+    sampler: Option<u32>,
+    #[serde(default)]
+    source: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Image {
+    #[serde(default)]
+    buffer_view: Option<u32>,
+    #[serde(default)]
+    mime_type: Option<String>,
+    #[serde(default)]
+    uri: Option<String>,
 }

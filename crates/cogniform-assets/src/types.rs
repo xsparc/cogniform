@@ -26,6 +26,14 @@ pub struct AssetLimits {
     pub max_accessors: NonZeroU32,
     /// Maximum material records parsed from one GLB.
     pub max_materials: NonZeroU32,
+    /// Maximum width or height accepted for one embedded base-color texture.
+    pub max_texture_dimension_2d: NonZeroU32,
+    /// Maximum pixel count accepted for one embedded base-color texture.
+    pub max_texture_pixels: NonZeroU64,
+    /// Maximum decoded RGBA8 bytes retained for one embedded texture.
+    pub max_texture_decoded_bytes: NonZeroU64,
+    /// Maximum temporary bytes the PNG decoder may allocate internally.
+    pub max_texture_decoder_bytes: NonZeroU64,
     /// Maximum primitives accepted in one mesh.
     pub max_primitives_per_mesh: NonZeroU32,
     /// Maximum expanded triangle vertices in one mesh.
@@ -52,6 +60,12 @@ impl Default for AssetLimits {
             max_buffer_views: NonZeroU32::new(256).expect("constant is non-zero"),
             max_accessors: NonZeroU32::new(256).expect("constant is non-zero"),
             max_materials: NonZeroU32::new(256).expect("constant is non-zero"),
+            max_texture_dimension_2d: NonZeroU32::new(2_048).expect("constant is non-zero"),
+            max_texture_pixels: NonZeroU64::new(4_194_304).expect("constant is non-zero"),
+            max_texture_decoded_bytes: NonZeroU64::new(16 * 1_024 * 1_024)
+                .expect("constant is non-zero"),
+            max_texture_decoder_bytes: NonZeroU64::new(4 * 1_024 * 1_024)
+                .expect("constant is non-zero"),
             max_primitives_per_mesh: NonZeroU32::new(1).expect("constant is non-zero"),
             max_vertices_per_mesh: NonZeroU32::new(262_144).expect("constant is non-zero"),
             max_indices_per_mesh: NonZeroU32::new(786_432).expect("constant is non-zero"),
@@ -121,6 +135,8 @@ pub enum AssetDiagnosticCode {
     InvalidNormal,
     /// A decoded primary texture coordinate is non-finite or inconsistent with its positions.
     InvalidTexcoord,
+    /// Embedded image bytes are malformed, truncated, or inconsistent with their PNG header.
+    InvalidImage,
     /// A decoded index is outside its position accessor.
     InvalidIndex,
     /// A configured mesh, primitive, vertex, or index count was exceeded.
@@ -195,6 +211,7 @@ pub struct AssetMaterial {
     base_color: [UnitF32; 4],
     metallic: UnitF32,
     roughness: UnitF32,
+    has_base_color_texture: bool,
 }
 
 impl AssetMaterial {
@@ -205,7 +222,13 @@ impl AssetMaterial {
             base_color,
             metallic,
             roughness,
+            has_base_color_texture: false,
         }
+    }
+
+    pub(crate) const fn with_base_color_texture(mut self) -> Self {
+        self.has_base_color_texture = true;
+        self
     }
 
     /// Returns the imported linear base color.
@@ -225,6 +248,54 @@ impl AssetMaterial {
     pub const fn roughness(self) -> UnitF32 {
         self.roughness
     }
+
+    /// Returns whether this material samples the asset's shared base-color texture.
+    #[must_use]
+    pub const fn has_base_color_texture(self) -> bool {
+        self.has_base_color_texture
+    }
+}
+
+/// One immutable decoded sRGB base-color image in tightly packed RGBA8 rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssetTexture {
+    width: NonZeroU32,
+    height: NonZeroU32,
+    rgba8: Arc<[u8]>,
+}
+
+impl AssetTexture {
+    pub(crate) fn new(width: NonZeroU32, height: NonZeroU32, rgba8: Arc<[u8]>) -> Self {
+        Self {
+            width,
+            height,
+            rgba8,
+        }
+    }
+
+    /// Returns the image width in pixels.
+    #[must_use]
+    pub const fn width(&self) -> u32 {
+        self.width.get()
+    }
+
+    /// Returns the image height in pixels.
+    #[must_use]
+    pub const fn height(&self) -> u32 {
+        self.height.get()
+    }
+
+    /// Returns tightly packed top-to-bottom RGBA8 texels.
+    #[must_use]
+    pub fn rgba8(&self) -> &[u8] {
+        &self.rgba8
+    }
+
+    /// Returns the exact retained and upload texel bytes.
+    #[must_use]
+    pub fn byte_len(&self) -> u64 {
+        u64::try_from(self.rgba8.len()).unwrap_or(u64::MAX)
+    }
 }
 
 /// Immutable upload-ready expanded triangle mesh.
@@ -233,6 +304,7 @@ pub struct AssetUploadJob {
     key: AssetMeshKey,
     vertices: Arc<[AssetVertex]>,
     material: AssetMaterial,
+    texture: Option<AssetTexture>,
 }
 
 impl AssetUploadJob {
@@ -240,11 +312,13 @@ impl AssetUploadJob {
         key: AssetMeshKey,
         vertices: Arc<[AssetVertex]>,
         material: AssetMaterial,
+        texture: Option<AssetTexture>,
     ) -> Self {
         Self {
             key,
             vertices,
             material,
+            texture,
         }
     }
 
@@ -272,6 +346,12 @@ impl AssetUploadJob {
         self.material
     }
 
+    /// Returns the immutable shared texture when this mesh's material references it.
+    #[must_use]
+    pub const fn base_color_texture(&self) -> Option<&AssetTexture> {
+        self.texture.as_ref()
+    }
+
     /// Returns exact GPU vertex bytes required by this interleaved mesh.
     #[must_use]
     pub fn byte_len(&self) -> u64 {
@@ -290,6 +370,7 @@ pub(crate) struct DecodedMesh {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DecodedAsset {
     pub(crate) meshes: Vec<DecodedMesh>,
+    pub(crate) texture: Option<AssetTexture>,
     pub(crate) byte_len: u64,
 }
 

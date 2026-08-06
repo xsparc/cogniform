@@ -86,8 +86,9 @@ world translation with capped inverse-square attenuation and exact-zero
 distance safety. Both apply one bounded direct metallic-roughness response
 through the same draw path, using the selected camera translation for the view
 direction; no active light of either kind preserves exact unlit output.
-Textures, configurable point range/radius, image-based lighting, encoding,
-shared memory, and remote delivery remain later slices.
+Additional texture roles and sampling policy, configurable point range/radius,
+image-based lighting, encoding, shared memory, and remote delivery remain
+later slices.
 
 ## Validation
 

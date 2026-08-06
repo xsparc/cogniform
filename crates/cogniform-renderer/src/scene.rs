@@ -325,6 +325,8 @@ impl RenderScene {
                     )
                 },
             );
+            let use_imported_texture = entity.material().is_none()
+                && imported_material.is_some_and(AssetMaterial::has_base_color_texture);
             draws.push(PreparedDraw {
                 geometry,
                 model,
@@ -333,6 +335,7 @@ impl RenderScene {
                 camera_position,
                 metallic,
                 roughness,
+                use_imported_texture,
                 compact_id: compact_id.get(),
             });
             id_lookup.insert(compact_id.get(), entity_id);
@@ -447,6 +450,7 @@ pub(crate) struct PreparedDraw {
     pub(crate) camera_position: [f32; 3],
     pub(crate) metallic: f32,
     pub(crate) roughness: f32,
+    pub(crate) use_imported_texture: bool,
     pub(crate) compact_id: u32,
 }
 

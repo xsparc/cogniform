@@ -18,10 +18,11 @@ scene revision that produced it.
 > deterministic primitive imagination compiler are also available. The current
 > asset baseline adds content-addressed GLB geometry with optional finite vertex
 > normals, one retained finite primary coordinate set, and unit-bounded numeric
-> metallic-roughness materials, exact bounded caller-driven CPU decode and GPU
-> upload, plus pure seeded cuboid-grid
-> procedures. Imported material values drive the existing direct-light path
-> when the entity has no explicit scene material. The local
+> metallic-roughness materials, plus one bounded embedded PNG base-color
+> texture. Exact caller-driven CPU decode and explicit GPU upload remain
+> separate; sampled sRGB RGBA multiplies the imported factor and drives the
+> existing direct-light path when the entity has no explicit scene material.
+> The baseline also includes pure seeded cuboid-grid procedures. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, and executes supported pure procedures through
 > the ordinary patch admission and replay path. A bounded
@@ -57,7 +58,7 @@ implementations arrive:
 |---|---|
 | `cogniform-protocol` | Backend-neutral IDs, patches, receipts, limits, and observations |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/primary-coordinate/material decoding, and immutable upload jobs |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/primary-coordinate/material/embedded-PNG decoding, and immutable upload jobs |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |
@@ -88,7 +89,7 @@ machine-readable payloads. The
 command admission, idempotency, deterministic compilation, and logical queries.
 The [GLB asset guide](docs/assets/glb-subset.md) documents exact source
 admission, the approved format subset, lifecycle, capacity limits, proxy policy,
-and controlled GPU validation. The
+texture sampling contract, and controlled GPU validation. The
 [local service guide](docs/protocol/local-service.md) documents the in-process
 composition boundary and known limitations, while the
 [canonical scenario guide](docs/getting-started/canonical-scenario.md) provides

@@ -24,10 +24,17 @@ struct DrawUniform {
 @group(0) @binding(0)
 var<uniform> draw: DrawUniform;
 
+@group(0) @binding(1)
+var base_color_texture: texture_2d<f32>;
+
+@group(0) @binding(2)
+var base_color_sampler: sampler;
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) world_normal: vec3<f32>,
     @location(1) world_position: vec3<f32>,
+    @location(2) texcoord_0: vec2<f32>,
 };
 
 struct FragmentOutput {
@@ -63,6 +70,7 @@ fn direct_material_response(
     surface_to_light: vec3<f32>,
     surface_to_view: vec3<f32>,
     has_view: bool,
+    base_color: vec3<f32>,
 ) -> vec3<f32> {
     let normal_light = clamp(dot(world_normal, surface_to_light), 0.0, 1.0);
     if normal_light <= 0.0 {
@@ -71,7 +79,7 @@ fn direct_material_response(
 
     let metallic = draw.material.x;
     let roughness = draw.material.y;
-    let normal_reflectance = mix(vec3(0.04), draw.color.rgb, vec3(metallic));
+    let normal_reflectance = mix(vec3(0.04), base_color, vec3(metallic));
     var fresnel = normal_reflectance;
     var specular = vec3(0.0);
 
@@ -96,7 +104,7 @@ fn direct_material_response(
     }
 
     let diffuse_weight = (vec3(1.0) - fresnel) * (1.0 - metallic);
-    let diffuse = diffuse_weight * draw.color.rgb / PI;
+    let diffuse = diffuse_weight * base_color / PI;
     return (diffuse + specular) * normal_light;
 }
 
@@ -104,7 +112,7 @@ fn direct_material_response(
 fn vs_main(
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    @location(2) _texcoord_0: vec2<f32>,
+    @location(2) texcoord_0: vec2<f32>,
 ) -> VertexOutput {
     var output: VertexOutput;
     let world_position = draw.model * vec4(position, 1.0);
@@ -130,6 +138,7 @@ fn vs_main(
     output.position = draw.view_projection * world_position;
     output.world_normal = normal_matrix * normal;
     output.world_position = world_position.xyz;
+    output.texcoord_0 = texcoord_0;
     return output;
 }
 
@@ -137,7 +146,9 @@ fn vs_main(
 fn fs_main(input: VertexOutput) -> FragmentOutput {
     var output: FragmentOutput;
     let world_normal = normalize(input.world_normal);
-    var shaded_color = draw.color.rgb;
+    let base_color = textureSample(base_color_texture, base_color_sampler, input.texcoord_0)
+        * draw.color;
+    var shaded_color = base_color.rgb;
     if draw.directional_light_count.x > 0u || draw.point_light_count.x > 0u {
         shaded_color = vec3(0.0);
         let to_view = draw.camera_position.xyz - input.world_position;
@@ -158,6 +169,7 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
                 light.surface_to_light.xyz,
                 surface_to_view,
                 has_view,
+                base_color.rgb,
             );
             let contribution = min(
                 response * min(
@@ -185,6 +197,7 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
                         surface_to_light,
                         surface_to_view,
                         has_view,
+                        base_color.rgb,
                     );
                     let contribution = min(
                         response * light.color_intensity.rgb * attenuated_intensity,
@@ -195,7 +208,7 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
             }
         }
     }
-    output.color = vec4(shaded_color, draw.color.a);
+    output.color = vec4(shaded_color, base_color.a);
     output.entity_id = draw.entity_id.x;
     output.normal = vec4(world_normal * 0.5 + vec3(0.5), 1.0);
     return output;

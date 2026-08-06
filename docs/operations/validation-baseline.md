@@ -26,6 +26,9 @@ CF027 imported GLB material retention, override precedence, and controlled
 direct-light evidence was collected on that profile on 2026-08-06.
 CF028 primary-coordinate retention, exact 32-byte layout, and controlled
 whole-frame equivalence evidence was collected on that profile on 2026-08-06.
+CF029 bounded embedded PNG decode, shared texture residency, sampled
+base-color-factor/override behavior, and exact-hash textured rehydration
+evidence was collected on that profile on 2026-08-06.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -35,7 +38,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded sRGB base-color texture orientation/factor/override and shared-residency response, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -45,8 +48,9 @@ untested hardware.
 The renderer is capability based. An adapter must satisfy the configured target
 dimensions, buffer bounds, attachment count, and render/copy usage for RGBA8
 color, Depth32Float depth, R32Uint identity, and RGBA8 signed normal targets
-before device creation. The normal path requires three color attachments and
-twelve color-attachment bytes per sample.
+before device creation, plus copy-destination, sampled binding, and filterable
+sampling for sRGB RGBA8 asset textures. The normal path requires three color
+attachments and twelve color-attachment bytes per sample.
 The validated GPU above is evidence that one adapter meets the contract; it does
 not impose a specific GPU model or driver version on future entries.
 
@@ -273,6 +277,31 @@ an unused indexed source coordinate, non-finite/count/range rejection without
 proxy, unsupported-encoding proxy behavior, renderer location 2, and the exact
 1,152/192/21,504-byte built-in payloads. This adds no image decode, sampler,
 texture, shader-sampling, schema, adapter, dependency, or performance claim.
+
+## Controlled embedded base-color texture commands
+
+The focused CF029 adapter and service-recovery checks passed in the optimized
+profile:
+
+```text
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact embedded_base_color_texture_preserves_orientation_factor_override_and_residency
+cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work
+```
+
+One source shared a 2x2 RGBA texture across two meshes. Before processing, the
+renderer reserved one unique 16-byte texture; the first explicit upload created
+it and the second reused it. Exact center probes pinned top-left then bottom-left
+row orientation, sRGB-to-linear sampling, base-color RGB/alpha multiplication,
+direct-light distinction, and full scene-material override. Depth, exact
+identity, quantized normal, and background remained stable. The recovery check
+proved a restored logical reference begins without CPU/GPU asset state and
+resumes only after explicit exact-byte import and texture upload, with no
+revision, logical-hash, or replay change. CPU tests separately pin RGB-to-RGBA
+expansion, malformed/truncated PNG rejection, strict references and resource
+shape, dimension/pixel/decoder/decoded/residency limits, unsupported-feature
+proxy classification, exact byte accounting, and pre-allocation GPU texture
+reservations. This adds no adapter, image-format, sampler, texture-role,
+schema, performance, deployment, or release claim.
 
 ## Controlled service-restoration command
 

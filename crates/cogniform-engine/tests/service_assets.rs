@@ -135,6 +135,67 @@ fn local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset() {
     });
 }
 
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work() {
+    pollster::block_on(async {
+        let config = LocalServiceConfig::new(WIDTH, HEIGHT);
+        let bytes = textured_fixture();
+        let hash = content_hash(&bytes);
+        let key = AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        };
+        let camera = StableEntityId::new(1).unwrap();
+        let triangle = StableEntityId::new(2).unwrap();
+        let mut service = LocalService::new(config.clone()).await.unwrap();
+        service.enqueue_asset_source(hash, bytes.clone()).unwrap();
+        assert_eq!(
+            service.process_next_asset_import().unwrap().state,
+            AssetState::Ready
+        );
+        service.enqueue_asset_upload(key).unwrap();
+        let uploaded = service.process_next_asset_upload().unwrap();
+        assert!(uploaded.texture_uploaded);
+        assert_eq!(uploaded.texture_byte_len, 4);
+        assert_eq!(service.asset_status().renderer.resident_textures, 1);
+        assert_eq!(service.asset_status().renderer.resident_texture_bytes, 4);
+        service
+            .submit_patch(scene_patch(camera, triangle, hash))
+            .unwrap();
+        service.process_next().unwrap().unwrap();
+        let expected_hash = service.logical_hash().unwrap();
+        let expected_replay = service.replay_bytes();
+        let recovery = service.recovery_point().unwrap();
+        drop(service);
+
+        let mut restored = LocalService::restore(config, &recovery).await.unwrap();
+        assert_empty_asset_status(&restored);
+        assert!(matches!(
+            restored.request_observation(request(10, camera)),
+            Err(LocalServiceError::Engine(error))
+                if matches!(
+                    error.as_ref(),
+                    EngineError::Renderer(RendererError::AssetUnavailable { key: missing, .. })
+                        if *missing == key
+                )
+        ));
+        restored.enqueue_asset_source(hash, bytes).unwrap();
+        assert_eq!(
+            restored.process_next_asset_import().unwrap().state,
+            AssetState::Ready
+        );
+        restored.enqueue_asset_upload(key).unwrap();
+        let rehydrated_upload = restored.process_next_asset_upload().unwrap();
+        assert!(rehydrated_upload.texture_uploaded);
+        assert_eq!(restored.asset_status().renderer.resident_textures, 1);
+        assert_eq!(restored.logical_hash().unwrap(), expected_hash);
+        assert_eq!(restored.replay_bytes(), expected_replay);
+        restored.request_observation(request(11, camera)).unwrap();
+        assert_center_entity(&wait_for_observation(&restored), triangle);
+    });
+}
+
 fn assert_hash_mismatch_is_capacity_neutral(
     service: &mut LocalService,
     hash: cogniform_protocol::ContentHash,
@@ -160,6 +221,10 @@ fn assert_empty_asset_status(service: &LocalService) {
     assert_eq!(status.renderer.pending_bytes, 0);
     assert_eq!(status.renderer.resident_meshes, 0);
     assert_eq!(status.renderer.resident_bytes, 0);
+    assert_eq!(status.renderer.pending_textures, 0);
+    assert_eq!(status.renderer.pending_texture_bytes, 0);
+    assert_eq!(status.renderer.resident_textures, 0);
+    assert_eq!(status.renderer.resident_texture_bytes, 0);
 }
 
 fn assert_asset_reference(
@@ -281,6 +346,59 @@ fn decode_hex(value: &str) -> Vec<u8> {
         .chunks_exact(2)
         .map(|pair| u8::from_str_radix(core::str::from_utf8(pair).unwrap(), 16).unwrap())
         .collect()
+}
+
+fn textured_fixture() -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.5_f32, 0.5]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let mut png_bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png_bytes, 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&[128, 64, 32, 255]).unwrap();
+    }
+    let image_offset = binary.len();
+    binary.extend_from_slice(&png_bytes);
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":2,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0}}]}}]}}"#,
+        binary_length = binary.len(),
+        image_length = png_bytes.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn glb_with_json(json: &str, binary: &[u8]) -> Vec<u8> {
+    let mut json = json.as_bytes().to_vec();
+    json.resize(json.len().next_multiple_of(4), b' ');
+    let mut binary = binary.to_vec();
+    binary.resize(binary.len().next_multiple_of(4), 0);
+    let length = 12 + 8 + json.len() + 8 + binary.len();
+    let mut output = Vec::with_capacity(length);
+    output.extend_from_slice(b"glTF");
+    output.extend_from_slice(&2_u32.to_le_bytes());
+    output.extend_from_slice(&u32::try_from(length).unwrap().to_le_bytes());
+    output.extend_from_slice(&u32::try_from(json.len()).unwrap().to_le_bytes());
+    output.extend_from_slice(&0x4e4f_534a_u32.to_le_bytes());
+    output.extend_from_slice(&json);
+    output.extend_from_slice(&u32::try_from(binary.len()).unwrap().to_le_bytes());
+    output.extend_from_slice(&0x004e_4942_u32.to_le_bytes());
+    output.extend_from_slice(&binary);
+    output
 }
 
 fn finite(value: f32) -> FiniteF32 {

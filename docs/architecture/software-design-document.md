@@ -225,12 +225,16 @@ are clamped in linear color space, and alpha remains unchanged.
 Zero-intensity definitions count toward their kind's capacity but are inactive.
 Only a scene with no active definition of either kind bypasses lighting and
 preserves exact base RGBA. A resident GLB mesh supplies its imported base
-color, metallic, and roughness when the entity has no explicit material; a
-scene `MaterialComponent` overrides all three values together. A built-in or
-material-free asset without a scene material uses its existing fallback color
-with neutral dielectric parameters `metallic = 0`, `roughness = 0.8`. Ambient,
-emissive, image-based lighting, shadows, spot lights, configurable point
-range/radius, textures, HDR, and tone mapping are outside this baseline. A
+color, optional base-color texture, metallic, and roughness when the entity has
+no explicit material. The shader samples the single `Rgba8UnormSrgb` image
+through a fixed repeat/linear one-mip sampler and multiplies sampled linear
+RGBA by the numeric base-color factor before either shading path. Untextured
+draws use a neutral white fallback. A scene `MaterialComponent` overrides the
+whole imported material and disables its texture. A built-in or material-free
+asset without a scene material uses its existing fallback color with neutral
+dielectric parameters `metallic = 0`, `roughness = 0.8`. Ambient, emissive,
+image-based lighting, shadows, spot lights, configurable point range/radius,
+other texture roles, HDR, and tone mapping are outside this baseline. A
 fixed 480-byte per-draw uniform preserves the prior 448-byte model, view-projection,
 material-color, identity, directional, and point-light prefix and appends
 zero-padded camera-position and metallic/roughness slots. A fifth definition
@@ -249,7 +253,27 @@ GPU layouts are explicit and asserted. `bytemuck::Pod` is used only for types wi
 
 ### 4.2 Assets
 
-Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset with finite positions, optional same-count finite vertex normals, optional same-count finite f32 `TEXCOORD_0`, and one bounded numeric metallic-roughness material per mesh. Decoders verify declared and decoded sizes before allocation; expanded upload vertices always reserve exactly 32 bytes for position, unit normal, and primary coordinate, synthesizing a winding-derived direction or exact zero coordinate when the source omits one. The renderer reserves shader location 2 for the coordinate but does not sample it, so current outputs remain unchanged. Material metadata travels with the immutable upload job but does not change vertex-byte or GPU-residency accounting. The local service owns bounded CPU asset state and explicitly forwards immutable upload jobs into renderer-owned residency; neither patches nor frames perform implicit asset work. Recovery preserves logical content references but starts CPU and GPU asset state empty, so callers must rehydrate exact matching bytes before dependent rendering resumes. An opt-in storage adapter can retain one exact source in a separate immutable bounded file, but it neither maps that file to recovery state nor decodes, imports, uploads, or schedules the source. Unsupported extensions produce structured diagnostics or approved proxies; malformed normal, primary-coordinate, or material data cannot proxy.
+Runtime assets are immutable and addressed by cryptographic content hash. The
+MVP accepts primitives first, then a bounded glTF/GLB subset with finite
+positions, optional same-count finite vertex normals, optional same-count
+finite f32 `TEXCOORD_0`, one bounded numeric metallic-roughness material per
+mesh, and at most one shared embedded PNG base-color texture. The image subset
+is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
+retained-byte, decoder-working-byte, per-asset, and aggregate CPU limits into
+one immutable RGBA8 value. Decoders verify declared and decoded sizes before
+allocation; expanded upload vertices always reserve exactly 32 bytes for
+position, unit normal, and primary coordinate, synthesizing a winding-derived
+direction or exact zero coordinate when the source omits one. The local service
+owns bounded CPU asset state and explicitly forwards immutable upload jobs into
+renderer-owned mesh and unique texture residency; neither patches nor frames
+perform implicit asset work. Recovery preserves logical content references but
+starts CPU and GPU asset state empty, so callers must rehydrate exact matching
+bytes before dependent rendering resumes. An opt-in storage adapter can retain
+one exact source in a separate immutable bounded file, but it neither maps that
+file to recovery state nor decodes, imports, uploads, or schedules the source.
+Unsupported extensions and valid out-of-subset image features produce
+structured diagnostics or approved proxies; malformed normal,
+primary-coordinate, material, image, or over-limit data cannot proxy.
 
 Built-in procedures are pure synchronous preparation functions. The local
 service executes a supported typed request under active runtime limits and
@@ -327,8 +351,8 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Machine outputs | Entity-ID probes are exact; exact unlit and tolerant direct-material color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
-| Asset safety | Hash mismatch, oversized decode, and unsupported features fail with structured diagnostics |
-| Asset resolution | The local service explicitly imports and uploads bounded content-addressed meshes; recovered logical references remain unavailable until exact-hash rehydration without another world mutation |
+| Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |
+| Asset resolution | The local service explicitly imports and uploads bounded content-addressed meshes and shared textures; recovered logical references remain unavailable until exact-hash rehydration without another world mutation |
 | Procedure composition | The local service produces deterministic stable IDs, queues an ordinary generated patch without immediate mutation, and preserves query/replay/hash/idempotency behavior across restoration |
 | End to end | Canonical room/table/light/camera scenario passes unattended |
 
@@ -338,7 +362,7 @@ CF009 resolves the initial candidate packaging and validation profile in
 [ADR 0010](../adr/0010-source-first-release-profile.md): source-first, no
 publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
-artifacts, textured/tangent-space normals and the remaining visual-quality surface, remote
+artifacts, additional texture roles/tangent-space normals and the remaining visual-quality surface, remote
 protocol/authentication, tenancy, observation retention, automatic startup,
 recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic
