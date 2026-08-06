@@ -24,6 +24,8 @@ and updated canonical Point-light evidence was collected on that profile on
 2026-08-06.
 CF027 imported GLB material retention, override precedence, and controlled
 direct-light evidence was collected on that profile on 2026-08-06.
+CF028 primary-coordinate retention, exact 32-byte layout, and controlled
+whole-frame equivalence evidence was collected on that profile on 2026-08-06.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -253,6 +255,24 @@ the existing material-free and proxy neutral defaults, unit-range rejection,
 exact 24-byte vertex accounting, immutable upload metadata, and all-value override
 precedence. This adds no supported adapter, GPU buffer, shader/pipeline,
 texture surface, schema, dependency, or performance claim.
+
+## Controlled primary-coordinate command
+
+The focused CF028 adapter check passed in the optimized profile:
+
+```text
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact primary_texcoords_are_retained_without_changing_rendered_observations
+```
+
+One GLB retained three exact finite f32 `TEXCOORD_0` values, including values
+outside the unit interval, through decode and the exact 32-byte upload layout.
+Its frame matched the equivalent coordinate-free fixture at every pixel for
+color, depth, stable identity, and world-space normal, including background.
+CPU tests separately pin indexed expansion, exact zero defaults, validation of
+an unused indexed source coordinate, non-finite/count/range rejection without
+proxy, unsupported-encoding proxy behavior, renderer location 2, and the exact
+1,152/192/21,504-byte built-in payloads. This adds no image decode, sampler,
+texture, shader-sampling, schema, adapter, dependency, or performance claim.
 
 ## Controlled service-restoration command
 

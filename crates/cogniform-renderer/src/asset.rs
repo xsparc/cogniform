@@ -237,6 +237,7 @@ fn encode_vertices(vertices: &[cogniform_assets::AssetVertex]) -> Vec<u8> {
                 .position
                 .iter()
                 .chain(&vertex.normal)
+                .chain(&vertex.texcoord_0)
                 .flat_map(|value| value.get().to_le_bytes())
         })
         .collect()
@@ -255,7 +256,8 @@ impl std::fmt::Debug for RendererAssets {
 mod tests {
     use core::num::{NonZeroU32, NonZeroU64};
 
-    use cogniform_assets::{AssetMeshKey, AssetStore, content_hash};
+    use cogniform_assets::{AssetMeshKey, AssetStore, AssetVertex, content_hash};
+    use cogniform_protocol::FiniteF32;
 
     use super::*;
 
@@ -280,36 +282,34 @@ mod tests {
     }
 
     #[test]
-    fn upload_vertices_are_interleaved_position_then_normal() {
-        let upload = fixture_upload(false);
-        let encoded = encode_vertices(upload.vertices());
-        assert_eq!(u64::try_from(encoded.len()).unwrap(), upload.byte_len());
+    fn upload_vertices_are_interleaved_position_normal_then_texcoord() {
+        let finite = |value| FiniteF32::new(value).unwrap();
+        let vertex = AssetVertex {
+            position: [finite(1.0), finite(2.0), finite(3.0)],
+            normal: [finite(0.0), finite(0.0), finite(1.0)],
+            texcoord_0: [finite(-0.25), finite(1.25)],
+        };
+        let encoded = encode_vertices(&[vertex]);
+        assert_eq!(encoded.len(), 32);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
-        let first = upload.vertices()[0];
-        let expected = first
-            .position
-            .iter()
-            .chain(&first.normal)
-            .map(|value| value.get())
-            .collect::<Vec<_>>();
-        assert_eq!(&values[..6], expected);
+        assert_eq!(values, [1.0, 2.0, 3.0, 0.0, 0.0, 1.0, -0.25, 1.25]);
     }
 
     #[test]
     fn exact_interleaved_bytes_are_rejected_before_gpu_allocation() {
         let upload = fixture_upload(false);
-        assert_eq!(upload.byte_len(), 72);
+        assert_eq!(upload.byte_len(), 96);
         let config =
-            RendererConfig::new(64, 64).with_max_asset_mesh_bytes(NonZeroU64::new(71).unwrap());
+            RendererConfig::new(64, 64).with_max_asset_mesh_bytes(NonZeroU64::new(95).unwrap());
         let mut assets = RendererAssets::new();
         assert!(matches!(
             assets.enqueue(upload, &config),
             Err(RendererError::AssetMeshBytesExceeded {
-                actual: 72,
-                limit: 71,
+                actual: 96,
+                limit: 95,
                 ..
             })
         ));

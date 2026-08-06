@@ -33,7 +33,8 @@ RGBA color `[51, 153, 230, 255]`, and a fixed orthographic camera with a small
 view shear. The background entity ID is `0`, cleared depth is `1.0`, and
 normal alpha `0` marks background. The centered cube contains 12
 non-degenerate outward counter-clockwise triangles, 36 expanded vertices, and
-exact axis-aligned source normals in one fixed 864-byte payload. The reference
+exact axis-aligned source normals plus zero primary coordinates in one fixed
+1,152-byte payload. The reference
 projection selects its near negative-Z face at the center, so that probe must
 report an outward negative-Z normal.
 
@@ -41,7 +42,7 @@ Extracted built-in geometry supports cuboids, planes, and spheres. A plane is a
 centered unit square at local Z = 0, expanded as two counter-clockwise XY
 triangles with a positive-Z unit normal. Its positive XYZ dimensions scale the
 full model: X and Y control visible size and Z participates in normal
-transformation without creating thickness. One fixed 144-byte plane vertex
+transformation without creating thickness. One fixed 192-byte plane vertex
 payload is allocated at renderer initialization; frames do not tessellate or
 upload it. The baseline pipeline does not cull the back side and does not flip
 its source normal.
@@ -49,11 +50,21 @@ its source normal.
 A sphere is centered, unit diameter, and uses a positive-Z polar axis. Its
 fixed 16 longitude sectors and 8 latitude bands form 224 non-degenerate
 outward counter-clockwise triangles, expanded to 672 vertices with unit radial
-normals in the same 24-byte layout. The exact 16,128-byte payload is generated
+normals and zero primary coordinates in the same 32-byte layout. The exact
+21,504-byte payload is generated
 once at renderer initialization. XYZ dimensions are bounding diameters, so
 non-uniform values produce an ellipsoid and the existing inverse-transpose
-normal path preserves the smooth direction. Sphere topology supplies no UV
-attribute, and frames perform no built-in tessellation or upload.
+normal path preserves the smooth direction. Sphere topology supplies exact
+zero primary coordinates, and frames perform no built-in tessellation or
+upload.
+
+Imported vertices use the same 32-byte position, normal, and primary-coordinate
+layout. An optional non-normalized finite f32 `TEXCOORD_0` reaches shader
+location 2; missing asset coordinates, built-ins, and proxy vertices use exact
+zero. The current WGSL accepts but never reads that location, so coordinates do
+not affect color, depth, identity, normals, background, or causality. Images,
+samplers, textures, transforms, additional coordinate sets, and sampling remain
+unsupported.
 
 Lighting is one fixed direct metallic-roughness baseline. A directional light
 emits along its transformed local negative-Z axis; transformed positive Z is
@@ -152,6 +163,7 @@ cargo test -p cogniform-renderer --test headless_reference --locked --offline --
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_normals_are_inverse_transformed_and_observable
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_material_factors_drive_direct_light_and_scene_override
+cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact primary_texcoords_are_retained_without_changing_rendered_observations
 ```
 
 The integration tests render at 64 by 64 pixels, verify exact object and
@@ -161,7 +173,8 @@ sphere depth and radial normals, and smooth normals under non-uniform scale usin
 tolerances, verify scene and imported dielectric/metallic/roughness response,
 exact unlit compatibility, scene-material override precedence, front- and
 back-facing response, and near/far Point attenuation without changing
-identity/depth/normals, validate output
+identity/depth/normals. They also compare every output sample between matching
+GLBs with missing versus retained primary coordinates, validate output
 lengths and bounds behavior, and require the selected backend to be DX12 or
 Vulkan. Normal workspace CI compiles these tests
 but leaves it ignored;
@@ -188,5 +201,8 @@ the direct material response, camera/material uniform, and unlit-compatibility
 rules.
 See [ADR 0027](../adr/0027-imported-glb-metallic-roughness-materials.md) for
 the imported numeric material, default, override, and byte-accounting rules.
+See [ADR 0028](../adr/0028-bounded-primary-texture-coordinates.md) for the
+primary-coordinate validation, zero-default, layout, and visual-compatibility
+rules.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

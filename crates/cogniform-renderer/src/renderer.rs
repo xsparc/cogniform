@@ -24,15 +24,17 @@ const ENTITY_ID_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 const NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const BYTES_PER_PIXEL: u32 = 4;
 const COPY_ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-const VERTEX_BYTES: usize = 24;
+// The shared ABI constant is fixed at 32 and fits every supported pointer width.
+#[allow(clippy::cast_possible_truncation)]
+const VERTEX_BYTES: usize = cogniform_assets::ASSET_VERTEX_BYTES as usize;
 const CUBE_VERTEX_COUNT: u32 = 36;
 const PLANE_VERTEX_COUNT: u32 = 6;
 const SPHERE_LONGITUDE_SECTORS: u16 = 16;
 const SPHERE_LATITUDE_BANDS: u16 = 8;
 const SPHERE_VERTEX_COUNT: u32 = 672;
 const SPHERE_RADIUS: f32 = 0.5;
-const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
 const CUBE_POSITIONS: [[f32; 3]; 36] = [
     [-0.5, -0.5, -0.5],
     [0.5, 0.5, -0.5],
@@ -558,7 +560,7 @@ async fn create_reference_pipeline(
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[Some(wgpu::VertexBufferLayout {
-                array_stride: 24,
+                array_stride: cogniform_assets::ASSET_VERTEX_BYTES,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &ASSET_VERTEX_ATTRIBUTES,
             })],
@@ -1102,7 +1104,7 @@ fn encode_sphere_triangle(encoded: &mut Vec<u8>, normals: [[f32; 3]; 3]) {
 }
 
 fn encode_vertex(encoded: &mut Vec<u8>, position: [f32; 3], normal: [f32; 3]) {
-    for value in position.iter().chain(&normal) {
+    for value in position.iter().chain(&normal).chain(&[0.0, 0.0]) {
         encoded.extend_from_slice(&value.to_le_bytes());
     }
 }
@@ -1340,15 +1342,15 @@ mod tests {
             CUBE_POSITIONS.len()
         );
         assert_eq!(CUBE_POSITIONS.len() / 3, 12);
-        assert_eq!(encoded.len(), 864);
+        assert_eq!(encoded.len(), 1_152);
         assert_eq!(encoded.len(), CUBE_POSITIONS.len() * VERTEX_BYTES);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
         let vertices = values
-            .chunks_exact(6)
-            .map(|vertex| <[f32; 6]>::try_from(vertex).unwrap())
+            .chunks_exact(8)
+            .map(|vertex| <[f32; 8]>::try_from(vertex).unwrap())
             .collect::<Vec<_>>();
         let mut face_triangle_counts = [0_u8; 6];
 
@@ -1358,6 +1360,7 @@ mod tests {
                     .iter()
                     .all(|value| value.to_bits() & 0x7fff_ffff == 0.5_f32.to_bits())
             );
+            assert_eq!(&vertex[6..], &[0.0, 0.0]);
         }
 
         for triangle in vertices.chunks_exact(3) {
@@ -1365,8 +1368,8 @@ mod tests {
             let second = [triangle[1][0], triangle[1][1], triangle[1][2]];
             let third = [triangle[2][0], triangle[2][1], triangle[2][2]];
             let normal = [triangle[0][3], triangle[0][4], triangle[0][5]];
-            assert_eq!(&triangle[1][3..], normal.as_slice());
-            assert_eq!(&triangle[2][3..], normal.as_slice());
+            assert_eq!(&triangle[1][3..6], normal.as_slice());
+            assert_eq!(&triangle[2][3..6], normal.as_slice());
 
             let edge_a = subtract(second, first);
             let edge_b = subtract(third, first);
@@ -1439,14 +1442,16 @@ mod tests {
             usize::try_from(PLANE_VERTEX_COUNT).unwrap(),
             PLANE_POSITIONS.len()
         );
-        assert_eq!(encoded.len(), PLANE_POSITIONS.len() * 24);
+        assert_eq!(encoded.len(), 192);
+        assert_eq!(encoded.len(), PLANE_POSITIONS.len() * VERTEX_BYTES);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
-        for (vertex, position) in values.chunks_exact(6).zip(PLANE_POSITIONS) {
+        for (vertex, position) in values.chunks_exact(8).zip(PLANE_POSITIONS) {
             assert_eq!(&vertex[..3], &position);
-            assert_eq!(&vertex[3..], &[0.0, 0.0, 1.0]);
+            assert_eq!(&vertex[3..6], &[0.0, 0.0, 1.0]);
+            assert_eq!(&vertex[6..], &[0.0, 0.0]);
         }
     }
 
@@ -1536,15 +1541,15 @@ mod tests {
         let expected_triangles =
             2 * usize::from(SPHERE_LONGITUDE_SECTORS) * usize::from(SPHERE_LATITUDE_BANDS - 1);
         assert_eq!(expected_triangles, 224);
-        assert_eq!(encoded.len(), 16_128);
+        assert_eq!(encoded.len(), 21_504);
         assert_eq!(encoded.len(), expected_vertices * VERTEX_BYTES);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
         let vertices = values
-            .chunks_exact(6)
-            .map(|vertex| <[f32; 6]>::try_from(vertex).unwrap())
+            .chunks_exact(8)
+            .map(|vertex| <[f32; 8]>::try_from(vertex).unwrap())
             .collect::<Vec<_>>();
         assert_eq!(vertices.len(), expected_vertices);
         assert_eq!(vertices.len() / 3, expected_triangles);
@@ -1576,6 +1581,7 @@ mod tests {
                 .zip(normal)
                 .map(|(position, normal)| position * normal)
                 .sum::<f32>();
+            assert_eq!(&vertex[6..], &[0.0, 0.0]);
             assert!((position_length - SPHERE_RADIUS).abs() <= 1.0e-5);
             assert!((normal_length - 1.0).abs() <= 1.0e-5);
             assert!((radial_alignment - SPHERE_RADIUS).abs() <= 1.0e-5);

@@ -2,7 +2,9 @@
 
 #![cfg(any(target_os = "windows", target_os = "linux"))]
 
-use cogniform_assets::{AssetMeshKey, AssetState, AssetStore, AssetVertex, content_hash};
+use cogniform_assets::{
+    ASSET_VERTEX_BYTES, AssetMeshKey, AssetState, AssetStore, AssetVertex, content_hash,
+};
 use cogniform_protocol::{
     AssetMeshComponent, CameraComponent, ColorRgb, ColorRgba, ComponentValue, ConflictPolicy,
     CreateEntity, DeliverySemantic, FiniteF32, FrameId, IdempotencyKey, LightComponent, LightKind,
@@ -92,6 +94,50 @@ fn approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal() {
         "normal must follow triangle winding: {normal:?}"
     );
     assert_eq!(frame.normal_at(0, 0), None);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn primary_texcoords_are_retained_without_changing_rendered_observations() {
+    let baseline = imported_frame(decode_hex(include_str!(
+        "../../../tests/assets/triangle.glb.hex"
+    )));
+    let bytes = primary_uv_fixture();
+    let content_hash = content_hash(&bytes);
+    let mut assets = AssetStore::default();
+    assets.enqueue(content_hash, bytes.clone()).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    let upload = assets
+        .upload_job(AssetMeshKey {
+            content_hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_eq!(upload.byte_len(), 3 * ASSET_VERTEX_BYTES);
+    for (vertex, expected) in
+        upload
+            .vertices()
+            .iter()
+            .zip([[-0.25, 1.25], [2.0, -3.0], [0.5, 0.75]])
+    {
+        assert_eq!(
+            vertex.texcoord_0.map(FiniteF32::get).map(f32::to_bits),
+            expected.map(f32::to_bits)
+        );
+    }
+
+    let with_texcoords = imported_frame(bytes);
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            assert_eq!(with_texcoords.color_at(x, y), baseline.color_at(x, y));
+            assert_eq!(with_texcoords.depth_at(x, y), baseline.depth_at(x, y));
+            assert_eq!(
+                with_texcoords.stable_entity_id_at(x, y),
+                baseline.stable_entity_id_at(x, y)
+            );
+            assert_eq!(with_texcoords.normal_at(x, y), baseline.normal_at(x, y));
+        }
+    }
 }
 
 #[test]
@@ -287,6 +333,39 @@ fn triangle_normal(vertices: &[AssetVertex]) -> [f32; 3] {
     normal
 }
 
+fn imported_frame(bytes: Vec<u8>) -> RenderedFrame {
+    let content_hash = content_hash(&bytes);
+    let key = AssetMeshKey {
+        content_hash,
+        mesh_index: 0,
+    };
+    let mut assets = AssetStore::default();
+    assets.enqueue(content_hash, bytes).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer
+        .enqueue_asset_upload(assets.upload_job(key).unwrap())
+        .unwrap();
+    renderer.process_next_asset_upload().unwrap();
+
+    let camera = StableEntityId::new(1).unwrap();
+    let triangle = StableEntityId::new(2).unwrap();
+    let mut world = AuthoritativeWorld::default();
+    world
+        .apply_patch(
+            &scene_patch(camera, triangle, content_hash, [1.0; 3]),
+            FrameId::new(1).unwrap(),
+        )
+        .unwrap();
+    renderer
+        .apply_extraction(&world.take_render_extraction().unwrap())
+        .unwrap();
+    renderer.submit_scene(camera).unwrap().read().unwrap()
+}
+
 fn assert_color_near(frame: &RenderedFrame, at: (u32, u32), expected_color: [u8; 4]) {
     let actual_color = frame.color_at(at.0, at.1).unwrap();
     for (actual, expected) in actual_color.into_iter().zip(expected_color) {
@@ -440,6 +519,24 @@ fn metallic_fixture() -> Vec<u8> {
         }
     }
     let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}],"materials":[{"pbrMetallicRoughness":{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":1.0,"roughnessFactor":0.5}}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0,"mode":4}]}]}"#;
+    glb_with_json(json, &binary)
+}
+
+fn primary_uv_fixture() -> Vec<u8> {
+    let positions = [[-0.75_f32, -0.5, 0.0], [0.75, -0.5, 0.0], [0.0, 0.75, 0.0]];
+    let texcoords = [[-0.25_f32, 1.25], [2.0, -3.0], [0.5, 0.75]];
+    let mut binary = Vec::with_capacity(60);
+    for position in positions {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in texcoords {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":60}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":24}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"},{"bufferView":1,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC2"}],"materials":[{"pbrMetallicRoughness":{"baseColorFactor":[0.2,0.6,0.9,1.0],"metallicFactor":0.0,"roughnessFactor":0.8}}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"TEXCOORD_0":1},"material":0,"mode":4}]}]}"#;
     glb_with_json(json, &binary)
 }
 
