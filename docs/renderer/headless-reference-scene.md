@@ -72,8 +72,10 @@ by metallic, and perceptual roughness is floored to `0.05` only in the GGX
 distribution to avoid a singular highlight. Each contribution and the shared
 sum are clamped in linear RGB; material alpha is preserved. If neither kind is
 active, the shader bypasses that response and preserves exact base RGBA. A
-missing material retains the existing fallback color with neutral dielectric
-`metallic = 0`, `roughness = 0.8`.
+resident GLB mesh supplies its imported base color, metallic, and roughness
+when the entity has no scene material. An explicit `MaterialComponent`
+overrides all three together. Built-in and material-free asset fallbacks retain
+the existing color with neutral dielectric `metallic = 0`, `roughness = 0.8`.
 
 The selected camera's extracted world translation supplies the view direction.
 A zero or derived-overflow view vector suppresses specular without creating a
@@ -147,16 +149,19 @@ cargo test -p cogniform-renderer --test headless_reference --locked --offline --
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact directional_light_modulates_front_and_back_facing_direct_color
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact point_light_applies_bounded_distance_and_facing_direct_shading
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact metallic_and_roughness_drive_distinct_bounded_direct_response
-cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored
+cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal
+cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_normals_are_inverse_transformed_and_observable
+cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_material_factors_drive_direct_light_and_scene_override
 ```
 
 The integration tests render at 64 by 64 pixels, verify exact object and
 background IDs, probe outward cuboid, plane, sphere, and direct
 directional/point material color, depth, position-only winding normals, curved
 sphere depth and radial normals, and smooth normals under non-uniform scale using the declared
-tolerances, verify dielectric/metallic/roughness response, exact unlit
-compatibility, front- and back-facing response, and near/far Point attenuation
-without changing identity/depth/normals, validate output
+tolerances, verify scene and imported dielectric/metallic/roughness response,
+exact unlit compatibility, scene-material override precedence, front- and
+back-facing response, and near/far Point attenuation without changing
+identity/depth/normals, validate output
 lengths and bounds behavior, and require the selected backend to be DX12 or
 Vulkan. Normal workspace CI compiles these tests
 but leaves it ignored;
@@ -181,5 +186,7 @@ topology, exterior normal, compatibility, and canonical-lighting correction.
 See [ADR 0026](../adr/0026-bounded-direct-metallic-roughness-response.md) for
 the direct material response, camera/material uniform, and unlit-compatibility
 rules.
+See [ADR 0027](../adr/0027-imported-glb-metallic-roughness-materials.md) for
+the imported numeric material, default, override, and byte-accounting rules.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

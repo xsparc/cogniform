@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use cogniform_assets::{AssetMeshKey, AssetUploadJob};
+use cogniform_assets::{AssetMaterial, AssetMeshKey, AssetUploadJob};
 
 use crate::{RendererConfig, RendererError};
 
@@ -51,7 +51,7 @@ pub struct RendererAssetStats {
 pub(crate) struct GpuAssetMesh {
     buffer: wgpu::Buffer,
     vertex_count: u32,
-    base_color: [f32; 4],
+    material: AssetMaterial,
     byte_len: u64,
 }
 
@@ -64,8 +64,8 @@ impl GpuAssetMesh {
         self.vertex_count
     }
 
-    pub(crate) const fn base_color(&self) -> [f32; 4] {
-        self.base_color
+    pub(crate) const fn material(&self) -> AssetMaterial {
+        self.material
     }
 }
 
@@ -183,13 +183,13 @@ impl RendererAssets {
             mapped.copy_from_slice(&encoded);
         }
         buffer.unmap();
-        let base_color = job.base_color().map(cogniform_protocol::UnitF32::get);
+        let material = job.material();
         let previous = self.resident.insert(
             key,
             GpuAssetMesh {
                 buffer,
                 vertex_count,
-                base_color,
+                material,
                 byte_len,
             },
         );

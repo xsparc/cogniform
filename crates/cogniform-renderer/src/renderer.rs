@@ -334,7 +334,7 @@ impl HeadlessRenderer {
             |key| {
                 self.assets
                     .mesh(key)
-                    .map(super::asset::GpuAssetMesh::base_color)
+                    .map(super::asset::GpuAssetMesh::material)
             },
         )?;
         self.submit_prepared(

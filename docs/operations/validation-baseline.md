@@ -22,6 +22,8 @@ Point-light evidence was collected on that profile on 2026-08-06.
 CF026 bounded direct metallic-roughness response, exact unlit compatibility,
 and updated canonical Point-light evidence was collected on that profile on
 2026-08-06.
+CF027 imported GLB material retention, override precedence, and controlled
+direct-light evidence was collected on that profile on 2026-08-06.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -31,7 +33,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct dielectric/metallic/roughness response, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -70,7 +72,8 @@ The renderer suite passed the built-in cube, extracted plane and sphere,
 front/back directional response, near/far/back-facing point response,
 dielectric/metallic/roughness response and exact unlit compatibility,
 bounded four-buffer readback pressure, renderer-drop retirement, position-only
-GLB winding fixture, and imported-normal fixture under non-uniform scale. The engine
+GLB winding fixture, imported numeric material response/override, and
+imported-normal fixture under non-uniform scale. The engine
 suite passed gateway/idempotency, normal-aware revision causality, complete
 service restoration, and the canonical scenario. The scenario selected Vulkan,
 committed revision 2,
@@ -228,6 +231,28 @@ prefix. The full renderer and engine controlled suites passed, including both
 imported-asset probes and the canonical center `[55, 30, 11, 255]`; this adds
 no supported adapter, texture/IBL/shadow surface, schema, dependency, or
 performance claim.
+
+## Controlled imported-material command
+
+The focused CF027 adapter check passed in the optimized profile:
+
+```text
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_material_factors_drive_direct_light_and_scene_override
+```
+
+One explicitly materialed GLB retained base color `(0.8, 0.4, 0.2, 1.0)`,
+metallic `1`, and roughness `0.5` through import, upload, and renderer
+residency. With no active light it produced exact `[204, 102, 51, 255]`.
+The fixed half-intensity directional source produced `[129, 65, 32, 255]`;
+an explicit scene dielectric override at roughness `0.5` then produced
+`[38, 22, 14, 255]`, each within the existing two-unit-per-channel tolerance.
+Depth, exact stable identity, quantized world normal, alpha, and background
+remained unchanged across frames; renderer revision advanced from 1 through 3
+with the accepted world patches. CPU tests separately pin glTF factor defaults,
+the existing material-free and proxy neutral defaults, unit-range rejection,
+exact 24-byte vertex accounting, immutable upload metadata, and all-value override
+precedence. This adds no supported adapter, GPU buffer, shader/pipeline,
+texture surface, schema, dependency, or performance claim.
 
 ## Controlled service-restoration command
 
