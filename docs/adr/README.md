@@ -31,5 +31,6 @@ earlier one and links the history.
 | [0023](0023-bounded-directional-diffuse-lighting.md) | Accepted | Render up to four stable-ordered directional lights with bounded diffuse shading and exact unlit compatibility |
 | [0024](0024-bounded-point-diffuse-lighting.md) | Accepted | Render up to four stable-ordered point lights with bounded inverse-square diffuse shading |
 | [0025](0025-outward-built-in-cuboid-winding.md) | Accepted | Correct the fixed built-in cuboid to outward counter-clockwise winding and exterior normals |
+| [0026](0026-bounded-direct-metallic-roughness-response.md) | Accepted | Honor metallic and roughness through one bounded direct-light microfacet response |
 
 New records use four sections: context, decision, consequences, and status.

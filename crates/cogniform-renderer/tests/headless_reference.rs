@@ -263,9 +263,7 @@ fn light_entity_with_id(
 
 fn light_fixture(kind: LightKind, light_world: [f64; 16]) -> RenderExtraction {
     let camera_id = StableEntityId::new(1).unwrap();
-    let plane_id = StableEntityId::new(2).unwrap();
     let positive = |value| PositiveF32::new(value).unwrap();
-    let unit = |value| UnitF32::new(value).unwrap();
     let identity = [
         1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
     ];
@@ -285,10 +283,31 @@ fn light_fixture(kind: LightKind, light_world: [f64; 16]) -> RenderExtraction {
         },
     )
     .unwrap();
-    let plane = RenderEntity::new(
+    let plane = lit_plane_entity(0.0, 0.5, 1);
+    RenderExtraction::new(
+        NonZeroU64::new(1).unwrap(),
+        SceneRevision::INITIAL,
+        SceneRevision::new(1),
+        vec![
+            RenderChange::upsert(camera),
+            RenderChange::upsert(plane),
+            RenderChange::upsert(light_entity(kind, light_world, 1)),
+        ],
+    )
+    .unwrap()
+}
+
+fn lit_plane_entity(metallic: f32, roughness: f32, generation: u64) -> RenderEntity {
+    let plane_id = StableEntityId::new(2).unwrap();
+    let positive = |value| PositiveF32::new(value).unwrap();
+    let unit = |value| UnitF32::new(value).unwrap();
+    let identity = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ];
+    RenderEntity::new(
         plane_id,
         identity,
-        1,
+        generation,
         RenderComponents {
             primitive: Some(PrimitiveComponent {
                 shape: PrimitiveShape::Plane,
@@ -305,22 +324,11 @@ fn light_fixture(kind: LightKind, light_world: [f64; 16]) -> RenderExtraction {
                     b: unit(0.2),
                     a: unit(1.0),
                 },
-                metallic: unit(0.0),
-                roughness: unit(0.5),
+                metallic: unit(metallic),
+                roughness: unit(roughness),
             }),
             ..RenderComponents::default()
         },
-    )
-    .unwrap();
-    RenderExtraction::new(
-        NonZeroU64::new(1).unwrap(),
-        SceneRevision::INITIAL,
-        SceneRevision::new(1),
-        vec![
-            RenderChange::upsert(camera),
-            RenderChange::upsert(plane),
-            RenderChange::upsert(light_entity(kind, light_world, 1)),
-        ],
     )
     .unwrap()
 }
@@ -332,10 +340,11 @@ fn translated_z(z: f64) -> [f64; 16] {
 }
 
 fn assert_color_near(frame: &RenderedFrame, x: u32, y: u32, expected: [u8; 4]) {
-    for (actual, expected) in frame.color_at(x, y).unwrap().into_iter().zip(expected) {
+    let actual_color = frame.color_at(x, y).unwrap();
+    for (actual, expected_channel) in actual_color.into_iter().zip(expected) {
         assert!(
-            actual.abs_diff(expected) <= 2,
-            "color channel {actual} differs from {expected}"
+            actual.abs_diff(expected_channel) <= 2,
+            "color {actual_color:?} differs from {expected:?}"
         );
     }
 }
@@ -360,7 +369,7 @@ fn assert_same_center_geometry(actual: &RenderedFrame, expected: &RenderedFrame)
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
-fn directional_light_modulates_front_and_back_facing_diffuse_color() {
+fn directional_light_modulates_front_and_back_facing_direct_color() {
     let camera_id = StableEntityId::new(1).unwrap();
     let plane_id = StableEntityId::new(2).unwrap();
     let initial = light_fixture(LightKind::Directional, translated_z(0.0));
@@ -375,14 +384,7 @@ fn directional_light_modulates_front_and_back_facing_diffuse_color() {
         front.stable_entity_id_at(center.0, center.1),
         Some(plane_id)
     );
-    for (actual, expected) in front
-        .color_at(center.0, center.1)
-        .unwrap()
-        .into_iter()
-        .zip([102, 51, 26, 255])
-    {
-        assert!(actual.abs_diff(expected) <= 2);
-    }
+    assert_color_near(&front, center.0, center.1, [38, 22, 14, 255]);
     let front_depth = front.depth_at(center.0, center.1).unwrap();
     let front_normal = front.normal_at(center.0, center.1).unwrap();
 
@@ -417,7 +419,86 @@ fn directional_light_modulates_front_and_back_facing_diffuse_color() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
-fn point_light_applies_bounded_distance_and_facing_diffuse_shading() {
+fn metallic_and_roughness_drive_distinct_bounded_direct_response() {
+    let camera_id = StableEntityId::new(1).unwrap();
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer
+        .apply_extraction(&light_fixture(LightKind::Directional, translated_z(0.0)))
+        .unwrap();
+    let dielectric = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+
+    let metallic_update = RenderExtraction::new(
+        NonZeroU64::new(2).unwrap(),
+        SceneRevision::new(1),
+        SceneRevision::new(2),
+        vec![RenderChange::upsert(lit_plane_entity(1.0, 0.5, 2))],
+    )
+    .unwrap();
+    renderer.apply_extraction(&metallic_update).unwrap();
+    let metallic = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+
+    let rough_update = RenderExtraction::new(
+        NonZeroU64::new(3).unwrap(),
+        SceneRevision::new(2),
+        SceneRevision::new(3),
+        vec![RenderChange::upsert(lit_plane_entity(1.0, 0.9, 3))],
+    )
+    .unwrap();
+    renderer.apply_extraction(&rough_update).unwrap();
+    let rough_metallic = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+
+    let smooth_update = RenderExtraction::new(
+        NonZeroU64::new(4).unwrap(),
+        SceneRevision::new(3),
+        SceneRevision::new(4),
+        vec![RenderChange::upsert(lit_plane_entity(1.0, 0.0, 4))],
+    )
+    .unwrap();
+    renderer.apply_extraction(&smooth_update).unwrap();
+    let smooth_metallic = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+
+    let unlit_update = RenderExtraction::new(
+        NonZeroU64::new(5).unwrap(),
+        SceneRevision::new(4),
+        SceneRevision::new(5),
+        vec![RenderChange::remove(StableEntityId::new(3).unwrap())],
+    )
+    .unwrap();
+    renderer.apply_extraction(&unlit_update).unwrap();
+    let unlit = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+
+    let center = (WIDTH / 2, HEIGHT / 2);
+    let dielectric_color = dielectric.color_at(center.0, center.1).unwrap();
+    let metallic_color = metallic.color_at(center.0, center.1).unwrap();
+    let rough_metallic_color = rough_metallic.color_at(center.0, center.1).unwrap();
+    let smooth_metallic_color = smooth_metallic.color_at(center.0, center.1).unwrap();
+    assert_eq!(
+        dielectric.stable_entity_id_at(center.0, center.1),
+        Some(StableEntityId::new(2).unwrap())
+    );
+    assert_color_near(&dielectric, center.0, center.1, [38, 22, 14, 255]);
+    assert_color_near(&metallic, center.0, center.1, [129, 65, 32, 255]);
+    assert_color_near(&rough_metallic, center.0, center.1, [12, 6, 3, 255]);
+    assert_color_near(&smooth_metallic, center.0, center.1, [255, 255, 255, 255]);
+    assert_color_near(&unlit, center.0, center.1, [204, 102, 51, 255]);
+    assert_ne!(dielectric_color, metallic_color);
+    assert_ne!(metallic_color, rough_metallic_color);
+    assert_ne!(smooth_metallic_color, metallic_color);
+    assert_same_center_geometry(&metallic, &dielectric);
+    assert_same_center_geometry(&rough_metallic, &dielectric);
+    assert_same_center_geometry(&smooth_metallic, &dielectric);
+    assert_same_center_geometry(&unlit, &dielectric);
+    assert_eq!(dielectric_color[3], 255);
+    assert_eq!(metallic_color[3], 255);
+    assert_eq!(rough_metallic_color[3], 255);
+    assert_eq!(smooth_metallic_color[3], 255);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn point_light_applies_bounded_distance_and_facing_direct_shading() {
     let camera_id = StableEntityId::new(1).unwrap();
     let plane_id = StableEntityId::new(2).unwrap();
     let mut renderer =
@@ -429,7 +510,7 @@ fn point_light_applies_bounded_distance_and_facing_diffuse_shading() {
     let near = renderer.submit_scene(camera_id).unwrap().read().unwrap();
     let center = (WIDTH / 2, HEIGHT / 2);
     assert_eq!(near.stable_entity_id_at(center.0, center.1), Some(plane_id));
-    assert_color_near(&near, center.0, center.1, [102, 51, 26, 255]);
+    assert_color_near(&near, center.0, center.1, [37, 22, 14, 255]);
 
     let far_update = RenderExtraction::new(
         NonZeroU64::new(2).unwrap(),
@@ -444,7 +525,7 @@ fn point_light_applies_bounded_distance_and_facing_diffuse_shading() {
     .unwrap();
     renderer.apply_extraction(&far_update).unwrap();
     let far = renderer.submit_scene(camera_id).unwrap().read().unwrap();
-    assert_color_near(&far, center.0, center.1, [26, 13, 6, 255]);
+    assert_color_near(&far, center.0, center.1, [9, 5, 3, 255]);
     assert_same_center_geometry(&far, &near);
 
     let mixed_update = RenderExtraction::new(
@@ -461,7 +542,7 @@ fn point_light_applies_bounded_distance_and_facing_diffuse_shading() {
     .unwrap();
     renderer.apply_extraction(&mixed_update).unwrap();
     let mixed = renderer.submit_scene(camera_id).unwrap().read().unwrap();
-    assert_color_near(&mixed, center.0, center.1, [128, 64, 32, 255]);
+    assert_color_near(&mixed, center.0, center.1, [47, 28, 18, 255]);
     assert_same_center_geometry(&mixed, &near);
 
     let back_update = RenderExtraction::new(

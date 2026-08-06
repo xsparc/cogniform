@@ -207,24 +207,31 @@ generated once at renderer initialization; no frame performs tessellation.
 A missing asset uses its exact explicit built-in fallback, and a resident
 asset retains precedence.
 
-The baseline shades material base RGB with independently bounded sets of up to
-four directional and four point definitions in stable entity-ID order. Local
+The baseline shades materials with independently bounded sets of up to four
+directional and four point definitions in stable entity-ID order. Local
 negative Z is the directional emission axis, so transformed positive Z points
 from the surface toward that source. A point source uses its extracted world
 translation and capped inverse-square attenuation
 `min(intensity / max(distance_squared, 1e-6), 1)`; exact source/fragment
 coincidence and finite-input f32 squared-distance overflow contribute zero.
-Active definitions from both kinds contribute a shared component-wise clamped
-Lambert sum and leave alpha unchanged.
+Active definitions use one bounded direct Cook-Torrance metallic-roughness
+response: GGX distribution, Schlick-GGX Smith visibility, Schlick Fresnel,
+dielectric normal reflectance `0.04`, a metallic base-color reflectance blend,
+and an energy-conserving Lambert diffuse split. Perceptual roughness has a
+`0.05` distribution floor for numerical safety. Contributions and their sum
+are clamped in linear color space, and alpha remains unchanged.
 Zero-intensity definitions count toward their kind's capacity but are inactive.
-Only a scene with no active definition of either kind preserves the exact prior
-unlit base color. Ambient, emissive, metallic/roughness response, specular/PBR,
-shadows, spot lights, configurable point range/radius, textures, HDR, and tone
-mapping are outside this baseline. A fixed 448-byte per-draw uniform preserves
-the prior 304-byte directional prefix and appends a point count plus four
-padded point slots. A fifth definition of either kind, a degenerate active
-direction, or an active point position outside finite GPU-f32 range fails
-before GPU submission.
+Only a scene with no active definition of either kind bypasses lighting and
+preserves exact base RGBA. A missing material uses its existing fallback color
+with neutral dielectric parameters `metallic = 0`, `roughness = 0.8`. Ambient,
+emissive, image-based lighting, shadows, spot lights, configurable point
+range/radius, textures, HDR, and tone mapping are outside this baseline. A
+fixed 480-byte per-draw uniform preserves the prior 448-byte model, view-projection,
+material-color, identity, directional, and point-light prefix and appends
+zero-padded camera-position and metallic/roughness slots. A fifth definition
+of either kind, a degenerate active direction, an active point position, or a
+selected camera position outside finite GPU-f32 range fails before GPU
+submission.
 
 Feature tiers are capability-based:
 
@@ -311,8 +318,8 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Live revert | A quiescent service builds and validates an exact historical replacement before swap, preserves the source frame frontier, clears named transient/asset state, and continues retained idempotency and ordinary branch append |
 | Recovery file | A new immutable local file stores one complete bounded envelope without overwrite; bounded load rejects non-files, growth, corruption, truncation, extension, and over-limit input before restoration |
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
-| Headless render | Outward-wound reference cuboid plus extracted plane, sphere, and bounded directional/point-lit scenes render without a visible window |
-| Machine outputs | Entity-ID probes are exact; unlit and directional/point-diffuse color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
+| Headless render | Outward-wound reference cuboid plus extracted plane, sphere, and bounded direct metallic-roughness directional/point-lit scenes render without a visible window |
+| Machine outputs | Entity-ID probes are exact; exact unlit and tolerant direct-material color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Asset safety | Hash mismatch, oversized decode, and unsupported features fail with structured diagnostics |
@@ -326,7 +333,7 @@ CF009 resolves the initial candidate packaging and validation profile in
 [ADR 0010](../adr/0010-source-first-release-profile.md): source-first, no
 publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
-artifacts, textured/tangent-space normals and the wider visual-quality surface, remote
+artifacts, textured/tangent-space normals and the remaining visual-quality surface, remote
 protocol/authentication, tenancy, observation retention, automatic startup,
 recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic

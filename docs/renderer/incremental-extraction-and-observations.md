@@ -83,10 +83,11 @@ The public unsupported-primitive renderer error remains reserved for
 compatibility and future shape evolution. Directional lights use transformed
 local positive Z as the surface-to-light direction. Point lights use extracted
 world translation with capped inverse-square attenuation and exact-zero
-distance safety. Both apply bounded Lambert RGB through the same draw path; no
-active light of either kind preserves exact unlit output. Textures,
-configurable point range/radius, wider material/PBR lighting, encoding, shared
-memory, and remote delivery remain later slices.
+distance safety. Both apply one bounded direct metallic-roughness response
+through the same draw path, using the selected camera translation for the view
+direction; no active light of either kind preserves exact unlit output.
+Textures, configurable point range/radius, image-based lighting, encoding,
+shared memory, and remote delivery remain later slices.
 
 ## Validation
 

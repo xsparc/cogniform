@@ -34,7 +34,10 @@ A `ScenePatch` always carries:
   remove-component, or reparent operations.
 
 Component values cover names, local transforms, built-in primitives, materials,
-perspective cameras, baseline lights, and immutable asset mesh references. An
+perspective cameras, baseline lights, and immutable asset mesh references. A
+material carries linear unit-interval base RGBA, metallic, and perceptual
+roughness; active renderer lights consume all three while unlit output preserves
+base RGBA exactly. An
 asset reference contains only a content hash and zero-based mesh index; bulk
 bytes and backend handles remain outside the protocol. A create operation
 cannot repeat a component kind. Rotations must be non-zero, camera ranges must

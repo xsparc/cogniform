@@ -308,6 +308,9 @@ impl HeadlessRenderer {
                     0.00, 0.50, 1.00,
                 ],
                 color: REFERENCE_COLOR.map(|channel| f32::from(channel) / 255.0),
+                camera_position: [0.0, 0.0, 3.0],
+                metallic: 0.0,
+                roughness: 0.8,
                 compact_id: REFERENCE_ENTITY_ID,
             }],
             directional_lights: Vec::new(),
@@ -1127,10 +1130,12 @@ fn encode_draw_uniform(
     const FLOATS_PER_DIRECTIONAL_LIGHT: usize = 8;
     const POINT_COUNT_FLOATS: usize = 4;
     const FLOATS_PER_POINT_LIGHT: usize = 8;
+    const MATERIAL_VIEW_FLOATS: usize = 8;
     const UNIFORM_BYTES: usize = (BASE_FLOATS
         + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT
         + POINT_COUNT_FLOATS
-        + MAX_POINT_LIGHTS * FLOATS_PER_POINT_LIGHT)
+        + MAX_POINT_LIGHTS * FLOATS_PER_POINT_LIGHT
+        + MATERIAL_VIEW_FLOATS)
         * 4;
     debug_assert!(directional_lights.len() <= MAX_DIRECTIONAL_LIGHTS);
     debug_assert!(point_lights.len() <= MAX_POINT_LIGHTS);
@@ -1200,6 +1205,14 @@ fn encode_draw_uniform(
         }
         bytes.extend_from_slice(&light.intensity.to_le_bytes());
     }
+    for value in draw.camera_position {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+    bytes.extend_from_slice(&draw.metallic.to_le_bytes());
+    bytes.extend_from_slice(&draw.roughness.to_le_bytes());
+    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
     debug_assert_eq!(bytes.len(), UNIFORM_BYTES);
     bytes
 }
@@ -1444,6 +1457,9 @@ mod tests {
             model: [1.0; 16],
             view_projection: [2.0; 16],
             color: [0.25, 0.5, 0.75, 1.0],
+            camera_position: [6.0, 7.0, 8.0],
+            metallic: 0.9,
+            roughness: 0.2,
             compact_id: 42,
         };
         let lights = [
@@ -1465,7 +1481,7 @@ mod tests {
         }];
 
         let bytes = encode_draw_uniform(&draw, &lights, &point_lights);
-        assert_eq!(bytes.len(), 448);
+        assert_eq!(bytes.len(), 480);
         let words = bytes
             .chunks_exact(4)
             .map(|word| <[u8; 4]>::try_from(word).unwrap())
@@ -1498,7 +1514,15 @@ mod tests {
             (80..88).map(float).collect::<Vec<_>>(),
             vec![3.0, 4.0, 5.0, 0.0, 0.9, 0.8, 0.7, 0.6]
         );
-        assert!(words[88..].iter().all(|word| *word == [0; 4]));
+        assert!(words[88..112].iter().all(|word| *word == [0; 4]));
+        assert_eq!(
+            (112..116).map(float).collect::<Vec<_>>(),
+            vec![6.0, 7.0, 8.0, 0.0]
+        );
+        assert_eq!(
+            (116..120).map(float).collect::<Vec<_>>(),
+            vec![0.9, 0.2, 0.0, 0.0]
+        );
     }
 
     #[test]

@@ -80,8 +80,10 @@ The importer accepts only the following baseline:
 - optional non-normalized scalar u16 or u32 indices;
 - tightly packed or valid component-aligned buffer-view strides up to 252
   bytes; and
-- an optional material `pbrMetallicRoughness.baseColorFactor`. Metallic and
-  roughness factors are range-validated but are not rendered yet.
+- an optional material `pbrMetallicRoughness.baseColorFactor`. Source metallic
+  and roughness factors are range-validated but are not retained in
+  `AssetMesh` or rendered; an explicit scene `MaterialComponent` supplies the
+  current direct metallic-roughness response.
 
 Indexed geometry is expanded into a triangle vertex stream, using the same
 source index for position and normal. Accepted source normals are normalized
