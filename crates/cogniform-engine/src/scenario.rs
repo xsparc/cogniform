@@ -29,7 +29,7 @@ const UPDATE_IDEMPOTENCY_KEY: u128 = 0x2_001;
 const COLOR_OBSERVATION_ID: u128 = 0x3_001;
 const ENTITY_ID_OBSERVATION_ID: u128 = 0x3_002;
 const VISIBILITY_OBSERVATION_ID: u128 = 0x3_003;
-const EXPECTED_TABLE_COLOR: [u8; 4] = [175, 93, 33, 255];
+const EXPECTED_TABLE_COLOR: [u8; 4] = [55, 30, 11, 255];
 const MAX_OBSERVATION_TIMEOUT: Duration = Duration::from_mins(1);
 
 struct ScenarioReplayEvidence {

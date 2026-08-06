@@ -44,9 +44,9 @@ wait. The default two-slot observation pool is never overcommitted.
 
 The scenario requires a newly initialized empty service. It is a conformance
 flow, not a scene import command. Its room and table are built-in cuboids. The
-Point source participates in bounded diffuse shading against the table's
-outward positive-Z face. On the validated Vulkan profile the center sample is
-`#af5d21ff` (`[175, 93, 33, 255]`), checked with the renderer's existing
+Point source drives the table's bounded direct metallic-roughness response on
+its outward positive-Z face. On the validated Vulkan profile the center sample is
+`#371e0bff` (`[55, 30, 11, 255]`), checked with the renderer's existing
 two-unit-per-channel RGBA8 tolerance. The focused renderer Point fixture
 separately proves near/far attenuation and back-facing rejection on a
 positive-Z plane.

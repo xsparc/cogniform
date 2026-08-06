@@ -42,6 +42,10 @@ release yet; the current workspace version remains `0.0.0`.
   attenuation, exact-zero and finite-input distance-overflow safety, typed
   capacity/range failures, and controlled near/far/back-facing adapter
   evidence;
+- bounded direct Cook-Torrance metallic-roughness response for the existing
+  directional and point lights, with GGX/Smith/Schlick terms, finite camera
+  view input, exact unlit compatibility, a fixed 480-byte draw uniform, and
+  controlled dielectric/metal/roughness evidence;
 - service-owned asset admission, explicit single-item CPU/GPU processing,
   aggregate residency status, and exact-hash post-recovery rehydration;
 - local typed service and unattended room/table/light/camera scenario;
@@ -67,6 +71,10 @@ release yet; the current workspace version remains `0.0.0`.
 
 ### Changed
 
+- active-light color now honors the required public metallic and roughness
+  fields instead of applying diffuse-only base-color modulation. The canonical
+  Point-lit table center is now `#371e0bff` on the validated profile while
+  revision, identity, visibility, depth, normals, and replay remain intact;
 - the fixed built-in cuboid now uses 12 outward counter-clockwise triangles and
   exact axis-aligned exterior normals while preserving its 36 vertices,
   24-byte interleaved layout, 864-byte initialization payload, extents, and
@@ -91,10 +99,11 @@ release yet; the current workspace version remains `0.0.0`.
   integration, deployment, or production SLA;
 - the validated full-runtime profile is currently Windows 11 x86_64 with a
   Vulkan discrete GPU; other runtime platforms/backends remain unverified;
-- renderer materials support only base color multiplied by bounded directional
-  and point Lambert diffuse; configurable point range/radius/cutoff, spot
-  lights, ambient, metallic/roughness response, specular/PBR, shadows,
-  emissive, HDR/tone mapping, and lighting configuration are not implemented.
+- renderer materials support base color plus bounded direct metallic-roughness
+  response for directional and point lights; configurable point
+  range/radius/cutoff, spot lights, ambient/image-based lighting, shadows,
+  emissive, HDR/tone mapping, gamma conversion, and lighting configuration are
+  not implemented.
   Normal output is quantized and the imported subset has
   no normal maps or tangent space; the GLB
   subset excludes textures, external buffers, compression, scene traversal,

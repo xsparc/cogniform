@@ -34,7 +34,7 @@ fn canonical_scenario_preserves_revision_observation_and_replay_causality() {
         }
         assert!(report.color.frame_id < report.entity_id.frame_id);
         assert!(report.entity_id.frame_id < report.visibility.frame_id);
-        for (actual, expected) in report.center_color.into_iter().zip([175, 93, 33, 255]) {
+        for (actual, expected) in report.center_color.into_iter().zip([55, 30, 11, 255]) {
             assert!(actual.abs_diff(expected) <= 2);
         }
         assert!(report.center_color[..3].iter().any(|channel| *channel > 0));

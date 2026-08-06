@@ -55,9 +55,9 @@ non-uniform values produce an ellipsoid and the existing inverse-transpose
 normal path preserves the smooth direction. Sphere topology supplies no UV
 attribute, and frames perform no built-in tessellation or upload.
 
-Lighting is a fixed diffuse baseline. A directional light emits along its
-transformed local negative-Z axis; transformed positive Z is normalized as the
-surface-to-light direction. A point light uses its extracted world translation
+Lighting is one fixed direct metallic-roughness baseline. A directional light
+emits along its transformed local negative-Z axis; transformed positive Z is
+normalized as the surface-to-light direction. A point light uses its extracted world translation
 and attenuation `min(intensity / max(distance_squared, 1e-6), 1)`. Exact
 source/fragment coincidence contributes zero rather than normalizing a zero
 vector. A finite source whose derived f32 squared distance overflows likewise
@@ -65,21 +65,30 @@ contributes zero before direction multiplication. Each kind processes up to
 four definitions in stable entity-ID order. Zero-intensity definitions count
 toward their kind's capacity but are omitted from the active arrays.
 
-Active directional and point lights share the clamped sum of their colored
-Lambert contributions, multiply base RGB, and preserve material alpha. If
-neither kind is active, the shader uses an exact factor of one and preserves
-the prior unlit output. A fifth definition of either kind, a degenerate active
-directional positive-Z axis, or an active point translation outside finite GPU
-f32 returns a typed error before submission.
+Active directional and point lights evaluate GGX distribution, Schlick-GGX
+Smith visibility, Schlick Fresnel, and an energy-conserving Lambert diffuse
+split. Normal-incidence reflectance blends dielectric `0.04` toward base color
+by metallic, and perceptual roughness is floored to `0.05` only in the GGX
+distribution to avoid a singular highlight. Each contribution and the shared
+sum are clamped in linear RGB; material alpha is preserved. If neither kind is
+active, the shader bypasses that response and preserves exact base RGBA. A
+missing material retains the existing fallback color with neutral dielectric
+`metallic = 0`, `roughness = 0.8`.
 
-The existing bind group carries one fixed 448-byte per-draw uniform. The prior
-304-byte prefix remains model, view-projection, color, compact ID, directional
-count, and four zero-padded 32-byte directional slots. An appended point count
-and four zero-padded 32-byte position/color-intensity slots complete the
-layout. This adds no light buffer, alternate pipeline, runtime configuration,
-or observation payload. Point range/cutoff/radius, spot lights, ambient,
-emissive, metallic/roughness response, specular/PBR, shadows, textures, HDR,
-and tone mapping are unsupported.
+The selected camera's extracted world translation supplies the view direction.
+A zero or derived-overflow view vector suppresses specular without creating a
+non-finite value. A fifth definition of either kind, a degenerate active
+directional positive-Z axis, or an active point or selected camera translation
+outside finite GPU f32 returns a typed error before submission.
+
+The existing bind group carries one fixed 480-byte per-draw uniform. The prior
+448-byte prefix remains model, view-projection, color, compact ID, directional
+count and four directional slots, then point count and four point slots. Two
+appended zero-padded `vec4` slots contain camera position and
+metallic/roughness. This adds no light buffer, alternate pipeline, runtime
+configuration, or observation payload. Point range/cutoff/radius, spot lights,
+ambient/emissive or image-based lighting, shadows, textures, HDR, tone mapping,
+and gamma conversion are unsupported.
 
 - entity IDs must match exactly;
 - color channels use an absolute tolerance of 2 units in RGBA8;
@@ -135,17 +144,19 @@ approved adapter:
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact reference_cube_produces_exact_ids_and_tolerant_color_depth_normals
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact extracted_plane_produces_color_depth_identity_and_plus_z_normal
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact extracted_sphere_produces_curved_depth_identity_and_radial_normals
-cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact directional_light_modulates_front_and_back_facing_diffuse_color
-cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact point_light_applies_bounded_distance_and_facing_diffuse_shading
+cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact directional_light_modulates_front_and_back_facing_direct_color
+cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact point_light_applies_bounded_distance_and_facing_direct_shading
+cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact metallic_and_roughness_drive_distinct_bounded_direct_response
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored
 ```
 
 The integration tests render at 64 by 64 pixels, verify exact object and
-background IDs, probe outward cuboid, plane, sphere, and directional/point-lit
-color, depth, position-only winding normals, curved sphere depth and radial
-normals, and smooth normals under non-uniform scale using the declared
-tolerances, verify front- and back-facing diffuse response plus near/far Point
-attenuation without changing identity/depth/normals, validate output
+background IDs, probe outward cuboid, plane, sphere, and direct
+directional/point material color, depth, position-only winding normals, curved
+sphere depth and radial normals, and smooth normals under non-uniform scale using the declared
+tolerances, verify dielectric/metallic/roughness response, exact unlit
+compatibility, front- and back-facing response, and near/far Point attenuation
+without changing identity/depth/normals, validate output
 lengths and bounds behavior, and require the selected backend to be DX12 or
 Vulkan. Normal workspace CI compiles these tests
 but leaves it ignored;
@@ -167,5 +178,8 @@ See [ADR 0024](../adr/0024-bounded-point-diffuse-lighting.md) for point
 position, attenuation, capacity, zero-distance, and appended-layout rules.
 See [ADR 0025](../adr/0025-outward-built-in-cuboid-winding.md) for the cuboid
 topology, exterior normal, compatibility, and canonical-lighting correction.
+See [ADR 0026](../adr/0026-bounded-direct-metallic-roughness-response.md) for
+the direct material response, camera/material uniform, and unlit-compatibility
+rules.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

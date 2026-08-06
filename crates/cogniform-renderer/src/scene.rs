@@ -11,6 +11,8 @@ use crate::RendererError;
 
 pub(crate) const MAX_DIRECTIONAL_LIGHTS: usize = 4;
 pub(crate) const MAX_POINT_LIGHTS: usize = 4;
+const DEFAULT_METALLIC: f32 = 0.0;
+const DEFAULT_ROUGHNESS: f32 = 0.8;
 
 /// Non-zero compact identity owned exclusively by one renderer instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -256,6 +258,7 @@ impl RenderScene {
             .camera()
             .ok_or(RendererError::CameraUnavailable { camera_id })?;
         let view_projection = camera_view_projection(camera_entity, camera, width, height)?;
+        let camera_position = point_position(camera_entity)?;
         let directional_lights = self.prepare_directional_lights()?;
         let point_lights = self.prepare_point_lights()?;
         let mut draws = Vec::new();
@@ -301,15 +304,30 @@ impl RenderScene {
                     model[8 + row] *= dimensions[2];
                 }
             }
-            let color = entity.material().map_or_else(
-                || imported_color.unwrap_or([0.8, 0.8, 0.8, 1.0]),
-                |material| color_values(material.base_color),
+            let (color, metallic, roughness) = entity.material().map_or_else(
+                || {
+                    (
+                        imported_color.unwrap_or([0.8, 0.8, 0.8, 1.0]),
+                        DEFAULT_METALLIC,
+                        DEFAULT_ROUGHNESS,
+                    )
+                },
+                |material| {
+                    (
+                        color_values(material.base_color),
+                        material.metallic.get(),
+                        material.roughness.get(),
+                    )
+                },
             );
             draws.push(PreparedDraw {
                 geometry,
                 model,
                 view_projection,
                 color,
+                camera_position,
+                metallic,
+                roughness,
                 compact_id: compact_id.get(),
             });
             id_lookup.insert(compact_id.get(), entity_id);
@@ -421,6 +439,9 @@ pub(crate) struct PreparedDraw {
     pub(crate) model: [f32; 16],
     pub(crate) view_projection: [f32; 16],
     pub(crate) color: [f32; 4],
+    pub(crate) camera_position: [f32; 3],
+    pub(crate) metallic: f32,
+    pub(crate) roughness: f32,
     pub(crate) compact_id: u32,
 }
 
@@ -808,6 +829,33 @@ mod tests {
             scene.prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None),
             Err(RendererError::DrawCapacityExceeded { limit: 1 })
         ));
+    }
+
+    #[test]
+    fn prepared_draw_carries_exact_camera_and_material_inputs() {
+        let mut scene = RenderScene::new(NonZeroU32::new(2).unwrap());
+        scene
+            .apply(&extraction(
+                1,
+                0,
+                1,
+                vec![
+                    RenderChange::upsert(camera(id(1))),
+                    RenderChange::upsert(entity(id(2))),
+                ],
+            ))
+            .unwrap();
+
+        let prepared = scene
+            .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None)
+            .unwrap();
+        let draw = &prepared.draws[0];
+        assert_eq!(
+            draw.camera_position.map(f32::to_bits),
+            [0.0, 0.0, 3.0].map(f32::to_bits)
+        );
+        assert_eq!(draw.metallic.to_bits(), 0.0_f32.to_bits());
+        assert_eq!(draw.roughness.to_bits(), 0.5_f32.to_bits());
     }
 
     #[test]
@@ -1203,6 +1251,12 @@ mod tests {
             .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None)
             .unwrap();
         assert_eq!(fallback.draws[0].geometry, PreparedGeometry::Plane);
+        assert_eq!(
+            fallback.draws[0].color.map(f32::to_bits),
+            [0.8, 0.8, 0.8, 1.0].map(f32::to_bits)
+        );
+        assert_eq!(fallback.draws[0].metallic.to_bits(), 0.0_f32.to_bits());
+        assert_eq!(fallback.draws[0].roughness.to_bits(), 0.8_f32.to_bits());
         assert_exact_f32(fallback.draws[0].model[0], 2.0);
         assert_exact_f32(fallback.draws[0].model[5], 3.0);
         assert_exact_f32(fallback.draws[0].model[10], 4.0);

@@ -506,13 +506,44 @@ expansion, and release action remain excluded. See
 [ADR 0025](../adr/0025-outward-built-in-cuboid-winding.md) and the
 [renderer guide](../renderer/headless-reference-scene.md).
 
+### PR 26 - CF026: Bounded direct metallic-roughness response
+
+Outcome: the public metallic and perceptual-roughness material inputs produce
+distinct bounded color through the existing directional and point path.
+
+Gate: each prepared draw carries the selected camera's finite GPU-f32 world
+translation and exact material values. Active lights use one documented direct
+Cook-Torrance response with GGX distribution, Schlick-GGX Smith visibility,
+Schlick Fresnel, dielectric `0.04` normal reflectance, metallic reflectance
+blending, and an energy-conserving Lambert diffuse split. Roughness has a
+`0.05` distribution floor only for numerical safety. Directional radiance,
+point inverse-square attenuation, exact coincidence/derived-overflow handling,
+stable ordering, and independent four-definition limits remain unchanged.
+Output and per-light accumulation remain bounded in linear RGB; alpha is
+unchanged. With neither kind active, exact base RGBA bypasses the BRDF.
+
+Implemented contract: preserve the complete 448-byte CF024 draw-uniform prefix
+and append zero-padded camera-position and metallic/roughness `vec4` slots for
+an exact 480-byte layout. Missing materials retain the existing fallback color
+with neutral `metallic = 0`, `roughness = 0.8`. Controlled adapter tests pin
+dielectric, metallic, rough-metal, and exact unlit color while holding depth,
+stable identity, normals, and background constant; all prior geometry, asset,
+lighting, observation, and engine regressions remain controlled. Textures,
+UVs, tangents, normal maps, IBL, ambient/emissive response, shadows, spot
+lights, HDR, tone mapping, gamma changes, transparency, configurable lighting,
+culling/clustering, schema/world/hash/replay changes, asset-format work,
+transport, persistence, dependencies, CI expansion, deployment, and release
+action remain excluded. See
+[ADR 0026](../adr/0026-bounded-direct-metallic-roughness-response.md) and the
+[renderer guide](../renderer/headless-reference-scene.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
-  -> CF022 -> CF023 -> CF024 -> CF025
+  -> CF022 -> CF023 -> CF024 -> CF025 -> CF026
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.

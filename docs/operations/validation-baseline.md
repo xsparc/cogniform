@@ -19,6 +19,9 @@ mixed-light compatibility evidence was collected on that profile on
 2026-08-05.
 CF025 outward cuboid topology, exterior-normal, and corrected canonical
 Point-light evidence was collected on that profile on 2026-08-06.
+CF026 bounded direct metallic-roughness response, exact unlit compatibility,
+and updated canonical Point-light evidence was collected on that profile on
+2026-08-06.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -28,7 +31,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, tolerant unlit and directional/point-diffuse color and depth, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct dielectric/metallic/roughness response, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -64,8 +67,8 @@ cargo run --release -p cogniform-cli --locked --offline -- scenario
 ```
 
 The renderer suite passed the built-in cube, extracted plane and sphere,
-front/back directional diffuse response, near/far/back-facing point diffuse
-response,
+front/back directional response, near/far/back-facing point response,
+dielectric/metallic/roughness response and exact unlit compatibility,
 bounded four-buffer readback pressure, renderer-drop retirement, position-only
 GLB winding fixture, and imported-normal fixture under non-uniform scale. The engine
 suite passed gateway/idempotency, normal-aware revision causality, complete
@@ -74,7 +77,8 @@ committed revision 2,
 reported frames 1-3, found the table at the center color/entity-ID pixels,
 reported 72 visible table pixels, and replayed two entries to logical hash
 `db23b22d98da433d6050c0cd863f3a736832c7bae2ca674cdbee3dae8ed25106`.
-The corrected outward table face produced center color `#af5d21ff` on this
+The corrected outward table face and direct material response produced center
+color `#371e0bff` (`[55, 30, 11, 255]`) on this
 profile under the existing two-unit-per-channel tolerance.
 Pixel coverage is visual evidence for this adapter, not a cross-GPU exact value.
 
@@ -138,7 +142,7 @@ pipeline, observation format, or performance claim.
 The focused CF023 adapter check passed in the optimized profile:
 
 ```text
-cargo test --release -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact directional_light_modulates_front_and_back_facing_diffuse_color
+cargo test --release -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact directional_light_modulates_front_and_back_facing_direct_color
 ```
 
 It rendered one centered plane with a white half-intensity directional light.
@@ -158,7 +162,7 @@ performance claim.
 The focused CF024 adapter check passed in the optimized profile:
 
 ```text
-cargo test --release -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact point_light_applies_bounded_distance_and_facing_diffuse_shading
+cargo test --release -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact point_light_applies_bounded_distance_and_facing_direct_shading
 ```
 
 It rendered one centered positive-Z plane with a white half-intensity Point
@@ -198,6 +202,32 @@ vertices, the 24-byte interleaved layout, exact 864-byte payload, coordinates
 at plus or minus `0.5`, outward centroid/winding alignment, and the six exact
 axis normals. Imported assets retain source winding. This adds no supported
 adapter, culling/two-sided policy, pipeline, schema, or performance claim.
+
+## Controlled direct-material commands
+
+The focused CF026 adapter and canonical checks passed in the optimized profile:
+
+```text
+cargo test --release -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact metallic_and_roughness_drive_distinct_bounded_direct_response
+cargo test --release -p cogniform-renderer --test headless_reference --locked --offline -- --ignored
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored
+cargo test --release -p cogniform-engine --tests --locked --offline -- --ignored
+```
+
+A centered positive-Z plane under the fixed half-intensity directional source
+produced `[38, 22, 14, 255]` as a dielectric at roughness `0.5`,
+`[129, 65, 32, 255]` as a metal at roughness `0.5`, and
+`[12, 6, 3, 255]` as a metal at roughness `0.9`, each within the existing
+two-unit-per-channel tolerance. Zero roughness exercised the distribution
+floor and remained finite and bounded. Removing the source preserved exact unlit base
+color `[204, 102, 51, 255]`. Depth, exact stable identity, quantized world
+normal, alpha, and background were unchanged across those frames. CPU tests
+pin finite camera/material preparation, the neutral missing-material values,
+and the exact zero-padded 480-byte uniform with its complete 448-byte CF024
+prefix. The full renderer and engine controlled suites passed, including both
+imported-asset probes and the canonical center `[55, 30, 11, 255]`; this adds
+no supported adapter, texture/IBL/shadow surface, schema, dependency, or
+performance claim.
 
 ## Controlled service-restoration command
 
