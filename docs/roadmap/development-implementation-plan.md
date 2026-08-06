@@ -567,13 +567,39 @@ expansion, deployment, and release action remain excluded. See
 [ADR 0027](../adr/0027-imported-glb-metallic-roughness-materials.md) and the
 [GLB guide](../assets/glb-subset.md).
 
+### PR 28 - CF028: Bounded primary texture-coordinate residency
+
+Outcome: one primary GLB coordinate set reaches renderer residency without
+claiming texture support or changing any rendered observation.
+
+Gate: an accepted primitive may add non-normalized finite f32 `VEC2`
+`TEXCOORD_0` with exactly the position source count. Values outside the unit
+interval are retained unchanged, and indexed expansion uses the same checked
+source index as position and normal. The complete coordinate accessor is
+validated before expanded allocation; non-finite values, count mismatches, and
+invalid ranges reject without proxy, while syntactically valid unsupported
+encodings remain typed and obey explicit proxy policy.
+
+Implemented contract: decoded and renderer vertices use one exact 32-byte
+position/normal/coordinate layout with shader location 2. Missing coordinates,
+built-ins, and proxies use exact zero; cuboid, plane, and sphere payloads become
+1,152, 192, and 21,504 bytes. The shader does not read the coordinate, and a
+controlled adapter comparison pins every color, depth, stable-identity,
+normal, and background sample across equivalent missing/present-coordinate
+assets. Images, textures, samplers, `baseColorTexture`, transforms, other
+coordinate sets or encodings, tangents, normal maps, shader sampling,
+schema/world/hash/replay changes, persistence, transport, dependencies, CI
+expansion, deployment, and release action remain excluded. See
+[ADR 0028](../adr/0028-bounded-primary-texture-coordinates.md) and the
+[GLB guide](../assets/glb-subset.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
-  -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027
+  -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -678,6 +704,16 @@ Validation expands with capability:
 - CF025: exact cuboid topology/layout/extents, two triangles per face,
   non-degeneracy, outward axis-aligned winding/normals, controlled reference
   near-face orientation, and positive canonical exterior Point-light response.
+- CF026: finite camera/material preparation, exact 480-byte uniform layout,
+  bounded direct-response vectors, exact unlit compatibility, and controlled
+  dielectric/metallic/roughness evidence.
+- CF027: imported numeric material retention/default/range/proxy behavior,
+  immutable residency and scene override precedence, plus controlled unlit and
+  direct-light evidence.
+- CF028: exact/indexed primary-coordinate retention including out-of-unit
+  values, full-source finite/count/range validation, typed unsupported
+  encodings, exact 32-byte CPU/GPU and zero-default built-in/proxy layouts, and
+  controlled whole-frame visual equivalence.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

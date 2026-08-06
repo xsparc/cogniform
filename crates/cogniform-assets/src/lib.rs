@@ -9,9 +9,9 @@ mod types;
 pub use error::AssetError;
 pub use store::AssetStore;
 pub use types::{
-    AssetAdmission, AssetDiagnostic, AssetDiagnosticCode, AssetLimits, AssetMaterial, AssetMeshKey,
-    AssetProcessOutcome, AssetRecord, AssetState, AssetStoreConfig, AssetStoreStats,
-    AssetUploadJob, AssetVertex, UnsupportedAssetPolicy,
+    ASSET_VERTEX_BYTES, AssetAdmission, AssetDiagnostic, AssetDiagnosticCode, AssetLimits,
+    AssetMaterial, AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetState, AssetStoreConfig,
+    AssetStoreStats, AssetUploadJob, AssetVertex, UnsupportedAssetPolicy,
 };
 
 use cogniform_protocol::ContentHash;

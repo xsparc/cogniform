@@ -111,7 +111,7 @@ pub enum AssetDiagnosticCode {
     UnsupportedFeature,
     /// A buffer, view, accessor, or index references bytes outside its bounds.
     InvalidBufferRange,
-    /// An accessor encoding is outside the approved scalar/position subset.
+    /// An accessor encoding is outside the approved vertex/index subset.
     UnsupportedAccessor,
     /// A mesh primitive is not triangle-list geometry.
     UnsupportedPrimitiveMode,
@@ -119,6 +119,8 @@ pub enum AssetDiagnosticCode {
     NonFiniteVertex,
     /// A decoded normal is non-finite, zero-length, or inconsistent with its positions.
     InvalidNormal,
+    /// A decoded primary texture coordinate is non-finite or inconsistent with its positions.
+    InvalidTexcoord,
     /// A decoded index is outside its position accessor.
     InvalidIndex,
     /// A configured mesh, primitive, vertex, or index count was exceeded.
@@ -164,13 +166,18 @@ impl AssetDiagnostic {
     }
 }
 
-/// One finite decoded position and unit normal used by the asset pipeline.
+/// Exact decoded and GPU bytes in one interleaved asset vertex.
+pub const ASSET_VERTEX_BYTES: u64 = 32;
+
+/// One finite decoded position, unit normal, and primary texture coordinate.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssetVertex {
     /// XYZ position in mesh-local units.
     pub position: [FiniteF32; 3],
     /// Normalized XYZ normal in mesh-local units.
     pub normal: [FiniteF32; 3],
+    /// Primary glTF texture coordinates retained without unit clamping.
+    pub texcoord_0: [FiniteF32; 2],
 }
 
 /// Stable key for one mesh inside immutable source bytes.
@@ -270,7 +277,7 @@ impl AssetUploadJob {
     pub fn byte_len(&self) -> u64 {
         u64::try_from(self.vertices.len())
             .unwrap_or(u64::MAX)
-            .saturating_mul(24)
+            .saturating_mul(ASSET_VERTEX_BYTES)
     }
 }
 

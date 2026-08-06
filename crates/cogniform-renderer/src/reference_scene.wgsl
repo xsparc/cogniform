@@ -101,7 +101,11 @@ fn direct_material_response(
 }
 
 @vertex
-fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>) -> VertexOutput {
+fn vs_main(
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) _texcoord_0: vec2<f32>,
+) -> VertexOutput {
     var output: VertexOutput;
     let world_position = draw.model * vec4(position, 1.0);
     let model_linear = mat3x3<f32>(draw.model[0].xyz, draw.model[1].xyz, draw.model[2].xyz);

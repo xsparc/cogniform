@@ -25,8 +25,11 @@ release yet; the current workspace version remains `0.0.0`.
 - bounded content-addressed GLB admission, CPU decode, renderer upload, and
   explicit unsupported/proxy policy;
 - optional finite same-count GLB vertex normals, deterministic winding fallback,
-  exact 24-byte position/normal accounting, interleaved GPU upload, and
-  inverse-transpose rendering under non-uniform scale;
+  interleaved GPU upload, and inverse-transpose rendering under non-uniform
+  scale;
+- optional finite same-count f32 `TEXCOORD_0`, including exact out-of-unit and
+  indexed retention, exact 32-byte position/normal/primary-coordinate
+  accounting, zero defaults, and visually inert shader input location 2;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
@@ -83,6 +86,11 @@ release yet; the current workspace version remains `0.0.0`.
   no explicit scene material is present. `AssetMaterial` and
   `AssetUploadJob::material` are additive APIs; `base_color` remains available,
   and the unpublished `0.0.0` workspace receives no release action;
+- `AssetVertex` now requires a public primary-coordinate field and
+  `AssetUploadJob::byte_len` accounts 32 rather than 24 bytes per expanded
+  vertex. Missing, built-in, and proxy coordinates are exact zero. This is a
+  source-breaking Rust API and capacity-planning change in the still-unpublished
+  `0.0.0` workspace; no version or release action was taken;
 - the fixed built-in cuboid now uses 12 outward counter-clockwise triangles and
   exact axis-aligned exterior normals while preserving its 36 vertices,
   24-byte interleaved layout, 864-byte initialization payload, extents, and
@@ -114,11 +122,12 @@ release yet; the current workspace version remains `0.0.0`.
   not implemented.
   Normal output is quantized and the imported subset supports numeric base
   color, metallic, and roughness but has no normal maps, emissive/alpha modes,
-  or tangent space; the GLB subset excludes textures, external buffers,
-  compression, scene traversal, and most vertex attributes. Built-in geometry supports cuboids, fixed
-  centered XY planes, and fixed centered unit-diameter spheres; configurable
-  subdivisions, plane thickness, UV attributes, and two-sided normal policy
-  remain unsupported;
+  or tangent space; the GLB subset retains one primary coordinate set but
+  excludes images, samplers, texture sampling, external buffers, compression,
+  scene traversal, and most vertex attributes. Built-in geometry supports
+  cuboids, fixed centered XY planes, and fixed centered unit-diameter spheres;
+  configurable subdivisions, plane thickness, generated coordinate mappings,
+  and two-sided normal policy remain unsupported;
 - recovery points and recovery files do not include queued commands,
   observations, asset bytes, or residency; exact-hash asset sources can be
   stored only as separate caller-mapped files. Files are create-new only and

@@ -4,8 +4,8 @@ use cogniform_protocol::{FiniteF32, UnitF32};
 use serde::Deserialize;
 
 use crate::types::{
-    AssetDiagnostic, AssetDiagnosticCode, AssetLimits, AssetMaterial, AssetVertex, DecodedAsset,
-    DecodedMesh,
+    ASSET_VERTEX_BYTES, AssetDiagnostic, AssetDiagnosticCode, AssetLimits, AssetMaterial,
+    AssetVertex, DecodedAsset, DecodedMesh,
 };
 
 const GLB_MAGIC: [u8; 4] = *b"glTF";
@@ -356,7 +356,7 @@ fn decode_mesh(
     decoded_bytes: &mut u64,
 ) -> Result<DecodedMesh, AssetDiagnostic> {
     let primitive = validated_primitive(mesh, limits, mesh_index)?;
-    let (position_index, positions, normals) = vertex_layouts(root, binary, primitive)?;
+    let (position_index, positions, normals, texcoords) = vertex_layouts(root, binary, primitive)?;
     let (indices, output_count) =
         output_layout(root, binary, primitive, positions, position_index, limits)?;
     if output_count > limits.max_vertices_per_mesh.get() {
@@ -366,13 +366,15 @@ fn decode_mesh(
             Some(mesh_index),
         ));
     }
-    let mesh_bytes = u64::from(output_count).checked_mul(24).ok_or_else(|| {
-        diagnostic(
-            AssetDiagnosticCode::ByteLimitExceeded,
-            "glb.decoded.mesh_bytes",
-            Some(mesh_index),
-        )
-    })?;
+    let mesh_bytes = u64::from(output_count)
+        .checked_mul(ASSET_VERTEX_BYTES)
+        .ok_or_else(|| {
+            diagnostic(
+                AssetDiagnosticCode::ByteLimitExceeded,
+                "glb.decoded.mesh_bytes",
+                Some(mesh_index),
+            )
+        })?;
     *decoded_bytes = decoded_bytes.checked_add(mesh_bytes).ok_or_else(|| {
         diagnostic(
             AssetDiagnosticCode::ByteLimitExceeded,
@@ -387,7 +389,10 @@ fn decode_mesh(
             None,
         ));
     }
-    let vertices = decode_vertices(binary, positions, normals, indices, output_count)?;
+    if let Some(texcoords) = texcoords {
+        validate_texcoords(binary, texcoords)?;
+    }
+    let vertices = decode_vertices(binary, positions, normals, texcoords, indices, output_count)?;
     let material = decode_material(root, primitive.material)?;
     Ok(DecodedMesh {
         vertices: Arc::from(vertices),
@@ -418,8 +423,10 @@ fn validated_primitive(
         ));
     }
     let attributes_supported = primitive.attributes.contains_key("POSITION")
-        && (primitive.attributes.len() == 1
-            || (primitive.attributes.len() == 2 && primitive.attributes.contains_key("NORMAL")));
+        && primitive
+            .attributes
+            .keys()
+            .all(|attribute| matches!(attribute.as_str(), "POSITION" | "NORMAL" | "TEXCOORD_0"));
     if !attributes_supported {
         return Err(diagnostic(
             AssetDiagnosticCode::UnsupportedFeature,
@@ -434,7 +441,15 @@ fn vertex_layouts(
     root: &Root,
     binary: &[u8],
     primitive: &Primitive,
-) -> Result<(u32, AccessorLayout, Option<AccessorLayout>), AssetDiagnostic> {
+) -> Result<
+    (
+        u32,
+        AccessorLayout,
+        Option<AccessorLayout>,
+        Option<AccessorLayout>,
+    ),
+    AssetDiagnostic,
+> {
     let position_index = primitive.attributes["POSITION"];
     let positions = accessor_layout(root, binary, position_index, AccessorExpectation::Positions)?;
     let normals = primitive
@@ -455,7 +470,30 @@ fn vertex_layouts(
             Some(normal_index),
         ));
     }
-    Ok((position_index, positions, normals.map(|(_, layout)| layout)))
+    let texcoords = primitive
+        .attributes
+        .get("TEXCOORD_0")
+        .copied()
+        .map(|texcoord_index| {
+            accessor_layout(root, binary, texcoord_index, AccessorExpectation::Texcoords)
+                .map(|layout| (texcoord_index, layout))
+        })
+        .transpose()?;
+    if let Some((texcoord_index, texcoords)) = texcoords
+        && texcoords.count != positions.count
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidTexcoord,
+            "glb.json.accessors.texcoord_0.count",
+            Some(texcoord_index),
+        ));
+    }
+    Ok((
+        position_index,
+        positions,
+        normals.map(|(_, layout)| layout),
+        texcoords.map(|(_, layout)| layout),
+    ))
 }
 
 fn output_layout(
@@ -499,6 +537,7 @@ fn output_layout(
 enum AccessorExpectation {
     Positions,
     Normals,
+    Texcoords,
     Indices,
 }
 
@@ -559,6 +598,11 @@ fn accessor_format(
         {
             Ok((12, 4))
         }
+        AccessorExpectation::Texcoords
+            if accessor.component_type == FLOAT && accessor.kind == "VEC2" =>
+        {
+            Ok((8, 4))
+        }
         AccessorExpectation::Indices
             if accessor.kind == "SCALAR"
                 && matches!(accessor.component_type, UNSIGNED_SHORT | UNSIGNED_INT) =>
@@ -572,6 +616,7 @@ fn accessor_format(
         }
         AccessorExpectation::Positions
         | AccessorExpectation::Normals
+        | AccessorExpectation::Texcoords
         | AccessorExpectation::Indices => Err(diagnostic(
             AssetDiagnosticCode::UnsupportedAccessor,
             "glb.json.accessors",
@@ -685,6 +730,7 @@ fn decode_vertices(
     binary: &[u8],
     positions: AccessorLayout,
     normals: Option<AccessorLayout>,
+    texcoords: Option<AccessorLayout>,
     indices: Option<AccessorLayout>,
     output_count: u32,
 ) -> Result<Vec<AssetVertex>, AssetDiagnostic> {
@@ -707,7 +753,15 @@ fn decode_vertices(
             .map(|layout| read_normal(binary, layout, position_index))
             .transpose()?
             .unwrap_or([FiniteF32::new(0.0).expect("zero is finite"); 3]);
-        vertices.push(AssetVertex { position, normal });
+        let texcoord_0 = texcoords
+            .map(|layout| read_texcoord(binary, layout, position_index))
+            .transpose()?
+            .unwrap_or([FiniteF32::new(0.0).expect("zero is finite"); 2]);
+        vertices.push(AssetVertex {
+            position,
+            normal,
+            texcoord_0,
+        });
     }
     if normals.is_none() {
         for triangle in vertices.chunks_exact_mut(3) {
@@ -722,6 +776,13 @@ fn decode_vertices(
         }
     }
     Ok(vertices)
+}
+
+fn validate_texcoords(binary: &[u8], layout: AccessorLayout) -> Result<(), AssetDiagnostic> {
+    for index in 0..layout.count {
+        read_texcoord(binary, layout, index)?;
+    }
+    Ok(())
 }
 
 fn read_index(binary: &[u8], layout: AccessorLayout, index: u32) -> Result<u32, AssetDiagnostic> {
@@ -819,6 +880,36 @@ fn read_normal(
         })?;
     }
     normalize_vector(normal, "glb.binary.normals", Some(index))
+}
+
+fn read_texcoord(
+    binary: &[u8],
+    layout: AccessorLayout,
+    index: u32,
+) -> Result<[FiniteF32; 2], AssetDiagnostic> {
+    let offset = element_offset(layout, index, "glb.binary.texcoord_0")?;
+    let mut texcoord = [FiniteF32::new(0.0).expect("zero is finite"); 2];
+    for (component, target) in texcoord.iter_mut().enumerate() {
+        let start = offset + component * 4;
+        let encoded: [u8; 4] = binary
+            .get(start..start + 4)
+            .and_then(|value| value.try_into().ok())
+            .ok_or_else(|| {
+                diagnostic(
+                    AssetDiagnosticCode::InvalidBufferRange,
+                    "glb.binary.texcoord_0",
+                    Some(index),
+                )
+            })?;
+        *target = FiniteF32::new(f32::from_le_bytes(encoded)).map_err(|_| {
+            diagnostic(
+                AssetDiagnosticCode::InvalidTexcoord,
+                "glb.binary.texcoord_0",
+                Some(index),
+            )
+        })?;
+    }
+    Ok(texcoord)
 }
 
 fn face_normal(
@@ -987,9 +1078,11 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
             });
             let normal = face_normal(positions[0], positions[1], positions[2])
                 .expect("proxy triangles are non-degenerate");
-            positions
-                .into_iter()
-                .map(move |position| AssetVertex { position, normal })
+            positions.into_iter().map(move |position| AssetVertex {
+                position,
+                normal,
+                texcoord_0: [FiniteF32::new(0.0).expect("zero is finite"); 2],
+            })
         })
         .collect();
     DecodedAsset {
@@ -1006,7 +1099,7 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
                 UnitF32::new(0.8).expect("constant is in range"),
             ),
         }],
-        byte_len: 36 * 24,
+        byte_len: 36 * ASSET_VERTEX_BYTES,
     }
 }
 

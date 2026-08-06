@@ -193,17 +193,19 @@ Every feedback envelope includes scene revision, frame ID, camera ID when releva
 Use `wgpu` with built-in WGSL and negotiated adapter features/limits. The baseline is a small forward renderer with primitive meshes, camera, depth, color, entity-ID, and quantized world-space normal output. Position-only triangles remain flat; approved imported vertex normals are inverse-transformed and interpolated. Headless mode renders to textures without constructing a visible window. Optional `winit` integration is isolated from the headless core.
 
 Built-in cuboids, centered unit XY planes, and centered unit-diameter spheres
-use immutable expanded position-plus-normal buffers. A cuboid is a centered
-unit box with 12 outward counter-clockwise triangles, 36 expanded vertices,
-and exact axis-aligned exterior normals in one fixed 864-byte payload. Plane
-triangles wind counter-clockwise toward positive Z, remain at local Z = 0, and
-apply all positive XYZ dimensions through the model transform; X/Y set visible
-extents while Z participates in normal transformation without creating
-thickness.
+use immutable expanded position-plus-normal-plus-primary-coordinate buffers.
+A cuboid is a centered unit box with 12 outward counter-clockwise triangles,
+36 expanded vertices, exact axis-aligned exterior normals, and zero
+coordinates in one fixed 1,152-byte payload. Plane triangles wind
+counter-clockwise toward positive Z, remain at local Z = 0, and apply all
+positive XYZ dimensions through the model transform; X/Y set visible extents
+while Z participates in normal transformation without creating thickness.
 The sphere has a positive-Z polar axis, fixed 16-sector by 8-band topology,
 outward counter-clockwise triangles, and unit radial normals. Its XYZ
 dimensions are bounding diameters. The fixed 672-vertex sphere payload is
-generated once at renderer initialization; no frame performs tessellation.
+21,504 bytes and is generated once at renderer initialization; no frame
+performs tessellation. The plane payload is 192 bytes. All built-ins use exact
+zero primary coordinates.
 A missing asset uses its exact explicit built-in fallback, and a resident
 asset retains precedence.
 
@@ -247,7 +249,7 @@ GPU layouts are explicit and asserted. `bytemuck::Pod` is used only for types wi
 
 ### 4.2 Assets
 
-Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset with finite positions, optional same-count finite vertex normals, and one bounded numeric metallic-roughness material per mesh. Decoders verify declared and decoded sizes before allocation; expanded upload vertices always reserve exactly 24 bytes for position plus unit normal, synthesizing a winding-derived direction when the source omits one. Material metadata travels with the immutable upload job but does not change vertex-byte or GPU-residency accounting. The local service owns bounded CPU asset state and explicitly forwards immutable upload jobs into renderer-owned residency; neither patches nor frames perform implicit asset work. Recovery preserves logical content references but starts CPU and GPU asset state empty, so callers must rehydrate exact matching bytes before dependent rendering resumes. An opt-in storage adapter can retain one exact source in a separate immutable bounded file, but it neither maps that file to recovery state nor decodes, imports, uploads, or schedules the source. Unsupported extensions produce structured diagnostics or approved proxies; malformed normal or material data cannot proxy.
+Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset with finite positions, optional same-count finite vertex normals, optional same-count finite f32 `TEXCOORD_0`, and one bounded numeric metallic-roughness material per mesh. Decoders verify declared and decoded sizes before allocation; expanded upload vertices always reserve exactly 32 bytes for position, unit normal, and primary coordinate, synthesizing a winding-derived direction or exact zero coordinate when the source omits one. The renderer reserves shader location 2 for the coordinate but does not sample it, so current outputs remain unchanged. Material metadata travels with the immutable upload job but does not change vertex-byte or GPU-residency accounting. The local service owns bounded CPU asset state and explicitly forwards immutable upload jobs into renderer-owned residency; neither patches nor frames perform implicit asset work. Recovery preserves logical content references but starts CPU and GPU asset state empty, so callers must rehydrate exact matching bytes before dependent rendering resumes. An opt-in storage adapter can retain one exact source in a separate immutable bounded file, but it neither maps that file to recovery state nor decodes, imports, uploads, or schedules the source. Unsupported extensions produce structured diagnostics or approved proxies; malformed normal, primary-coordinate, or material data cannot proxy.
 
 Built-in procedures are pure synchronous preparation functions. The local
 service executes a supported typed request under active runtime limits and
