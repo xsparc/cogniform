@@ -537,13 +537,43 @@ action remain excluded. See
 [ADR 0026](../adr/0026-bounded-direct-metallic-roughness-response.md) and the
 [renderer guide](../renderer/headless-reference-scene.md).
 
+### PR 27 - CF027: Imported GLB metallic-roughness materials
+
+Outcome: validated numeric GLB material factors reach the existing bounded
+direct-light response without duplicating them in world state.
+
+Gate: one typed immutable asset material retains linear base RGBA, metallic,
+and perceptual roughness from the approved GLB subset through decoded mesh,
+upload job, renderer residency, and scene preparation. Explicitly selected GLB
+materials apply the glTF default of one for omitted factors; a primitive with
+no material preserves Cogniform's existing `(0.8, 0.8, 0.8, 1.0)`, metallic
+`0`, roughness `0.8` fallback, and the magenta proxy keeps the same neutral
+numeric factors. Every value is unit-bounded before a record becomes ready.
+
+Implemented contract: a resident asset supplies all three imported values only
+when its entity has no `MaterialComponent`; an explicit scene material
+overrides all three together. No active light preserves exact selected base
+RGBA. Material metadata uses no vertex or GPU buffer bytes, so the 24-byte
+expanded vertex, upload reservation, residency accounting, content hash,
+explicit import/upload/rehydration, 480-byte draw uniform, bind group, shader,
+pipeline, and causal observation contracts remain unchanged. CPU tests pin
+retention, defaults, rejection, proxy, accounting, and override precedence; a
+controlled adapter probe pins distinct imported and overridden direct color
+while depth, stable identity, normals, background, and revision progression
+remain fixed. Textures, images, samplers, UVs, tangents, normal maps,
+emissive/alpha modes, image-based lighting, shadows, HDR, tone mapping,
+schema/world/hash/replay changes, persistence, transport, dependencies, CI
+expansion, deployment, and release action remain excluded. See
+[ADR 0027](../adr/0027-imported-glb-metallic-roughness-materials.md) and the
+[GLB guide](../assets/glb-subset.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
-  -> CF022 -> CF023 -> CF024 -> CF025 -> CF026
+  -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.

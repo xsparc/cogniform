@@ -222,7 +222,10 @@ and an energy-conserving Lambert diffuse split. Perceptual roughness has a
 are clamped in linear color space, and alpha remains unchanged.
 Zero-intensity definitions count toward their kind's capacity but are inactive.
 Only a scene with no active definition of either kind bypasses lighting and
-preserves exact base RGBA. A missing material uses its existing fallback color
+preserves exact base RGBA. A resident GLB mesh supplies its imported base
+color, metallic, and roughness when the entity has no explicit material; a
+scene `MaterialComponent` overrides all three values together. A built-in or
+material-free asset without a scene material uses its existing fallback color
 with neutral dielectric parameters `metallic = 0`, `roughness = 0.8`. Ambient,
 emissive, image-based lighting, shadows, spot lights, configurable point
 range/radius, textures, HDR, and tone mapping are outside this baseline. A
@@ -244,7 +247,7 @@ GPU layouts are explicit and asserted. `bytemuck::Pod` is used only for types wi
 
 ### 4.2 Assets
 
-Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset with finite positions and optional same-count finite vertex normals. Decoders verify declared and decoded sizes before allocation; expanded upload vertices always reserve exactly 24 bytes for position plus unit normal, synthesizing a winding-derived direction when the source omits one. The local service owns bounded CPU asset state and explicitly forwards immutable upload jobs into renderer-owned residency; neither patches nor frames perform implicit asset work. Recovery preserves logical content references but starts CPU and GPU asset state empty, so callers must rehydrate exact matching bytes before dependent rendering resumes. An opt-in storage adapter can retain one exact source in a separate immutable bounded file, but it neither maps that file to recovery state nor decodes, imports, uploads, or schedules the source. Unsupported extensions produce structured diagnostics or approved proxies; malformed normal data cannot proxy.
+Runtime assets are immutable and addressed by cryptographic content hash. The MVP accepts primitives first, then a bounded glTF/GLB subset with finite positions, optional same-count finite vertex normals, and one bounded numeric metallic-roughness material per mesh. Decoders verify declared and decoded sizes before allocation; expanded upload vertices always reserve exactly 24 bytes for position plus unit normal, synthesizing a winding-derived direction when the source omits one. Material metadata travels with the immutable upload job but does not change vertex-byte or GPU-residency accounting. The local service owns bounded CPU asset state and explicitly forwards immutable upload jobs into renderer-owned residency; neither patches nor frames perform implicit asset work. Recovery preserves logical content references but starts CPU and GPU asset state empty, so callers must rehydrate exact matching bytes before dependent rendering resumes. An opt-in storage adapter can retain one exact source in a separate immutable bounded file, but it neither maps that file to recovery state nor decodes, imports, uploads, or schedules the source. Unsupported extensions produce structured diagnostics or approved proxies; malformed normal or material data cannot proxy.
 
 Built-in procedures are pure synchronous preparation functions. The local
 service executes a supported typed request under active runtime limits and

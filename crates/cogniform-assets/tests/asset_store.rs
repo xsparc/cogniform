@@ -42,6 +42,32 @@ fn glb_with_json(json: &str, binary: &[u8]) -> Vec<u8> {
     output
 }
 
+fn triangle_binary() -> Vec<u8> {
+    let mut binary = Vec::with_capacity(36);
+    for vertex in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in vertex {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    binary
+}
+
+fn triangle_glb_with_material(pbr_fields: &str) -> Vec<u8> {
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":[{{"pbrMetallicRoughness":{{{pbr_fields}}}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":0,"mode":4}}]}}]}}"#
+    );
+    glb_with_json(&json, &triangle_binary())
+}
+
+fn triangle_glb_without_material() -> Vec<u8> {
+    let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"mode":4}]}]}"#;
+    glb_with_json(json, &triangle_binary())
+}
+
 fn glb_with_normals(
     normals: [[f32; 3]; 3],
     normal_count: u32,
@@ -142,6 +168,91 @@ fn verified_fixture_decodes_only_when_explicitly_processed() {
         assert_normal(vertex.normal, [0.0, 0.0, 1.0]);
     }
     assert_color(upload.base_color(), [0.2, 0.6, 0.9, 1.0]);
+    assert_color(upload.material().base_color(), [0.2, 0.6, 0.9, 1.0]);
+    assert_eq!(
+        upload.material().metallic().get().to_bits(),
+        0.0_f32.to_bits()
+    );
+    assert_eq!(
+        upload.material().roughness().get().to_bits(),
+        0.8_f32.to_bits()
+    );
+}
+
+#[test]
+fn explicit_material_defaults_and_no_material_fallback_are_retained() {
+    let explicit = triangle_glb_with_material(r#""baseColorFactor":[0.3,0.4,0.5,0.6]"#);
+    let explicit_hash = content_hash(&explicit);
+    let mut explicit_store = AssetStore::default();
+    explicit_store.enqueue(explicit_hash, explicit).unwrap();
+    assert_eq!(
+        explicit_store.process_next().unwrap().state,
+        AssetState::Ready
+    );
+    let explicit_upload = explicit_store
+        .upload_job(AssetMeshKey {
+            content_hash: explicit_hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_color(
+        explicit_upload.material().base_color(),
+        [0.3, 0.4, 0.5, 0.6],
+    );
+    assert_eq!(
+        explicit_upload.material().metallic().get().to_bits(),
+        1.0_f32.to_bits()
+    );
+    assert_eq!(
+        explicit_upload.material().roughness().get().to_bits(),
+        1.0_f32.to_bits()
+    );
+
+    let unmaterialed = triangle_glb_without_material();
+    let unmaterialed_hash = content_hash(&unmaterialed);
+    let mut unmaterialed_store = AssetStore::default();
+    unmaterialed_store
+        .enqueue(unmaterialed_hash, unmaterialed)
+        .unwrap();
+    assert_eq!(
+        unmaterialed_store.process_next().unwrap().state,
+        AssetState::Ready
+    );
+    let unmaterialed_upload = unmaterialed_store
+        .upload_job(AssetMeshKey {
+            content_hash: unmaterialed_hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_color(
+        unmaterialed_upload.material().base_color(),
+        [0.8, 0.8, 0.8, 1.0],
+    );
+    assert_eq!(
+        unmaterialed_upload.material().metallic().get().to_bits(),
+        0.0_f32.to_bits()
+    );
+    assert_eq!(
+        unmaterialed_upload.material().roughness().get().to_bits(),
+        0.8_f32.to_bits()
+    );
+    assert_eq!(explicit_upload.byte_len(), unmaterialed_upload.byte_len());
+}
+
+#[test]
+fn out_of_range_material_factors_are_rejected() {
+    for fields in [
+        r#""metallicFactor":-0.1,"roughnessFactor":0.5"#,
+        r#""metallicFactor":0.5,"roughnessFactor":1.1"#,
+    ] {
+        let bytes = triangle_glb_with_material(fields);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
 }
 
 #[test]
@@ -326,6 +437,14 @@ fn unsupported_extensions_are_typed_and_proxy_policy_is_explicit() {
         .unwrap();
     assert_eq!(upload.vertices().len(), 36);
     assert_color(upload.base_color(), [1.0, 0.0, 1.0, 1.0]);
+    assert_eq!(
+        upload.material().metallic().get().to_bits(),
+        0.0_f32.to_bits()
+    );
+    assert_eq!(
+        upload.material().roughness().get().to_bits(),
+        0.8_f32.to_bits()
+    );
 }
 
 #[test]

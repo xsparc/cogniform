@@ -1,7 +1,7 @@
 use core::num::{NonZeroU32, NonZeroU64};
 use std::collections::{BTreeMap, BTreeSet};
 
-use cogniform_assets::AssetMeshKey;
+use cogniform_assets::{AssetMaterial, AssetMeshKey};
 use cogniform_protocol::{
     CameraComponent, ColorRgba, LightKind, RenderChange, RenderEntity, RenderExtraction,
     SceneRevision, StableEntityId,
@@ -248,7 +248,7 @@ impl RenderScene {
         width: u32,
         height: u32,
         max_draws: NonZeroU32,
-        mut resolve_asset: impl FnMut(AssetMeshKey) -> Option<[f32; 4]>,
+        mut resolve_asset: impl FnMut(AssetMeshKey) -> Option<AssetMaterial>,
     ) -> Result<PreparedScene, RendererError> {
         let camera_entity = self
             .entities
@@ -265,13 +265,13 @@ impl RenderScene {
         let mut id_lookup = BTreeMap::new();
         for (&entity_id, entity) in &self.entities {
             let primitive = entity.primitive();
-            let (geometry, imported_color) = if let Some(asset_mesh) = entity.asset_mesh() {
+            let (geometry, imported_material) = if let Some(asset_mesh) = entity.asset_mesh() {
                 let key = AssetMeshKey {
                     content_hash: asset_mesh.content_hash,
                     mesh_index: asset_mesh.mesh_index,
                 };
-                if let Some(color) = resolve_asset(key) {
-                    (PreparedGeometry::Asset(key), Some(color))
+                if let Some(material) = resolve_asset(key) {
+                    (PreparedGeometry::Asset(key), Some(material))
                 } else if let Some(primitive) = primitive {
                     (primitive_geometry(primitive.shape), None)
                 } else {
@@ -306,10 +306,15 @@ impl RenderScene {
             }
             let (color, metallic, roughness) = entity.material().map_or_else(
                 || {
-                    (
-                        imported_color.unwrap_or([0.8, 0.8, 0.8, 1.0]),
-                        DEFAULT_METALLIC,
-                        DEFAULT_ROUGHNESS,
+                    imported_material.map_or(
+                        ([0.8, 0.8, 0.8, 1.0], DEFAULT_METALLIC, DEFAULT_ROUGHNESS),
+                        |material| {
+                            (
+                                material.base_color().map(cogniform_protocol::UnitF32::get),
+                                material.metallic().get(),
+                                material.roughness().get(),
+                            )
+                        },
                     )
                 },
                 |material| {
@@ -644,6 +649,14 @@ mod tests {
         assert_eq!(actual.to_bits(), expected.to_bits());
     }
 
+    fn asset_material(color: [f32; 4], metallic: f32, roughness: f32) -> AssetMaterial {
+        AssetMaterial::new(
+            color.map(|value| UnitF32::new(value).unwrap()),
+            UnitF32::new(metallic).unwrap(),
+            UnitF32::new(roughness).unwrap(),
+        )
+    }
+
     fn entity(entity_id: StableEntityId) -> RenderEntity {
         primitive_entity(entity_id, PrimitiveShape::Cuboid, [1.0; 3])
     }
@@ -754,6 +767,30 @@ mod tests {
                     content_hash: key.content_hash,
                     mesh_index: key.mesh_index,
                 }),
+                ..RenderComponents::default()
+            },
+        )
+        .unwrap()
+    }
+
+    fn asset_entity_with_material(
+        entity_id: StableEntityId,
+        key: AssetMeshKey,
+        material: MaterialComponent,
+        generation: u64,
+    ) -> RenderEntity {
+        RenderEntity::new(
+            entity_id,
+            [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+            generation,
+            RenderComponents {
+                asset_mesh: Some(AssetMeshComponent {
+                    content_hash: key.content_hash,
+                    mesh_index: key.mesh_index,
+                }),
+                material: Some(material),
                 ..RenderComponents::default()
             },
         )
@@ -1211,7 +1248,7 @@ mod tests {
 
         let resident = scene
             .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |resolved| {
-                (resolved == key).then_some([0.1, 0.2, 0.3, 1.0])
+                (resolved == key).then_some(asset_material([0.1, 0.2, 0.3, 1.0], 0.4, 0.6))
             })
             .unwrap();
         assert_eq!(resident.draws[0].geometry, PreparedGeometry::Asset(key));
@@ -1263,12 +1300,81 @@ mod tests {
 
         let resident = scene
             .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |resolved| {
-                (resolved == key).then_some([0.1, 0.2, 0.3, 1.0])
+                (resolved == key).then_some(asset_material([0.1, 0.2, 0.3, 1.0], 0.4, 0.6))
             })
             .unwrap();
         assert_eq!(resident.draws[0].geometry, PreparedGeometry::Asset(key));
         assert_exact_f32(resident.draws[0].model[0], 1.0);
         assert_exact_f32(resident.draws[0].model[5], 1.0);
         assert_exact_f32(resident.draws[0].model[10], 1.0);
+    }
+
+    #[test]
+    fn resident_asset_material_is_used_until_scene_material_overrides_all_values() {
+        let key = AssetMeshKey {
+            content_hash: ContentHash::from_bytes([10; 32]),
+            mesh_index: 6,
+        };
+        let imported = asset_material([0.1, 0.2, 0.3, 0.4], 0.75, 0.25);
+        let mut scene = RenderScene::new(NonZeroU32::new(2).unwrap());
+        scene
+            .apply(&extraction(
+                1,
+                0,
+                1,
+                vec![
+                    RenderChange::upsert(camera(id(1))),
+                    RenderChange::upsert(asset_entity(id(2), key)),
+                ],
+            ))
+            .unwrap();
+
+        let prepared = scene
+            .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |resolved| {
+                (resolved == key).then_some(imported)
+            })
+            .unwrap();
+        assert_eq!(
+            prepared.draws[0].color.map(f32::to_bits),
+            [0.1, 0.2, 0.3, 0.4].map(f32::to_bits)
+        );
+        assert_exact_f32(prepared.draws[0].metallic, 0.75);
+        assert_exact_f32(prepared.draws[0].roughness, 0.25);
+
+        let unit = |value| UnitF32::new(value).unwrap();
+        let scene_material = MaterialComponent {
+            base_color: ColorRgba {
+                r: unit(0.8),
+                g: unit(0.4),
+                b: unit(0.2),
+                a: unit(0.5),
+            },
+            metallic: unit(0.0),
+            roughness: unit(0.9),
+        };
+        scene
+            .apply(&extraction(
+                2,
+                1,
+                2,
+                vec![RenderChange::upsert(asset_entity_with_material(
+                    id(2),
+                    key,
+                    scene_material,
+                    2,
+                ))],
+            ))
+            .unwrap();
+        let overridden = scene
+            .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| {
+                Some(imported)
+            })
+            .unwrap();
+        assert_eq!(
+            overridden.draws[0].color.map(f32::to_bits),
+            [0.8, 0.4, 0.2, 0.5].map(f32::to_bits)
+        );
+        assert_exact_f32(overridden.draws[0].metallic, 0.0);
+        assert_exact_f32(overridden.draws[0].roughness, 0.9);
     }
 }

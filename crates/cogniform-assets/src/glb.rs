@@ -4,7 +4,8 @@ use cogniform_protocol::{FiniteF32, UnitF32};
 use serde::Deserialize;
 
 use crate::types::{
-    AssetDiagnostic, AssetDiagnosticCode, AssetLimits, AssetVertex, DecodedAsset, DecodedMesh,
+    AssetDiagnostic, AssetDiagnosticCode, AssetLimits, AssetMaterial, AssetVertex, DecodedAsset,
+    DecodedMesh,
 };
 
 const GLB_MAGIC: [u8; 4] = *b"glTF";
@@ -387,10 +388,10 @@ fn decode_mesh(
         ));
     }
     let vertices = decode_vertices(binary, positions, normals, indices, output_count)?;
-    let base_color = decode_material(root, primitive.material)?;
+    let material = decode_material(root, primitive.material)?;
     Ok(DecodedMesh {
         vertices: Arc::from(vertices),
-        base_color,
+        material,
     })
 }
 
@@ -901,27 +902,20 @@ fn element_offset(
 fn decode_material(
     root: &Root,
     material_index: Option<u32>,
-) -> Result<[UnitF32; 4], AssetDiagnostic> {
-    let values = if let Some(index) = material_index {
+) -> Result<AssetMaterial, AssetDiagnostic> {
+    let (color_values, metallic_value, roughness_value) = if let Some(index) = material_index {
         let material = get(&root.materials, index, "glb.json.materials")?;
         let pbr = material.pbr_metallic_roughness.as_ref();
-        if let Some(pbr) = pbr {
-            for scalar in [pbr.metallic, pbr.roughness].into_iter().flatten() {
-                UnitF32::new(scalar).map_err(|_| {
-                    diagnostic(
-                        AssetDiagnosticCode::InvalidJson,
-                        "glb.json.materials.pbrMetallicRoughness",
-                        Some(index),
-                    )
-                })?;
-            }
-        }
-        pbr.and_then(|value| value.base_color).unwrap_or([1.0; 4])
+        (
+            pbr.and_then(|value| value.base_color).unwrap_or([1.0; 4]),
+            pbr.and_then(|value| value.metallic).unwrap_or(1.0),
+            pbr.and_then(|value| value.roughness).unwrap_or(1.0),
+        )
     } else {
-        [0.8, 0.8, 0.8, 1.0]
+        ([0.8, 0.8, 0.8, 1.0], 0.0, 0.8)
     };
     let mut color = [UnitF32::new(0.0).expect("zero is in range"); 4];
-    for (target, value) in color.iter_mut().zip(values) {
+    for (target, value) in color.iter_mut().zip(color_values) {
         *target = UnitF32::new(value).map_err(|_| {
             diagnostic(
                 AssetDiagnosticCode::InvalidJson,
@@ -930,7 +924,20 @@ fn decode_material(
             )
         })?;
     }
-    Ok(color)
+    let material_scalar = |value| {
+        UnitF32::new(value).map_err(|_| {
+            diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.materials.pbrMetallicRoughness",
+                material_index,
+            )
+        })
+    };
+    Ok(AssetMaterial::new(
+        color,
+        material_scalar(metallic_value)?,
+        material_scalar(roughness_value)?,
+    ))
 }
 
 pub(crate) fn proxy_asset() -> DecodedAsset {
@@ -988,12 +995,16 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
     DecodedAsset {
         meshes: vec![DecodedMesh {
             vertices: Arc::from(vertices),
-            base_color: [
-                UnitF32::new(1.0).expect("constant is in range"),
+            material: AssetMaterial::new(
+                [
+                    UnitF32::new(1.0).expect("constant is in range"),
+                    UnitF32::new(0.0).expect("constant is in range"),
+                    UnitF32::new(1.0).expect("constant is in range"),
+                    UnitF32::new(1.0).expect("constant is in range"),
+                ],
                 UnitF32::new(0.0).expect("constant is in range"),
-                UnitF32::new(1.0).expect("constant is in range"),
-                UnitF32::new(1.0).expect("constant is in range"),
-            ],
+                UnitF32::new(0.8).expect("constant is in range"),
+            ),
         }],
         byte_len: 36 * 24,
     }

@@ -9,7 +9,7 @@ mod types;
 pub use error::AssetError;
 pub use store::AssetStore;
 pub use types::{
-    AssetAdmission, AssetDiagnostic, AssetDiagnosticCode, AssetLimits, AssetMeshKey,
+    AssetAdmission, AssetDiagnostic, AssetDiagnosticCode, AssetLimits, AssetMaterial, AssetMeshKey,
     AssetProcessOutcome, AssetRecord, AssetState, AssetStoreConfig, AssetStoreStats,
     AssetUploadJob, AssetVertex, UnsupportedAssetPolicy,
 };

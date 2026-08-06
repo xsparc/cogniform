@@ -215,7 +215,7 @@ impl AssetStore {
         Ok(AssetUploadJob::new(
             key,
             mesh.vertices.clone(),
-            mesh.base_color,
+            mesh.material,
         ))
     }
 

@@ -32,5 +32,6 @@ earlier one and links the history.
 | [0024](0024-bounded-point-diffuse-lighting.md) | Accepted | Render up to four stable-ordered point lights with bounded inverse-square diffuse shading |
 | [0025](0025-outward-built-in-cuboid-winding.md) | Accepted | Correct the fixed built-in cuboid to outward counter-clockwise winding and exterior normals |
 | [0026](0026-bounded-direct-metallic-roughness-response.md) | Accepted | Honor metallic and roughness through one bounded direct-light microfacet response |
+| [0027](0027-imported-glb-metallic-roughness-materials.md) | Accepted | Retain bounded GLB material factors through immutable upload and renderer residency |
 
 New records use four sections: context, decision, consequences, and status.

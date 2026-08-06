@@ -5,7 +5,9 @@ and bounded renderer uploads are implemented by CF007. CF015 composes those
 steps into the local typed service without making them implicit. CF019 adds an
 independent immutable bounded file for retaining one exact source across a
 restart; import and upload remain explicit. CF020 adds bounded optional vertex
-normals without expanding the texture, material, or scene-graph surface.
+normals. CF027 retains the approved numeric metallic-roughness factors through
+the same immutable upload and renderer-residency path without adding textures
+or scene-graph traversal.
 
 ## Ownership and lifecycle
 
@@ -44,8 +46,9 @@ APIs remain available for embedders that own those domains directly.
 
 Records are retained as `Queued`, `Ready`, `ProxyReady`, or `Rejected`. The
 original source is retained only while queued. Ready and proxy records retain
-expanded triangle positions and unit normals for upload. There is no eviction API in this
-baseline; dropping the store or renderer releases its respective residency.
+expanded triangle positions, unit normals, and one typed immutable numeric
+material for upload. There is no eviction API in this baseline; dropping the
+store or renderer releases its respective residency.
 
 The authoritative world stores only `AssetMeshComponent`, containing the
 content hash and zero-based mesh index. That component participates in logical
@@ -80,10 +83,12 @@ The importer accepts only the following baseline:
 - optional non-normalized scalar u16 or u32 indices;
 - tightly packed or valid component-aligned buffer-view strides up to 252
   bytes; and
-- an optional material `pbrMetallicRoughness.baseColorFactor`. Source metallic
-  and roughness factors are range-validated but are not retained in
-  `AssetMesh` or rendered; an explicit scene `MaterialComponent` supplies the
-  current direct metallic-roughness response.
+- an optional material with unit-interval
+  `pbrMetallicRoughness.baseColorFactor`, `metallicFactor`, and
+  `roughnessFactor`. For an explicitly selected material, omitted factors use
+  the glTF defaults of one. A primitive without a material retains the
+  existing neutral Cogniform fallback `(0.8, 0.8, 0.8, 1.0)`, metallic `0`,
+  and roughness `0.8`.
 
 Indexed geometry is expanded into a triangle vertex stream, using the same
 source index for position and normal. Accepted source normals are normalized
@@ -125,10 +130,18 @@ failures always produce `Rejected`. A proxy therefore never masks malformed or
 over-limit input. A syntactically valid but unsupported normal accessor format
 remains an `UnsupportedAccessor` and may proxy only under explicit policy.
 
-At draw time, a resident mesh uses its imported base color unless the world
-entity has an explicit material, which overrides it. If the referenced mesh is
-not resident, an explicit primitive component is used as the author-chosen
-fallback. Without that component, preparation fails with `AssetUnavailable`.
+At draw time, a resident mesh uses its imported base color, metallic, and
+roughness unless the world entity has an explicit material, which overrides
+all three together. No active light preserves the selected base RGBA exactly.
+If the referenced mesh is not resident, an explicit primitive component is
+used as the author-chosen fallback. Without that component, preparation fails
+with `AssetUnavailable`.
+
+`AssetMaterial` carries only validated unit-interval numeric metadata.
+`AssetUploadJob::material` exposes the complete value while the compatible
+`base_color` accessor remains. Material metadata does not change the exact
+24-byte expanded vertex accounting, pending upload bytes, or resident GPU
+bytes.
 
 ## Default bounds
 
@@ -169,9 +182,10 @@ resident-byte limits.
 
 The default offline suite verifies exact hash admission, every truncated prefix
 of the checked fixture, malformed extension declarations, proxy eligibility,
-normal normalization/count/value/range failures, winding fallback, exact
-24-byte accounting, range and capacity failure, procedure replay, world
-extraction, and renderer upload reservation:
+material retention/defaults/range failures, normal
+normalization/count/value/range failures, winding fallback, exact 24-byte
+accounting, range and capacity failure, procedure replay, world extraction,
+and renderer upload reservation:
 
 ```text
 cargo test -p cogniform-assets -p cogniform-procedural --locked --offline
@@ -184,14 +198,16 @@ on an approved DX12 or Vulkan adapter:
 ```text
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_normals_are_inverse_transformed_and_observable
+cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_material_factors_drive_direct_light_and_scene_override
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
 cargo test --release -p cogniform-storage --test asset_file --locked --offline -- --ignored --exact persisted_recovery_and_asset_sources_restore_renderable_state
 ```
 
 The controlled tests create no window, perform no network call, and upload no
 artifact. They verify exact entity identity plus tolerant imported color,
-depth, position-only winding normals, and imported normals under non-uniform
-scale, then prove that restored asset references require explicit
+depth, position-only winding normals, imported normals under non-uniform scale,
+and distinct imported/overridden direct material response with exact unlit
+base RGBA, then prove that restored asset references require explicit
 exact-hash CPU/GPU rehydration without another logical mutation. The CF019 case
 persists recovery and asset source in separate files, drops the source service,
 restores the logical reference, observes its exact typed absence, and then

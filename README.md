@@ -16,9 +16,11 @@ scene revision that produced it.
 > winding fallback and bounded imported vertex normals. A bounded
 > in-process gateway, exact logical queries, and a
 > deterministic primitive imagination compiler are also available. The current
-> asset baseline adds content-addressed GLB geometry with optional finite
-> vertex normals, exact bounded caller-driven CPU decode and GPU upload, plus
-> pure seeded cuboid-grid procedures. The local
+> asset baseline adds content-addressed GLB geometry with optional finite vertex
+> normals and unit-bounded numeric metallic-roughness materials, exact bounded
+> caller-driven CPU decode and GPU upload, plus pure seeded cuboid-grid
+> procedures. Imported material values drive the existing direct-light path
+> when the entity has no explicit scene material. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, and executes supported pure procedures through
 > the ordinary patch admission and replay path. A bounded
@@ -54,7 +56,7 @@ implementations arrive:
 |---|---|
 | `cogniform-protocol` | Backend-neutral IDs, patches, receipts, limits, and observations |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded decoding, and immutable upload jobs |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/material decoding, and immutable upload jobs |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |

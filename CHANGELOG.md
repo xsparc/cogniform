@@ -46,6 +46,10 @@ release yet; the current workspace version remains `0.0.0`.
   directional and point lights, with GGX/Smith/Schlick terms, finite camera
   view input, exact unlit compatibility, a fixed 480-byte draw uniform, and
   controlled dielectric/metal/roughness evidence;
+- immutable imported GLB base-color, metallic, and roughness metadata through
+  existing upload/residency, with glTF factor defaults, scene-material
+  override precedence, unchanged vertex-byte accounting, and controlled
+  direct-light evidence;
 - service-owned asset admission, explicit single-item CPU/GPU processing,
   aggregate residency status, and exact-hash post-recovery rehydration;
 - local typed service and unattended room/table/light/camera scenario;
@@ -75,6 +79,10 @@ release yet; the current workspace version remains `0.0.0`.
   fields instead of applying diffuse-only base-color modulation. The canonical
   Point-lit table center is now `#371e0bff` on the validated profile while
   revision, identity, visibility, depth, normals, and replay remain intact;
+- accepted GLB metallic and roughness factors now reach direct lighting when
+  no explicit scene material is present. `AssetMaterial` and
+  `AssetUploadJob::material` are additive APIs; `base_color` remains available,
+  and the unpublished `0.0.0` workspace receives no release action;
 - the fixed built-in cuboid now uses 12 outward counter-clockwise triangles and
   exact axis-aligned exterior normals while preserving its 36 vertices,
   24-byte interleaved layout, 864-byte initialization payload, extents, and
@@ -104,10 +112,10 @@ release yet; the current workspace version remains `0.0.0`.
   range/radius/cutoff, spot lights, ambient/image-based lighting, shadows,
   emissive, HDR/tone mapping, gamma conversion, and lighting configuration are
   not implemented.
-  Normal output is quantized and the imported subset has
-  no normal maps or tangent space; the GLB
-  subset excludes textures, external buffers, compression, scene traversal,
-  and most vertex attributes. Built-in geometry supports cuboids, fixed
+  Normal output is quantized and the imported subset supports numeric base
+  color, metallic, and roughness but has no normal maps, emissive/alpha modes,
+  or tangent space; the GLB subset excludes textures, external buffers,
+  compression, scene traversal, and most vertex attributes. Built-in geometry supports cuboids, fixed
   centered XY planes, and fixed centered unit-diameter spheres; configurable
   subdivisions, plane thickness, UV attributes, and two-sided normal policy
   remain unsupported;

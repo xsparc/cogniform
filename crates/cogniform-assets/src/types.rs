@@ -182,24 +182,62 @@ pub struct AssetMeshKey {
     pub mesh_index: u32,
 }
 
+/// Immutable bounded material values imported with one mesh.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AssetMaterial {
+    base_color: [UnitF32; 4],
+    metallic: UnitF32,
+    roughness: UnitF32,
+}
+
+impl AssetMaterial {
+    /// Creates one already-validated linear metallic-roughness material value.
+    #[must_use]
+    pub const fn new(base_color: [UnitF32; 4], metallic: UnitF32, roughness: UnitF32) -> Self {
+        Self {
+            base_color,
+            metallic,
+            roughness,
+        }
+    }
+
+    /// Returns the imported linear base color.
+    #[must_use]
+    pub const fn base_color(self) -> [UnitF32; 4] {
+        self.base_color
+    }
+
+    /// Returns the imported metallic factor.
+    #[must_use]
+    pub const fn metallic(self) -> UnitF32 {
+        self.metallic
+    }
+
+    /// Returns the imported perceptual roughness factor.
+    #[must_use]
+    pub const fn roughness(self) -> UnitF32 {
+        self.roughness
+    }
+}
+
 /// Immutable upload-ready expanded triangle mesh.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssetUploadJob {
     key: AssetMeshKey,
     vertices: Arc<[AssetVertex]>,
-    base_color: [UnitF32; 4],
+    material: AssetMaterial,
 }
 
 impl AssetUploadJob {
     pub(crate) fn new(
         key: AssetMeshKey,
         vertices: Arc<[AssetVertex]>,
-        base_color: [UnitF32; 4],
+        material: AssetMaterial,
     ) -> Self {
         Self {
             key,
             vertices,
-            base_color,
+            material,
         }
     }
 
@@ -218,7 +256,13 @@ impl AssetUploadJob {
     /// Returns the imported linear base color.
     #[must_use]
     pub const fn base_color(&self) -> [UnitF32; 4] {
-        self.base_color
+        self.material.base_color()
+    }
+
+    /// Returns the complete immutable imported material.
+    #[must_use]
+    pub const fn material(&self) -> AssetMaterial {
+        self.material
     }
 
     /// Returns exact GPU vertex bytes required by this interleaved mesh.
@@ -233,7 +277,7 @@ impl AssetUploadJob {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DecodedMesh {
     pub(crate) vertices: Arc<[AssetVertex]>,
-    pub(crate) base_color: [UnitF32; 4],
+    pub(crate) material: AssetMaterial,
 }
 
 #[derive(Debug, Clone, PartialEq)]

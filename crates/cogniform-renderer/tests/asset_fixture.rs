@@ -4,12 +4,13 @@
 
 use cogniform_assets::{AssetMeshKey, AssetState, AssetStore, AssetVertex, content_hash};
 use cogniform_protocol::{
-    AssetMeshComponent, CameraComponent, ComponentValue, ConflictPolicy, CreateEntity,
-    DeliverySemantic, FiniteF32, FrameId, IdempotencyKey, LocalTransform, PatchBudget, PositiveF32,
-    PositiveVec3, Quaternion, SceneOperation, ScenePatch, SceneRevision, SchemaVersion,
-    StableEntityId, TransactionId, Vec3,
+    AssetMeshComponent, CameraComponent, ColorRgb, ColorRgba, ComponentValue, ConflictPolicy,
+    CreateEntity, DeliverySemantic, FiniteF32, FrameId, IdempotencyKey, LightComponent, LightKind,
+    LocalTransform, MaterialComponent, NonNegativeF32, PatchBudget, PositiveF32, PositiveVec3,
+    Quaternion, SceneOperation, ScenePatch, SceneRevision, SchemaVersion, SetComponent,
+    StableEntityId, TransactionId, UnitF32, Vec3,
 };
-use cogniform_renderer::{AssetUploadAdmission, HeadlessRenderer, RendererConfig};
+use cogniform_renderer::{AssetUploadAdmission, HeadlessRenderer, RenderedFrame, RendererConfig};
 use cogniform_world::AuthoritativeWorld;
 
 const WIDTH: u32 = 64;
@@ -91,6 +92,109 @@ fn approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal() {
         "normal must follow triangle winding: {normal:?}"
     );
     assert_eq!(frame.normal_at(0, 0), None);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn imported_material_factors_drive_direct_light_and_scene_override() {
+    let bytes = metallic_fixture();
+    let content_hash = content_hash(&bytes);
+    let key = AssetMeshKey {
+        content_hash,
+        mesh_index: 0,
+    };
+    let mut assets = AssetStore::default();
+    assets.enqueue(content_hash, bytes).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    let upload = assets.upload_job(key).unwrap();
+    assert_eq!(
+        upload.material().metallic().get().to_bits(),
+        1.0_f32.to_bits()
+    );
+    assert_eq!(
+        upload.material().roughness().get().to_bits(),
+        0.5_f32.to_bits()
+    );
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer.enqueue_asset_upload(upload).unwrap();
+    renderer.process_next_asset_upload().unwrap();
+
+    let camera = StableEntityId::new(1).unwrap();
+    let triangle = StableEntityId::new(2).unwrap();
+    let light = StableEntityId::new(3).unwrap();
+    let mut world = AuthoritativeWorld::default();
+    world
+        .apply_patch(
+            &scene_patch(camera, triangle, content_hash, [1.0; 3]),
+            FrameId::new(1).unwrap(),
+        )
+        .unwrap();
+    renderer
+        .apply_extraction(&world.take_render_extraction().unwrap())
+        .unwrap();
+    let unlit = renderer.submit_scene(camera).unwrap().read().unwrap();
+    assert_eq!(renderer.scene_revision(), SceneRevision::new(1));
+
+    world
+        .apply_patch(
+            &add_directional_light_patch(SceneRevision::new(1), light),
+            FrameId::new(2).unwrap(),
+        )
+        .unwrap();
+    renderer
+        .apply_extraction(&world.take_render_extraction().unwrap())
+        .unwrap();
+    let imported = renderer.submit_scene(camera).unwrap().read().unwrap();
+    assert_eq!(renderer.scene_revision(), SceneRevision::new(2));
+
+    world
+        .apply_patch(
+            &override_material_patch(SceneRevision::new(2), triangle),
+            FrameId::new(3).unwrap(),
+        )
+        .unwrap();
+    renderer
+        .apply_extraction(&world.take_render_extraction().unwrap())
+        .unwrap();
+    let overridden = renderer.submit_scene(camera).unwrap().read().unwrap();
+    assert_eq!(renderer.scene_revision(), SceneRevision::new(3));
+
+    let center = (WIDTH / 2, HEIGHT / 2);
+    assert_eq!(
+        unlit.color_at(center.0, center.1),
+        Some([204, 102, 51, 255])
+    );
+    assert_color_near(&imported, center, [129, 65, 32, 255]);
+    assert_color_near(&overridden, center, [38, 22, 14, 255]);
+    for frame in [&unlit, &imported, &overridden] {
+        assert_eq!(
+            frame.stable_entity_id_at(center.0, center.1),
+            Some(triangle)
+        );
+        assert_eq!(frame.stable_entity_id_at(0, 0), None);
+        assert_eq!(frame.normal_at(0, 0), None);
+    }
+    assert_eq!(
+        imported.depth_at(center.0, center.1),
+        unlit.depth_at(center.0, center.1)
+    );
+    assert_eq!(
+        overridden.depth_at(center.0, center.1),
+        unlit.depth_at(center.0, center.1)
+    );
+    assert_eq!(
+        imported.normal_at(center.0, center.1),
+        unlit.normal_at(center.0, center.1)
+    );
+    assert_eq!(
+        overridden.normal_at(center.0, center.1),
+        unlit.normal_at(center.0, center.1)
+    );
+    assert_eq!(imported.color_at(0, 0), unlit.color_at(0, 0));
+    assert_eq!(overridden.color_at(0, 0), unlit.color_at(0, 0));
 }
 
 #[test]
@@ -183,6 +287,68 @@ fn triangle_normal(vertices: &[AssetVertex]) -> [f32; 3] {
     normal
 }
 
+fn assert_color_near(frame: &RenderedFrame, at: (u32, u32), expected_color: [u8; 4]) {
+    let actual_color = frame.color_at(at.0, at.1).unwrap();
+    for (actual, expected) in actual_color.into_iter().zip(expected_color) {
+        assert!(
+            actual.abs_diff(expected) <= 2,
+            "color {actual_color:?} differs from {expected_color:?}"
+        );
+    }
+}
+
+fn add_directional_light_patch(base_revision: SceneRevision, light: StableEntityId) -> ScenePatch {
+    ScenePatch {
+        schema_version: SchemaVersion::V1,
+        transaction_id: TransactionId::new(4).unwrap(),
+        idempotency_key: IdempotencyKey::new(5).unwrap(),
+        base_revision,
+        conflict_policy: ConflictPolicy::RequireExactBase,
+        delivery: DeliverySemantic::MustApply,
+        declared_budget: PatchBudget::default(),
+        operations: vec![SceneOperation::Create(CreateEntity {
+            entity_id: light,
+            components: vec![
+                ComponentValue::LocalTransform(transform(0.0, [1.0; 3])),
+                ComponentValue::Light(LightComponent {
+                    kind: LightKind::Directional,
+                    color: ColorRgb {
+                        r: unit(1.0),
+                        g: unit(1.0),
+                        b: unit(1.0),
+                    },
+                    intensity: NonNegativeF32::new(0.5).unwrap(),
+                }),
+            ],
+        })],
+    }
+}
+
+fn override_material_patch(base_revision: SceneRevision, triangle: StableEntityId) -> ScenePatch {
+    ScenePatch {
+        schema_version: SchemaVersion::V1,
+        transaction_id: TransactionId::new(6).unwrap(),
+        idempotency_key: IdempotencyKey::new(7).unwrap(),
+        base_revision,
+        conflict_policy: ConflictPolicy::RequireExactBase,
+        delivery: DeliverySemantic::MustApply,
+        declared_budget: PatchBudget::default(),
+        operations: vec![SceneOperation::SetComponent(SetComponent {
+            entity_id: triangle,
+            component: ComponentValue::Material(MaterialComponent {
+                base_color: ColorRgba {
+                    r: unit(0.8),
+                    g: unit(0.4),
+                    b: unit(0.2),
+                    a: unit(1.0),
+                },
+                metallic: unit(0.0),
+                roughness: unit(0.5),
+            }),
+        })],
+    }
+}
+
 fn scene_patch(
     camera: StableEntityId,
     triangle: StableEntityId,
@@ -261,6 +427,22 @@ fn smooth_fixture() -> Vec<u8> {
     glb_with_json(json, &binary)
 }
 
+fn metallic_fixture() -> Vec<u8> {
+    let positions = [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ];
+    let mut binary = Vec::with_capacity(36);
+    for vertex in positions {
+        for value in vertex {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}],"materials":[{"pbrMetallicRoughness":{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":1.0,"roughnessFactor":0.5}}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0,"mode":4}]}]}"#;
+    glb_with_json(json, &binary)
+}
+
 fn glb_with_json(json: &str, binary: &[u8]) -> Vec<u8> {
     let mut json = json.as_bytes().to_vec();
     json.resize(json.len().next_multiple_of(4), b' ');
@@ -295,4 +477,8 @@ fn finite(value: f32) -> FiniteF32 {
 
 fn positive(value: f32) -> PositiveF32 {
     PositiveF32::new(value).unwrap()
+}
+
+fn unit(value: f32) -> UnitF32 {
+    UnitF32::new(value).unwrap()
 }

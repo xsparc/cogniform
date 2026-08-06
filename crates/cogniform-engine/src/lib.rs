@@ -18,8 +18,8 @@ mod scenario;
 mod service;
 
 pub use cogniform_assets::{
-    AssetAdmission, AssetDiagnostic, AssetDiagnosticCode, AssetError, AssetLimits, AssetMeshKey,
-    AssetProcessOutcome, AssetRecord, AssetState, AssetStoreConfig, AssetStoreStats,
+    AssetAdmission, AssetDiagnostic, AssetDiagnosticCode, AssetError, AssetLimits, AssetMaterial,
+    AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetState, AssetStoreConfig, AssetStoreStats,
     AssetUploadJob, AssetVertex, UnsupportedAssetPolicy, content_hash,
 };
 pub use cogniform_procedural::{
