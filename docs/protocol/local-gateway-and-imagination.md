@@ -1,7 +1,8 @@
 # Local gateway and imagination compiler
 
 Status: implemented by CF006 for offline in-process use; CF016 routes service
-procedure output through the unchanged patch gateway.
+procedure output through the unchanged patch gateway, and CF031 adds
+monotonic oldest-pending command age to aggregate status.
 
 The current gateway is a Rust composition API, not a network service. It
 accepts typed `ScenePatch` and `ImaginationEnvelope` values, owns one
@@ -38,9 +39,16 @@ or mutate the world again. Successful receipt status changes to
 domain-separated digest of canonical command bytes instead of the complete
 input payload, and gateway debug output contains only aggregate state.
 
-`GatewayQueueStats` reports current depth and monotonic admitted, superseded,
-dropped, and rejected counters. These counters are local diagnostics and are
-not part of logical replay state.
+`GatewayQueueStats` reports current depth, optional monotonic
+`oldest_pending_age_micros`, and admitted, superseded, dropped, and rejected
+counters. An empty queue reports `None`. `AlreadyQueued` retains the original
+age; `LatestWins` replacement starts a new age while preserving queue
+position; dropped, replayed, conflicting, invalid, or capacity-rejected work
+does not change retained age. Processing removes the selected timestamp with
+the command. Status and debug output remain aggregate and contain no command,
+key, supersession text, or system-clock timestamp. Age and counters are local
+diagnostics and are not part of command fingerprints, world state, logical
+hashing, replay, or recovery.
 
 ## Procedure output
 
@@ -109,12 +117,15 @@ pagination state is created.
 Canonical fixtures cover imagination, query, and query-result JSON. Compiler
 tests cover normalized byte stability, deterministic substitutions, spatial
 resolution, unresolved references and constraints, cycles, stale views, and
-budget rejection. Gateway tests cover all overload semantics, idempotency
-conflicts, stable query filtering, and fail-before-truncate behavior. The
-controlled adapter integration compiles, applies, queries, replays, and rejects
-a stale explicit patch without duplicate mutation.
+budget rejection. Gateway tests cover all overload semantics, exact age
+retention/reset/removal, microsecond saturation, idempotency conflicts, stable
+query filtering, and fail-before-truncate behavior. The controlled adapter
+integration compiles, applies, queries, replays, and rejects a stale explicit
+patch without duplicate mutation while proving queued and drained age status.
 
 See [ADR 0007](../adr/0007-pure-imagination-compiler-and-bounded-local-gateway.md)
 for the package and lifecycle decision and
 [ADR 0016](../adr/0016-service-procedure-composition-through-ordinary-patches.md)
-for service procedure composition.
+for service procedure composition, and
+[ADR 0031](../adr/0031-monotonic-pending-work-age-status.md) for transient age
+semantics.

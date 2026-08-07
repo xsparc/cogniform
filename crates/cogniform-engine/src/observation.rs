@@ -2,12 +2,12 @@ use core::num::NonZeroU32;
 use std::{
     collections::BTreeMap,
     sync::{
-        Arc,
+        Arc, Mutex, MutexGuard,
         atomic::{AtomicU32, Ordering},
         mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
     },
     thread,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use cogniform_protocol::{
@@ -89,10 +89,12 @@ pub struct ObservationQueue {
 
 impl std::fmt::Debug for ObservationQueue {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (outstanding, oldest_age_micros) = self.status_at(Instant::now());
         formatter
             .debug_struct("ObservationQueue")
             .field("capacity", &self.slots.capacity())
-            .field("outstanding", &self.slots.in_use())
+            .field("outstanding", &outstanding)
+            .field("oldest_outstanding_age_micros", &oldest_age_micros)
             .finish_non_exhaustive()
     }
 }
@@ -132,6 +134,20 @@ impl ObservationQueue {
     #[must_use]
     pub fn outstanding(&self) -> u32 {
         self.slots.in_use()
+    }
+
+    /// Returns monotonic elapsed microseconds for the oldest outstanding request.
+    #[must_use]
+    pub fn oldest_outstanding_age_micros(&self) -> Option<u64> {
+        self.oldest_outstanding_age_micros_at(Instant::now())
+    }
+
+    pub(crate) fn oldest_outstanding_age_micros_at(&self, sampled_at: Instant) -> Option<u64> {
+        self.slots.oldest_age_micros_at(sampled_at)
+    }
+
+    pub(crate) fn status_at(&self, sampled_at: Instant) -> (u32, Option<u64>) {
+        self.slots.status_at(sampled_at)
     }
 
     /// Admits a submitted frame without waiting for worker or consumer progress.
@@ -304,6 +320,11 @@ struct ObservationSlots {
 struct ObservationSlotState {
     capacity: u32,
     in_use: AtomicU32,
+    pending: Mutex<Vec<Arc<ObservationAdmission>>>,
+}
+
+struct ObservationAdmission {
+    reserved_at: Instant,
 }
 
 impl ObservationSlots {
@@ -312,6 +333,9 @@ impl ObservationSlots {
             inner: Arc::new(ObservationSlotState {
                 capacity: capacity.get(),
                 in_use: AtomicU32::new(0),
+                pending: Mutex::new(Vec::with_capacity(
+                    usize::try_from(capacity.get()).expect("u32 capacity fits usize"),
+                )),
             }),
         }
     }
@@ -321,41 +345,101 @@ impl ObservationSlots {
     }
 
     fn in_use(&self) -> u32 {
-        self.inner.in_use.load(Ordering::Acquire)
+        let pending = self.pending();
+        let in_use = self.inner.in_use.load(Ordering::Acquire);
+        debug_assert_eq!(
+            usize::try_from(in_use).expect("u32 count fits usize"),
+            pending.len()
+        );
+        in_use
     }
 
     fn try_acquire(&self) -> Option<ObservationPermit> {
-        let mut current = self.in_use();
-        loop {
-            if current >= self.capacity() {
-                return None;
-            }
-            match self.inner.in_use.compare_exchange_weak(
-                current,
-                current + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    return Some(ObservationPermit {
-                        slots: self.clone(),
-                    });
-                }
-                Err(observed) => current = observed,
-            }
+        let mut pending = self.pending();
+        let current = self.inner.in_use.load(Ordering::Acquire);
+        if current >= self.capacity() {
+            return None;
         }
+        Some(self.acquire(&mut pending, current, Instant::now()))
+    }
+
+    #[cfg(test)]
+    fn try_acquire_at(&self, reserved_at: Instant) -> Option<ObservationPermit> {
+        let mut pending = self.pending();
+        let current = self.inner.in_use.load(Ordering::Acquire);
+        if current >= self.capacity() {
+            return None;
+        }
+        Some(self.acquire(&mut pending, current, reserved_at))
+    }
+
+    fn acquire(
+        &self,
+        pending: &mut Vec<Arc<ObservationAdmission>>,
+        current: u32,
+        reserved_at: Instant,
+    ) -> ObservationPermit {
+        let admission = Arc::new(ObservationAdmission { reserved_at });
+        pending.push(Arc::clone(&admission));
+        let previous = self.inner.in_use.fetch_add(1, Ordering::AcqRel);
+        debug_assert_eq!(previous, current);
+        ObservationPermit {
+            slots: self.clone(),
+            admission,
+        }
+    }
+
+    fn oldest_age_micros_at(&self, sampled_at: Instant) -> Option<u64> {
+        self.status_at(sampled_at).1
+    }
+
+    fn status_at(&self, sampled_at: Instant) -> (u32, Option<u64>) {
+        let pending = self.pending();
+        let in_use = self.inner.in_use.load(Ordering::Acquire);
+        debug_assert_eq!(
+            usize::try_from(in_use).expect("u32 count fits usize"),
+            pending.len()
+        );
+        let oldest_age_micros = pending
+            .iter()
+            .map(|admission| admission.reserved_at)
+            .min()
+            .map(|reserved_at| elapsed_micros(sampled_at, reserved_at));
+        (in_use, oldest_age_micros)
+    }
+
+    fn pending(&self) -> MutexGuard<'_, Vec<Arc<ObservationAdmission>>> {
+        self.inner
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
 pub(crate) struct ObservationPermit {
     slots: ObservationSlots,
+    admission: Arc<ObservationAdmission>,
 }
 
 impl Drop for ObservationPermit {
     fn drop(&mut self) {
+        let mut pending = self.slots.pending();
+        let position = pending
+            .iter()
+            .position(|admission| Arc::ptr_eq(admission, &self.admission))
+            .expect("outstanding observation permit retains its age record");
+        pending.swap_remove(position);
         let previous = self.slots.inner.in_use.fetch_sub(1, Ordering::AcqRel);
         debug_assert!(previous > 0);
     }
+}
+
+fn elapsed_micros(sampled_at: Instant, started_at: Instant) -> u64 {
+    duration_micros(sampled_at.saturating_duration_since(started_at))
+}
+
+fn duration_micros(duration: Duration) -> u64 {
+    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]
@@ -375,6 +459,70 @@ mod tests {
         assert_eq!(slots.in_use(), 2);
         drop((second, replacement));
         assert_eq!(slots.in_use(), 0);
+    }
+
+    #[test]
+    fn observation_age_spans_each_live_permit_and_releases_exactly() {
+        let started_at = Instant::now();
+        let slots = ObservationSlots::new(NonZeroU32::new(2).unwrap());
+        assert_eq!(slots.oldest_age_micros_at(started_at), None);
+        let first = slots.try_acquire_at(started_at).unwrap();
+        let second = slots
+            .try_acquire_at(started_at + Duration::from_micros(4))
+            .unwrap();
+        assert!(
+            slots
+                .try_acquire_at(started_at + Duration::from_micros(6))
+                .is_none()
+        );
+        let sampled_at = started_at + Duration::from_micros(11);
+        assert_eq!(slots.oldest_age_micros_at(sampled_at), Some(11));
+        drop(first);
+        assert_eq!(slots.oldest_age_micros_at(sampled_at), Some(7));
+        drop(second);
+        assert_eq!(slots.oldest_age_micros_at(sampled_at), None);
+        assert_eq!(duration_micros(Duration::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn renderer_error_delivery_releases_observation_age_and_capacity() {
+        let started_at = Instant::now();
+        let slots = ObservationSlots::new(NonZeroU32::new(1).unwrap());
+        let permit = slots.try_acquire_at(started_at).unwrap();
+        let (sender, _jobs) = mpsc::sync_channel::<ObservationJob>(1);
+        let (results, receiver) = mpsc::sync_channel(1);
+        let queue = ObservationQueue {
+            sender,
+            receiver,
+            slots: slots.clone(),
+            limits: RuntimeLimits::default(),
+        };
+        results
+            .send(ObservationCompletion {
+                permit,
+                request: ObservationRequest {
+                    observation_id: ObservationId::new(1).unwrap(),
+                    camera_id: StableEntityId::new(1).unwrap(),
+                    kind: ObservationKind::Color,
+                    quality: ObservationQuality::Low,
+                },
+                observed_at_unix_micros: 0,
+                production_latency_micros: 0,
+                frame: Err(cogniform_renderer::RendererError::ReadbackFailed {
+                    stage: "test",
+                    reason: "injected failure".to_owned(),
+                }),
+            })
+            .unwrap();
+        assert!(slots.oldest_age_micros_at(started_at).is_some());
+
+        assert!(matches!(
+            queue.try_receive(SceneRevision::INITIAL),
+            Err(ObservationError::Renderer(
+                cogniform_renderer::RendererError::ReadbackFailed { .. }
+            ))
+        ));
+        assert_eq!(slots.status_at(started_at), (0, None));
     }
 
     #[test]

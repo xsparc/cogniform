@@ -1,5 +1,8 @@
 use core::num::NonZeroU32;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    time::{Duration, Instant},
+};
 
 use cogniform_compiler::{
     CompilationResult, CompilationSceneView, CompilerConfig, DeterministicCompiler,
@@ -148,6 +151,8 @@ impl GatewayResponse {
 pub struct GatewayQueueStats {
     /// Current uncommitted command depth.
     pub depth: u32,
+    /// Monotonic elapsed microseconds for the oldest uncommitted command.
+    pub oldest_pending_age_micros: Option<u64>,
     /// Commands appended without supersession.
     pub admitted: u64,
     /// Uncommitted latest-value commands replaced in place.
@@ -277,7 +282,11 @@ impl LocalGateway {
     /// Returns bounded overload counters and current queue depth.
     #[must_use]
     pub fn queue_stats(&self) -> GatewayQueueStats {
-        self.queue.stats()
+        self.queue_stats_at(Instant::now())
+    }
+
+    pub(crate) fn queue_stats_at(&self, sampled_at: Instant) -> GatewayQueueStats {
+        self.queue.stats_at(sampled_at)
     }
 
     /// Returns the number of retained accepted gateway results.
@@ -345,6 +354,7 @@ pub(crate) fn validate_config(
 struct CommandRecord {
     command: GatewayCommand,
     fingerprint: [u8; 32],
+    queued_at: Instant,
 }
 
 impl CommandRecord {
@@ -353,6 +363,21 @@ impl CommandRecord {
         Ok(Self {
             command,
             fingerprint,
+            queued_at: Instant::now(),
+        })
+    }
+
+    #[cfg(test)]
+    fn new_at(
+        command: GatewayCommand,
+        limits: &RuntimeLimits,
+        queued_at: Instant,
+    ) -> Result<Self, GatewayError> {
+        let fingerprint = command.fingerprint(limits)?;
+        Ok(Self {
+            command,
+            fingerprint,
+            queued_at,
         })
     }
 
@@ -470,14 +495,32 @@ impl CommandQueue {
     }
 
     fn stats(&self) -> GatewayQueueStats {
+        self.stats_at(Instant::now())
+    }
+
+    fn stats_at(&self, sampled_at: Instant) -> GatewayQueueStats {
         GatewayQueueStats {
             depth: self.depth(),
+            oldest_pending_age_micros: self
+                .entries
+                .iter()
+                .map(|record| record.queued_at)
+                .min()
+                .map(|queued_at| elapsed_micros(sampled_at, queued_at)),
             admitted: self.admitted,
             superseded: self.superseded,
             dropped: self.dropped,
             rejected: self.rejected,
         }
     }
+}
+
+fn elapsed_micros(sampled_at: Instant, started_at: Instant) -> u64 {
+    duration_micros(sampled_at.saturating_duration_since(started_at))
+}
+
+fn duration_micros(duration: Duration) -> u64 {
+    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
 }
 
 fn execute_query(
@@ -567,6 +610,10 @@ mod tests {
         CommandRecord::new(command, &RuntimeLimits::default()).unwrap()
     }
 
+    fn record_at(command: GatewayCommand, queued_at: Instant) -> CommandRecord {
+        CommandRecord::new_at(command, &RuntimeLimits::default(), queued_at).unwrap()
+    }
+
     #[test]
     fn queue_delivery_semantics_remain_bounded_under_pressure() {
         let mut queue = CommandQueue::new(NonZeroU32::new(2).unwrap());
@@ -609,16 +656,100 @@ mod tests {
             queue.admit(record(rejected), true),
             Err(GatewayError::CommandCapacityExceeded { capacity: 2 })
         ));
+        let stats = queue.stats();
+        assert_eq!(stats.depth, 2);
+        assert!(stats.oldest_pending_age_micros.is_some());
+        assert_eq!(stats.admitted, 2);
+        assert_eq!(stats.superseded, 1);
+        assert_eq!(stats.dropped, 1);
+        assert_eq!(stats.rejected, 1);
+    }
+
+    #[test]
+    fn queue_age_tracks_oldest_retained_admission_without_payload_identity() {
+        let started_at = Instant::now();
+        let mut queue = CommandQueue::new(NonZeroU32::new(2).unwrap());
+        assert_eq!(queue.stats_at(started_at).oldest_pending_age_micros, None);
+
+        let durable = GatewayCommand::Patch(patch(30, DeliverySemantic::MustApply));
+        queue
+            .admit(record_at(durable.clone(), started_at), true)
+            .unwrap();
+        assert!(matches!(
+            queue
+                .admit(
+                    record_at(durable, started_at + Duration::from_micros(3)),
+                    true,
+                )
+                .unwrap(),
+            GatewayAdmission::AlreadyQueued { .. }
+        ));
+
+        let replaceable = |nonce| {
+            GatewayCommand::Patch(patch(
+                nonce,
+                DeliverySemantic::LatestWins {
+                    supersession_key: SceneText::new("camera/age").unwrap(),
+                },
+            ))
+        };
+        queue
+            .admit(
+                record_at(replaceable(31), started_at + Duration::from_micros(2)),
+                true,
+            )
+            .unwrap();
+        assert!(matches!(
+            queue
+                .admit(
+                    record_at(replaceable(32), started_at + Duration::from_micros(7)),
+                    false,
+                )
+                .unwrap(),
+            GatewayAdmission::Superseded { .. }
+        ));
+        let sampled_at = started_at + Duration::from_micros(11);
         assert_eq!(
-            queue.stats(),
-            GatewayQueueStats {
-                depth: 2,
-                admitted: 2,
-                superseded: 1,
-                dropped: 1,
-                rejected: 1,
-            }
+            queue.stats_at(sampled_at).oldest_pending_age_micros,
+            Some(11)
         );
+
+        let dropped = GatewayCommand::Patch(patch(33, DeliverySemantic::BestEffort));
+        assert!(matches!(
+            queue
+                .admit(
+                    record_at(dropped, started_at + Duration::from_micros(9)),
+                    false,
+                )
+                .unwrap(),
+            GatewayAdmission::Dropped { .. }
+        ));
+        assert_eq!(
+            queue.stats_at(sampled_at).oldest_pending_age_micros,
+            Some(11)
+        );
+
+        let rejected = GatewayCommand::Patch(patch(34, DeliverySemantic::MustApply));
+        assert!(matches!(
+            queue.admit(
+                record_at(rejected, started_at + Duration::from_micros(10)),
+                true,
+            ),
+            Err(GatewayError::CommandCapacityExceeded { capacity: 2 })
+        ));
+        assert_eq!(
+            queue.stats_at(sampled_at).oldest_pending_age_micros,
+            Some(11)
+        );
+
+        queue.pop_front().unwrap();
+        assert_eq!(
+            queue.stats_at(sampled_at).oldest_pending_age_micros,
+            Some(4)
+        );
+        queue.pop_front().unwrap();
+        assert_eq!(queue.stats_at(sampled_at).oldest_pending_age_micros, None);
+        assert_eq!(duration_micros(Duration::MAX), u64::MAX);
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use core::num::NonZeroU32;
+use std::time::Instant;
 
 use cogniform_assets::AssetUploadJob;
 use cogniform_protocol::{
@@ -286,6 +287,16 @@ impl CogniformEngine {
     #[must_use]
     pub fn outstanding_observations(&self) -> u32 {
         self.observations.outstanding()
+    }
+
+    /// Returns monotonic elapsed microseconds for the oldest outstanding observation.
+    #[must_use]
+    pub fn oldest_outstanding_observation_age_micros(&self) -> Option<u64> {
+        self.observations.oldest_outstanding_age_micros()
+    }
+
+    pub(crate) fn observation_status_at(&self, sampled_at: Instant) -> (u32, Option<u64>) {
+        self.observations.status_at(sampled_at)
     }
 
     /// Returns the active bounded public protocol limits.

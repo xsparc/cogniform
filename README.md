@@ -26,7 +26,10 @@ scene revision that produced it.
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, can explicitly evict all CPU/GPU state for one
 > content hash without changing its logical references, and executes supported
-> pure procedures through the ordinary patch admission and replay path. A bounded
+> pure procedures through the ordinary patch admission and replay path.
+> Aggregate status now reports optional monotonic oldest-pending age for
+> commands, observations, imports, and uploads without exposing payloads or
+> creating background telemetry. A bounded
 > local typed service and CLI now run the canonical unattended MVP flow,
 > verify replay to the same logical hash, and restore a fresh service from a
 > complete caller-owned in-memory recovery point. That point has a deterministic

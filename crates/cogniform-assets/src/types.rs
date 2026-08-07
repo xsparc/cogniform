@@ -426,6 +426,8 @@ pub struct AssetStoreStats {
     pub records: u32,
     /// Imports awaiting explicit processing.
     pub pending_imports: u32,
+    /// Monotonic elapsed microseconds for the oldest pending import.
+    pub oldest_pending_import_age_micros: Option<u64>,
     /// Exact source bytes retained by pending imports.
     pub pending_source_bytes: u64,
     /// Decoded CPU mesh bytes retained by ready/proxy records.

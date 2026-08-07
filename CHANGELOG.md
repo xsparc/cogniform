@@ -63,6 +63,10 @@ release yet; the current workspace version remains `0.0.0`.
   state, pending uploads, resident meshes, and shared textures, with exact
   released-resource outcomes, stable unrelated FIFO work, idempotent absence,
   backend-safe submitted-frame completion, and logically neutral rehydration;
+- optional monotonic oldest-pending age in aggregate command, observation,
+  asset-import, and renderer-upload status, with deterministic duplicate,
+  supersession, rejection, processing, eviction, delivery, and saturation
+  semantics and no payload or durable-state exposure;
 - local typed service and unattended room/table/light/camera scenario;
 - complete verified in-memory local-service restoration with retained replay,
   logical state, idempotency, renderer revision, and frame continuity;
@@ -85,6 +89,12 @@ release yet; the current workspace version remains `0.0.0`.
   checklist.
 
 ### Changed
+
+- `GatewayQueueStats`, `LocalServiceStatus`, `AssetStoreStats`, and
+  `RendererAssetStats` add optional elapsed-microsecond age fields. This is an
+  additive runtime contract and a source-breaking change for exhaustive public
+  struct construction in the still-unpublished `0.0.0` workspace; no version
+  or release action was taken;
 
 - active-light color now honors the required public metallic and roughness
   fields instead of applying diffuse-only base-color modulation. The canonical

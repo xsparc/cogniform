@@ -44,7 +44,13 @@ does not create workers or make those calls implicitly.
 `enqueue_asset_upload`, and `process_next_asset_upload` methods preserve the
 same split lifecycle. `evict_asset` explicitly releases every CPU and renderer
 record for one content hash, while `asset_status` returns only aggregate store
-and renderer counters. The engine forwards immutable upload jobs and never
+and renderer counters. Those counters include optional monotonic elapsed
+microseconds for the oldest pending import and upload. An empty queue reports
+no age; already-known or already-queued work retains the original age;
+capacity rejection does not alter it; processing or eviction removes it with
+the matching entry. No source bytes, content hash, mesh key, system-clock
+timestamp, or automatic telemetry is exposed. The engine forwards immutable
+upload jobs and never
 exposes mutable renderer state or backend handles. The lower-level store and
 renderer APIs remain available for embedders that own those domains directly.
 

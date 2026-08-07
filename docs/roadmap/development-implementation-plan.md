@@ -645,6 +645,30 @@ deployment, and release action remain excluded. See
 [GLB guide](../assets/glb-subset.md), and the
 [local service guide](../protocol/local-service.md).
 
+### PR 31 - CF031: Monotonic pending-work age status
+
+Outcome: an operator can distinguish healthy caller-driven progress from
+stalled commands, observations, imports, or uploads without inspecting queued
+payloads or enabling background telemetry.
+
+Gate: the existing command, service, asset-store, and renderer status values
+report optional monotonic oldest-pending age in saturating microseconds. Empty
+lifecycles report `None`. Exact deterministic tests cover duplicate retention,
+`LatestWins` reset, capacity rejection and drop neutrality, FIFO-preserving
+processing/eviction, and observation permit reservation through delivery or
+error release.
+
+Implemented contract: one process-local `Instant` follows each retained
+transient lifecycle object. Status sampling is explicit and bounded; output is
+aggregate only. Timestamps never enter canonical encoding, fingerprints,
+asset identity, world state, logical hash, replay, recovery, persistence, or
+observation metadata. Active-operation timing, background sampling, logging,
+tracing, exporters, alerts, remote transport, authentication, CI expansion,
+deployment, and release action remain excluded. See
+[ADR 0031](../adr/0031-monotonic-pending-work-age-status.md), the
+[local gateway guide](../protocol/local-gateway-and-imagination.md), and the
+[local service guide](../protocol/local-service.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -652,7 +676,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
-  -> CF030
+  -> CF030 -> CF031
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -776,6 +800,10 @@ Validation expands with capability:
   resident mesh/texture release accounting, unrelated FIFO preservation,
   idempotent absence, submitted-frame GPU lifetime, fallback/unavailable
   behavior, and logically neutral exact-hash rehydration.
+- CF031: exact monotonic command/import/upload/observation ages under injected
+  time, duplicate and supersession semantics, rejection/drop neutrality,
+  processing/eviction/delivery cleanup, saturation, empty status, and
+  controlled service lifecycle regressions.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

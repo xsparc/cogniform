@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 use cogniform_engine::{
     CanonicalScenarioConfig, EngineError, EngineRecoveryPoint, GatewayAdmission, GatewayResponse,
-    LocalService, LocalServiceConfig, LocalServiceError, Observation, ObservationPayload,
-    ObservationRequest, run_canonical_scenario,
+    LocalService, LocalServiceConfig, LocalServiceError, LocalServiceStatus, Observation,
+    ObservationPayload, ObservationRequest, run_canonical_scenario,
 };
 use cogniform_protocol::{
     ApplyStatus, ComponentKind, ComponentValue, ConflictPolicy, DeliverySemantic, FrameId,
@@ -276,7 +276,7 @@ fn historical_recovery_fork_restores_exact_revision_and_continues() {
             .unwrap();
         assert_eq!(historical.next_frame_id(), source_next_frame);
         assert!(source_bytes.starts_with(historical.replay_bytes()));
-        assert_eq!(source.status(), source_status);
+        assert_status_state_unchanged(&source_status, source.status());
         assert_eq!(source.logical_hash().unwrap(), source_hash);
         assert_eq!(source.replay_bytes(), source_bytes);
 
@@ -334,4 +334,28 @@ fn historical_recovery_fork_restores_exact_revision_and_continues() {
             "checkpointed table",
         );
     });
+}
+
+fn assert_status_state_unchanged(expected: &LocalServiceStatus, mut actual: LocalServiceStatus) {
+    assert_monotonic_age(
+        expected.command_queue.oldest_pending_age_micros,
+        actual.command_queue.oldest_pending_age_micros,
+    );
+    assert_monotonic_age(
+        expected.oldest_outstanding_observation_age_micros,
+        actual.oldest_outstanding_observation_age_micros,
+    );
+    actual.command_queue.oldest_pending_age_micros =
+        expected.command_queue.oldest_pending_age_micros;
+    actual.oldest_outstanding_observation_age_micros =
+        expected.oldest_outstanding_observation_age_micros;
+    assert_eq!(&actual, expected);
+}
+
+fn assert_monotonic_age(expected: Option<u64>, actual: Option<u64>) {
+    match (expected, actual) {
+        (None, None) => {}
+        (Some(expected), Some(actual)) => assert!(actual >= expected),
+        _ => panic!("unchanged pending lifecycle must preserve age presence"),
+    }
 }

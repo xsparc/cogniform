@@ -247,12 +247,14 @@ fn verified_fixture_decodes_only_when_explicitly_processed() {
     store.enqueue(hash, bytes).expect("fixture should queue");
     assert_eq!(store.record(hash).unwrap().state, AssetState::Queued);
     assert_eq!(store.stats().pending_imports, 1);
+    assert!(store.stats().oldest_pending_import_age_micros.is_some());
     assert_eq!(store.stats().resident_cpu_bytes, 0);
 
     let outcome = store.process_next().expect("one import should process");
     assert_eq!(outcome.state, AssetState::Ready);
     assert_eq!(outcome.mesh_count, 1);
     assert_eq!(store.stats().pending_imports, 0);
+    assert_eq!(store.stats().oldest_pending_import_age_micros, None);
     assert_eq!(store.stats().resident_cpu_bytes, 96);
 
     let upload = store
@@ -924,6 +926,7 @@ fn content_hash_mismatch_fails_before_record_or_queue_mutation() {
     ));
     assert_eq!(store.stats().records, 0);
     assert_eq!(store.stats().pending_imports, 0);
+    assert_eq!(store.stats().oldest_pending_import_age_micros, None);
 }
 
 #[test]

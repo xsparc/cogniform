@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    time::{Duration, Instant},
+};
 
 use cogniform_assets::{AssetMaterial, AssetMeshKey, AssetTexture, AssetUploadJob};
 use cogniform_protocol::ContentHash;
@@ -45,6 +48,8 @@ pub struct AssetUploadOutcome {
 pub struct RendererAssetStats {
     /// Jobs admitted but not yet processed.
     pub pending_uploads: u32,
+    /// Monotonic elapsed microseconds for the oldest pending upload.
+    pub oldest_pending_upload_age_micros: Option<u64>,
     /// Bytes reserved by pending upload jobs.
     pub pending_bytes: u64,
     /// Immutable GPU-resident meshes.
@@ -126,8 +131,27 @@ impl GpuAssetMesh {
     }
 }
 
+struct PendingAssetUpload {
+    job: AssetUploadJob,
+    queued_at: Instant,
+}
+
+impl PendingAssetUpload {
+    fn key(&self) -> AssetMeshKey {
+        self.job.key()
+    }
+
+    fn byte_len(&self) -> u64 {
+        self.job.byte_len()
+    }
+
+    fn base_color_texture(&self) -> Option<&AssetTexture> {
+        self.job.base_color_texture()
+    }
+}
+
 pub(crate) struct RendererAssets {
-    pending: VecDeque<AssetUploadJob>,
+    pending: VecDeque<PendingAssetUpload>,
     pending_bytes: u64,
     pending_textures: BTreeSet<ContentHash>,
     pending_texture_bytes: u64,
@@ -155,6 +179,25 @@ impl RendererAssets {
         &mut self,
         job: AssetUploadJob,
         config: &RendererConfig,
+    ) -> Result<AssetUploadAdmission, RendererError> {
+        self.enqueue_with_time(job, config, None)
+    }
+
+    #[cfg(test)]
+    fn enqueue_at(
+        &mut self,
+        job: AssetUploadJob,
+        config: &RendererConfig,
+        queued_at: Instant,
+    ) -> Result<AssetUploadAdmission, RendererError> {
+        self.enqueue_with_time(job, config, Some(queued_at))
+    }
+
+    fn enqueue_with_time(
+        &mut self,
+        job: AssetUploadJob,
+        config: &RendererConfig,
+        queued_at: Option<Instant>,
     ) -> Result<AssetUploadAdmission, RendererError> {
         let key = job.key();
         if self.resident.contains_key(&key) {
@@ -227,7 +270,10 @@ impl RendererAssets {
             });
         }
         self.reserve_texture(key, job.base_color_texture(), config)?;
-        self.pending.push_back(job);
+        self.pending.push_back(PendingAssetUpload {
+            job,
+            queued_at: queued_at.unwrap_or_else(Instant::now),
+        });
         self.pending_bytes = projected_pending;
         Ok(AssetUploadAdmission::Queued { key })
     }
@@ -287,7 +333,7 @@ impl RendererAssets {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Option<AssetUploadOutcome> {
-        let job = self.pending.pop_front()?;
+        let job = self.pending.pop_front()?.job;
         let key = job.key();
         let byte_len = job.byte_len();
         self.pending_bytes = self.pending_bytes.saturating_sub(byte_len);
@@ -446,6 +492,10 @@ impl RendererAssets {
     }
 
     pub(crate) fn stats(&self) -> RendererAssetStats {
+        self.stats_at(Instant::now())
+    }
+
+    fn stats_at(&self, sampled_at: Instant) -> RendererAssetStats {
         debug_assert_eq!(
             self.resident_bytes,
             self.resident
@@ -462,6 +512,12 @@ impl RendererAssets {
         );
         RendererAssetStats {
             pending_uploads: u32::try_from(self.pending.len()).unwrap_or(u32::MAX),
+            oldest_pending_upload_age_micros: self
+                .pending
+                .iter()
+                .map(|pending| pending.queued_at)
+                .min()
+                .map(|queued_at| elapsed_micros(sampled_at, queued_at)),
             pending_bytes: self.pending_bytes,
             resident_meshes: u32::try_from(self.resident.len()).unwrap_or(u32::MAX),
             resident_bytes: self.resident_bytes,
@@ -471,6 +527,14 @@ impl RendererAssets {
             resident_texture_bytes: self.resident_texture_bytes,
         }
     }
+}
+
+fn elapsed_micros(sampled_at: Instant, started_at: Instant) -> u64 {
+    duration_micros(sampled_at.saturating_duration_since(started_at))
+}
+
+fn duration_micros(duration: Duration) -> u64 {
+    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
 }
 
 fn validate_texture(
@@ -597,6 +661,72 @@ mod tests {
         ));
         assert_eq!(assets.stats().pending_uploads, 1);
         assert_eq!(assets.stats().resident_meshes, 0);
+    }
+
+    #[test]
+    fn upload_age_tracks_only_retained_pending_jobs() {
+        let started_at = Instant::now();
+        let first = fixture_upload(false);
+        let first_key = first.key();
+        let second = fixture_upload(true);
+        let second_key = second.key();
+        let config =
+            RendererConfig::new(64, 64).with_asset_upload_capacity(NonZeroU32::new(2).unwrap());
+        let mut assets = RendererAssets::new();
+        assert_eq!(
+            assets.stats_at(started_at).oldest_pending_upload_age_micros,
+            None
+        );
+        assets
+            .enqueue_at(first.clone(), &config, started_at)
+            .unwrap();
+        assert!(matches!(
+            assets
+                .enqueue_at(first, &config, started_at + Duration::from_micros(8))
+                .unwrap(),
+            AssetUploadAdmission::AlreadyQueued { .. }
+        ));
+        assets
+            .enqueue_at(second, &config, started_at + Duration::from_micros(3))
+            .unwrap();
+        let sampled_at = started_at + Duration::from_micros(13);
+        assert_eq!(
+            assets.stats_at(sampled_at).oldest_pending_upload_age_micros,
+            Some(13)
+        );
+        assert!(matches!(
+            assets.enqueue_at(
+                textured_upload([1, 2, 3, 255]),
+                &config,
+                started_at + Duration::from_micros(9)
+            ),
+            Err(RendererError::AssetUploadCapacityExceeded { capacity: 2 })
+        ));
+        assert_eq!(
+            assets.stats_at(sampled_at).oldest_pending_upload_age_micros,
+            Some(13)
+        );
+
+        assert_eq!(
+            assets.evict(first_key.content_hash).removed_pending_uploads,
+            1
+        );
+        assert_eq!(assets.pending.front().unwrap().key(), second_key);
+        assert_eq!(
+            assets.stats_at(sampled_at).oldest_pending_upload_age_micros,
+            Some(10)
+        );
+        assert_eq!(
+            assets
+                .evict(second_key.content_hash)
+                .removed_pending_uploads,
+            1
+        );
+        assert_eq!(
+            assets.stats_at(sampled_at).oldest_pending_upload_age_micros,
+            None
+        );
+        assert_eq!(duration_micros(Duration::MAX), u64::MAX);
     }
 
     #[test]

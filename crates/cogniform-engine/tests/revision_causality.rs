@@ -192,6 +192,7 @@ fn extracted_frames_and_bounded_observations_preserve_revision_causality() {
         .request_observation(request(10, camera, ObservationKind::EntityId))
         .unwrap();
     assert_eq!(engine.outstanding_observations(), 1);
+    assert!(engine.oldest_outstanding_observation_age_micros().is_some());
     assert!(matches!(
         engine.request_observation(request(11, camera, ObservationKind::Depth)),
         Err(EngineError::Observation(
@@ -214,6 +215,7 @@ fn extracted_frames_and_bounded_observations_preserve_revision_causality() {
     assert_eq!(engine.renderer().scene_revision(), SceneRevision::new(2));
 
     let ids = wait_for(&engine);
+    assert_eq!(engine.oldest_outstanding_observation_age_micros(), None);
     assert_eq!(ids.metadata().scene_revision, SceneRevision::new(1));
     assert_eq!(ids.metadata().frame_id, receipt.estimated_visible_frame);
     assert_eq!(ids.metadata().staleness.revisions_behind, 1);

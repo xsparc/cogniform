@@ -68,7 +68,9 @@ fn gateway_compiles_applies_queries_and_replays_without_duplicate_mutation() {
             gateway.submit_imagination(imagination.clone()).unwrap(),
             GatewayAdmission::Queued { .. }
         ));
+        assert!(gateway.queue_stats().oldest_pending_age_micros.is_some());
         let response = gateway.process_next().unwrap().unwrap();
+        assert_eq!(gateway.queue_stats().oldest_pending_age_micros, None);
         let created_revision = match response {
             GatewayResponse::ImaginationProcessed {
                 compilation,
@@ -103,6 +105,7 @@ fn gateway_compiles_applies_queries_and_replays_without_duplicate_mutation() {
             },
             _ => panic!("expected an immediate idempotent replay"),
         }
+        assert_eq!(gateway.queue_stats().oldest_pending_age_micros, None);
         assert_eq!(gateway.engine().revision(), created_revision);
 
         let mut conflicting = imagination;

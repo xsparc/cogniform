@@ -36,5 +36,6 @@ earlier one and links the history.
 | [0028](0028-bounded-primary-texture-coordinates.md) | Accepted | Retain one bounded primary GLB texture-coordinate set without changing rendered output |
 | [0029](0029-bounded-embedded-png-base-color-textures.md) | Accepted | Decode and explicitly upload one bounded embedded PNG base-color texture |
 | [0030](0030-explicit-content-hash-asset-eviction.md) | Accepted | Reclaim all CPU/GPU asset state for one content hash through an explicit caller-driven operation |
+| [0031](0031-monotonic-pending-work-age-status.md) | Accepted | Report monotonic oldest-pending age for every caller-driven local-service queue |
 
 New records use four sections: context, decision, consequences, and status.

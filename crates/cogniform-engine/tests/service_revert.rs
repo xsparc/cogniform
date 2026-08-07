@@ -154,9 +154,16 @@ async fn assert_successful_revert(
     let before_assets = service.asset_status();
     assert_eq!(before.scene_revision, SceneRevision::new(3));
     assert_eq!(before.command_queue.depth, 0);
+    assert_eq!(before.command_queue.oldest_pending_age_micros, None);
     assert_eq!(before.outstanding_observations, 0);
+    assert_eq!(before.oldest_outstanding_observation_age_micros, None);
     assert_eq!(before_assets.store.pending_imports, 0);
+    assert_eq!(before_assets.store.oldest_pending_import_age_micros, None);
     assert_eq!(before_assets.renderer.pending_uploads, 0);
+    assert_eq!(
+        before_assets.renderer.oldest_pending_upload_age_micros,
+        None
+    );
     assert_eq!(before_assets.store.records, 1);
     assert_eq!(before_assets.renderer.resident_meshes, 1);
 
@@ -187,8 +194,10 @@ async fn assert_successful_revert(
     assert_eq!(status.scene_revision, SceneRevision::new(1));
     assert_eq!(status.renderer_revision, SceneRevision::new(1));
     assert_eq!(status.command_queue.depth, 0);
+    assert_eq!(status.command_queue.oldest_pending_age_micros, None);
     assert_eq!(status.completed_results, 0);
     assert_eq!(status.outstanding_observations, 0);
+    assert_eq!(status.oldest_outstanding_observation_age_micros, None);
     assert_eq!(status.replay_entries, 1);
     assert_empty_assets(&service.asset_status());
     assert_eq!(service.replay_bytes(), target.replay_bytes());
@@ -318,14 +327,53 @@ impl StateProof {
     }
 
     fn assert_unchanged(&self, service: &LocalService) {
-        assert_eq!(service.status(), self.status);
-        assert_eq!(service.asset_status(), self.assets);
+        assert_status_state_unchanged(&self.status, service.status());
+        assert_asset_state_unchanged(&self.assets, service.asset_status());
         assert_eq!(service.logical_hash().unwrap(), self.logical_hash);
         assert_eq!(service.replay_bytes(), self.replay);
         assert_eq!(
             service.recovery_point().unwrap().next_frame_id(),
             self.next_frame_id
         );
+    }
+}
+
+fn assert_status_state_unchanged(expected: &LocalServiceStatus, mut actual: LocalServiceStatus) {
+    assert_monotonic_age(
+        expected.command_queue.oldest_pending_age_micros,
+        actual.command_queue.oldest_pending_age_micros,
+    );
+    assert_monotonic_age(
+        expected.oldest_outstanding_observation_age_micros,
+        actual.oldest_outstanding_observation_age_micros,
+    );
+    actual.command_queue.oldest_pending_age_micros =
+        expected.command_queue.oldest_pending_age_micros;
+    actual.oldest_outstanding_observation_age_micros =
+        expected.oldest_outstanding_observation_age_micros;
+    assert_eq!(&actual, expected);
+}
+
+fn assert_asset_state_unchanged(expected: &LocalAssetStatus, mut actual: LocalAssetStatus) {
+    assert_monotonic_age(
+        expected.store.oldest_pending_import_age_micros,
+        actual.store.oldest_pending_import_age_micros,
+    );
+    assert_monotonic_age(
+        expected.renderer.oldest_pending_upload_age_micros,
+        actual.renderer.oldest_pending_upload_age_micros,
+    );
+    actual.store.oldest_pending_import_age_micros = expected.store.oldest_pending_import_age_micros;
+    actual.renderer.oldest_pending_upload_age_micros =
+        expected.renderer.oldest_pending_upload_age_micros;
+    assert_eq!(&actual, expected);
+}
+
+fn assert_monotonic_age(expected: Option<u64>, actual: Option<u64>) {
+    match (expected, actual) {
+        (None, None) => {}
+        (Some(expected), Some(actual)) => assert!(actual >= expected),
+        _ => panic!("unchanged pending lifecycle must preserve age presence"),
     }
 }
 
@@ -393,9 +441,11 @@ fn assert_table_exists(service: &LocalService, table_id: StableEntityId, revisio
 fn assert_empty_assets(status: &LocalAssetStatus) {
     assert_eq!(status.store.records, 0);
     assert_eq!(status.store.pending_imports, 0);
+    assert_eq!(status.store.oldest_pending_import_age_micros, None);
     assert_eq!(status.store.pending_source_bytes, 0);
     assert_eq!(status.store.resident_cpu_bytes, 0);
     assert_eq!(status.renderer.pending_uploads, 0);
+    assert_eq!(status.renderer.oldest_pending_upload_age_micros, None);
     assert_eq!(status.renderer.pending_bytes, 0);
     assert_eq!(status.renderer.resident_meshes, 0);
     assert_eq!(status.renderer.resident_bytes, 0);

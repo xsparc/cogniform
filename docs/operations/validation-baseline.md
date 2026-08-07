@@ -31,6 +31,9 @@ base-color-factor/override behavior, and exact-hash textured rehydration
 evidence was collected on that profile on 2026-08-06.
 CF030 exact content-hash asset eviction, submitted-frame preservation, and
 explicit rehydration evidence was collected on that profile on 2026-08-07.
+CF031 deterministic monotonic pending-work age and controlled
+command/observation/import/upload lifecycle evidence was collected on that
+profile on 2026-08-07.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -92,6 +95,34 @@ The corrected outward table face and direct material response produced center
 color `#371e0bff` (`[55, 30, 11, 255]`) on this
 profile under the existing two-unit-per-channel tolerance.
 Pixel coverage is visual evidence for this adapter, not a cross-GPU exact value.
+
+## Controlled pending-work age commands
+
+CF031 ran the focused CPU contracts, every existing release-mode renderer and
+engine controlled test, and the canonical release scenario:
+
+```text
+cargo test -p cogniform-assets -p cogniform-renderer -p cogniform-engine --all-features --locked --offline
+cargo test --release -p cogniform-renderer --tests --locked --offline -- --ignored
+cargo test --release -p cogniform-engine --tests --locked --offline -- --ignored
+cargo run --release -p cogniform-cli --locked --offline -- scenario
+```
+
+Deterministic injected-time unit tests prove empty status, exact microseconds,
+`u64` saturation, duplicate retention, `LatestWins` reset, drop/capacity
+rejection neutrality, FIFO-preserving process/eviction removal, and exact
+observation permit release. The 14 renderer and 10 engine controlled tests
+then prove pending/resident upload behavior, command queue drain and replay,
+observation reservation through delivery, service asset import/upload,
+restoration, historical fork, quiescent revert, and canonical empty status on
+the declared Vulkan adapter. Status-state comparisons retain exact equality
+for every stable field while requiring nondecreasing age for an unchanged
+pending lifecycle. The canonical scenario remains revision 2, three ordered
+frames, center `#371e0bff`, 72 table pixels, two replay entries, and matching
+live/replayed logical hash
+`db23b22d98da433d6050c0cd863f3a736832c7bae2ca674cdbee3dae8ed25106`.
+No timing threshold, exporter, logging, transport, deployment, or additional
+supported platform is introduced.
 
 ## Controlled vertex-normal commands
 

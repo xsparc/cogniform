@@ -39,39 +39,7 @@ fn local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset() {
 
         assert_hash_mismatch_is_capacity_neutral(&mut service, hash, &bytes);
 
-        assert_eq!(
-            service.enqueue_asset_source(hash, bytes.clone()).unwrap(),
-            AssetAdmission::Queued { content_hash: hash }
-        );
-        let queued = service.asset_status();
-        assert_eq!(queued.store.records, 1);
-        assert_eq!(queued.store.pending_imports, 1);
-        assert_eq!(queued.store.pending_source_bytes, bytes.len() as u64);
-        assert_eq!(queued.renderer.pending_uploads, 0);
-
-        let imported = service
-            .process_next_asset_import()
-            .expect("one admitted import should be processed");
-        assert_eq!(imported.content_hash, hash);
-        assert_eq!(imported.state, AssetState::Ready);
-        assert_eq!(imported.mesh_count, 1);
-        let record = service.asset_record(hash).unwrap();
-        assert_eq!(record.state, AssetState::Ready);
-        assert_eq!(record.source_bytes, bytes.len() as u64);
-        assert!(record.decoded_bytes > 0);
-        assert_eq!(service.asset_status().store.pending_source_bytes, 0);
-
-        assert_eq!(
-            service.enqueue_asset_upload(key).unwrap(),
-            AssetUploadAdmission::Queued { key }
-        );
-        assert_eq!(service.asset_status().renderer.pending_uploads, 1);
-        let uploaded = service
-            .process_next_asset_upload()
-            .expect("one admitted GPU upload should be processed");
-        assert_eq!(uploaded.key, key);
-        assert_eq!(uploaded.vertex_count, 3);
-        assert_eq!(service.asset_status().renderer.resident_meshes, 1);
+        import_and_upload(&mut service, hash, &bytes, key);
 
         assert!(matches!(
             service
@@ -79,14 +47,35 @@ fn local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset() {
                 .unwrap(),
             GatewayAdmission::Queued { .. }
         ));
+        assert!(
+            service
+                .status()
+                .command_queue
+                .oldest_pending_age_micros
+                .is_some()
+        );
         let response = service.process_next().unwrap().unwrap();
+        assert_eq!(
+            service.status().command_queue.oldest_pending_age_micros,
+            None
+        );
         let GatewayResponse::PatchApplied { receipt } = response else {
             panic!("expected patch response");
         };
         assert_eq!(receipt.new_revision, SceneRevision::new(1));
 
         service.request_observation(request(1, camera)).unwrap();
+        assert!(
+            service
+                .status()
+                .oldest_outstanding_observation_age_micros
+                .is_some()
+        );
         let observation = wait_for_observation(&service);
+        assert_eq!(
+            service.status().oldest_outstanding_observation_age_micros,
+            None
+        );
         assert_center_entity(&observation, triangle);
         assert_eq!(observation.metadata().scene_revision, SceneRevision::new(1));
 
@@ -117,13 +106,7 @@ fn local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset() {
         assert_eq!(restored.logical_hash().unwrap(), expected_hash);
         assert_eq!(restored.replay_bytes(), expected_replay);
 
-        restored.enqueue_asset_source(hash, bytes).unwrap();
-        assert_eq!(
-            restored.process_next_asset_import().unwrap().state,
-            AssetState::Ready
-        );
-        restored.enqueue_asset_upload(key).unwrap();
-        assert_eq!(restored.process_next_asset_upload().unwrap().key, key);
+        import_and_upload(&mut restored, hash, &bytes, key);
         assert_eq!(restored.status().scene_revision, SceneRevision::new(1));
         assert_eq!(restored.logical_hash().unwrap(), expected_hash);
         assert_eq!(restored.replay_bytes(), expected_replay);
@@ -133,6 +116,70 @@ fn local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset() {
         assert_center_entity(&rehydrated, triangle);
         assert_eq!(rehydrated.metadata().scene_revision, SceneRevision::new(1));
     });
+}
+
+fn import_and_upload(
+    service: &mut LocalService,
+    hash: cogniform_protocol::ContentHash,
+    bytes: &[u8],
+    key: AssetMeshKey,
+) {
+    assert_eq!(
+        service.enqueue_asset_source(hash, bytes.to_vec()).unwrap(),
+        AssetAdmission::Queued { content_hash: hash }
+    );
+    let queued = service.asset_status();
+    assert_eq!(queued.store.records, 1);
+    assert_eq!(queued.store.pending_imports, 1);
+    assert!(queued.store.oldest_pending_import_age_micros.is_some());
+    assert_eq!(queued.store.pending_source_bytes, bytes.len() as u64);
+    assert_eq!(queued.renderer.pending_uploads, 0);
+    assert_eq!(queued.renderer.oldest_pending_upload_age_micros, None);
+
+    let imported = service
+        .process_next_asset_import()
+        .expect("one admitted import should be processed");
+    assert_eq!(imported.content_hash, hash);
+    assert_eq!(imported.state, AssetState::Ready);
+    assert_eq!(imported.mesh_count, 1);
+    let record = service.asset_record(hash).unwrap();
+    assert_eq!(record.state, AssetState::Ready);
+    assert_eq!(record.source_bytes, bytes.len() as u64);
+    assert!(record.decoded_bytes > 0);
+    assert_eq!(service.asset_status().store.pending_source_bytes, 0);
+    assert_eq!(
+        service
+            .asset_status()
+            .store
+            .oldest_pending_import_age_micros,
+        None
+    );
+
+    assert_eq!(
+        service.enqueue_asset_upload(key).unwrap(),
+        AssetUploadAdmission::Queued { key }
+    );
+    assert_eq!(service.asset_status().renderer.pending_uploads, 1);
+    assert!(
+        service
+            .asset_status()
+            .renderer
+            .oldest_pending_upload_age_micros
+            .is_some()
+    );
+    let uploaded = service
+        .process_next_asset_upload()
+        .expect("one admitted GPU upload should be processed");
+    assert_eq!(uploaded.key, key);
+    assert_eq!(uploaded.vertex_count, 3);
+    assert_eq!(service.asset_status().renderer.resident_meshes, 1);
+    assert_eq!(
+        service
+            .asset_status()
+            .renderer
+            .oldest_pending_upload_age_micros,
+        None
+    );
 }
 
 #[test]
@@ -324,9 +371,11 @@ fn assert_empty_asset_status(service: &LocalService) {
     let status = service.asset_status();
     assert_eq!(status.store.records, 0);
     assert_eq!(status.store.pending_imports, 0);
+    assert_eq!(status.store.oldest_pending_import_age_micros, None);
     assert_eq!(status.store.pending_source_bytes, 0);
     assert_eq!(status.store.resident_cpu_bytes, 0);
     assert_eq!(status.renderer.pending_uploads, 0);
+    assert_eq!(status.renderer.oldest_pending_upload_age_micros, None);
     assert_eq!(status.renderer.pending_bytes, 0);
     assert_eq!(status.renderer.resident_meshes, 0);
     assert_eq!(status.renderer.resident_bytes, 0);
