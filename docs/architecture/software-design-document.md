@@ -63,6 +63,7 @@ The first workspace should prove boundaries without prematurely creating every e
 | Area | Responsibility | Dependency rule |
 |---|---|---|
 | `cogniform-protocol` | Stable public value types, patches, receipts, observations, limits, errors | No ECS, GPU, network, or generated transport dependency |
+| `cogniform-observation` | Owned observation payload values and bounded transport-neutral binary envelopes | Depends only on protocol and deterministic hashing; owns no renderer, service, I/O, session, or shared-memory resource |
 | `cogniform-compiler` | Pure seeded primitive imagination normalization and structured explanations | Depends only on protocol and deterministic hashing; owns no world/service state |
 | `cogniform-world` | `hecs` implementation, stable-ID index, validation, atomic commit, hierarchy, transforms, queries | Depends on protocol/math; never renderer or service |
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
@@ -86,7 +87,9 @@ report. CF036 lets the CLI invoke the existing bounded exact-hash asset load as
 a read-only aggregate diagnostic without moving filesystem authority or asset
 bytes into the engine. CF037 adds a CLI-private schema-version-one view over
 that verified result while preserving the exact human report and storage
-boundary. Spatial
+boundary. CF038 establishes a separate payload-codec boundary that binds fixed
+binary bulk values to canonical observation metadata without selecting a
+transport, listener, session, or storage policy. Spatial
 acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -95,6 +98,8 @@ or dependency footprint.
 
 ```text
 protocol <- world <- replay
+    ^
+    +---- observation
     ^
     +---- compiler
     ^          |
@@ -111,11 +116,12 @@ protocol <- world <- replay
 
 The diagram shows allowed information flow, not permission to create circular Cargo dependencies. Shared render DTOs belong in a dependency-neutral boundary rather than making world depend on renderer.
 
-The compiler depends only on protocol values and deterministic hashing. Engine
-may orchestrate compiler, world, renderer, and replay through their public
-interfaces; compiler never reads mutable world state. Storage depends on the
-public recovery and asset identities it persists. The CLI may compose engine
-and storage but must not move filesystem authority into the engine.
+The compiler and observation codec each depend only on protocol values and
+deterministic hashing. Engine may orchestrate compiler, world, renderer,
+observation coding, and replay through their public interfaces; neither narrow
+crate reads mutable world or renderer state. Storage depends on the public
+recovery and asset identities it persists. The CLI may compose engine and
+storage but must not move filesystem authority into the engine.
 
 ## 3. Core contracts and invariants
 
@@ -212,6 +218,14 @@ age, and rejected or dropped work does not alter retained age.
 ### 3.6 Observation causality
 
 Every feedback envelope includes scene revision, frame ID, camera ID when relevant, observation timestamp, production latency, quality level, and staleness. An observation never claims a newer revision than its render input. Readback, encoding, delivery, and optional inference are asynchronous and may complete later while retaining source causality.
+
+Owned color, depth, normal, entity-ID, and visibility payloads stay separate
+from canonical causal metadata. An explicit versioned binary codec binds the
+metadata's exact canonical JSON to a fixed-layout payload under independent
+envelope and visibility-entry bounds. Encoding is caller-invoked after local
+delivery; it does not enter the render worker, persist data, or create a
+transport. Its SHA-256 digest detects corruption but does not authenticate,
+authorize, encrypt, or establish freshness.
 
 ## 4. Rendering and assets
 
@@ -333,6 +347,9 @@ All agent data, labels, assets, procedures, and transport messages are untrusted
 - stable ownership scopes and expected generation/revision checks;
 - scene text treated as data with provenance, never privileged instructions;
 - zero or reinitialize recycled observation buffers before crossing trust scopes;
+- validate exact observation kind, count, canonical value layout, envelope
+  length, and metadata-bound integrity before allocating decoded payload
+  vectors; require transports to cap frames before buffering;
 - append-only replay integrity, bounded integrity-checked recovery envelopes,
   create-new bounded recovery and exact-hash asset-source files with
   path-redacted failures, and secret-free canonical events;
@@ -377,6 +394,7 @@ Research targets such as 60 Hz, 3 ms p95 CPU engine work, 8 ms p95 GPU time, 8 m
 The public surface stays small: apply imagination, apply a supported built-in
 procedure through an ordinary patch, apply patch, query scene,
 request observation, subscribe to bounded feedback, explain compilation,
+explicitly encode or decode one bounded metadata-bound observation payload,
 capture complete or exact-revision local recovery state, restore it into a
 fresh service, explicitly persist/load one immutable local recovery file or
 one independent exact-hash asset-source file, inspect one recovery file through
@@ -422,6 +440,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Headless render | Outward-wound reference cuboid plus extracted plane, sphere, and bounded direct metallic-roughness directional/point-lit scenes render without a visible window |
 | Machine outputs | Entity-ID probes are exact; exact unlit and tolerant direct-material color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
+| Observation payload envelope | All five payload kinds round-trip fixed version-one layouts; bounds, canonical values, metadata substitution, truncation, extension, and every-byte corruption reject before decoded output is returned |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
 | Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |
@@ -437,7 +456,7 @@ CF009 resolves the initial candidate packaging and validation profile in
 publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
 artifacts, additional texture roles/tangent-space normals and the remaining visual-quality surface, remote
-protocol/authentication, tenancy, observation retention, automatic startup,
+protocol/authentication and pre-buffer framing, tenancy, observation retention, automatic startup,
 recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log

@@ -824,6 +824,34 @@ CI, deployment, version, or release boundary changes. See
 [asset-file guide](../persistence/asset-files.md), and the
 [validation baseline](../operations/validation-baseline.md).
 
+### PR 38 - CF038: Bounded observation-payload envelope
+
+Outcome: future local, shared-memory, and authenticated remote adapters can
+reuse one deterministic bounded payload representation that remains separate
+from canonical causal metadata and renderer/service ownership.
+
+Gate: a new dependency-neutral `cogniform-observation` crate owns the existing
+public color, depth, normal, entity-ID, and visibility payload values plus a
+version-one binary envelope. The fixed header and big-endian per-kind layouts
+are byte-pinned. Encoding validates metadata, kind, counts, canonical values,
+ordering, runtime pixels, visibility entries, and complete size before output
+allocation. Decoding validates the borrowed input bound, exact framing and
+length, metadata binding, and SHA-256 integrity before allocating the decoded
+vector. All five kinds round-trip; truncation, extension, metadata substitution,
+every-byte corruption, invalid tags/floats/IDs/order, and limit failures reject
+with typed payload-redacted errors.
+
+Implemented contract: `cogniform-engine` re-exports the moved values for source
+compatibility and offers one explicit encoding method after observation
+delivery. The codec performs no I/O and introduces no listener, session,
+authentication, authorization, tenancy, shared-memory allocation, gRPC/QUIC,
+compression, image format, retention, renderer scheduling, automatic delivery,
+deployment, version, or release action. SHA-256 supplies corruption detection,
+not writer authenticity or confidentiality. See
+[ADR 0038](../adr/0038-bounded-observation-payload-envelope.md), the
+[observation-payload envelope guide](../protocol/observation-payload-envelope.md),
+and the [validation baseline](../operations/validation-baseline.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -832,6 +860,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
+  -> CF038
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -990,9 +1019,19 @@ Validation expands with capability:
   positional `--json` filename behavior, complete verification and in-memory
   serialization before stdout, empty failure stdout, redaction, and no new
   package, lockfile, core schema, or GPU boundary.
+- CF038: exact all-kind round trips and byte fixtures, fixed big-endian header
+  and value layouts, engine re-export compatibility, metadata substitution,
+  every-prefix truncation, trailing input, every-byte corruption, invalid
+  canonical float/presence/identity/order/count cases, and independent runtime,
+  visibility-entry, and complete-envelope limits without GPU or transport I/O.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
 ## 6. Deferred roadmap
 
-After the MVP and only with evidence: shared-memory observation leases, authenticated gRPC/QUIC transport, Wasmtime procedures, KTX2/mesh optimization, advanced culling/batching, model bridge, Gaussian splat plugin, browser target, fleet orchestration, and high availability. Each requires a new design decision and approved task rather than silently entering an MVP PR.
+After the MVP and only with evidence: shared-memory observation leases,
+authenticated and pre-buffer-bounded gRPC/QUIC transport, Wasmtime procedures,
+KTX2/mesh optimization, advanced culling/batching, model bridge, Gaussian
+splat plugin, browser target, fleet orchestration, and high availability. Each
+requires a new design decision and approved task rather than silently entering
+an MVP PR.

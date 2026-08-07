@@ -51,6 +51,9 @@ and path/payload-redacted failure evidence was collected on 2026-08-08.
 CF037 fixed-layout schema-version-one asset-source inspection JSON, unchanged
 human bytes, complete-before-output serialization, option-like path behavior,
 and failure redaction evidence was collected on 2026-08-08.
+CF038 bounded observation-payload framing, canonical all-kind layouts,
+metadata binding, corruption rejection, and independent resource-limit
+evidence was collected on the CPU profile on 2026-08-08.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -240,6 +243,33 @@ freshness,
 authorization, recovery association, or GPU readiness, and it schedules no
 import, upload, or rehydration. Schema version one remains CLI-private and
 establishes no general diagnostics contract.
+
+## Controlled observation-payload envelope commands
+
+CF038 ran the dependency-neutral payload codec and its engine compatibility
+edge without a GPU adapter or transport:
+
+```text
+cargo fmt --all --check
+cargo clippy -p cogniform-observation -p cogniform-engine --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-observation -p cogniform-engine --all-features --locked --offline
+```
+
+The 11 codec integration tests pin every payload kind's round trip, fixed
+header and big-endian item layouts, one exact full-envelope fixture, canonical
+metadata, presence/float/identity/visibility rules, metadata substitution, every
+truncated prefix, trailing bytes, every single-byte mutation, and independent
+envelope, visibility-entry, and runtime-pixel limits. The 25 engine unit tests
+retain the existing import path through a public re-export and prove explicit
+encoding of one completed bound payload. Existing adapter-backed engine tests
+remain ignored under their documented hardware gate; no renderer behavior or
+GPU support claim changed.
+
+The decoder receives an already-buffered borrowed slice. These tests prove its
+in-memory bound and allocate-after-integrity behavior, not network framing,
+authentication, confidentiality, session rate limits, shared-memory safety,
+or automatic delivery. A future stream adapter must enforce its own declared
+length cap before buffering.
 
 ## Controlled vertex-normal commands
 

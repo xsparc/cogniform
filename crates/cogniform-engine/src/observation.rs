@@ -10,6 +10,10 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use cogniform_observation::{
+    EntityVisibility, ObservationEnvelopeError, ObservationPayload, ObservationPayloadLimits,
+    encode_payload,
+};
 use cogniform_protocol::{
     ImageDimensions, ObservationId, ObservationKind, ObservationMetadata, ObservationQuality,
     ObservationStaleness, RuntimeLimits, SceneRevision, SchemaVersion, StableEntityId,
@@ -31,30 +35,6 @@ pub struct ObservationRequest {
     pub quality: ObservationQuality,
 }
 
-/// Stable visibility summary for one entity in one frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EntityVisibility {
-    /// Stable world identity.
-    pub entity_id: StableEntityId,
-    /// Exact number of pixels carrying this identity.
-    pub visible_pixels: u64,
-}
-
-/// Owned bulk data associated with one causal observation envelope.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ObservationPayload {
-    /// Linear RGBA8 pixels in row-major order.
-    Color(Vec<[u8; 4]>),
-    /// Normalized f32 depth pixels in row-major order.
-    Depth(Vec<f32>),
-    /// Flat world-space unit normals; background pixels are `None`.
-    Normal(Vec<Option<[f32; 3]>>),
-    /// Exact stable identity per pixel; background is `None`.
-    EntityId(Vec<Option<StableEntityId>>),
-    /// Stable-identity visibility counts sorted by identity.
-    Visibility(Vec<EntityVisibility>),
-}
-
 /// Completed bounded observation with exact source causality.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Observation {
@@ -73,6 +53,20 @@ impl Observation {
     #[must_use]
     pub const fn payload(&self) -> &ObservationPayload {
         &self.payload
+    }
+
+    /// Explicitly encodes the owned payload without performing I/O.
+    pub fn to_payload_envelope(
+        &self,
+        runtime_limits: &RuntimeLimits,
+        payload_limits: ObservationPayloadLimits,
+    ) -> Result<Vec<u8>, ObservationEnvelopeError> {
+        encode_payload(
+            &self.metadata,
+            &self.payload,
+            runtime_limits,
+            payload_limits,
+        )
     }
 }
 
@@ -538,5 +532,48 @@ mod tests {
         }
         let visibility = counts.into_iter().collect::<Vec<_>>();
         assert_eq!(visibility, vec![(first, 1), (second, 2)]);
+    }
+
+    #[test]
+    fn completed_observation_explicitly_encodes_its_bound_payload() {
+        let metadata = ObservationMetadata {
+            schema_version: SchemaVersion::V1,
+            observation_id: ObservationId::new(1).unwrap(),
+            scene_revision: SceneRevision::new(2),
+            frame_id: cogniform_protocol::FrameId::new(3).unwrap(),
+            camera_id: StableEntityId::new(4).unwrap(),
+            kind: ObservationKind::Color,
+            dimensions: Some(ImageDimensions {
+                width: NonZeroU32::new(1).unwrap(),
+                height: NonZeroU32::new(1).unwrap(),
+            }),
+            quality: ObservationQuality::Low,
+            observed_at_unix_micros: 5,
+            production_latency_micros: 6,
+            staleness: ObservationStaleness {
+                latest_known_revision: SceneRevision::new(2),
+                revisions_behind: 0,
+            },
+        };
+        let observation = Observation {
+            metadata,
+            payload: ObservationPayload::Color(vec![[1, 2, 3, 4]]),
+        };
+        let runtime_limits = RuntimeLimits::default();
+        let payload_limits = ObservationPayloadLimits::default();
+        let encoded = observation
+            .to_payload_envelope(&runtime_limits, payload_limits)
+            .unwrap();
+
+        assert_eq!(
+            cogniform_observation::decode_payload(
+                observation.metadata(),
+                &encoded,
+                &runtime_limits,
+                payload_limits,
+            )
+            .unwrap(),
+            observation.payload
+        );
     }
 }

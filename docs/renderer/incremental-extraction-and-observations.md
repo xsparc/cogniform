@@ -85,6 +85,14 @@ camera, quality, completion time, latency, and staleness against the latest
 known world revision. An observation cannot claim a revision newer than its
 frame input.
 
+CF038 keeps these owned vectors intact and moves their public value types into
+the dependency-neutral `cogniform-observation` crate. An explicit in-memory
+codec can bind any completed payload to its canonical metadata in a bounded,
+fixed-layout binary envelope. Encoding is never part of renderer submission or
+worker completion, and the crate owns no GPU, service, transport, file, or
+shared-memory resource. See the
+[observation-payload envelope guide](../protocol/observation-payload-envelope.md).
+
 The extracted draw path currently supports cuboids, centered XY planes, fixed
 unit-diameter spheres, explicitly resident approved GLB meshes, and perspective
 cameras. An unavailable asset uses its exact explicit primitive fallback;
@@ -102,8 +110,8 @@ distance safety. Both apply one bounded direct metallic-roughness response
 through the same draw path, using the selected camera translation for the view
 direction; no active light of either kind preserves exact unlit output.
 Additional texture roles and sampling policy, configurable point range/radius,
-image-based lighting, encoding, shared memory, and remote delivery remain
-later slices.
+image-based lighting, image/compression encoding, shared memory, and remote
+delivery remain later slices.
 
 ## Validation
 
@@ -137,5 +145,7 @@ See [ADR 0023](../adr/0023-bounded-directional-diffuse-lighting.md) for the
 direction, capacity, combination, and exact unlit-compatibility rules.
 See [ADR 0024](../adr/0024-bounded-point-diffuse-lighting.md) for Point
 translation, attenuation, independent capacity, and zero-distance rules.
+See [ADR 0038](../adr/0038-bounded-observation-payload-envelope.md) for the
+separate payload-codec boundary and transport responsibilities.
 See [ADR 0025](../adr/0025-outward-built-in-cuboid-winding.md) for the fixed
 cuboid's outward winding and corrected normal/lighting compatibility behavior.

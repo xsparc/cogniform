@@ -131,6 +131,14 @@ matching the identity payload's explicit absence rather than using a zero
 vector sentinel. Visibility requests return stable-ID-sorted pixel counts and
 remain the only observation kind without dimensions.
 
+Completed observations remain owned in-process values. Callers can explicitly
+encode a payload with `Observation::to_payload_envelope`; the separate codec
+validates the causal metadata, exact kind/count/value layout, active runtime
+limits, and an independent complete-envelope limit. This does not alter permit
+lifetime, poll behavior, renderer readback, or service scheduling, and the
+service never automatically sends, stores, or encodes a result. See the
+[observation-payload envelope guide](observation-payload-envelope.md).
+
 ## Replay ownership
 
 The engine applies patches through `RecordedWorld`. Canonical patch encoding
@@ -267,7 +275,9 @@ branch identity, and any external rollback policy.
 - Processing and polling are caller-driven. There is no long-running daemon,
   subscription stream, shutdown protocol, automatic retry loop, or telemetry
   exporter. Age status is diagnostic evidence, not an SLO or alert policy.
-- Observation payloads are owned vectors. Shared-memory leases and encoded
+- Observation payloads are owned vectors with an explicit bounded binary
+  envelope available to callers. Listeners, authenticated sessions,
+  pre-buffer stream framing, shared-memory leases, and automatic encoded
   delivery are deferred.
 - Recovery is into a fresh service from a complete in-memory point. Exact
   retained revisions can seed separate historical forks or replace a quiescent
