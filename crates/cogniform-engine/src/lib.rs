@@ -19,14 +19,16 @@ mod service;
 
 pub use cogniform_assets::{
     AssetAdmission, AssetDiagnostic, AssetDiagnosticCode, AssetError, AssetLimits, AssetMaterial,
-    AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetState, AssetStoreConfig, AssetStoreStats,
-    AssetUploadJob, AssetVertex, UnsupportedAssetPolicy, content_hash,
+    AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetState, AssetStoreConfig,
+    AssetStoreEviction, AssetStoreStats, AssetUploadJob, AssetVertex, UnsupportedAssetPolicy,
+    content_hash,
 };
 pub use cogniform_procedural::{
     BuiltinProcedure, CuboidGrid, ProcedureError, ProcedureLimits, ProcedureRequest,
 };
 pub use cogniform_renderer::{
-    AdapterSummary, AssetUploadAdmission, AssetUploadOutcome, RendererAssetStats, RendererError,
+    AdapterSummary, AssetUploadAdmission, AssetUploadOutcome, RendererAssetEviction,
+    RendererAssetStats, RendererError,
 };
 pub use engine::{CogniformEngine, EngineConfig};
 pub use error::{EngineError, GatewayError, LocalRevertError, LocalServiceError, ObservationError};
@@ -47,6 +49,6 @@ pub use scenario::{
     run_canonical_scenario,
 };
 pub use service::{
-    LocalAssetStatus, LocalRevertReceipt, LocalService, LocalServiceConfig, LocalServiceStatus,
-    ProcedureSubmission,
+    LocalAssetEvictionOutcome, LocalAssetStatus, LocalRevertReceipt, LocalService,
+    LocalServiceConfig, LocalServiceStatus, ProcedureSubmission,
 };

@@ -1,13 +1,15 @@
 use cogniform_assets::{
     AssetAdmission, AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetStore, AssetStoreConfig,
-    AssetStoreStats,
+    AssetStoreEviction, AssetStoreStats,
 };
 use cogniform_procedural::{ProcedureArtifact, ProcedureRequest, execute};
 use cogniform_protocol::{
     ContentHash, FrameId, ImaginationEnvelope, ScenePatch, SceneQuery, SceneQueryResult,
     SceneRevision, StableEntityId,
 };
-use cogniform_renderer::{AssetUploadAdmission, AssetUploadOutcome, RendererAssetStats};
+use cogniform_renderer::{
+    AssetUploadAdmission, AssetUploadOutcome, RendererAssetEviction, RendererAssetStats,
+};
 use cogniform_replay::ReplayVerification;
 use cogniform_world::LogicalSceneHash;
 
@@ -72,6 +74,25 @@ pub struct LocalAssetStatus {
     pub store: AssetStoreStats,
     /// Renderer upload reservations and immutable GPU mesh residency.
     pub renderer: RendererAssetStats,
+}
+
+/// Exact CPU and renderer-domain effects of one explicit content-hash eviction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalAssetEvictionOutcome {
+    /// Immutable content identity selected for eviction.
+    pub content_hash: ContentHash,
+    /// Service-owned record, queue, and decoded-memory effects.
+    pub store: AssetStoreEviction,
+    /// Renderer-owned upload, mesh, and texture effects.
+    pub renderer: RendererAssetEviction,
+}
+
+impl LocalAssetEvictionOutcome {
+    /// Returns whether the selected hash was already absent from both domains.
+    #[must_use]
+    pub const fn is_already_absent(self) -> bool {
+        self.store.is_already_absent() && self.renderer.is_already_absent()
+    }
 }
 
 /// Deterministic built-in procedure output admitted as one ordinary patch.
@@ -241,6 +262,22 @@ impl LocalService {
     /// Processes at most one renderer-owned asset upload.
     pub fn process_next_asset_upload(&mut self) -> Option<AssetUploadOutcome> {
         self.gateway.engine_mut().process_next_asset_upload()
+    }
+
+    /// Explicitly evicts all CPU and renderer state for one content hash.
+    ///
+    /// Logical world references, replay, persisted exact-hash source files, and
+    /// frame identity remain unchanged. A later draw therefore uses its authored
+    /// primitive fallback or returns `AssetUnavailable` until the caller drives
+    /// exact-hash import and upload again.
+    pub fn evict_asset(&mut self, content_hash: ContentHash) -> LocalAssetEvictionOutcome {
+        let renderer = self.gateway.engine_mut().evict_asset(content_hash);
+        let store = self.assets.evict(content_hash);
+        LocalAssetEvictionOutcome {
+            content_hash,
+            store,
+            renderer,
+        }
     }
 
     /// Returns bounded asset occupancy without source bytes or backend handles.

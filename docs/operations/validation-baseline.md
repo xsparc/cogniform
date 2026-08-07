@@ -29,6 +29,8 @@ whole-frame equivalence evidence was collected on that profile on 2026-08-06.
 CF029 bounded embedded PNG decode, shared texture residency, sampled
 base-color-factor/override behavior, and exact-hash textured rehydration
 evidence was collected on that profile on 2026-08-06.
+CF030 exact content-hash asset eviction, submitted-frame preservation, and
+explicit rehydration evidence was collected on that profile on 2026-08-07.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -38,7 +40,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded sRGB base-color texture orientation/factor/override and shared-residency response, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded sRGB base-color texture orientation/factor/override and shared-residency response, content-hash eviction with submitted-readback safety and exact reupload, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -303,6 +305,29 @@ proxy classification, exact byte accounting, and pre-allocation GPU texture
 reservations. This adds no adapter, image-format, sampler, texture-role,
 schema, performance, deployment, or release claim.
 
+## Controlled explicit asset-eviction commands
+
+The focused CF030 renderer and service checks passed in the optimized profile:
+
+```text
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work
+cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact explicit_eviction_is_capacity_exact_and_logically_neutral_before_rehydration
+```
+
+A two-mesh textured asset was partially uploaded before a frame submission.
+Eviction then released the remaining upload reservation, every resident mesh,
+and the shared texture exactly once while the submitted readback remained
+valid. The renderer's next draw used its authored cuboid fallback; the
+no-fallback service draw returned `AssetUnavailable` without consuming a
+frame. Exact reupload restored matching imported output. The service check
+additionally pinned queued-source and decoded-CPU release, idempotent absent
+eviction, unrelated FIFO preservation, and unchanged world reference,
+revision, logical hash, replay, recovery evidence, and frame frontier. This is
+explicit local
+content-hash policy evidence, not per-mesh, LRU, reference-counted, background,
+or automatic eviction, automatic rehydration, source-file deletion, device
+recreation, deployment, or release evidence.
+
 ## Controlled service-restoration command
 
 The following focused CF012 test passed in release mode on the validated
@@ -363,7 +388,8 @@ but began with empty CPU/GPU asset state. Observation then returned the exact
 missing entity and mesh key. Reimporting the same bytes and uploading the mesh
 restored the observation without a world mutation or replay change. This is
 caller-supplied in-memory rehydration evidence, not filesystem/network
-resolution, persistence, eviction, automatic startup, or device recreation.
+resolution, persistence, automatic eviction, automatic startup, or device
+recreation.
 
 ## Controlled service-procedure command
 
@@ -450,7 +476,7 @@ CPU tests separately prove source-size and hash rejection before I/O,
 create-new non-overwrite, regular-file and metadata bounds, complete identity
 validation, growth detection, path-redacted errors, and injected write/sync
 cleanup. This is caller-mapped local-file evidence, not a bundle, content
-discovery, asset catalog, retention/eviction, automatic rehydration,
+discovery, asset catalog, automatic retention/eviction, automatic rehydration,
 authentication, encryption, directory-entry crash consistency, remote storage,
 or device-loss recovery.
 

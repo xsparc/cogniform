@@ -59,6 +59,10 @@ release yet; the current workspace version remains `0.0.0`.
   direct-light evidence;
 - service-owned asset admission, explicit single-item CPU/GPU processing,
   aggregate residency status, and exact-hash post-recovery rehydration;
+- explicit whole-content-hash asset eviction across queued sources, decoded CPU
+  state, pending uploads, resident meshes, and shared textures, with exact
+  released-resource outcomes, stable unrelated FIFO work, idempotent absence,
+  backend-safe submitted-frame completion, and logically neutral rehydration;
 - local typed service and unattended room/table/light/camera scenario;
 - complete verified in-memory local-service restoration with retained replay,
   logical state, idempotency, renderer revision, and frame continuity;

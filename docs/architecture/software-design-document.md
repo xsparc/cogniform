@@ -266,9 +266,14 @@ position, unit normal, and primary coordinate, synthesizing a winding-derived
 direction or exact zero coordinate when the source omits one. The local service
 owns bounded CPU asset state and explicitly forwards immutable upload jobs into
 renderer-owned mesh and unique texture residency; neither patches nor frames
-perform implicit asset work. Recovery preserves logical content references but
-starts CPU and GPU asset state empty, so callers must rehydrate exact matching
-bytes before dependent rendering resumes. An opt-in storage adapter can retain
+perform implicit asset work. A caller may explicitly evict every CPU record,
+queued source, decoded mesh/texture, pending upload, resident mesh, and shared
+GPU texture for one content hash while leaving logical world references,
+revision, replay, hash, and frame identity unchanged. Unrelated queues retain
+their order; GPU destruction may complete after already-submitted work.
+Recovery preserves logical content references but starts CPU and GPU asset
+state empty, so callers must rehydrate exact matching bytes before dependent
+rendering resumes. An opt-in storage adapter can retain
 one exact source in a separate immutable bounded file, but it neither maps that
 file to recovery state nor decodes, imports, uploads, or schedules the source.
 Unsupported extensions and valid out-of-subset image features produce
@@ -291,6 +296,8 @@ All agent data, labels, assets, procedures, and transport messages are untrusted
 
 - pre-decode byte caps, bounded collections/nesting, entity/operation/pixel quotas;
 - strict asset decoded-size, vertex/index, texture, and GPU-residency limits;
+- explicit content-hash-wide asset reclamation with exact released-resource
+  accounting and no hidden retry or pressure policy;
 - no arbitrary native shaders or plugins;
 - stable ownership scopes and expected generation/revision checks;
 - scene text treated as data with provenance, never privileged instructions;
@@ -308,7 +315,7 @@ without affecting world or render correctness.
 
 ## 6. Performance and observability
 
-Measure latency as separate spans: decode, validate, compile, patch validate, patch commit, transform propagate, render extract, upload, encode, GPU frame, observation copy, feedback enqueue, and delivery. Relevant spans carry request, transaction, revision, frame, and agent identifiers with bounded cardinality.
+Measure latency as separate spans: decode, validate, compile, patch validate, patch commit, transform propagate, render extract, upload, asset eviction, encode, GPU frame, observation copy, feedback enqueue, and delivery. Relevant spans carry request, transaction, revision, frame, and agent identifiers with bounded cardinality.
 
 Research targets such as 60 Hz, 3 ms p95 CPU engine work, 8 ms p95 GPU time, 8 ms for 1,000 simple operations, 30 ms for 10,000 operations, one-frame commit-to-visibility, and near-zero hot-path allocations are hypotheses until reference hardware and fixtures are recorded. Correctness gates land before performance gates; thresholds cannot be silently weakened.
 
@@ -319,8 +326,9 @@ procedure through an ordinary patch, apply patch, query scene,
 request observation, subscribe to bounded feedback, explain compilation,
 capture complete or exact-revision local recovery state, restore it into a
 fresh service, explicitly persist/load one immutable local recovery file or
-one independent exact-hash asset-source file, revert live recorded state, and
-resolve assets. Initial
+one independent exact-hash asset-source file, revert live recorded state,
+resolve assets, and explicitly evict one content hash from CPU/GPU residency.
+Initial
 implementation can use in-process Rust types and
 canonical JSON fixtures. Protobuf/gRPC, MCP, local shared memory, and QUIC are
 adapters introduced after the core semantics are tested.
@@ -353,6 +361,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |
 | Asset resolution | The local service explicitly imports and uploads bounded content-addressed meshes and shared textures; recovered logical references remain unavailable until exact-hash rehydration without another world mutation |
+| Asset eviction | One explicit content-hash operation releases exact queued/CPU/upload/GPU mesh and shared-texture capacity while preserving unrelated order, logical references, revision, replay, hash, frame frontier, and later exact-hash rehydration |
 | Procedure composition | The local service produces deterministic stable IDs, queues an ordinary generated patch without immediate mutation, and preserves query/replay/hash/idempotency behavior across restoration |
 | End to end | Canonical room/table/light/camera scenario passes unattended |
 

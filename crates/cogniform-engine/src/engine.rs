@@ -2,10 +2,11 @@ use core::num::NonZeroU32;
 
 use cogniform_assets::AssetUploadJob;
 use cogniform_protocol::{
-    ApplyReceipt, ApplyStatus, FrameId, RuntimeLimits, ScenePatch, SceneRevision,
+    ApplyReceipt, ApplyStatus, ContentHash, FrameId, RuntimeLimits, ScenePatch, SceneRevision,
 };
 use cogniform_renderer::{
-    AssetUploadAdmission, AssetUploadOutcome, HeadlessRenderer, RendererAssetStats, RendererConfig,
+    AssetUploadAdmission, AssetUploadOutcome, HeadlessRenderer, RendererAssetEviction,
+    RendererAssetStats, RendererConfig,
 };
 use cogniform_replay::{
     RecordedApplyError, RecordedWorld, ReplayConfig, ReplayError, ReplayLog, ReplayVerification,
@@ -162,6 +163,11 @@ impl CogniformEngine {
     /// Processes at most one renderer-owned asset upload.
     pub fn process_next_asset_upload(&mut self) -> Option<AssetUploadOutcome> {
         self.renderer.process_next_asset_upload()
+    }
+
+    /// Explicitly releases all renderer-owned state for one content hash.
+    pub fn evict_asset(&mut self, content_hash: ContentHash) -> RendererAssetEviction {
+        self.renderer.evict_asset(content_hash)
     }
 
     /// Returns bounded renderer asset occupancy without exposing GPU handles.

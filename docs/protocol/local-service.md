@@ -9,7 +9,8 @@ ordinary patch admission. CF017 adds quiescent in-place historical revert
 through a fully restored replacement. CF018 adds a separate explicit adapter
 for immutable bounded local recovery files. CF019 extends that separate
 adapter with immutable exact-hash asset-source files for caller-driven
-rehydration.
+rehydration. CF030 adds explicit content-hash-wide CPU/GPU asset eviction with
+exact accounting and no logical scene mutation.
 
 `LocalService` composes one bounded `LocalGateway`, authoritative recorded
 world, service-owned asset store, headless renderer, and observation worker. It
@@ -42,6 +43,7 @@ handle, renderer device, queue, staging buffer, or replay log.
 | `asset_record` | Return one immutable lifecycle record without source bytes |
 | `enqueue_asset_upload` | Create an immutable ready-mesh job and reserve renderer capacity |
 | `process_next_asset_upload` | Upload at most one renderer-owned queued mesh |
+| `evict_asset` | Release all queued and resident CPU/GPU state for one content hash without changing the world or replay |
 | `asset_status` | Return aggregate CPU-store and renderer-residency counters |
 | `submit_patch` | Validate and admit one explicit patch under its delivery semantic |
 | `submit_imagination` | Validate and admit one deterministic primitive imagination |
@@ -163,7 +165,23 @@ The service does not locate content by hash. A caller may compose
 `cogniform-storage::AssetFileStore` to create or bounded-load one independently
 mapped exact-hash source, then pass the returned bytes through the ordinary
 explicit service methods. Filesystem/network discovery, recovery manifests,
-mutable caches, eviction, retries, and scheduling remain caller concerns.
+mutable caches, automatic eviction, retries, and scheduling remain caller
+concerns.
+
+`evict_asset` is the explicit local policy hook. It removes all pending and
+resident CPU and renderer state for one content hash and returns exact
+per-domain counts and released bytes. It preserves unrelated FIFO work and is
+an idempotent no-op when the hash is already absent. It does not inspect or
+mutate world references, revision, logical hash, replay, frame allocation,
+recovery points, or independently persisted source files.
+
+After eviction, an authored primitive fallback remains available; otherwise a
+dependent draw returns `AssetUnavailable`. The caller can restore residency by
+supplying the same exact-hash source and explicitly driving import and upload.
+Already submitted GPU work remains readable, so a backend may defer physical
+allocation destruction until safe retirement. The service supplies no
+per-mesh, LRU, reference-counted, background, or automatic eviction and no
+automatic rehydration.
 
 ## Historical recovery forks
 
@@ -235,8 +253,8 @@ branch identity, and any external rollback policy.
 - Only the pure built-in cuboid-grid procedure is supported. External
   procedures, plugins, Wasm, and user code are not loaded. The service accepts
   caller-supplied exact-hash asset bytes but does not discover external assets,
-  associate source files with recovery state, evict them, or restore their
-  residency automatically.
+  associate source files with recovery state, automatically evict them, or
+  restore their residency automatically.
 - The headless baseline supports controlled DX12 or Vulkan adapters. Browser,
   Metal, OpenGL, and a hosted-GPU CI promise are outside the current contract.
 
@@ -248,7 +266,8 @@ See [ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md),
 [ADR 0016](../adr/0016-service-procedure-composition-through-ordinary-patches.md),
 [ADR 0017](../adr/0017-quiescent-live-revert-through-fresh-replacement.md),
 [ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md),
-[ADR 0019](../adr/0019-immutable-exact-hash-asset-source-files.md), the
+[ADR 0019](../adr/0019-immutable-exact-hash-asset-source-files.md),
+[ADR 0030](../adr/0030-explicit-content-hash-asset-eviction.md), the
 [gateway guide](local-gateway-and-imagination.md), the
 [recovery-file guide](../persistence/recovery-files.md), the
 [asset-file guide](../persistence/asset-files.md), and the

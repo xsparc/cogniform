@@ -4,7 +4,7 @@ use std::{
 };
 
 use cogniform_assets::AssetUploadJob;
-use cogniform_protocol::{FrameId, RenderExtraction, SceneRevision, StableEntityId};
+use cogniform_protocol::{ContentHash, FrameId, RenderExtraction, SceneRevision, StableEntityId};
 
 use crate::{
     AdapterPreference, AdapterSummary, AssetUploadAdmission, AssetUploadOutcome, CapabilityIssue,
@@ -294,6 +294,14 @@ impl HeadlessRenderer {
     /// frame submission.
     pub fn process_next_asset_upload(&mut self) -> Option<AssetUploadOutcome> {
         self.assets.process_next(&self.device, &self.queue)
+    }
+
+    /// Explicitly releases all queued and resident renderer state for one source.
+    ///
+    /// Unrelated upload jobs preserve FIFO order. GPU backends may keep dropped
+    /// resources alive until already-submitted work no longer references them.
+    pub fn evict_asset(&mut self, content_hash: ContentHash) -> crate::RendererAssetEviction {
+        self.assets.evict(content_hash)
     }
 
     /// Returns aggregate upload and GPU residency occupancy.

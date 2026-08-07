@@ -70,6 +70,15 @@ Untextured draws use a renderer-owned white fallback. External images, custom
 samplers, transforms, additional coordinate sets, mipmaps, and other texture
 roles remain unsupported.
 
+`HeadlessRenderer::evict_asset` removes every pending upload and resident mesh
+for one content hash, plus its unique pending or resident texture at most once.
+The returned outcome reports exact removed counts and released bytes; unrelated
+uploads retain FIFO order and repeated absent eviction is a no-op. Submitted
+frames remain readable because a backend may defer physical resource
+destruction until the work is safe to retire. Eviction does not modify the
+extracted scene: the next preparation uses an authored primitive fallback or
+returns `AssetUnavailable` until the exact asset is explicitly uploaded again.
+
 Lighting is one fixed direct metallic-roughness baseline. A directional light
 emits along its transformed local negative-Z axis; transformed positive Z is
 normalized as the surface-to-light direction. A point light uses its extracted world translation
@@ -170,6 +179,7 @@ cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ig
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_material_factors_drive_direct_light_and_scene_override
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact primary_texcoords_are_retained_without_changing_rendered_observations
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact embedded_base_color_texture_preserves_orientation_factor_override_and_residency
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work
 ```
 
 The integration tests render at 64 by 64 pixels, verify exact object and
@@ -182,6 +192,10 @@ back-facing response, and near/far Point attenuation without changing
 identity/depth/normals. They also compare every output sample between matching
 GLBs with missing versus retained primary coordinates, then pin texture
 orientation, sRGB/factor/alpha response, scene override, and shared residency.
+The eviction contract partially uploads a two-mesh textured asset, submits a
+frame, releases the remaining reservation and all logical residency exactly,
+keeps the submitted readback valid, verifies the authored cuboid fallback, and
+then restores identical imported output through explicit exact-hash upload.
 They validate output lengths and bounds behavior and require the selected
 backend to be DX12 or Vulkan. Normal workspace CI compiles these tests
 but leaves it ignored;
@@ -213,5 +227,7 @@ primary-coordinate validation, zero-default, layout, and visual-compatibility
 rules.
 See [ADR 0029](../adr/0029-bounded-embedded-png-base-color-textures.md) for the
 decode, residency, sampling, fallback, and material-override rules.
+See [ADR 0030](../adr/0030-explicit-content-hash-asset-eviction.md) for the
+content-hash eviction boundary, accounting, and submitted-work rule.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.
