@@ -133,6 +133,19 @@ The command opens no window and performs no network call. It verifies the room,
 table, light, camera, atomic update, exact query, color/entity-ID/visibility
 causality, and replay hash contract before returning success.
 
+Scripts can request the same completed scenario proof as compact versioned
+JSON:
+
+```text
+cargo run -p cogniform-cli --locked --offline -- scenario --json
+```
+
+Consumers must require `schema_version` 1 and `scenario`
+`canonical-mvp-v1`. The adapter summary and run evidence can fingerprint or
+correlate the local host, so the report is opt-in and must not be uploaded or
+published by default. See the
+[canonical scenario guide](docs/getting-started/canonical-scenario.md).
+
 To inspect one immutable recovery file without selecting a GPU adapter:
 
 ```text

@@ -42,6 +42,9 @@ pre-output validation, and failure redaction evidence was collected on
 CF034 fixed-layout schema-version-one controlled-measurement JSON, unchanged
 human report structure, pre-output preparation, exact argument rejection, and
 informational-only evidence was collected on 2026-08-08.
+CF035 fixed-layout schema-version-one canonical-scenario JSON, unchanged human
+bytes, pre-GPU argument rejection, complete-before-output behavior, and
+controlled cross-mode GPU evidence was collected on 2026-08-08.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -103,6 +106,34 @@ The corrected outward table face and direct material response produced center
 color `#371e0bff` (`[55, 30, 11, 255]`) on this
 profile under the existing two-unit-per-channel tolerance.
 Pixel coverage is visual evidence for this adapter, not a cross-GPU exact value.
+
+## Controlled canonical-scenario JSON command
+
+CF035 retained the existing human scenario command and added an explicit
+machine-readable mode. The release-mode CLI regression runs both modes as
+separate complete scenarios on the controlled adapter and compares their
+adapter, revision, query, identity, pixel, logical-hash, and replay evidence:
+
+```text
+cargo test --release -p cogniform-cli --test scenario_output --locked --offline -- --ignored --exact human_and_json_modes_prove_the_same_canonical_scenario
+cargo run --release -p cogniform-cli --locked --offline -- scenario --json
+```
+
+Both commands passed on 2026-08-08. The JSON command selected the existing
+NVIDIA GeForce RTX 5070 Vulkan discrete-GPU profile and reported WebGPU
+compliance, revision 2, four queried entities, frames 1-3, center table identity
+and `#371e0bff`, 72 visible table pixels, two replay entries, and matching
+live/replayed logical hash
+`db23b22d98da433d6050c0cd863f3a736832c7bae2ca674cdbee3dae8ed25106`.
+Schema version one is one compact line-feed-terminated object with fixed
+top-level and adapter field order and typed integer counters. Invalid arguments
+are rejected before adapter selection with empty stdout. Report construction
+and serialization finish before stdout is written.
+
+This records no new adapter, platform, scenario, tolerance, performance, or
+release support claim. Adapter identity and run evidence can fingerprint or
+correlate the host and remain local opt-in output with no upload, exporter, or
+background collection.
 
 ## Controlled pending-work age commands
 

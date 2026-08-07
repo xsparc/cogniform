@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF034 versioned controlled-measurement JSON on 2026-08-08.
+and extended through CF035 versioned canonical-scenario JSON on 2026-08-08.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -60,6 +60,10 @@ The controlled CPU measurement's optional machine-readable view is likewise
 versioned and encoded only at the CLI boundary after all samples finish. It
 contains fixed fixture/profile/sample metadata and timings, but no hardware
 identity, system metadata, threshold, upload, or background collection.
+The canonical scenario's optional machine-readable view is also CLI-only and
+is encoded after the complete adapter-backed scenario succeeds. It deliberately
+contains the already-human-visible adapter summary plus exact run evidence, so
+it is opt-in local output rather than automatic telemetry.
 
 ## Threat and control matrix
 
@@ -83,6 +87,7 @@ Residual ratings assume the declared local single-user boundary.
 | A recovery path or file causes overwrite, disclosure, unbounded allocation, or partial-state adoption | High | Separate opt-in crate; encode-before-I/O; create-new only; final symlink/non-file rejection; metadata/platform allocation bound; fixed-buffer read and growth probe; complete digest validation; path-redacted errors; injected write/sync cleanup | Medium because parent-path trust, permissions, confidentiality, authenticity, freshness, and crash durability remain caller-owned |
 | Offline recovery diagnostics expose a path/payload, accept only a verified prefix, mutate the file, require GPU availability, or emit partial machine output on failure | High | Exact one-path CLI; bounded read-only storage load; shared complete restoration preflight before stdout; aggregate-only human/schema-v1 JSON result; path/payload-redacted success and errors; empty JSON failure stdout; ordinary no-adapter black-box tests | Low inside the trusted local fixed-profile boundary |
 | Measurement diagnostics create a hidden performance gate or disclose a host fingerprint | High | Explicit local invocation; fixed fixture and sample counts; schema-v1 integer timings marked `informational_only`; no hardware identity, system metadata, threshold, automatic upload, exporter, or background sampling; complete preparation before stdout | Low inside the trusted local boundary; operators still control timing disclosure |
+| Scenario diagnostics expose adapter identity or correlatable run evidence, emit a partial proof, or imply portable support | High | Explicit `--json`; complete scenario and in-memory schema-v1 serialization before stdout; fixed profile/scenario; exact cross-mode tests; no path, payload, timing, upload, exporter, background sampling, or added support claim; invalid arguments reject before adapter selection | Low inside the trusted local boundary; operators still control adapter and run-evidence disclosure |
 | An asset path or source file causes overwrite, disclosure, unbounded allocation, substitution, or unsafe implicit rehydration | High | Separate opt-in adapter; source size/hash checks before I/O; create-new only; bounded regular-file load and growth probe; complete expected-hash validation before return; path-redacted errors; explicit later import/upload; injected cleanup and controlled restart evidence | Medium because path mapping, parent trust, permissions, confidentiality, writer authenticity, freshness, retention, and crash durability remain caller-owned |
 | A historical fork reuses a frame identity issued before capture or mutates the live source | High | Exact contiguous replay prefixes are copied with the source's current next frame identity; controlled tests preserve source status/hash/bytes and prove query/observe/append continuation | Low for pre-capture reuse; future cross-branch identity and freshness remain caller-owned |
 | A stale, unintended, or busy live revert silently loses authoritative or transient state | High | Local caller-only API, explicit older revision, exact quiescence blockers, fresh replacement before swap, no event on failure, explicit removed-tail/cache/asset receipt, controlled continuation test | Low inside the local trusted-caller boundary; authorization and freshness remain caller-owned |
@@ -114,6 +119,11 @@ transport, or production use.
   Do not publish timing distributions by default, infer a portable hardware
   identity, or turn a noisy local result into a release or merge threshold.
   Scripts should require JSON `schema_version` 1 and `unit` `nanoseconds`.
+- Treat canonical scenario output as locally sensitive conformance evidence.
+  Do not publish the adapter name/backend or correlate its stable IDs, hashes,
+  colors, counters, and pixel coverage by default. Scripts should require JSON
+  `schema_version` 1 and `scenario` `canonical-mvp-v1`; a pass applies only to
+  the named adapter/profile and is not a portable performance or support claim.
 - Treat procedure requests as untrusted bounded data. Do not load external
   procedure code or grant a procedure filesystem, network, clock, renderer, or
   mutable-world access under this threat model.
@@ -164,7 +174,7 @@ transport, or production use.
 
 Remote transport, authentication, tenancy, automatic or mutable persistence,
 recovery discovery/profile negotiation, diagnostic schemas beyond the
-versioned recovery and controlled-measurement CLI reports, asset
+versioned recovery, controlled-measurement, and canonical-scenario CLI reports, asset
 catalogs, automatic eviction/rehydration, shared memory, third-party
 Wasm, model execution, arbitrary shaders, binary
 releases, telemetry export, and production deployment each add a trust

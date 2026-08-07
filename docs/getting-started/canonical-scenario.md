@@ -32,6 +32,21 @@ IDs, the center color and entity ID, visible table pixels, matching 64-character
 logical hashes, two replay entries, and the bounded replay byte count.
 Wall-clock timestamps and local paths are not printed.
 
+Scripts can request the same completed proof as compact versioned JSON:
+
+```text
+cargo run -p cogniform-cli --locked --offline -- scenario --json
+```
+
+Consumers must require `schema_version` 1 and `scenario`
+`canonical-mvp-v1`. The fixed-layout object includes the declared 64x64
+profile, adapter summary, revision/query evidence, stable identities, ordered
+frames, pixel probe, matching live/replayed hashes, and replay counts. It is
+serialized completely before stdout is written. The adapter name/backend and
+the run's identifiers, hashes, colors, counters, and pixel coverage can be
+sensitive correlation data; do not upload or publish this local output by
+default.
+
 ## Failure behavior
 
 The command fails closed with a concise diagnostic when adapter creation,
@@ -52,6 +67,10 @@ separately proves near/far attenuation and back-facing rejection on a
 positive-Z plane.
 Pixel coverage and tolerant color can vary within the renderer contract;
 stable identity, revision causality, and logical replay hash remain exact.
+The sole optional scenario argument is `--json`. Invalid or extra arguments
+fail before adapter selection and leave stdout empty. A successful JSON report
+proves this one run under its named adapter and profile; it is not a portable
+performance result or a claim of support for another adapter.
 
 The controlled integration equivalent is intentionally ignored by ordinary
 workspace tests because standard hosted CI does not promise a compatible GPU.
@@ -59,6 +78,7 @@ On an approved adapter it can be run explicitly with:
 
 ```text
 cargo test -p cogniform-engine --test canonical_mvp --locked --offline -- --ignored
+cargo test --release -p cogniform-cli --test scenario_output --locked --offline -- --ignored
 ```
 
 See the [local service contract](../protocol/local-service.md) for the API,
