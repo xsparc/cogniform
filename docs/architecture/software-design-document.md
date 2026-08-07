@@ -80,7 +80,9 @@ CPU restoration preflight for offline diagnostics, and CF033 adds a versioned
 machine-readable recovery view at that CLI boundary without moving encoding
 into the engine. CF034 similarly adds a versioned view over the existing
 controlled CPU measurement at the CLI boundary, with no engine or protocol
-encoding. Spatial
+encoding. CF035 adds the same boundary-preserving machine-readable option to
+the successful canonical scenario proof while retaining its default human
+report. Spatial
 acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -353,6 +355,13 @@ includes no hardware identity or upload behavior. The default human report is
 unchanged. This view does not establish a performance threshold or replace a
 dated controlled baseline.
 
+The canonical `canonical-mvp-v1` scenario has a separate opt-in CLI
+schema-version-one JSON proof. It identifies the fixed 64x64 profile, selected
+backend-neutral adapter, successful revision/query/observation evidence, stable
+IDs, pixel probe, and matching live/replayed hashes. Serialization finishes
+only after the complete scenario succeeds. The default human report remains
+unchanged; there is no automatic upload, exporter, or background collection.
+
 Research targets such as 60 Hz, 3 ms p95 CPU engine work, 8 ms p95 GPU time, 8 ms for 1,000 simple operations, 30 ms for 10,000 operations, one-frame commit-to-visibility, and near-zero hot-path allocations are hypotheses until reference hardware and fixtures are recorded. Correctness gates land before performance gates; thresholds cannot be silently weakened.
 
 ## 7. External interfaces
@@ -365,7 +374,8 @@ fresh service, explicitly persist/load one immutable local recovery file or
 one independent exact-hash asset-source file, inspect one recovery file through
 the complete CPU restoration preflight without GPU initialization and emit an
 optional versioned CLI JSON report, run the controlled CPU measurement with an
-optional versioned CLI JSON report, revert live recorded state,
+optional versioned CLI JSON report, run the canonical unattended scenario with
+an optional versioned CLI JSON proof, revert live recorded state,
 resolve assets, and explicitly evict one content hash from CPU/GPU residency.
 Initial
 implementation can use in-process Rust types and
@@ -395,6 +405,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Recovery file | A new immutable local file stores one complete bounded envelope without overwrite; bounded load rejects non-files, growth, corruption, truncation, extension, and over-limit input before restoration |
 | Recovery inspection | One explicit CLI path is loaded read-only and passes the same configuration, complete-replay, authoritative-world, logical-hash, and frame-frontier preflight as restoration without adapter selection; default human output is unchanged and optional deterministic schema-v1 JSON remains aggregate and path/payload redacted |
 | Controlled measurement | The fixed CPU world fixture retains its human report and emits optional fixed-layout schema-v1 integer-nanosecond distributions that are explicitly informational only and written only after measurement completes |
+| Canonical scenario report | The fixed 64x64 end-to-end scenario retains its 19-line human report and emits optional fixed-layout schema-v1 adapter, revision, observation, identity, pixel, and replay evidence only after the scenario succeeds |
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
 | Headless render | Outward-wound reference cuboid plus extracted plane, sphere, and bounded direct metallic-roughness directional/point-lit scenes render without a visible window |
 | Machine outputs | Entity-ID probes are exact; exact unlit and tolerant direct-material color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
@@ -405,7 +416,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Asset resolution | The local service explicitly imports and uploads bounded content-addressed meshes and shared textures; recovered logical references remain unavailable until exact-hash rehydration without another world mutation |
 | Asset eviction | One explicit content-hash operation releases exact queued/CPU/upload/GPU mesh and shared-texture capacity while preserving unrelated order, logical references, revision, replay, hash, frame frontier, and later exact-hash rehydration |
 | Procedure composition | The local service produces deterministic stable IDs, queues an ordinary generated patch without immediate mutation, and preserves query/replay/hash/idempotency behavior across restoration |
-| End to end | Canonical room/table/light/camera scenario passes unattended |
+| End to end | Canonical room/table/light/camera scenario passes unattended and its human and schema-v1 JSON modes prove the same causal result |
 
 ## 10. Open decisions
 
@@ -419,8 +430,9 @@ recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
 rotation, recovery-inspection profile selection, broader diagnostic schemas,
-including schemas beyond the versioned recovery and controlled-measurement CLI
-reports, and model policy remain explicitly open. Defaults in the roadmap are
+including schemas beyond the versioned recovery, controlled-measurement, and
+canonical-scenario CLI reports, and model policy remain explicitly open.
+Defaults in the roadmap are
 planning assumptions, not production commitments.
 
 ## 11. Verified foundation references

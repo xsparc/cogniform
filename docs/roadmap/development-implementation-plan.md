@@ -745,6 +745,34 @@ release action remain excluded. See
 [ADR 0034](../adr/0034-versioned-controlled-measurement-json.md) and the
 [validation baseline](../operations/validation-baseline.md).
 
+### PR 35 - CF035: Versioned canonical-scenario JSON
+
+Outcome: scripts, CI helpers, and local operators can consume a stable
+versioned proof of the successful canonical unattended scenario without
+parsing its unchanged human report.
+
+Gate: `cogniform-cli scenario --json` emits one fixed-layout compact
+schema-version-one object followed by one line feed after adapter creation,
+the complete scenario, three observations, replay verification, and in-memory
+serialization succeed. Exact fields cover the fixed scenario/profile,
+backend-neutral adapter summary, revision/query evidence, stable IDs, ordered
+frames, center color/entity, visible pixels, matching live/replayed logical
+hashes, and replay counts. The default 19-line human report remains byte for
+byte intact. Invalid or extra arguments fail before GPU work with empty
+stdout.
+
+Implemented contract: the JSON report is a CLI-private serializable view over
+the existing public `AdapterSummary` and successful `CanonicalScenarioReport`.
+Existing CLI serialization dependencies are reused, so no manifest, lockfile,
+package, vendor, engine, protocol, scenario, profile, tolerance, or supported-
+adapter change. JSON input, scenario configuration, a general diagnostic
+schema, adapter selection, performance timings/thresholds, logging/exporters,
+telemetry, transport, authentication, CI expansion, deployment, versioning,
+and release action remain excluded. See
+[ADR 0035](../adr/0035-versioned-canonical-scenario-json.md), the
+[canonical scenario guide](../getting-started/canonical-scenario.md), and the
+[validation baseline](../operations/validation-baseline.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -752,7 +780,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
-  -> CF030 -> CF031 -> CF032 -> CF033 -> CF034
+  -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -894,6 +922,12 @@ Validation expands with capability:
   distributions, explicit informational-only semantics, unchanged human
   structure and debug warning, exact argument rejection, empty failure stdout,
   and no manifest, lockfile, baseline, package, or GPU boundary.
+- CF035: exact compact schema-version-one canonical-scenario JSON, fixed
+  top-level/nested field order and types, lowercase identity/hash/color
+  encoding, matching live/replayed proof, causal frame ordering, unchanged
+  19-line human bytes, pre-GPU argument rejection, complete-before-output
+  behavior, and controlled human/JSON GPU regression without a new engine,
+  protocol, dependency, profile, tolerance, or supported-adapter boundary.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

@@ -17,6 +17,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Immutable recovery file | Pass on validated profile | Encode-before-I/O create-new storage, non-overwrite, bounded regular-file load, corruption/growth rejection, injected write/sync cleanup, and persisted restoration continuation |
 | Offline recovery inspection | Pass for declared CPU profile | Exact complete restoration preflight without adapter selection, unchanged human output plus deterministic CLI schema-v1 JSON, read-only file evidence, semantic/frame rejection, and path/payload redaction |
 | Controlled CPU measurement | Pass for declared CPU profile | Fixed fixture/sample metadata, unchanged human structure, fixed-layout schema-v1 integer-nanosecond distributions, complete-before-output behavior, and explicit informational-only status |
+| Canonical scenario report | Pass on validated profile | Unchanged 19-line human proof plus fixed-layout schema-v1 adapter/revision/observation/identity/pixel/replay evidence, complete-before-output behavior, and controlled cross-mode comparison |
 | Immutable asset source file | Pass on validated profile | Pre-I/O source-size/hash validation, create-new non-overwrite, bounded regular-file load, substitution/growth rejection, injected cleanup, and separate persisted rehydration continuation |
 | Fresh-service restoration | Pass on validated profile | Complete replay and frame state restore revision/hash/query/idempotency and continue observation and append causality |
 | Historical recovery fork | Pass on validated profile | An exact retained revision restores into a separate fresh service, preserves the source, resumes from the source frame frontier, and continues query/observe/append causality |
@@ -48,6 +49,9 @@ This does not make the current `0.0.0` workspace a supported release.
       public-tree, and dependency-policy checks.
 - [ ] Reproduce all ignored engine/renderer conformance tests on at least one
       matrix entry named in the compatibility baseline.
+- [ ] Re-run the canonical scenario's human and schema-version-one JSON modes
+      on that matrix entry and confirm they prove the same successful run
+      contract without publishing the adapter or run evidence.
 - [ ] Re-run `measure-world` human and schema-version-one JSON output in release
       mode and append rather than overwrite
       the dated baseline if hardware, fixture, or result materially changes.
@@ -94,6 +98,11 @@ The GitHub release must be marked prerelease and state:
   version one, contains no hardware identity, and is informational only; timing
   values can still expose local performance characteristics and are not a
   release or merge threshold;
+- the canonical scenario's optional compact JSON proof is CLI schema version
+  one and can disclose adapter identity plus correlatable stable IDs, hashes,
+  colors, counters, and pixel evidence; it remains local and opt-in, makes no
+  portable performance or additional-adapter claim, and is not uploaded by
+  default;
 - exact-hash asset sources are separate create-new plaintext artifacts with no
   recovery manifest, content discovery, catalog, automatic retention/eviction,
   automatic rehydration, writer authentication, or remote-storage guarantee;

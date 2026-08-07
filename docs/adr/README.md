@@ -40,5 +40,6 @@ earlier one and links the history.
 | [0032](0032-offline-recovery-file-inspection.md) | Accepted | Inspect one immutable recovery file through the exact CPU restoration preflight without GPU or payload exposure |
 | [0033](0033-versioned-recovery-inspection-json.md) | Accepted | Emit a deterministic versioned recovery-inspection JSON report at the CLI boundary |
 | [0034](0034-versioned-controlled-measurement-json.md) | Accepted | Emit versioned informational controlled-measurement JSON at the CLI boundary |
+| [0035](0035-versioned-canonical-scenario-json.md) | Accepted | Emit a deterministic versioned canonical-scenario proof at the CLI boundary |
 
 New records use four sections: context, decision, consequences, and status.

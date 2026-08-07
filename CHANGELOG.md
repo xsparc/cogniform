@@ -91,6 +91,10 @@ release yet; the current workspace version remains `0.0.0`.
   measurement, with fixed integer-nanosecond distributions, exact
   fields/types/order, explicit informational-only status, unchanged human
   structure and debug warning, and complete preparation before stdout;
+- fixed-layout compact schema-version-one JSON for the canonical unattended
+  scenario, with exact adapter/revision/observation/identity/pixel/replay
+  fields, unchanged 19-line human output, pre-GPU argument rejection, and
+  complete scenario plus serialization before stdout;
 - separate immutable exact-hash asset-source files with pre-I/O size and
   identity checks, shared create-new/sync/cleanup guarantees, bounded
   regular-file loading, and explicit restart rehydration evidence;
@@ -184,6 +188,10 @@ release yet; the current workspace version remains `0.0.0`.
   threshold, baseline replacement, hardware identity, arbitrary fixture/sample
   selection, or automatic upload; timing distributions can still expose local
   performance characteristics.
+  Canonical scenario JSON is likewise CLI schema version one and has no JSON
+  input, scenario/profile/adapter selection, performance threshold, automatic
+  upload, exporter, or additional support claim; adapter identity and exact run
+  evidence can fingerprint or correlate the local host.
   In-place revert requires drained transient work, clears asset residency, and
   supplies no automatic rollback or freshness policy;
   future frame identity across concurrently live branches is
