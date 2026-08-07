@@ -79,6 +79,10 @@ unit-diameter spheres, explicitly resident approved GLB meshes, and perspective
 cameras. An unavailable asset uses its exact explicit primitive fallback;
 resident assets retain precedence. All three current `PrimitiveShape` values
 therefore select their named geometry without a silent cuboid substitution.
+Content-hash eviction changes only CPU/GPU asset availability, not the
+`RenderScene`, extracted component, renderer revision, or frame frontier. The
+next preparation therefore selects the same authored fallback or returns the
+same typed `AssetUnavailable` key until exact residency is explicitly restored.
 The public unsupported-primitive renderer error remains reserved for
 compatibility and future shape evolution. Directional lights use transformed
 local positive Z as the surface-to-light direction. Point lights use extracted

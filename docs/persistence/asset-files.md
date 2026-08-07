@@ -63,6 +63,10 @@ file, then loads each authorized source required by retained logical
 references and drives ordinary import/upload. Successful rehydration changes
 neither scene revision, logical hash, nor replay bytes.
 
+`LocalService::evict_asset` affects only in-memory CPU and renderer state. It
+never deletes or modifies this independently mapped source file. A caller may
+later load the same approved file and explicitly rehydrate the exact hash.
+
 ## Security and durability boundary
 
 Paths and hash-to-path associations are caller authority. Do not derive paths
@@ -77,8 +81,8 @@ it can become decoded or GPU-resident state. File `sync_all` does not provide
 a portable directory-entry or power-loss guarantee.
 
 The adapter provides no directory creation, overwrite, rename, delete,
-discovery, bundle/manifest, snapshot catalog, retention, eviction, automatic
-checkpoint/startup/rehydration, encryption, signing, key management,
+discovery, bundle/manifest, snapshot catalog, automatic retention or eviction,
+automatic checkpoint/startup/rehydration, encryption, signing, key management,
 remote/object storage, background worker, or wider asset-format support.
 
 See [ADR 0019](../adr/0019-immutable-exact-hash-asset-source-files.md), the

@@ -25,6 +25,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, finite non-zero same-count normals, finite same-count primary coordinates with full-source validation, unit-bounded numeric materials, bounded static embedded RGB/RGBA PNG decode, independent texture accounting, exact decoded/GPU bytes, truncation corpus, typed unsupported/proxy policy |
 | Service asset resolution | Pass on validated profile | Explicit one-item import/upload renders an exact stable ID and optional shared texture; recovery retains logical references and exact-hash rehydration resumes rendering without replay mutation |
+| Asset lifecycle | Pass on validated profile | Explicit content-hash-wide eviction releases exact queued, decoded, upload, mesh, and unique-texture capacity; preserves unrelated FIFO, submitted frames, world/replay/frame state, and persisted sources; and supports exact rehydration |
 | Service procedure composition | Pass on validated profile | A bounded 2x3 built-in procedure follows ordinary queue, idempotency, query, replay/hash, and restored world-idempotency behavior |
 | End to end | Pass on validated profile | Room/table/light/camera create and atomic restyle, exact query, three observations, same replay hash |
 | Repository and dependency hygiene | Pass | Redacted Git-object scan, secret scanning/push protection, pinned vendor/lock/action, cargo-deny |
@@ -80,8 +81,8 @@ The GitHub release must be marked prerelease and state:
   overwrite, latest-pointer, retention, directory-sync, power-loss,
   authentication, or remote-storage guarantee;
 - exact-hash asset sources are separate create-new plaintext artifacts with no
-  recovery manifest, content discovery, catalog, retention/eviction, automatic
-  rehydration, writer authentication, or remote-storage guarantee;
+  recovery manifest, content discovery, catalog, automatic retention/eviction,
+  automatic rehydration, writer authentication, or remote-storage guarantee;
 - historical recovery supports caller-coordinated fresh forks and quiescent
   live replacement, but provides no automatic rollback, authorization,
   freshness, branch manager, or global frame namespace across concurrent
@@ -89,7 +90,7 @@ The GitHub release must be marked prerelease and state:
 - asset bytes, decoded meshes, and GPU residency are not recovery state;
   callers may map retained hashes to separate approved files but must rehydrate
   exact matching content explicitly; no filesystem/network resolver, durable
-  mutable cache, eviction policy, or automatic asset startup exists;
+  mutable cache, automatic eviction policy, or automatic asset startup exists;
 - only compiled pure built-in procedures are supported; no external procedure
   loading, user-code execution, native plugin, or Wasm host is included;
 - normal output is quantized and accepts the documented imported smoothing

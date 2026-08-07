@@ -24,8 +24,9 @@ scene revision that produced it.
 > existing direct-light path when the entity has no explicit scene material.
 > The baseline also includes pure seeded cuboid-grid procedures. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
-> rehydration after recovery, and executes supported pure procedures through
-> the ordinary patch admission and replay path. A bounded
+> rehydration after recovery, can explicitly evict all CPU/GPU state for one
+> content hash without changing its logical references, and executes supported
+> pure procedures through the ordinary patch admission and replay path. A bounded
 > local typed service and CLI now run the canonical unattended MVP flow,
 > verify replay to the same logical hash, and restore a fresh service from a
 > complete caller-owned in-memory recovery point. That point has a deterministic
@@ -58,7 +59,7 @@ implementations arrive:
 |---|---|
 | `cogniform-protocol` | Backend-neutral IDs, patches, receipts, limits, and observations |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/primary-coordinate/material/embedded-PNG decoding, and immutable upload jobs |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/primary-coordinate/material/embedded-PNG decoding, immutable upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |
@@ -88,8 +89,9 @@ machine-readable payloads. The
 [local gateway guide](docs/protocol/local-gateway-and-imagination.md) documents
 command admission, idempotency, deterministic compilation, and logical queries.
 The [GLB asset guide](docs/assets/glb-subset.md) documents exact source
-admission, the approved format subset, lifecycle, capacity limits, proxy policy,
-texture sampling contract, and controlled GPU validation. The
+admission, the approved format subset, lifecycle and explicit eviction,
+capacity limits, proxy policy, texture sampling contract, and controlled GPU
+validation. The
 [local service guide](docs/protocol/local-service.md) documents the in-process
 composition boundary and known limitations, while the
 [canonical scenario guide](docs/getting-started/canonical-scenario.md) provides

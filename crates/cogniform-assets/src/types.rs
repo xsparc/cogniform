@@ -431,3 +431,30 @@ pub struct AssetStoreStats {
     /// Decoded CPU mesh bytes retained by ready/proxy records.
     pub resident_cpu_bytes: u64,
 }
+
+/// Exact asset-store resources released for one content hash.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AssetStoreEviction {
+    /// Immutable content identity selected for eviction.
+    pub content_hash: ContentHash,
+    /// Lifecycle state removed from the store, or `None` when already absent.
+    pub previous_state: Option<AssetState>,
+    /// Queued import records removed; currently zero or one.
+    pub removed_pending_imports: u32,
+    /// Exact queued source bytes released.
+    pub released_pending_source_bytes: u64,
+    /// Exact decoded CPU bytes released.
+    pub released_resident_cpu_bytes: u64,
+    /// Decoded mesh records released.
+    pub removed_meshes: u32,
+    /// Shared decoded textures released; currently zero or one.
+    pub removed_textures: u32,
+}
+
+impl AssetStoreEviction {
+    /// Returns whether the selected hash had no retained CPU-side state.
+    #[must_use]
+    pub const fn is_already_absent(self) -> bool {
+        self.previous_state.is_none()
+    }
+}

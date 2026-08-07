@@ -13,7 +13,9 @@ mod frame;
 mod renderer;
 mod scene;
 
-pub use asset::{AssetUploadAdmission, AssetUploadOutcome, RendererAssetStats};
+pub use asset::{
+    AssetUploadAdmission, AssetUploadOutcome, RendererAssetEviction, RendererAssetStats,
+};
 pub use config::{
     AdapterPreference, MAX_READBACK_CAPACITY, MAX_READBACK_TIMEOUT, MAX_TARGET_DIMENSION,
     MAX_TARGET_PIXELS, REFERENCE_COLOR, REFERENCE_ENTITY_ID, RendererConfig,

@@ -280,6 +280,77 @@ fn verified_fixture_decodes_only_when_explicitly_processed() {
 }
 
 #[test]
+fn queued_eviction_releases_exact_capacity_and_preserves_unrelated_fifo_order() {
+    let first = fixture();
+    let first_hash = content_hash(&first);
+    let second = triangle_glb_without_material();
+    let second_hash = content_hash(&second);
+    let mut store = AssetStore::default();
+    store.enqueue(first_hash, first.clone()).unwrap();
+    store.enqueue(second_hash, second.clone()).unwrap();
+
+    let eviction = store.evict(first_hash);
+    assert_eq!(eviction.content_hash, first_hash);
+    assert_eq!(eviction.previous_state, Some(AssetState::Queued));
+    assert_eq!(eviction.removed_pending_imports, 1);
+    assert_eq!(
+        eviction.released_pending_source_bytes,
+        u64::try_from(first.len()).unwrap()
+    );
+    assert_eq!(eviction.released_resident_cpu_bytes, 0);
+    assert_eq!(eviction.removed_meshes, 0);
+    assert_eq!(eviction.removed_textures, 0);
+    assert_eq!(store.stats().records, 1);
+    assert_eq!(store.stats().pending_imports, 1);
+    assert_eq!(
+        store.stats().pending_source_bytes,
+        u64::try_from(second.len()).unwrap()
+    );
+    assert_eq!(store.process_next().unwrap().content_hash, second_hash);
+
+    let absent = store.evict(first_hash);
+    assert!(absent.is_already_absent());
+    assert_eq!(absent.released_pending_source_bytes, 0);
+
+    assert_eq!(
+        store.enqueue(first_hash, first).unwrap(),
+        cogniform_assets::AssetAdmission::Queued {
+            content_hash: first_hash
+        }
+    );
+}
+
+#[test]
+fn ready_and_rejected_eviction_release_only_their_retained_state() {
+    let ready = fixture();
+    let ready_hash = content_hash(&ready);
+    let rejected = Vec::new();
+    let rejected_hash = content_hash(&rejected);
+    let mut store = AssetStore::default();
+    store.enqueue(ready_hash, ready).unwrap();
+    store.enqueue(rejected_hash, rejected).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(store.process_next().unwrap().state, AssetState::Rejected);
+    let ready_bytes = store.record(ready_hash).unwrap().decoded_bytes;
+    assert!(ready_bytes > 0);
+
+    let rejected_eviction = store.evict(rejected_hash);
+    assert_eq!(rejected_eviction.previous_state, Some(AssetState::Rejected));
+    assert_eq!(rejected_eviction.released_resident_cpu_bytes, 0);
+    assert_eq!(rejected_eviction.removed_meshes, 0);
+    assert_eq!(rejected_eviction.removed_textures, 0);
+    assert_eq!(store.stats().resident_cpu_bytes, ready_bytes);
+
+    let ready_eviction = store.evict(ready_hash);
+    assert_eq!(ready_eviction.previous_state, Some(AssetState::Ready));
+    assert_eq!(ready_eviction.released_resident_cpu_bytes, ready_bytes);
+    assert_eq!(ready_eviction.removed_meshes, 1);
+    assert_eq!(ready_eviction.removed_textures, 0);
+    assert_eq!(store.stats().records, 0);
+    assert_eq!(store.stats().resident_cpu_bytes, 0);
+}
+
+#[test]
 fn explicit_material_defaults_and_no_material_fallback_are_retained() {
     let explicit = triangle_glb_with_material(r#""baseColorFactor":[0.3,0.4,0.5,0.6]"#);
     let explicit_hash = content_hash(&explicit);
@@ -375,6 +446,11 @@ fn embedded_rgba_and_rgb_base_color_textures_are_bounded_and_retained() {
             255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 64, 255, 255, 255, 0,
         ]
     );
+    let rgba_eviction = rgba_store.evict(rgba_hash);
+    assert_eq!(rgba_eviction.removed_meshes, 1);
+    assert_eq!(rgba_eviction.removed_textures, 1);
+    assert_eq!(rgba_eviction.released_resident_cpu_bytes, 112);
+    assert_eq!(rgba_store.stats().resident_cpu_bytes, 0);
 
     let rgb_png = encode_png(
         2,
@@ -908,6 +984,13 @@ fn unsupported_extensions_are_typed_and_proxy_policy_is_explicit() {
         upload.material().roughness().get().to_bits(),
         0.8_f32.to_bits()
     );
+    let decoded_bytes = proxying.record(hash).unwrap().decoded_bytes;
+    let eviction = proxying.evict(hash);
+    assert_eq!(eviction.previous_state, Some(AssetState::ProxyReady));
+    assert_eq!(eviction.released_resident_cpu_bytes, decoded_bytes);
+    assert_eq!(eviction.removed_meshes, 1);
+    assert_eq!(eviction.removed_textures, 0);
+    assert_eq!(proxying.stats().records, 0);
 }
 
 #[test]

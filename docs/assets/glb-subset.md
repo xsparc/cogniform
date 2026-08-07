@@ -9,6 +9,8 @@ normals. CF027 retains the approved numeric metallic-roughness factors through
 the same immutable upload and renderer-residency path. CF028 retains one
 bounded primary f32 coordinate set. CF029 admits one shared embedded PNG
 base-color texture through that path without adding scene-graph traversal.
+CF030 adds explicit content-hash-wide eviction across the CPU store and
+renderer without changing logical scene state.
 
 ## Ownership and lifecycle
 
@@ -40,17 +42,21 @@ does not create workers or make those calls implicitly.
 `LocalService` is now the standard in-process owner. Its
 `enqueue_asset_source`, `process_next_asset_import`, `asset_record`,
 `enqueue_asset_upload`, and `process_next_asset_upload` methods preserve the
-same split lifecycle, while `asset_status` returns only aggregate store and
-renderer counters. The engine forwards immutable upload jobs and never exposes
-mutable renderer state or backend handles. The lower-level store and renderer
-APIs remain available for embedders that own those domains directly.
+same split lifecycle. `evict_asset` explicitly releases every CPU and renderer
+record for one content hash, while `asset_status` returns only aggregate store
+and renderer counters. The engine forwards immutable upload jobs and never
+exposes mutable renderer state or backend handles. The lower-level store and
+renderer APIs remain available for embedders that own those domains directly.
 
 Records are retained as `Queued`, `Ready`, `ProxyReady`, or `Rejected`. The
 original source is retained only while queued. Ready records retain expanded
 triangle positions, unit normals, primary coordinates, one typed immutable
 numeric material per mesh, and at most one shared immutable RGBA8 texture.
-Proxy records have no texture. There is no eviction API in this baseline;
-dropping the store or renderer releases its respective residency.
+Proxy records have no texture. `AssetStore::evict` removes one hash's queued
+source or terminal CPU record, decoded meshes, and shared decoded texture.
+`HeadlessRenderer::evict_asset` removes every pending or resident mesh for the
+hash and its optional unique texture reservation or residency. Unrelated work
+keeps its FIFO order.
 
 The authoritative world stores only `AssetMeshComponent`, containing the
 content hash and zero-based mesh index. That component participates in logical
@@ -68,6 +74,26 @@ exact-hash source file under a caller-selected bound. It does not retain the
 source inside `AssetStore`, associate it with a recovery point, discover a path
 from a hash, decode the GLB, or schedule import/upload. See the
 [asset-file guide](../persistence/asset-files.md).
+
+## Explicit eviction
+
+Eviction is content-hash-wide and caller-driven. `LocalService::evict_asset`
+returns separate exact CPU-store and renderer outcomes so a caller can account
+for removed records, jobs, meshes, textures, and released bytes. Repeating the
+operation after the hash is absent is an idempotent no-op.
+
+Eviction does not scan or mutate the authoritative world, increment its
+revision, append replay, reserve a frame, cancel a submitted readback, or
+delete an `AssetFileStore` source. A later draw therefore uses an explicitly
+authored primitive fallback when present or returns `AssetUnavailable` without
+consuming a frame identity. Supplying the same exact-hash bytes and explicitly
+driving import and upload restores the ordinary render path.
+
+A backend may retain physical GPU allocations until already submitted work is
+safe to retire; the logical reservation and residency counters are released
+immediately. The baseline has no per-mesh, LRU, reference-counted, background,
+or automatic eviction and does not automatically rehydrate an evicted hash.
+Callers must avoid adversarial evict/reimport retry loops.
 
 ## Approved GLB subset
 

@@ -1,8 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF029 bounded embedded PNG base-color textures on
-2026-08-06.
+and extended through CF030 explicit content-hash asset eviction on 2026-08-07.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -17,7 +16,7 @@ separate transport and identity design violates the assumptions below.
 | Accepted-event log, recovery point, and recovery file | Newly accepted patches stay complete, ordered, bounded, integrity checked, and replayable; complete or exact-revision replay bytes remain associated with non-reused frame-continuity state; explicit files never overwrite an existing target |
 | Observation causality | Payload, camera, frame, revision, and stable identity agree |
 | Asset state and source files | Source identity is exact; malformed or oversized input cannot become decoded or GPU-resident state; recovered references and caller-mapped source files cannot substitute different bytes |
-| Host resources | CPU, memory, queues, GPU allocations, and waits stay within declared bounds |
+| Host resources | CPU, memory, queues, GPU allocations, and waits stay within declared bounds and explicit release is exactly accounted |
 | Process and GPU | Backend failures return controlled errors and do not grant access to world mutation |
 | Repository and release | No credentials, private workflow state, paid calls, or unreviewed artifacts enter public history |
 
@@ -66,6 +65,7 @@ Residual ratings assume the declared local single-user boundary.
 | Idempotency-key reuse duplicates or substitutes work | High | Retained canonical command fingerprint, transaction identity, conflict error, exact replayed receipt | Low |
 | Adversarial procedure dimensions or text allocate unbounded output or bypass mutation controls | High | Pure built-in implementation, entity/patch/decoded/text preflight under active runtime limits, ordinary gateway admission and atomic patch processing, controlled restoration test | Low |
 | Queue or readback pressure creates hidden unbounded work | High | Fixed command, idempotency, asset, renderer, and observation capacities with typed rejection/drop/supersession; per-renderer retirement guard keeps final driver destruction off the caller's bounded read path | Low |
+| A caller churns eviction and reimport to amplify decode, upload, or GPU-retirement work | High | Explicit trusted-local content-hash API only; one-item bounded import/upload; exact release outcomes; no background eviction, retry, or automatic rehydration; submitted work remains safely retired | Low inside the local caller boundary; remote exposure would require rate and authorization controls |
 | Adversarial light or material definitions create unbounded per-frame GPU work, invalid directions, non-finite positions, or singular direct-light math | High | Independent four-definition directional/point caps, stable preparation, zero-padded fixed uniform, finite/unit-bounded scene and imported values, finite selected-camera conversion, roughness and BRDF denominator floors, degenerate active-direction and out-of-range active-position rejection, exact-zero and derived-distance-overflow handling, and pre-submit tests | Low |
 | Renderer-local IDs escape as authoritative identity | High | Frame-local compact mapping, stable IDs in public observations, exact center-pixel tests | Low |
 | Observation from an old camera or revision is accepted as current | High | Camera/frame/revision metadata, explicit staleness, source-ahead rejection, canonical scenario proof | Low |
@@ -130,14 +130,18 @@ transport, or production use.
   exact hash matches the retained key. `AssetUnavailable` is not permission for
   Cogniform to discover or download content, and substituting another hash
   changes the requested logical asset rather than repairing residency.
+- Authorize explicit asset eviction as a local capacity-policy decision.
+  Inspect its exact outcome, retain approved source files independently, and do
+  not spin an evict/reimport loop or expose eviction as an unauthenticated
+  remote endpoint.
 - On a repository secret finding, revoke or rotate first and coordinate history
   remediation privately. A later deletion does not remove public exposure.
 
 ## Deferred changes that require a new review
 
 Remote transport, authentication, tenancy, automatic or mutable persistence,
-asset catalogs/eviction/automatic rehydration, shared memory, third-party Wasm,
-model execution, arbitrary shaders, binary
+asset catalogs, automatic eviction/rehydration, shared memory, third-party
+Wasm, model execution, arbitrary shaders, binary
 releases, telemetry export, and production deployment each add a trust
 boundary. None may inherit this local threat assessment without an approved
 design and updated abuse/failure tests.

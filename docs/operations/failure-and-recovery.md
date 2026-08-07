@@ -31,6 +31,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | Live revert target is current/future or transient work is not drained | Return typed target or exact command/observation/import/upload blockers; preserve world, renderer, frame frontier, replay, hash, queues, and assets | controlled quiescent-revert test |
 | Asset content hash mismatch | Consume no record or queue capacity | asset-store tests |
 | Restored logical asset reference has no CPU/GPU residency | Return the exact entity and mesh key as `AssetUnavailable`; preserve revision, hash, and replay | controlled service-asset rehydration test |
+| Explicit asset eviction targets queued, partially uploaded, resident, or absent content | Release exact CPU/GPU reservations and residency for that hash, preserve unrelated FIFO and submitted frames, and leave world, revision, hash, replay, frame frontier, recovery, and source files unchanged | CF030 asset-store, renderer, and controlled service tests |
 | Truncated, malformed, over-limit, or unsafe-proxy GLB | Reject without panic or GPU upload; only approved unsupported classes may proxy | asset truncation and classification tests |
 | GLB normal range/count is invalid, a direction is zero or non-finite, or a position-only triangle is degenerate | Reject before decoded/GPU adoption; never substitute a proxy for malformed direction data | CF020 asset normal and proxy-policy tests |
 | GLB primary-coordinate range/count is invalid or any source component is non-finite | Reject before expanded allocation or GPU adoption, including malformed unused indexed values; never substitute a proxy for malformed coordinate data | CF028 asset coordinate and proxy-policy tests |
@@ -139,7 +140,9 @@ and the ordinary asset importer must still validate GLB structure and bounds.
 Recovery and asset files are independent. Restore the complete recovery point,
 then load only caller-approved sources for its retained logical references and
 explicitly drive import/upload. Cogniform supplies no directory scan, manifest,
-hash-to-path lookup, retry, retention, eviction, or automatic rehydration.
+hash-to-path lookup, retry, retention, automatic eviction, or automatic
+rehydration. Explicit in-memory eviction never deletes the independently
+persisted source.
 
 ### Historical fork request
 
@@ -178,6 +181,21 @@ mismatch must not be retried with a substituted identity because that would no
 longer resolve the world reference. Rehydration leaves the world and replay
 unchanged; fetching, persistence, cache policy, and retry scheduling are not
 implemented by the service.
+
+### Explicit asset eviction
+
+Treat `LocalService::evict_asset` as a trusted local capacity-policy action.
+Inspect its exact store and renderer outcomes to account for removed queued
+bytes, decoded meshes/textures, upload reservations, and logical GPU residency.
+Repeating an absent eviction is safe, but do not spin an adversarial
+evict/reimport cycle or mistake it for an automatic cache policy.
+
+World references, revision, logical hash, replay, frame allocation, recovery
+points, and separately persisted source files remain unchanged. Subsequent
+draws use an authored primitive fallback or return `AssetUnavailable`; restore
+residency only from approved exact-hash bytes through explicit import/upload.
+Already submitted readbacks remain valid, and the backend may defer physical
+GPU destruction until submitted work is retired.
 
 ### Renderer, readback, or device failure
 

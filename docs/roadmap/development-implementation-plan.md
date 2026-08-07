@@ -620,6 +620,31 @@ deployment, and release action remain excluded. See
 [ADR 0029](../adr/0029-bounded-embedded-png-base-color-textures.md) and the
 [GLB guide](../assets/glb-subset.md).
 
+### PR 30 - CF030: Explicit content-hash asset eviction
+
+Outcome: a long-lived local service can reclaim every bounded CPU and GPU
+asset capacity for one exact source without replacing the service or changing
+logical scene history.
+
+Gate: one caller-driven content-hash operation removes its retained lifecycle
+record, queued source, decoded meshes/shared texture, all pending uploads,
+resident meshes, and unique pending/resident GPU texture. Exact typed outcomes
+report each released count and byte total; repeated absence is idempotent and
+unrelated import/upload FIFO order is unchanged.
+
+Implemented contract: the world is not scanned or mutated. Asset references,
+revision, logical hash, replay bytes, recovery state, frame frontier, and
+separate exact-hash source files remain unchanged. A dependent draw uses its
+authored primitive fallback or returns `AssetUnavailable`; explicit exact-hash
+re-import/upload restores rendering. Submitted frames remain readable while a
+backend defers physical GPU destruction. Per-mesh, LRU, reference-counted,
+automatic/background eviction, retry policy, catalogs, file deletion,
+automatic rehydration, device recreation, dependencies, CI expansion,
+deployment, and release action remain excluded. See
+[ADR 0030](../adr/0030-explicit-content-hash-asset-eviction.md), the
+[GLB guide](../assets/glb-subset.md), and the
+[local service guide](../protocol/local-service.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -627,6 +652,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
+  -> CF030
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -746,6 +772,10 @@ Validation expands with capability:
   fixed repeat/linear sRGB sampling and white fallback, factor/override
   semantics, plus controlled orientation, direct-light, and exact-hash
   rehydration evidence.
+- CF030: queued/ready/proxy/rejected CPU-record eviction, exact pending and
+  resident mesh/texture release accounting, unrelated FIFO preservation,
+  idempotent absence, submitted-frame GPU lifetime, fallback/unavailable
+  behavior, and logically neutral exact-hash rehydration.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

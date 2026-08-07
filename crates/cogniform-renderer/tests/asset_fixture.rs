@@ -9,8 +9,8 @@ use cogniform_protocol::{
     AssetMeshComponent, CameraComponent, ColorRgb, ColorRgba, ComponentValue, ConflictPolicy,
     CreateEntity, DeliverySemantic, FiniteF32, FrameId, IdempotencyKey, LightComponent, LightKind,
     LocalTransform, MaterialComponent, NonNegativeF32, PatchBudget, PositiveF32, PositiveVec3,
-    Quaternion, SceneOperation, ScenePatch, SceneRevision, SchemaVersion, SetComponent,
-    StableEntityId, TransactionId, UnitF32, Vec3,
+    PrimitiveComponent, PrimitiveShape, Quaternion, SceneOperation, ScenePatch, SceneRevision,
+    SchemaVersion, SetComponent, StableEntityId, TransactionId, UnitF32, Vec3,
 };
 use cogniform_renderer::{AssetUploadAdmission, HeadlessRenderer, RenderedFrame, RendererConfig};
 use cogniform_world::AuthoritativeWorld;
@@ -351,6 +351,97 @@ fn embedded_base_color_texture_preserves_orientation_factor_override_and_residen
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work() {
+    let bytes = textured_two_mesh_fixture();
+    let content_hash = content_hash(&bytes);
+    let mut assets = AssetStore::default();
+    assets.enqueue(content_hash, bytes).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    for mesh_index in 0..2 {
+        renderer
+            .enqueue_asset_upload(
+                assets
+                    .upload_job(AssetMeshKey {
+                        content_hash,
+                        mesh_index,
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+    }
+    let uploaded = renderer.process_next_asset_upload().unwrap();
+    assert!(uploaded.texture_uploaded);
+    assert_eq!(renderer.asset_stats().pending_uploads, 1);
+    assert_eq!(renderer.asset_stats().resident_meshes, 1);
+    assert_eq!(renderer.asset_stats().resident_textures, 1);
+
+    let camera = StableEntityId::new(1).unwrap();
+    let triangle = StableEntityId::new(2).unwrap();
+    let mut world = AuthoritativeWorld::default();
+    world
+        .apply_patch(
+            &scene_patch_with_cuboid_fallback(camera, triangle, content_hash),
+            FrameId::new(1).unwrap(),
+        )
+        .unwrap();
+    renderer
+        .apply_extraction(&world.take_render_extraction().unwrap())
+        .unwrap();
+    let pending_frame = renderer.submit_scene(camera).unwrap();
+
+    let eviction = renderer.evict_asset(content_hash);
+    assert_eq!(eviction.removed_pending_uploads, 1);
+    assert_eq!(eviction.released_pending_bytes, 96);
+    assert_eq!(eviction.removed_resident_meshes, 1);
+    assert_eq!(eviction.released_resident_bytes, 96);
+    assert_eq!(eviction.removed_pending_textures, 0);
+    assert_eq!(eviction.released_pending_texture_bytes, 0);
+    assert_eq!(eviction.removed_resident_textures, 1);
+    assert_eq!(eviction.released_resident_texture_bytes, 16);
+    assert!(renderer.evict_asset(content_hash).is_already_absent());
+    let empty = renderer.asset_stats();
+    assert_eq!(empty.pending_uploads, 0);
+    assert_eq!(empty.pending_bytes, 0);
+    assert_eq!(empty.resident_meshes, 0);
+    assert_eq!(empty.resident_bytes, 0);
+    assert_eq!(empty.pending_textures, 0);
+    assert_eq!(empty.pending_texture_bytes, 0);
+    assert_eq!(empty.resident_textures, 0);
+    assert_eq!(empty.resident_texture_bytes, 0);
+
+    let submitted = pending_frame.read().unwrap();
+    assert_eq!(
+        submitted.stable_entity_id_at(WIDTH / 2, HEIGHT / 2),
+        Some(triangle)
+    );
+    let fallback = renderer.submit_scene(camera).unwrap().read().unwrap();
+    assert_eq!(
+        fallback.stable_entity_id_at(WIDTH / 2, HEIGHT / 2),
+        Some(triangle)
+    );
+    assert_ne!(
+        fallback.color_at(WIDTH / 2, HEIGHT / 2),
+        submitted.color_at(WIDTH / 2, HEIGHT / 2)
+    );
+
+    upload_textured_meshes(&mut renderer, &assets, content_hash);
+    let rehydrated = renderer.submit_scene(camera).unwrap().read().unwrap();
+    assert_eq!(
+        rehydrated.stable_entity_id_at(WIDTH / 2, HEIGHT / 2),
+        Some(triangle)
+    );
+    assert_eq!(
+        rehydrated.color_at(WIDTH / 2, HEIGHT / 2),
+        submitted.color_at(WIDTH / 2, HEIGHT / 2)
+    );
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn imported_normals_are_inverse_transformed_and_observable() {
     let bytes = smooth_fixture();
     let content_hash = content_hash(&bytes);
@@ -626,6 +717,28 @@ fn scene_patch(
             }),
         ],
     }
+}
+
+fn scene_patch_with_cuboid_fallback(
+    camera: StableEntityId,
+    triangle: StableEntityId,
+    content_hash: cogniform_protocol::ContentHash,
+) -> ScenePatch {
+    let mut patch = scene_patch(camera, triangle, content_hash, [1.0; 3]);
+    let SceneOperation::Create(entity) = &mut patch.operations[1] else {
+        unreachable!("fixture entity creation remains the second operation")
+    };
+    entity
+        .components
+        .push(ComponentValue::Primitive(PrimitiveComponent {
+            shape: PrimitiveShape::Cuboid,
+            dimensions: PositiveVec3 {
+                x: positive(1.0),
+                y: positive(1.0),
+                z: positive(1.0),
+            },
+        }));
+    patch
 }
 
 fn transform(z: f32, scale: [f32; 3]) -> LocalTransform {

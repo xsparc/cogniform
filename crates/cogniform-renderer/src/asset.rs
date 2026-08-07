@@ -61,6 +61,44 @@ pub struct RendererAssetStats {
     pub resident_texture_bytes: u64,
 }
 
+/// Exact renderer-domain resources released for one content hash.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RendererAssetEviction {
+    /// Immutable content identity selected for eviction.
+    pub content_hash: ContentHash,
+    /// Upload jobs removed while preserving unrelated FIFO order.
+    pub removed_pending_uploads: u32,
+    /// Exact pending vertex bytes released.
+    pub released_pending_bytes: u64,
+    /// GPU-resident meshes removed.
+    pub removed_resident_meshes: u32,
+    /// Exact resident vertex-buffer bytes released from renderer ownership.
+    pub released_resident_bytes: u64,
+    /// Unique pending texture reservations removed; currently zero or one.
+    pub removed_pending_textures: u32,
+    /// Exact pending RGBA8 texture bytes released.
+    pub released_pending_texture_bytes: u64,
+    /// Unique resident textures removed; currently zero or one.
+    pub removed_resident_textures: u32,
+    /// Exact resident RGBA8 texture bytes released from renderer ownership.
+    pub released_resident_texture_bytes: u64,
+}
+
+impl RendererAssetEviction {
+    /// Returns whether the selected hash had no queued or resident renderer state.
+    #[must_use]
+    pub const fn is_already_absent(self) -> bool {
+        self.removed_pending_uploads == 0
+            && self.released_pending_bytes == 0
+            && self.removed_resident_meshes == 0
+            && self.released_resident_bytes == 0
+            && self.removed_pending_textures == 0
+            && self.released_pending_texture_bytes == 0
+            && self.removed_resident_textures == 0
+            && self.released_resident_texture_bytes == 0
+    }
+}
+
 pub(crate) struct GpuAssetMesh {
     buffer: wgpu::Buffer,
     vertex_count: u32,
@@ -317,6 +355,84 @@ impl RendererAssets {
             texture_uploaded,
             texture_byte_len,
         })
+    }
+
+    pub(crate) fn evict(&mut self, content_hash: ContentHash) -> RendererAssetEviction {
+        let removed_pending_textures = u32::from(self.pending_textures.remove(&content_hash));
+        let pending_texture_bytes = if removed_pending_textures != 0 {
+            self.pending
+                .iter()
+                .filter(|job| job.key().content_hash == content_hash)
+                .find_map(|job| job.base_color_texture())
+                .expect("pending texture reservation retains an upload job")
+                .byte_len()
+        } else {
+            0
+        };
+
+        let mut removed_pending_uploads = 0_u32;
+        let mut released_pending_bytes = 0_u64;
+        self.pending.retain(|job| {
+            if job.key().content_hash == content_hash {
+                removed_pending_uploads = removed_pending_uploads
+                    .checked_add(1)
+                    .expect("pending upload count remains exactly accounted");
+                released_pending_bytes = released_pending_bytes
+                    .checked_add(job.byte_len())
+                    .expect("pending vertex bytes remain exactly accounted");
+                false
+            } else {
+                true
+            }
+        });
+        self.pending_bytes = self
+            .pending_bytes
+            .checked_sub(released_pending_bytes)
+            .expect("pending vertex bytes remain exactly accounted");
+        self.pending_texture_bytes = self
+            .pending_texture_bytes
+            .checked_sub(pending_texture_bytes)
+            .expect("pending texture bytes remain exactly accounted");
+
+        let mut removed_resident_meshes = 0_u32;
+        let mut released_resident_bytes = 0_u64;
+        self.resident.retain(|key, mesh| {
+            if key.content_hash == content_hash {
+                removed_resident_meshes = removed_resident_meshes
+                    .checked_add(1)
+                    .expect("resident mesh count remains exactly accounted");
+                released_resident_bytes = released_resident_bytes
+                    .checked_add(mesh.byte_len)
+                    .expect("resident vertex bytes remain exactly accounted");
+                false
+            } else {
+                true
+            }
+        });
+        self.resident_bytes = self
+            .resident_bytes
+            .checked_sub(released_resident_bytes)
+            .expect("resident vertex bytes remain exactly accounted");
+
+        let resident_texture = self.resident_textures.remove(&content_hash);
+        let removed_resident_textures = u32::from(resident_texture.is_some());
+        let resident_texture_bytes = resident_texture.map_or(0, |texture| texture.byte_len);
+        self.resident_texture_bytes = self
+            .resident_texture_bytes
+            .checked_sub(resident_texture_bytes)
+            .expect("resident texture bytes remain exactly accounted");
+
+        RendererAssetEviction {
+            content_hash,
+            removed_pending_uploads,
+            released_pending_bytes,
+            removed_resident_meshes,
+            released_resident_bytes,
+            removed_pending_textures,
+            released_pending_texture_bytes: pending_texture_bytes,
+            removed_resident_textures,
+            released_resident_texture_bytes: resident_texture_bytes,
+        }
     }
 
     pub(crate) fn mesh(&self, key: AssetMeshKey) -> Option<&GpuAssetMesh> {
@@ -600,6 +716,39 @@ mod tests {
             assert_eq!(assets.stats().pending_textures, 1);
             assert_eq!(assets.stats().pending_texture_bytes, 4);
         }
+    }
+
+    #[test]
+    fn pending_eviction_releases_exact_reservations_and_preserves_other_fifo_work() {
+        let selected = textured_upload([255, 0, 0, 255]);
+        let selected_key = selected.key();
+        let retained = fixture_upload(true);
+        let retained_key = retained.key();
+        let config = RendererConfig::new(64, 64);
+        let mut assets = RendererAssets::new();
+        assets.enqueue(selected.clone(), &config).unwrap();
+        assets.enqueue(retained, &config).unwrap();
+
+        let eviction = assets.evict(selected_key.content_hash);
+        assert_eq!(eviction.content_hash, selected_key.content_hash);
+        assert_eq!(eviction.removed_pending_uploads, 1);
+        assert_eq!(eviction.released_pending_bytes, selected.byte_len());
+        assert_eq!(eviction.removed_resident_meshes, 0);
+        assert_eq!(eviction.released_resident_bytes, 0);
+        assert_eq!(eviction.removed_pending_textures, 1);
+        assert_eq!(eviction.released_pending_texture_bytes, 4);
+        assert_eq!(eviction.removed_resident_textures, 0);
+        assert_eq!(eviction.released_resident_texture_bytes, 0);
+        assert_eq!(assets.stats().pending_uploads, 1);
+        assert_eq!(assets.stats().pending_bytes, 96);
+        assert_eq!(assets.stats().pending_textures, 0);
+        assert_eq!(assets.pending.front().unwrap().key(), retained_key);
+
+        assert!(assets.evict(selected_key.content_hash).is_already_absent());
+        assert!(matches!(
+            assets.enqueue(selected, &config),
+            Ok(AssetUploadAdmission::Queued { key }) if key == selected_key
+        ));
     }
 
     fn fixture_upload(change_color: bool) -> AssetUploadJob {

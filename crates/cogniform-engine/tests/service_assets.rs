@@ -196,6 +196,115 @@ fn exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work() {
     });
 }
 
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn explicit_eviction_is_capacity_exact_and_logically_neutral_before_rehydration() {
+    pollster::block_on(async {
+        let config = LocalServiceConfig::new(WIDTH, HEIGHT);
+        let bytes = two_mesh_fixture();
+        let hash = content_hash(&bytes);
+        let first_key = AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        };
+        let second_key = AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 1,
+        };
+        let camera = StableEntityId::new(1).unwrap();
+        let triangle = StableEntityId::new(2).unwrap();
+        let mut service = LocalService::new(config).await.unwrap();
+
+        service.enqueue_asset_source(hash, bytes.clone()).unwrap();
+        let queued = service.evict_asset(hash);
+        assert_eq!(queued.content_hash, hash);
+        assert_eq!(queued.store.previous_state, Some(AssetState::Queued));
+        assert_eq!(queued.store.removed_pending_imports, 1);
+        assert_eq!(
+            queued.store.released_pending_source_bytes,
+            u64::try_from(bytes.len()).unwrap()
+        );
+        assert!(queued.renderer.is_already_absent());
+        assert_empty_asset_status(&service);
+        assert!(service.evict_asset(hash).is_already_absent());
+
+        service.enqueue_asset_source(hash, bytes.clone()).unwrap();
+        assert_eq!(
+            service.process_next_asset_import().unwrap().state,
+            AssetState::Ready
+        );
+        let decoded_bytes = service.asset_record(hash).unwrap().decoded_bytes;
+        assert_eq!(service.asset_record(hash).unwrap().mesh_count, 2);
+        service.enqueue_asset_upload(first_key).unwrap();
+        service.enqueue_asset_upload(second_key).unwrap();
+        assert_eq!(service.process_next_asset_upload().unwrap().key, first_key);
+        assert_eq!(service.asset_status().renderer.pending_uploads, 1);
+        assert_eq!(service.asset_status().renderer.resident_meshes, 1);
+
+        service
+            .submit_patch(scene_patch(camera, triangle, hash))
+            .unwrap();
+        service.process_next().unwrap().unwrap();
+        service.request_observation(request(20, camera)).unwrap();
+        assert_center_entity(&wait_for_observation(&service), triangle);
+        let expected_revision = service.status().scene_revision;
+        let expected_hash = service.logical_hash().unwrap();
+        let expected_replay = service.replay_bytes();
+        let expected_next_frame = service.recovery_point().unwrap().next_frame_id();
+
+        let eviction = service.evict_asset(hash);
+        assert_eq!(eviction.store.previous_state, Some(AssetState::Ready));
+        assert_eq!(eviction.store.released_resident_cpu_bytes, decoded_bytes);
+        assert_eq!(eviction.store.removed_meshes, 2);
+        assert_eq!(eviction.store.removed_textures, 0);
+        assert_eq!(eviction.renderer.removed_pending_uploads, 1);
+        assert_eq!(eviction.renderer.released_pending_bytes, 96);
+        assert_eq!(eviction.renderer.removed_resident_meshes, 1);
+        assert_eq!(eviction.renderer.released_resident_bytes, 96);
+        assert_eq!(eviction.renderer.removed_pending_textures, 0);
+        assert_eq!(eviction.renderer.removed_resident_textures, 0);
+        assert_empty_asset_status(&service);
+        assert!(service.asset_record(hash).is_none());
+        assert_asset_reference(&service, triangle, hash);
+        assert_eq!(service.status().scene_revision, expected_revision);
+        assert_eq!(service.logical_hash().unwrap(), expected_hash);
+        assert_eq!(service.replay_bytes(), expected_replay);
+        assert_eq!(
+            service.recovery_point().unwrap().next_frame_id(),
+            expected_next_frame
+        );
+        assert!(matches!(
+            service.request_observation(request(21, camera)),
+            Err(LocalServiceError::Engine(error))
+                if matches!(
+                    error.as_ref(),
+                    EngineError::Renderer(RendererError::AssetUnavailable { key, .. })
+                        if *key == first_key
+                )
+        ));
+        assert_eq!(
+            service.recovery_point().unwrap().next_frame_id(),
+            expected_next_frame
+        );
+        assert!(service.evict_asset(hash).is_already_absent());
+
+        service.enqueue_asset_source(hash, bytes).unwrap();
+        assert_eq!(
+            service.process_next_asset_import().unwrap().state,
+            AssetState::Ready
+        );
+        service.enqueue_asset_upload(first_key).unwrap();
+        assert_eq!(service.process_next_asset_upload().unwrap().key, first_key);
+        assert_eq!(service.status().scene_revision, expected_revision);
+        assert_eq!(service.logical_hash().unwrap(), expected_hash);
+        assert_eq!(service.replay_bytes(), expected_replay);
+        service.request_observation(request(22, camera)).unwrap();
+        let rehydrated = wait_for_observation(&service);
+        assert_center_entity(&rehydrated, triangle);
+        assert_eq!(rehydrated.metadata().frame_id, expected_next_frame);
+    });
+}
+
 fn assert_hash_mismatch_is_capacity_neutral(
     service: &mut LocalService,
     hash: cogniform_protocol::ContentHash,
@@ -380,6 +489,21 @@ fn textured_fixture() -> Vec<u8> {
         image_length = png_bytes.len(),
     );
     glb_with_json(&json, &binary)
+}
+
+fn two_mesh_fixture() -> Vec<u8> {
+    let mut binary = Vec::with_capacity(36);
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]},{"primitives":[{"attributes":{"POSITION":0}}]}]}"#;
+    glb_with_json(json, &binary)
 }
 
 fn glb_with_json(json: &str, binary: &[u8]) -> Vec<u8> {

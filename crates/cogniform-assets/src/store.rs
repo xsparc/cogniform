@@ -223,6 +223,76 @@ impl AssetStore {
         ))
     }
 
+    /// Explicitly removes all retained CPU-side state for one content hash.
+    ///
+    /// Eviction is content-hash-wide and caller-driven. It cancels a queued
+    /// import or releases a decoded/rejected record without decoding, external
+    /// I/O, or mutation of any logical world reference.
+    pub fn evict(&mut self, content_hash: ContentHash) -> crate::AssetStoreEviction {
+        let Some(stored) = self.records.remove(&content_hash) else {
+            debug_assert!(
+                !self
+                    .pending
+                    .iter()
+                    .any(|pending| pending.content_hash == content_hash),
+                "pending imports always retain a lifecycle record"
+            );
+            return crate::AssetStoreEviction {
+                content_hash,
+                previous_state: None,
+                removed_pending_imports: 0,
+                released_pending_source_bytes: 0,
+                released_resident_cpu_bytes: 0,
+                removed_meshes: 0,
+                removed_textures: 0,
+            };
+        };
+
+        let mut removed_pending_imports = 0_u32;
+        let mut released_pending_source_bytes = 0_u64;
+        self.pending.retain(|pending| {
+            if pending.content_hash == content_hash {
+                removed_pending_imports = removed_pending_imports
+                    .checked_add(1)
+                    .expect("pending import count remains exactly accounted");
+                released_pending_source_bytes = released_pending_source_bytes
+                    .checked_add(
+                        u64::try_from(pending.source.len())
+                            .expect("supported targets represent source lengths as u64"),
+                    )
+                    .expect("pending source bytes remain exactly accounted");
+                false
+            } else {
+                true
+            }
+        });
+        debug_assert!(removed_pending_imports <= 1);
+        self.pending_source_bytes = self
+            .pending_source_bytes
+            .checked_sub(released_pending_source_bytes)
+            .expect("queued source bytes remain exactly accounted");
+        self.resident_cpu_bytes = self
+            .resident_cpu_bytes
+            .checked_sub(stored.record.decoded_bytes)
+            .expect("decoded CPU bytes remain exactly accounted");
+
+        let removed_textures = u32::from(
+            stored
+                .decoded
+                .as_ref()
+                .is_some_and(|decoded| decoded.texture.is_some()),
+        );
+        crate::AssetStoreEviction {
+            content_hash,
+            previous_state: Some(stored.record.state),
+            removed_pending_imports,
+            released_pending_source_bytes,
+            released_resident_cpu_bytes: stored.record.decoded_bytes,
+            removed_meshes: stored.record.mesh_count,
+            removed_textures,
+        }
+    }
+
     /// Returns aggregate occupancy without exposing admitted source content.
     #[must_use]
     pub fn stats(&self) -> AssetStoreStats {
