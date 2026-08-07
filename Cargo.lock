@@ -140,6 +140,8 @@ dependencies = [
  "cogniform-protocol",
  "cogniform-storage",
  "pollster",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

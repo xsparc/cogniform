@@ -695,6 +695,31 @@ action remain excluded. See
 [ADR 0032](../adr/0032-offline-recovery-file-inspection.md) and the
 [recovery-file guide](../persistence/recovery-files.md).
 
+### PR 33 - CF033: Versioned recovery-inspection JSON
+
+Outcome: scripts and local agents can consume a stable versioned aggregate
+recovery-inspection report without parsing the unchanged human presentation or
+gaining access to a path or replay payload.
+
+Gate: `cogniform-cli inspect-recovery --json <path>` emits one deterministic
+compact schema-version-one object followed by one line feed. Field names,
+order, JSON types, fixed profile, counts, revision/frame values, and lowercase
+hashes are exact. `--` permits a reserved option-like filename. Both output
+modes finish the existing bounded load and complete CPU restoration preflight
+before stdout; failures are nonzero with empty stdout and path/payload-redacted
+stderr.
+
+Implemented contract: the JSON report is a CLI-private serializable view over
+the existing `RecoveryInspection`; neither the engine nor the recovery
+protocol gains encoding. The CLI adds only direct edges to already pinned and
+vendored `serde` and `serde_json`, with no package or version change. JSON
+input, a general diagnostic schema, profile selection, automatic
+startup/restore, discovery/catalog/latest pointers, asset association or
+rehydration, remote transport, authentication, logging/exporters, CI
+expansion, deployment, versioning, and release action remain excluded. See
+[ADR 0033](../adr/0033-versioned-recovery-inspection-json.md) and the
+[recovery-file guide](../persistence/recovery-files.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -702,7 +727,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
-  -> CF030 -> CF031 -> CF032
+  -> CF030 -> CF031 -> CF032 -> CF033
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -835,6 +860,10 @@ Validation expands with capability:
   extension, growth, oversize, and non-file rejection; semantic replay/frame
   rejection; exact CLI argument/help behavior; path/payload redaction; file
   immutability; and ordinary CPU-only CI evidence without adapter selection.
+- CF033: exact compact schema-version-one recovery JSON, fixed field order and
+  JSON types, lowercase hashes, unchanged human bytes, reserved filename
+  escape, pre-output semantic validation, empty failure stdout, redaction, and
+  no new package/version/vendor or GPU boundary.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

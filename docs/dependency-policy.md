@@ -59,6 +59,16 @@ working-memory, decoded-byte, and residency limits constrain the parser. The
 optional `zlib-rs` feature is not enabled. Wider image formats, decoder
 features, or backend changes require a new review.
 
+## Existing serialization reuse
+
+CF033 adds direct `cogniform-cli` edges to the workspace's existing
+exact-pinned and vendored `serde` 1.0.229 and `serde_json` 1.0.151 packages for
+one CLI-private versioned recovery-inspection report. It enables no new feature
+and adds no package, version, checksum, build script, unsafe code, native code,
+runtime download, network, telemetry, or paid-service requirement. Encoding
+stays in the composition root; the engine and recovery protocol remain typed
+and encoding-free.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

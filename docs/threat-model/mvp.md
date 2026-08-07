@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF032 offline recovery-file inspection on 2026-08-07.
+and extended through CF033 versioned recovery-inspection JSON on 2026-08-07.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -54,7 +54,8 @@ call. The separate storage adapter touches only an explicit caller-selected
 path when directly invoked.
 The offline inspection command composes that adapter with the exact CPU
 restoration preflight, retains no reconstructed world, and emits only aggregate
-counts, revision/frame values, and hashes.
+counts, revision/frame values, and hashes. Its optional machine-readable view
+is versioned and encoded only at the CLI boundary after complete validation.
 
 ## Threat and control matrix
 
@@ -76,7 +77,7 @@ Residual ratings assume the declared local single-user boundary.
 | Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |
 | Recovery replay bytes and frame marker are separated or accidentally changed | High | Single bounded versioned envelope, exact-length parsing, domain-separated SHA-256 digest, every-byte corruption rejection before replay allocation | Low for accidental corruption; authenticity remains caller-owned |
 | A recovery path or file causes overwrite, disclosure, unbounded allocation, or partial-state adoption | High | Separate opt-in crate; encode-before-I/O; create-new only; final symlink/non-file rejection; metadata/platform allocation bound; fixed-buffer read and growth probe; complete digest validation; path-redacted errors; injected write/sync cleanup | Medium because parent-path trust, permissions, confidentiality, authenticity, freshness, and crash durability remain caller-owned |
-| Offline recovery diagnostics expose a path/payload, accept only a verified prefix, mutate the file, or require GPU availability | High | Exact one-path CLI; bounded read-only storage load; shared complete restoration preflight; aggregate-only result; path/payload-redacted success and errors; ordinary no-adapter black-box tests | Low inside the trusted local fixed-profile boundary |
+| Offline recovery diagnostics expose a path/payload, accept only a verified prefix, mutate the file, require GPU availability, or emit partial machine output on failure | High | Exact one-path CLI; bounded read-only storage load; shared complete restoration preflight before stdout; aggregate-only human/schema-v1 JSON result; path/payload-redacted success and errors; empty JSON failure stdout; ordinary no-adapter black-box tests | Low inside the trusted local fixed-profile boundary |
 | An asset path or source file causes overwrite, disclosure, unbounded allocation, substitution, or unsafe implicit rehydration | High | Separate opt-in adapter; source size/hash checks before I/O; create-new only; bounded regular-file load and growth probe; complete expected-hash validation before return; path-redacted errors; explicit later import/upload; injected cleanup and controlled restart evidence | Medium because path mapping, parent trust, permissions, confidentiality, writer authenticity, freshness, retention, and crash durability remain caller-owned |
 | A historical fork reuses a frame identity issued before capture or mutates the live source | High | Exact contiguous replay prefixes are copied with the source's current next frame identity; controlled tests preserve source status/hash/bytes and prove query/observe/append continuation | Low for pre-capture reuse; future cross-branch identity and freshness remain caller-owned |
 | A stale, unintended, or busy live revert silently loses authoritative or transient state | High | Local caller-only API, explicit older revision, exact quiescence blockers, fresh replacement before swap, no event on failure, explicit removed-tail/cache/asset receipt, controlled continuation test | Low inside the local trusted-caller boundary; authorization and freshness remain caller-owned |
@@ -121,7 +122,8 @@ transport, or production use.
 - Use `inspect-recovery` only as a trusted local, fixed-profile diagnostic.
   Keep its aggregate output private when hashes or revision/frame counts are
   sensitive, and do not treat a passing CPU preflight as authentication,
-  freshness selection, asset availability, or GPU/service readiness.
+  freshness selection, asset availability, or GPU/service readiness. Scripts
+  should require JSON `schema_version` 1 instead of parsing human output.
 - Treat asset-file paths and their expected hash mapping as trusted local
   configuration. Do not scan an untrusted directory as a catalog, infer writer
   authenticity from SHA-256, or automatically import every stored source.
@@ -152,7 +154,7 @@ transport, or production use.
 ## Deferred changes that require a new review
 
 Remote transport, authentication, tenancy, automatic or mutable persistence,
-recovery discovery/profile negotiation/machine-readable diagnostics, asset
+recovery discovery/profile negotiation/broader diagnostic schemas, asset
 catalogs, automatic eviction/rehydration, shared memory, third-party
 Wasm, model execution, arbitrary shaders, binary
 releases, telemetry export, and production deployment each add a trust

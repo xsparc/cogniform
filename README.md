@@ -144,6 +144,17 @@ prints only aggregate replay/revision/frame/hash evidence. A pass does not prove
 writer authenticity, freshness, asset residency, or GPU/service readiness; see
 the [recovery-file guide](docs/persistence/recovery-files.md).
 
+Scripts can request the compact versioned report without changing the default
+human output:
+
+```text
+cargo run -p cogniform-cli --locked --offline -- inspect-recovery --json state/checkpoint-0001.cnfr
+```
+
+Consumers must require `schema_version` 1. The JSON still contains potentially
+sensitive aggregate hashes and counts; failures write no partial JSON to
+stdout.
+
 The controlled CPU fixture is informational and should be run in the optimized
 profile:
 

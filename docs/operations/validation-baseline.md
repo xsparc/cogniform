@@ -36,6 +36,9 @@ command/observation/import/upload lifecycle evidence was collected on that
 profile on 2026-08-07.
 CF032 CPU-only recovery-file inspection, fixed-profile semantic preflight,
 path redaction, and read-only CLI evidence was collected on 2026-08-07.
+CF033 deterministic schema-version-one recovery JSON, unchanged human output,
+pre-output validation, and failure redaction evidence was collected on
+2026-08-07.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -149,6 +152,16 @@ Inspection uses `default-local-64x64`. It does not validate asset residency,
 writer authenticity, freshness, authorization, automatic startup, or later GPU
 service initialization, and it adds no performance threshold or supported
 platform.
+
+CF033 repeated the focused commands above after adding the CLI-only JSON view.
+Black-box tests pin the exact compact object, field order and JSON types,
+single-line-feed framing, lowercase hashes, fixed profile, reserved filename
+escape, unchanged human bytes, file immutability, empty failure stdout, and
+path/payload redaction. The lockfile adds only direct CLI edges to the existing
+exact-pinned vendored `serde` and `serde_json` packages; no package, version,
+vendor source, engine, renderer, or recovery-file format changed. Because the
+slice is entirely at the CPU CLI presentation boundary, no GPU test or new
+adapter claim is required.
 
 ## Controlled vertex-normal commands
 
