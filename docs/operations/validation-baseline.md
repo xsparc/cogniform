@@ -39,6 +39,9 @@ path redaction, and read-only CLI evidence was collected on 2026-08-07.
 CF033 deterministic schema-version-one recovery JSON, unchanged human output,
 pre-output validation, and failure redaction evidence was collected on
 2026-08-07.
+CF034 fixed-layout schema-version-one controlled-measurement JSON, unchanged
+human report structure, pre-output preparation, exact argument rejection, and
+informational-only evidence was collected on 2026-08-08.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -569,6 +572,28 @@ The optimized command is:
 ```text
 cargo run --release -p cogniform-cli --locked --offline -- measure-world
 ```
+
+Scripts may request the same completed measurement as compact versioned JSON:
+
+```text
+cargo run --release -p cogniform-cli --locked --offline -- measure-world --json
+```
+
+Schema version one emits exactly one line-feed-terminated object. It identifies
+the `world-create-empty-v1` fixture, build profile, 1,000 operations, five
+warmups, 30 measured samples, `nanoseconds` unit, and
+`informational_only: true`. Its five distribution objects are `apply_total`,
+`validate_and_preflight`, `atomic_commit`, `render_extraction`, and
+`logical_hash`; each contains ordered integer `min`, `median`, `p95`, and `max`
+values. JSON preparation is complete before stdout, and invalid arguments
+leave stdout empty. The human labels, order, microsecond formatting, threshold
+statement, and debug-profile warning remain unchanged.
+
+CF034 ran the release JSON command as a smoke test but deliberately records no
+new timing table: adding a presentation schema neither replaces the dated
+baseline below nor creates a merge threshold. The report includes no hardware
+identity or upload behavior, although local timing values can still reveal
+host or process performance characteristics.
 
 Two independent command invocations were recorded on 2026-08-02. Each used
 five warmups followed by 30 measured samples in one process. Nearest-rank p95

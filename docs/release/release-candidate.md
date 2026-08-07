@@ -16,6 +16,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Recovery envelope | Pass | Deterministic bounded v1 encoding, exact round trip, typed malformed-input rejection, and every-byte corruption injection |
 | Immutable recovery file | Pass on validated profile | Encode-before-I/O create-new storage, non-overwrite, bounded regular-file load, corruption/growth rejection, injected write/sync cleanup, and persisted restoration continuation |
 | Offline recovery inspection | Pass for declared CPU profile | Exact complete restoration preflight without adapter selection, unchanged human output plus deterministic CLI schema-v1 JSON, read-only file evidence, semantic/frame rejection, and path/payload redaction |
+| Controlled CPU measurement | Pass for declared CPU profile | Fixed fixture/sample metadata, unchanged human structure, fixed-layout schema-v1 integer-nanosecond distributions, complete-before-output behavior, and explicit informational-only status |
 | Immutable asset source file | Pass on validated profile | Pre-I/O source-size/hash validation, create-new non-overwrite, bounded regular-file load, substitution/growth rejection, injected cleanup, and separate persisted rehydration continuation |
 | Fresh-service restoration | Pass on validated profile | Complete replay and frame state restore revision/hash/query/idempotency and continue observation and append causality |
 | Historical recovery fork | Pass on validated profile | An exact retained revision restores into a separate fresh service, preserves the source, resumes from the source frame frontier, and continues query/observe/append causality |
@@ -47,7 +48,8 @@ This does not make the current `0.0.0` workspace a supported release.
       public-tree, and dependency-policy checks.
 - [ ] Reproduce all ignored engine/renderer conformance tests on at least one
       matrix entry named in the compatibility baseline.
-- [ ] Re-run `measure-world` in release mode and append rather than overwrite
+- [ ] Re-run `measure-world` human and schema-version-one JSON output in release
+      mode and append rather than overwrite
       the dated baseline if hardware, fixture, or result materially changes.
 - [ ] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
       matrix, recovery-envelope, recovery-file, and asset-file
@@ -88,6 +90,10 @@ The GitHub release must be marked prerelease and state:
   choose the freshest file, initialize a GPU/service, or discover assets; its
   optional compact JSON report is CLI schema version one and aggregate hashes
   and counts can still be sensitive;
+- the controlled CPU measurement's optional compact JSON report is CLI schema
+  version one, contains no hardware identity, and is informational only; timing
+  values can still expose local performance characteristics and are not a
+  release or merge threshold;
 - exact-hash asset sources are separate create-new plaintext artifacts with no
   recovery manifest, content discovery, catalog, automatic retention/eviction,
   automatic rehydration, writer authentication, or remote-storage guarantee;
