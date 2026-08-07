@@ -11,7 +11,7 @@ pub use store::AssetStore;
 pub use types::{
     ASSET_VERTEX_BYTES, AssetAdmission, AssetDiagnostic, AssetDiagnosticCode, AssetLimits,
     AssetMaterial, AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetState, AssetStoreConfig,
-    AssetStoreStats, AssetUploadJob, AssetVertex, UnsupportedAssetPolicy,
+    AssetStoreStats, AssetTexture, AssetUploadJob, AssetVertex, UnsupportedAssetPolicy,
 };
 
 use cogniform_protocol::ContentHash;

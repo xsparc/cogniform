@@ -74,6 +74,16 @@ pub struct RendererConfig {
     pub max_resident_asset_meshes: NonZeroU32,
     /// Maximum aggregate immutable asset vertex bytes resident on the GPU.
     pub max_resident_asset_bytes: NonZeroU64,
+    /// Maximum width or height of one uploaded asset base-color texture.
+    pub max_asset_texture_dimension_2d: NonZeroU32,
+    /// Maximum bytes in one uploaded asset base-color texture.
+    pub max_asset_texture_bytes: NonZeroU64,
+    /// Maximum aggregate bytes reserved by pending unique texture uploads.
+    pub max_pending_asset_texture_bytes: NonZeroU64,
+    /// Maximum immutable asset base-color textures resident on the GPU.
+    pub max_resident_asset_textures: NonZeroU32,
+    /// Maximum aggregate immutable asset texture bytes resident on the GPU.
+    pub max_resident_asset_texture_bytes: NonZeroU64,
 }
 
 impl RendererConfig {
@@ -96,6 +106,14 @@ impl RendererConfig {
                 .expect("constant is non-zero"),
             max_resident_asset_meshes: NonZeroU32::new(256).expect("constant is non-zero"),
             max_resident_asset_bytes: NonZeroU64::new(64 * 1_024 * 1_024)
+                .expect("constant is non-zero"),
+            max_asset_texture_dimension_2d: NonZeroU32::new(2_048).expect("constant is non-zero"),
+            max_asset_texture_bytes: NonZeroU64::new(16 * 1_024 * 1_024)
+                .expect("constant is non-zero"),
+            max_pending_asset_texture_bytes: NonZeroU64::new(32 * 1_024 * 1_024)
+                .expect("constant is non-zero"),
+            max_resident_asset_textures: NonZeroU32::new(256).expect("constant is non-zero"),
+            max_resident_asset_texture_bytes: NonZeroU64::new(64 * 1_024 * 1_024)
                 .expect("constant is non-zero"),
         }
     }
@@ -174,6 +192,41 @@ impl RendererConfig {
     #[must_use]
     pub const fn with_max_resident_asset_bytes(mut self, bytes: NonZeroU64) -> Self {
         self.max_resident_asset_bytes = bytes;
+        self
+    }
+
+    /// Sets the per-texture width and height limit.
+    #[must_use]
+    pub const fn with_max_asset_texture_dimension_2d(mut self, dimension: NonZeroU32) -> Self {
+        self.max_asset_texture_dimension_2d = dimension;
+        self
+    }
+
+    /// Sets the per-texture RGBA8 byte limit.
+    #[must_use]
+    pub const fn with_max_asset_texture_bytes(mut self, bytes: NonZeroU64) -> Self {
+        self.max_asset_texture_bytes = bytes;
+        self
+    }
+
+    /// Sets the aggregate pending unique-texture byte reservation.
+    #[must_use]
+    pub const fn with_max_pending_asset_texture_bytes(mut self, bytes: NonZeroU64) -> Self {
+        self.max_pending_asset_texture_bytes = bytes;
+        self
+    }
+
+    /// Sets the aggregate GPU-resident texture-count limit.
+    #[must_use]
+    pub const fn with_max_resident_asset_textures(mut self, textures: NonZeroU32) -> Self {
+        self.max_resident_asset_textures = textures;
+        self
+    }
+
+    /// Sets the aggregate GPU-resident texture-byte limit.
+    #[must_use]
+    pub const fn with_max_resident_asset_texture_bytes(mut self, bytes: NonZeroU64) -> Self {
+        self.max_resident_asset_texture_bytes = bytes;
         self
     }
 }

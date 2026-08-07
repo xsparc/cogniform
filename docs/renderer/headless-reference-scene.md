@@ -20,7 +20,8 @@ this slice. Unsupported platforms return a structured backend error. A selected
 adapter must support three color attachments, twelve color-attachment bytes per
 sample, the configured target and readback limits, and render/copy usages for
 linear `Rgba8Unorm` color, `R32Uint` identity, `Rgba8Unorm` normal, and
-`Depth32Float` depth.
+`Depth32Float` depth. It must also support copy-destination, sampled binding,
+and filterable sampling for `Rgba8UnormSrgb` asset textures.
 
 No optional or experimental GPU feature is enabled. The adapter summary records
 the adapter name, backend, device class, and WebGPU-compliance flag for
@@ -61,10 +62,13 @@ upload.
 Imported vertices use the same 32-byte position, normal, and primary-coordinate
 layout. An optional non-normalized finite f32 `TEXCOORD_0` reaches shader
 location 2; missing asset coordinates, built-ins, and proxy vertices use exact
-zero. The current WGSL accepts but never reads that location, so coordinates do
-not affect color, depth, identity, normals, background, or causality. Images,
-samplers, textures, transforms, additional coordinate sets, and sampling remain
-unsupported.
+zero. A mesh may sample the single approved embedded PNG base-color texture;
+the renderer decodes sRGB RGB automatically, multiplies sampled RGBA by the
+numeric base-color factor, and preserves the glTF top-to-bottom row order. One
+renderer-owned repeat/linear one-mip sampler applies the omitted-sampler policy.
+Untextured draws use a renderer-owned white fallback. External images, custom
+samplers, transforms, additional coordinate sets, mipmaps, and other texture
+roles remain unsupported.
 
 Lighting is one fixed direct metallic-roughness baseline. A directional light
 emits along its transformed local negative-Z axis; transformed positive Z is
@@ -98,10 +102,11 @@ The existing bind group carries one fixed 480-byte per-draw uniform. The prior
 448-byte prefix remains model, view-projection, color, compact ID, directional
 count and four directional slots, then point count and four point slots. Two
 appended zero-padded `vec4` slots contain camera position and
-metallic/roughness. This adds no light buffer, alternate pipeline, runtime
+metallic/roughness. Bindings 1 and 2 select the sampled base-color view and
+fixed sampler. This adds no light buffer, alternate pipeline, runtime
 configuration, or observation payload. Point range/cutoff/radius, spot lights,
-ambient/emissive or image-based lighting, shadows, textures, HDR, tone mapping,
-and gamma conversion are unsupported.
+ambient/emissive or image-based lighting, shadows, additional texture roles,
+HDR, tone mapping, and configurable gamma conversion are unsupported.
 
 - entity IDs must match exactly;
 - color channels use an absolute tolerance of 2 units in RGBA8;
@@ -164,6 +169,7 @@ cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ig
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_normals_are_inverse_transformed_and_observable
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_material_factors_drive_direct_light_and_scene_override
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact primary_texcoords_are_retained_without_changing_rendered_observations
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact embedded_base_color_texture_preserves_orientation_factor_override_and_residency
 ```
 
 The integration tests render at 64 by 64 pixels, verify exact object and
@@ -174,9 +180,10 @@ tolerances, verify scene and imported dielectric/metallic/roughness response,
 exact unlit compatibility, scene-material override precedence, front- and
 back-facing response, and near/far Point attenuation without changing
 identity/depth/normals. They also compare every output sample between matching
-GLBs with missing versus retained primary coordinates, validate output
-lengths and bounds behavior, and require the selected backend to be DX12 or
-Vulkan. Normal workspace CI compiles these tests
+GLBs with missing versus retained primary coordinates, then pin texture
+orientation, sRGB/factor/alpha response, scene override, and shared residency.
+They validate output lengths and bounds behavior and require the selected
+backend to be DX12 or Vulkan. Normal workspace CI compiles these tests
 but leaves it ignored;
 the architecture reserves adapter conformance for controlled local or
 self-hosted hardware. The test does not contact a service, create a window,
@@ -204,5 +211,7 @@ the imported numeric material, default, override, and byte-accounting rules.
 See [ADR 0028](../adr/0028-bounded-primary-texture-coordinates.md) for the
 primary-coordinate validation, zero-default, layout, and visual-compatibility
 rules.
+See [ADR 0029](../adr/0029-bounded-embedded-png-base-color-textures.md) for the
+decode, residency, sampling, fallback, and material-override rules.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

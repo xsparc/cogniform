@@ -593,13 +593,40 @@ expansion, deployment, and release action remain excluded. See
 [ADR 0028](../adr/0028-bounded-primary-texture-coordinates.md) and the
 [GLB guide](../assets/glb-subset.md).
 
+### PR 29 - CF029: Bounded embedded PNG base-color texture
+
+Outcome: one observable embedded GLB base-color texture reaches the existing
+causal unlit and direct-light paths without implicit work or schema changes.
+
+Gate: accept at most one shared texture and one in-BIN `image/png` buffer view,
+only through `baseColorTexture` texture zero, omitted/zero `texCoord`, omitted
+sampler, and an approved `TEXCOORD_0`. Decode only static non-interlaced 8-bit
+RGB/RGBA into immutable RGBA8 under dimension, pixel, decoder-working,
+retained-byte, per-asset, and aggregate CPU limits. Malformed, truncated,
+range-invalid, or over-limit image input rejects without proxy.
+
+Implemented contract: exact-pinned vendored `png` 0.18.1 performs bounded
+caller-driven decode. Upload jobs carry shared immutable texels; renderer
+admission separately reserves unique texture count/bytes and explicit upload
+creates one `Rgba8UnormSrgb` texture per source hash. One fixed repeat/linear
+one-mip sampler and white fallback extend the existing bind group. Sampled
+linear RGBA multiplies `baseColorFactor`; an explicit scene material disables
+the imported texture. Controlled evidence pins top-to-bottom texel orientation,
+factor multiplication, lit/unlit distinction, override, unchanged
+depth/identity/normals/background, one shared GPU texture, and exact-hash
+rehydration. JPEG, URIs, custom samplers, mipmaps, other texture roles, alpha
+modes, image-based lighting, persistence catalogs, transport, CI expansion,
+deployment, and release action remain excluded. See
+[ADR 0029](../adr/0029-bounded-embedded-png-base-color-textures.md) and the
+[GLB guide](../assets/glb-subset.md).
+
 ## 3. Dependency graph
 
 ```text
 CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
-  -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028
+  -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -714,6 +741,11 @@ Validation expands with capability:
   values, full-source finite/count/range validation, typed unsupported
   encodings, exact 32-byte CPU/GPU and zero-default built-in/proxy layouts, and
   controlled whole-frame visual equivalence.
+- CF029: strict embedded PNG/reference validation, bounded RGB/RGBA decode and
+  expansion, independent CPU/GPU texture accounting, unique explicit upload,
+  fixed repeat/linear sRGB sampling and white fallback, factor/override
+  semantics, plus controlled orientation, direct-light, and exact-hash
+  rehydration evidence.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

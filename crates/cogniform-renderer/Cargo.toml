@@ -18,4 +18,5 @@ wgpu.workspace = true
 
 [dev-dependencies]
 cogniform-world.workspace = true
+png.workspace = true
 pollster = "=0.4.0"

@@ -13,6 +13,8 @@ pub enum RenderTargetKind {
     Normal,
     /// 32-bit unsigned renderer-local entity-ID output.
     EntityId,
+    /// Sampled sRGB asset base-color texture.
+    AssetBaseColor,
 }
 
 impl std::fmt::Display for RenderTargetKind {
@@ -22,6 +24,7 @@ impl std::fmt::Display for RenderTargetKind {
             Self::Depth => formatter.write_str("depth"),
             Self::Normal => formatter.write_str("normal"),
             Self::EntityId => formatter.write_str("entity-id"),
+            Self::AssetBaseColor => formatter.write_str("asset-base-color"),
         }
     }
 }
@@ -198,6 +201,13 @@ pub enum RendererError {
         /// Configured maximum.
         limit: u64,
     },
+    /// One decoded texture exceeds the configured dimension or byte limit.
+    AssetTextureLimitExceeded {
+        /// Immutable source identity and mesh selection carrying the texture.
+        key: AssetMeshKey,
+        /// Stable validation reason.
+        reason: &'static str,
+    },
     /// The bounded renderer upload queue is full.
     AssetUploadCapacityExceeded {
         /// Configured job capacity.
@@ -218,6 +228,25 @@ pub enum RendererError {
     /// Resident plus reserved GPU asset bytes would exceed their bound.
     AssetResidencyBytesExceeded {
         /// Projected bytes.
+        actual: u64,
+        /// Configured maximum.
+        limit: u64,
+    },
+    /// Pending unique texture byte reservations would exceed their bound.
+    AssetTextureUploadBytesExceeded {
+        /// Projected reserved texture bytes.
+        actual: u64,
+        /// Configured maximum.
+        limit: u64,
+    },
+    /// Resident plus reserved texture count would exceed its bound.
+    AssetTextureResidencyCapacityExceeded {
+        /// Configured texture capacity.
+        capacity: u32,
+    },
+    /// Resident plus reserved GPU texture bytes would exceed their bound.
+    AssetTextureResidencyBytesExceeded {
+        /// Projected texture bytes.
         actual: u64,
         /// Configured maximum.
         limit: u64,
@@ -276,10 +305,14 @@ impl std::fmt::Display for RendererError {
             | Self::InvalidAssetMesh { .. }
             | Self::AssetVertexLimitExceeded { .. }
             | Self::AssetMeshBytesExceeded { .. }
+            | Self::AssetTextureLimitExceeded { .. }
             | Self::AssetUploadCapacityExceeded { .. }
             | Self::AssetUploadBytesExceeded { .. }
             | Self::AssetResidencyCapacityExceeded { .. }
             | Self::AssetResidencyBytesExceeded { .. }
+            | Self::AssetTextureUploadBytesExceeded { .. }
+            | Self::AssetTextureResidencyCapacityExceeded { .. }
+            | Self::AssetTextureResidencyBytesExceeded { .. }
             | Self::AssetUnavailable { .. }) => format_asset_error(error, formatter),
             Self::ReadbackPoolExhausted { capacity } => write!(
                 formatter,
@@ -398,6 +431,9 @@ fn format_asset_error(
             formatter,
             "asset mesh {key:?} has {actual} bytes; limit is {limit}"
         ),
+        RendererError::AssetTextureLimitExceeded { key, reason } => {
+            write!(formatter, "asset texture for {key:?} exceeds {reason}")
+        }
         RendererError::AssetUploadCapacityExceeded { capacity } => {
             write!(formatter, "asset upload capacity {capacity} is full")
         }
@@ -411,6 +447,20 @@ fn format_asset_error(
         RendererError::AssetResidencyBytesExceeded { actual, limit } => write!(
             formatter,
             "asset residency would reserve {actual} bytes; limit is {limit}"
+        ),
+        RendererError::AssetTextureUploadBytesExceeded { actual, limit } => write!(
+            formatter,
+            "pending asset textures reserve {actual} bytes; limit is {limit}"
+        ),
+        RendererError::AssetTextureResidencyCapacityExceeded { capacity } => {
+            write!(
+                formatter,
+                "asset texture residency capacity {capacity} is full"
+            )
+        }
+        RendererError::AssetTextureResidencyBytesExceeded { actual, limit } => write!(
+            formatter,
+            "asset texture residency would reserve {actual} bytes; limit is {limit}"
         ),
         RendererError::AssetUnavailable { entity_id, key } => write!(
             formatter,

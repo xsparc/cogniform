@@ -1,7 +1,8 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF024 bounded point diffuse lighting on 2026-08-05.
+and extended through CF029 bounded embedded PNG base-color textures on
+2026-08-06.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -31,8 +32,8 @@ snapshots and canonical replay entries.
    procedures, queries, IDs, labels, limits, and observation requests are
    untrusted typed or JSON-derived data.
 2. **Asset file/bytes to storage and decoder.** A caller-selected path, claimed
-   SHA-256 identity, and GLB bytes cross bounded file checks before separately
-   crossing into a strict, explicitly scheduled parser.
+   SHA-256 identity, and GLB/embedded PNG bytes cross bounded file checks before
+   separately crossing into strict, explicitly scheduled parsers.
 3. **World to renderer.** The renderer receives immutable compact extraction,
    never mutable ECS state or an authorization decision.
 4. **Renderer to observation worker.** GPU readback crosses an asynchronous
@@ -60,7 +61,7 @@ Residual ratings assume the declared local single-user boundary.
 | Threat | Inherent risk | Controls and evidence | Residual |
 |---|---|---|---|
 | Oversized or deeply nested messages exhaust CPU or memory | High | Pre-decode byte/nesting caps, bounded collections and budgets, fail-before-mutation tests | Low |
-| Malformed, substituted, or adversarial GLB allocates excessively or reaches GPU state | High | Service-owned exact-hash admission, source/decoded/count limits, strict subset, exact 32-byte expanded-vertex reservation, finite non-zero same-count normal, full-source finite same-count primary-coordinate, and unit-bounded numeric material validation, explicit one-item processing, empty recovery residency, truncation corpus, unsafe proxy exclusions | Medium |
+| Malformed, substituted, or adversarial GLB/PNG allocates excessively or reaches GPU state | High | Service-owned exact-hash admission, source/decoded/count limits, strict geometry/image subset, exact 32-byte expanded-vertex reservation, finite non-zero same-count normal, full-source finite same-count primary-coordinate, unit-bounded numeric material validation, PNG dimension/pixel/working/decoded bounds, separately reserved unique GPU texture count/bytes, exact-pinned vendored decoder, explicit one-item processing, empty recovery residency, truncation corpus, unsafe proxy exclusions | Medium |
 | Stale, conflicting, or partially invalid patch mutates part of the world | High | Exact base revision, complete preflight plan, atomic commit, invariant/property tests | Low |
 | Idempotency-key reuse duplicates or substitutes work | High | Retained canonical command fingerprint, transaction identity, conflict error, exact replayed receipt | Low |
 | Adversarial procedure dimensions or text allocate unbounded output or bypass mutation controls | High | Pure built-in implementation, entity/patch/decoded/text preflight under active runtime limits, ordinary gateway admission and atomic patch processing, controlled restoration test | Low |

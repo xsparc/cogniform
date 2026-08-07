@@ -29,7 +29,11 @@ release yet; the current workspace version remains `0.0.0`.
   scale;
 - optional finite same-count f32 `TEXCOORD_0`, including exact out-of-unit and
   indexed retention, exact 32-byte position/normal/primary-coordinate
-  accounting, zero defaults, and visually inert shader input location 2;
+  accounting, zero defaults, and shader input location 2;
+- one bounded shared embedded PNG GLB base-color texture, with strict static
+  8-bit RGB/RGBA decode, independent CPU/GPU accounting, explicit unique
+  upload, fixed repeat/linear sRGB sampling, white fallback, factor/override
+  semantics, and controlled orientation plus rehydration evidence;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
@@ -91,9 +95,15 @@ release yet; the current workspace version remains `0.0.0`.
   vertex. Missing, built-in, and proxy coordinates are exact zero. This is a
   source-breaking Rust API and capacity-planning change in the still-unpublished
   `0.0.0` workspace; no version or release action was taken;
+- `AssetUploadJob` can now carry one immutable shared `AssetTexture`, renderer
+  asset statistics expose separate pending/resident texture counts and bytes,
+  and `RendererConfig` adds texture dimension/byte/count limits. The imported
+  texture is disabled by an explicit scene material. These are additive and
+  source-breaking exhaustive-enum/configuration changes in the unpublished
+  `0.0.0` workspace; no version or release action was taken;
 - the fixed built-in cuboid now uses 12 outward counter-clockwise triangles and
   exact axis-aligned exterior normals while preserving its 36 vertices,
-  24-byte interleaved layout, 864-byte initialization payload, extents, and
+  32-byte interleaved layout, 1,152-byte initialization payload, extents, and
   no-culling pipeline. Cuboid normal observations and diffuse color
   intentionally replace the prior inward-facing result; the canonical
   Point-lit table center is now positive. The unpublished `0.0.0` workspace
@@ -122,9 +132,10 @@ release yet; the current workspace version remains `0.0.0`.
   not implemented.
   Normal output is quantized and the imported subset supports numeric base
   color, metallic, and roughness but has no normal maps, emissive/alpha modes,
-  or tangent space; the GLB subset retains one primary coordinate set but
-  excludes images, samplers, texture sampling, external buffers, compression,
-  scene traversal, and most vertex attributes. Built-in geometry supports
+  or tangent space; the GLB subset samples one shared embedded PNG base-color
+  texture but excludes external/data images, JPEG, explicit samplers, additional
+  texture roles, compression, scene traversal, and most vertex attributes.
+  Built-in geometry supports
   cuboids, fixed centered XY planes, and fixed centered unit-diameter spheres;
   configurable subdivisions, plane thickness, generated coordinate mappings,
   and two-sided normal policy remain unsupported;

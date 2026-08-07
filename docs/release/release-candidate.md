@@ -19,12 +19,12 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Fresh-service restoration | Pass on validated profile | Complete replay and frame state restore revision/hash/query/idempotency and continue observation and append causality |
 | Historical recovery fork | Pass on validated profile | An exact retained revision restores into a separate fresh service, preserves the source, resumes from the source frame frontier, and continues query/observe/append causality |
 | Quiescent live revert | Pass on validated profile | A fully restored historical replacement swaps only after success, rejects transient blockers without mutation, clears named cache/asset state, preserves frame/prefix idempotency, and continues a new branch |
-| Headless render | Pass on validated profile | No surface/window; outward-wound Vulkan cuboid, centered plane, fixed sphere, bounded directional/point direct metallic-roughness response including imported numeric GLB materials and scene overrides, visually inert primary-coordinate residency, readback pressure, renderer-drop retirement, and canonical scenario evidence |
+| Headless render | Pass on validated profile | No surface/window; outward-wound Vulkan cuboid, centered plane, fixed sphere, bounded directional/point direct metallic-roughness response including imported numeric GLB materials, one sampled embedded PNG base-color texture, scene overrides, readback pressure, renderer-drop retirement, and canonical scenario evidence |
 | Machine outputs | Pass on validated profile | Exact unlit and tolerant scene/imported/overridden direct-material color and depth, exact stable entity ID, structured visibility, and quantized world-space normals from outward built-ins, source-wound assets, sphere radial directions, or approved imported directions |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
-| Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, finite non-zero same-count normals, finite same-count primary coordinates with full-source validation, unit-bounded numeric materials with explicit defaults, exact decoded/GPU bytes, truncation corpus, typed unsupported/proxy policy |
-| Service asset resolution | Pass on validated profile | Explicit one-item import/upload renders an exact stable ID; recovery retains logical references and exact-hash rehydration resumes rendering without replay mutation |
+| Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, finite non-zero same-count normals, finite same-count primary coordinates with full-source validation, unit-bounded numeric materials, bounded static embedded RGB/RGBA PNG decode, independent texture accounting, exact decoded/GPU bytes, truncation corpus, typed unsupported/proxy policy |
+| Service asset resolution | Pass on validated profile | Explicit one-item import/upload renders an exact stable ID and optional shared texture; recovery retains logical references and exact-hash rehydration resumes rendering without replay mutation |
 | Service procedure composition | Pass on validated profile | A bounded 2x3 built-in procedure follows ordinary queue, idempotency, query, replay/hash, and restored world-idempotency behavior |
 | End to end | Pass on validated profile | Room/table/light/camera create and atomic restyle, exact query, three observations, same replay hash |
 | Repository and dependency hygiene | Pass | Redacted Git-object scan, secret scanning/push protection, pinned vendor/lock/action, cargo-deny |
@@ -97,18 +97,19 @@ The GitHub release must be marked prerelease and state:
   platforms/backends remain
   unsupported; and
 - built-in rendering supports outward-wound centered unit cuboids, fixed
-  centered XY planes, and fixed centered unit-diameter spheres; imported
-  primary coordinates are retained but never sampled; configurable
-  subdivisions, plane thickness, generated coordinate mappings, and two-sided
-  normal policy are not implemented;
+  centered XY planes, and fixed centered unit-diameter spheres; one documented
+  embedded PNG base-color texture can sample imported primary coordinates;
+  configurable subdivisions, plane thickness, generated coordinate mappings,
+  and two-sided normal policy are not implemented;
   and
 - lighting supports independently bounded sets of at most four stable-ordered
   directional and four point definitions with direct GGX/Smith/Schlick
   metallic-roughness response, exact unlit compatibility, imported numeric GLB
   factors, and explicit scene override precedence; configurable point
   range/radius/cutoff, spot lights, ambient/image-based lighting, shadows,
-  emissive and alpha material modes, HDR/tone mapping, gamma conversion,
-  textures, and lighting configuration are not implemented; and
+  emissive and alpha material modes, HDR/tone mapping, configurable gamma
+  conversion, additional image formats/samplers/texture roles, and lighting
+  configuration are not implemented; and
 - performance figures are one-machine informational measurements.
 
 If a candidate is defective, close or supersede its release entry as

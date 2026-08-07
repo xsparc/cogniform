@@ -34,5 +34,6 @@ earlier one and links the history.
 | [0026](0026-bounded-direct-metallic-roughness-response.md) | Accepted | Honor metallic and roughness through one bounded direct-light microfacet response |
 | [0027](0027-imported-glb-metallic-roughness-materials.md) | Accepted | Retain bounded GLB material factors through immutable upload and renderer residency |
 | [0028](0028-bounded-primary-texture-coordinates.md) | Accepted | Retain one bounded primary GLB texture-coordinate set without changing rendered output |
+| [0029](0029-bounded-embedded-png-base-color-textures.md) | Accepted | Decode and explicitly upload one bounded embedded PNG base-color texture |
 
 New records use four sections: context, decision, consequences, and status.

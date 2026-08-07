@@ -216,6 +216,10 @@ impl AssetStore {
             key,
             mesh.vertices.clone(),
             mesh.material,
+            mesh.material
+                .has_base_color_texture()
+                .then(|| decoded.texture.clone())
+                .flatten(),
         ))
     }
 
