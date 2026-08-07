@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF030 explicit content-hash asset eviction on 2026-08-07.
+and extended through CF031 monotonic pending-work age status on 2026-08-07.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -64,7 +64,8 @@ Residual ratings assume the declared local single-user boundary.
 | Stale, conflicting, or partially invalid patch mutates part of the world | High | Exact base revision, complete preflight plan, atomic commit, invariant/property tests | Low |
 | Idempotency-key reuse duplicates or substitutes work | High | Retained canonical command fingerprint, transaction identity, conflict error, exact replayed receipt | Low |
 | Adversarial procedure dimensions or text allocate unbounded output or bypass mutation controls | High | Pure built-in implementation, entity/patch/decoded/text preflight under active runtime limits, ordinary gateway admission and atomic patch processing, controlled restoration test | Low |
-| Queue or readback pressure creates hidden unbounded work | High | Fixed command, idempotency, asset, renderer, and observation capacities with typed rejection/drop/supersession; per-renderer retirement guard keeps final driver destruction off the caller's bounded read path | Low |
+| Queue or readback pressure creates hidden unbounded work | High | Fixed command, idempotency, asset, renderer, and observation capacities with typed rejection/drop/supersession; optional aggregate oldest-pending ages expose stalled caller-driven work; per-renderer retirement guard keeps final driver destruction off the caller's bounded read path | Low |
+| Queue diagnostics disclose queued content or create a hidden telemetry channel | High | Status/debug expose only optional saturating elapsed microseconds and existing aggregate counts; monotonic instants stay process-local and out of payloads, identifiers, system time, durable state, logs, exporters, and background workers | Low inside the local caller boundary |
 | A caller churns eviction and reimport to amplify decode, upload, or GPU-retirement work | High | Explicit trusted-local content-hash API only; one-item bounded import/upload; exact release outcomes; no background eviction, retry, or automatic rehydration; submitted work remains safely retired | Low inside the local caller boundary; remote exposure would require rate and authorization controls |
 | Adversarial light or material definitions create unbounded per-frame GPU work, invalid directions, non-finite positions, or singular direct-light math | High | Independent four-definition directional/point caps, stable preparation, zero-padded fixed uniform, finite/unit-bounded scene and imported values, finite selected-camera conversion, roughness and BRDF denominator floors, degenerate active-direction and out-of-range active-position rejection, exact-zero and derived-distance-overflow handling, and pre-submit tests | Low |
 | Renderer-local IDs escape as authoritative identity | High | Frame-local compact mapping, stable IDs in public observations, exact center-pixel tests | Low |
@@ -96,6 +97,9 @@ transport, or production use.
   text. Cogniform validates structure and bounds; it is not a secret sanitizer.
 - Stop admitting commands when capacity errors repeat. Retrying without a
   consumer or scheduling change is an availability attack on the same process.
+- Treat pending-work ages as local aggregate diagnostics. Sample them at a
+  bounded operator-selected cadence; do not infer payload identity, persist
+  them as causal truth, or expose them as unauthenticated remote telemetry.
 - Treat procedure requests as untrusted bounded data. Do not load external
   procedure code or grant a procedure filesystem, network, clock, renderer, or
   mutable-world access under this threat model.

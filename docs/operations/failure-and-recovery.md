@@ -17,6 +17,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | Idempotency key reused for different command content | Return typed conflict without duplicate compile or mutation | gateway and world idempotency tests |
 | Procedure entity, patch, or supersession-text budget is exceeded | Reject before output allocation or gateway admission; preserve revision, queue, hash, and replay | procedure and controlled service-procedure tests |
 | Full command/result/observation queue | Typed reject, explicit drop, or in-place supersession according to declared delivery | gateway, observation-slot, and readback-pressure tests |
+| Pending command, observation, import, or upload stops making progress | Inspect optional monotonic oldest-pending age; drain or reschedule the named caller-driven lifecycle without exposing payloads | CF031 deterministic age lifecycle and controlled status tests |
 | Replay entry or total-log capacity exhausted | Reject before world mutation | `replay_capacity_rejects_before_world_mutation` |
 | Replay byte truncated, reordered, removed, or modified | Return only the longest verified prefix and a typed tail error | replay contract tests |
 | Any one replay byte flipped | Reject before the affected entry; verify and replay only the intact prefix | `every_single_byte_corruption_stops_before_the_unverified_entry` |
@@ -67,6 +68,14 @@ results, reduce the producer rate, or create a new service with reviewed larger
 bounds. Do not spin-retry `MustApply` or observation work while the same queue
 remains full. `BestEffort` drops and `LatestWins` supersession are explicit
 outcomes, not successful durable application.
+
+`LocalServiceStatus::command_queue` and
+`oldest_outstanding_observation_age_micros`, plus the import/upload fields in
+`asset_status`, distinguish empty work from the oldest retained wait in
+saturating monotonic microseconds. Compare successive caller-selected samples;
+the value is not a wall-clock timestamp, deadline, SLO, payload identifier, or
+automatic alert. A reset can mean processing, eviction, delivery, or valid
+`LatestWins` replacement, so interpret it with depth and outcome counters.
 
 ### Patch or query rejection
 

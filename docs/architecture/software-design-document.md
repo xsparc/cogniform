@@ -180,7 +180,14 @@ Every queued command declares one of:
 - `LatestWins(key)`: a new uncommitted value supersedes an older one for the same key.
 - `BestEffort`: may be dropped under configured pressure.
 
-Queues have fixed or configuration-bounded capacity, observable depth/age/drop counters, and no hidden unbounded spill. Durable work receives typed backpressure; replaceable observations use latest-value behavior.
+Queues have fixed or configuration-bounded capacity, observable depth/age/drop
+counters, and no hidden unbounded spill. Durable work receives typed
+backpressure; replaceable observations use latest-value behavior. The local
+service reports optional monotonic oldest-pending age in saturating
+microseconds for commands, outstanding observations, asset imports, and
+renderer uploads. Empty lifecycles report no age. Duplicate or already-known
+work preserves the original admission age, `LatestWins` replacement resets its
+age, and rejected or dropped work does not alter retained age.
 
 ### 3.6 Observation causality
 
@@ -279,6 +286,10 @@ file to recovery state nor decodes, imports, uploads, or schedules the source.
 Unsupported extensions and valid out-of-subset image features produce
 structured diagnostics or approved proxies; malformed normal,
 primary-coordinate, material, image, or over-limit data cannot proxy.
+Aggregate asset status includes optional monotonic oldest-import and
+oldest-upload ages without exposing source bytes, mesh keys, texture content,
+or backend handles. Processing and explicit eviction remove matching age state
+with the existing queue entry.
 
 Built-in procedures are pure synchronous preparation functions. The local
 service executes a supported typed request under active runtime limits and
@@ -315,7 +326,15 @@ without affecting world or render correctness.
 
 ## 6. Performance and observability
 
-Measure latency as separate spans: decode, validate, compile, patch validate, patch commit, transform propagate, render extract, upload, asset eviction, encode, GPU frame, observation copy, feedback enqueue, and delivery. Relevant spans carry request, transaction, revision, frame, and agent identifiers with bounded cardinality.
+Measure latency as separate spans: decode, validate, compile, patch validate,
+patch commit, transform propagate, render extract, upload, asset eviction,
+encode, GPU frame, observation copy, feedback enqueue, and delivery. Relevant
+spans carry request, transaction, revision, frame, and agent identifiers with
+bounded cardinality. The current caller-driven service implements only
+on-demand aggregate oldest-pending age for its four bounded work lifecycles.
+Those values use a monotonic process-local clock, are sampled only by status or
+debug inspection, and never enter durable or causal identity. Active-operation
+spans, exporters, logging, alerts, and production thresholds remain deferred.
 
 Research targets such as 60 Hz, 3 ms p95 CPU engine work, 8 ms p95 GPU time, 8 ms for 1,000 simple operations, 30 ms for 10,000 operations, one-frame commit-to-visibility, and near-zero hot-path allocations are hypotheses until reference hardware and fixtures are recorded. Correctness gates land before performance gates; thresholds cannot be silently weakened.
 
@@ -359,6 +378,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Machine outputs | Entity-ID probes are exact; exact unlit and tolerant direct-material color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
+| Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
 | Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |
 | Asset resolution | The local service explicitly imports and uploads bounded content-addressed meshes and shared textures; recovered logical references remain unavailable until exact-hash rehydration without another world mutation |
 | Asset eviction | One explicit content-hash operation releases exact queued/CPU/upload/GPU mesh and shared-texture capacity while preserving unrelated order, logical references, revision, replay, hash, frame frontier, and later exact-hash rehydration |

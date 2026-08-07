@@ -45,7 +45,29 @@ fn canonical_scenario_preserves_revision_observation_and_replay_causality() {
         assert_eq!(report.replay.final_revision(), SceneRevision::new(2));
         assert_eq!(report.replay.final_scene_hash(), Some(report.logical_hash));
         assert_eq!(service.status().outstanding_observations, 0);
+        assert_eq!(
+            service.status().oldest_outstanding_observation_age_micros,
+            None
+        );
         assert_eq!(service.status().replay_entries, 2);
         assert_eq!(service.status().command_queue.depth, 0);
+        assert_eq!(
+            service.status().command_queue.oldest_pending_age_micros,
+            None
+        );
+        assert_eq!(
+            service
+                .asset_status()
+                .store
+                .oldest_pending_import_age_micros,
+            None
+        );
+        assert_eq!(
+            service
+                .asset_status()
+                .renderer
+                .oldest_pending_upload_age_micros,
+            None
+        );
     });
 }

@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use cogniform_assets::{
     AssetAdmission, AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetStore, AssetStoreConfig,
     AssetStoreEviction, AssetStoreStats,
@@ -59,6 +61,8 @@ pub struct LocalServiceStatus {
     pub completed_results: u32,
     /// Queued, active, or completed observations not yet delivered.
     pub outstanding_observations: u32,
+    /// Monotonic elapsed microseconds for the oldest outstanding observation.
+    pub oldest_outstanding_observation_age_micros: Option<u64>,
     /// Fixed total observation capacity.
     pub observation_capacity: u32,
     /// Accepted entries in the bounded replay log.
@@ -358,13 +362,17 @@ impl LocalService {
     /// Returns current bounded occupancy and revision state.
     #[must_use]
     pub fn status(&self) -> LocalServiceStatus {
+        let sampled_at = Instant::now();
         let engine = self.gateway.engine();
+        let (outstanding_observations, oldest_outstanding_observation_age_micros) =
+            engine.observation_status_at(sampled_at);
         LocalServiceStatus {
             scene_revision: engine.revision(),
             renderer_revision: engine.renderer().scene_revision(),
-            command_queue: self.gateway.queue_stats(),
+            command_queue: self.gateway.queue_stats_at(sampled_at),
             completed_results: self.gateway.completed_result_count(),
-            outstanding_observations: engine.outstanding_observations(),
+            outstanding_observations,
+            oldest_outstanding_observation_age_micros,
             observation_capacity: engine.observation_capacity(),
             replay_entries: u32::try_from(engine.replay_log().len()).unwrap_or(u32::MAX),
             replay_bytes: engine.replay_log().encoded_len(),

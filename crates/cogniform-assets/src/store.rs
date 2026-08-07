@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    time::{Duration, Instant},
+};
 
 use cogniform_protocol::ContentHash;
 
@@ -13,6 +16,7 @@ use crate::{
 struct PendingImport {
     content_hash: ContentHash,
     source: Box<[u8]>,
+    queued_at: Instant,
 }
 
 struct StoredAsset {
@@ -61,6 +65,25 @@ impl AssetStore {
         &mut self,
         expected_hash: ContentHash,
         source: Vec<u8>,
+    ) -> Result<AssetAdmission, AssetError> {
+        self.enqueue_with_time(expected_hash, source, None)
+    }
+
+    #[cfg(test)]
+    fn enqueue_at(
+        &mut self,
+        expected_hash: ContentHash,
+        source: Vec<u8>,
+        queued_at: Instant,
+    ) -> Result<AssetAdmission, AssetError> {
+        self.enqueue_with_time(expected_hash, source, Some(queued_at))
+    }
+
+    fn enqueue_with_time(
+        &mut self,
+        expected_hash: ContentHash,
+        source: Vec<u8>,
+        queued_at: Option<Instant>,
     ) -> Result<AssetAdmission, AssetError> {
         let source_bytes = u64::try_from(source.len()).unwrap_or(u64::MAX);
         if source_bytes > self.config.limits.max_source_bytes.get() {
@@ -123,6 +146,7 @@ impl AssetStore {
         self.pending.push_back(PendingImport {
             content_hash: expected_hash,
             source: source.into_boxed_slice(),
+            queued_at: queued_at.unwrap_or_else(Instant::now),
         });
         self.pending_source_bytes = projected_pending;
         Ok(AssetAdmission::Queued {
@@ -296,9 +320,19 @@ impl AssetStore {
     /// Returns aggregate occupancy without exposing admitted source content.
     #[must_use]
     pub fn stats(&self) -> AssetStoreStats {
+        self.stats_at(Instant::now())
+    }
+
+    fn stats_at(&self, sampled_at: Instant) -> AssetStoreStats {
         AssetStoreStats {
             records: u32::try_from(self.records.len()).unwrap_or(u32::MAX),
             pending_imports: u32::try_from(self.pending.len()).unwrap_or(u32::MAX),
+            oldest_pending_import_age_micros: self
+                .pending
+                .iter()
+                .map(|pending| pending.queued_at)
+                .min()
+                .map(|queued_at| elapsed_micros(sampled_at, queued_at)),
             pending_source_bytes: self.pending_source_bytes,
             resident_cpu_bytes: self.resident_cpu_bytes,
         }
@@ -317,4 +351,92 @@ fn reject_record(stored: &mut StoredAsset, diagnostic: AssetDiagnostic) {
     stored.record.mesh_count = 0;
     stored.record.diagnostics = vec![diagnostic];
     stored.decoded = None;
+}
+
+fn elapsed_micros(sampled_at: Instant, started_at: Instant) -> u64 {
+    duration_micros(sampled_at.saturating_duration_since(started_at))
+}
+
+fn duration_micros(duration: Duration) -> u64 {
+    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use core::num::NonZeroU32;
+
+    use super::*;
+
+    #[test]
+    fn import_age_tracks_only_retained_pending_sources() {
+        let started_at = Instant::now();
+        let mut store = AssetStore::default();
+        assert_eq!(
+            store.stats_at(started_at).oldest_pending_import_age_micros,
+            None
+        );
+
+        let first = b"first pending source".to_vec();
+        let first_hash = content_hash(&first);
+        store
+            .enqueue_at(first_hash, first.clone(), started_at)
+            .unwrap();
+        assert!(matches!(
+            store
+                .enqueue_at(first_hash, first, started_at + Duration::from_micros(7))
+                .unwrap(),
+            AssetAdmission::AlreadyKnown { .. }
+        ));
+
+        let second = b"second pending source".to_vec();
+        let second_hash = content_hash(&second);
+        store
+            .enqueue_at(second_hash, second, started_at + Duration::from_micros(3))
+            .unwrap();
+        let sampled_at = started_at + Duration::from_micros(13);
+        assert_eq!(
+            store.stats_at(sampled_at).oldest_pending_import_age_micros,
+            Some(13)
+        );
+
+        assert_eq!(store.evict(first_hash).removed_pending_imports, 1);
+        assert_eq!(
+            store.stats_at(sampled_at).oldest_pending_import_age_micros,
+            Some(10)
+        );
+        store.process_next().unwrap();
+        assert_eq!(
+            store.stats_at(sampled_at).oldest_pending_import_age_micros,
+            None
+        );
+        assert_eq!(duration_micros(Duration::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn rejected_import_does_not_change_oldest_age() {
+        let mut config = AssetStoreConfig::default();
+        config.limits.max_pending_imports = NonZeroU32::new(1).unwrap();
+        let started_at = Instant::now();
+        let mut store = AssetStore::new(config);
+        let first = b"only pending source".to_vec();
+        store
+            .enqueue_at(content_hash(&first), first, started_at)
+            .unwrap();
+
+        let rejected = b"rejected pending source".to_vec();
+        assert!(matches!(
+            store.enqueue_at(
+                content_hash(&rejected),
+                rejected,
+                started_at + Duration::from_micros(5)
+            ),
+            Err(AssetError::ImportCapacityExceeded { capacity: 1 })
+        ));
+        assert_eq!(
+            store
+                .stats_at(started_at + Duration::from_micros(9))
+                .oldest_pending_import_age_micros,
+            Some(9)
+        );
+    }
 }

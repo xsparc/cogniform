@@ -10,7 +10,8 @@ through a fully restored replacement. CF018 adds a separate explicit adapter
 for immutable bounded local recovery files. CF019 extends that separate
 adapter with immutable exact-hash asset-source files for caller-driven
 rehydration. CF030 adds explicit content-hash-wide CPU/GPU asset eviction with
-exact accounting and no logical scene mutation.
+exact accounting and no logical scene mutation. CF031 adds on-demand monotonic
+oldest-pending age for every caller-driven service queue.
 
 `LocalService` composes one bounded `LocalGateway`, authoritative recorded
 world, service-owned asset store, headless renderer, and observation worker. It
@@ -44,7 +45,7 @@ handle, renderer device, queue, staging buffer, or replay log.
 | `enqueue_asset_upload` | Create an immutable ready-mesh job and reserve renderer capacity |
 | `process_next_asset_upload` | Upload at most one renderer-owned queued mesh |
 | `evict_asset` | Release all queued and resident CPU/GPU state for one content hash without changing the world or replay |
-| `asset_status` | Return aggregate CPU-store and renderer-residency counters |
+| `asset_status` | Return aggregate CPU-store and renderer-residency counters plus optional oldest import/upload ages |
 | `submit_patch` | Validate and admit one explicit patch under its delivery semantic |
 | `submit_imagination` | Validate and admit one deterministic primitive imagination |
 | `submit_procedure` | Execute one pure bounded built-in procedure and admit its generated ordinary patch |
@@ -52,7 +53,7 @@ handle, renderer device, queue, staging buffer, or replay log.
 | `query` | Return one bounded, exact-revision logical result immediately |
 | `request_observation` | Reserve one observation slot and submit a revision-linked frame |
 | `try_receive_observation` | Poll at most one completed owned observation without waiting |
-| `status` | Return revision, renderer, queue, observation, and replay occupancy counters |
+| `status` | Return revision, renderer, command/observation occupancy, optional oldest ages, and replay counters |
 | `verify_replay` | Verify sequence, revision, scene-hash, predecessor, and entry-hash chains |
 | `logical_hash` | Hash the current canonical logical world |
 | `replayed_logical_hash` | Replay accepted events into a fresh world and hash the result |
@@ -67,6 +68,30 @@ Patch and imagination admission preserves the gateway's `MustApply`,
 does not secretly process work. `process_next` handles no more than one queued
 item, so embedders choose their own scheduling policy without an unbounded
 background loop.
+
+## Pending-work age
+
+Status inspection reports optional monotonic elapsed microseconds for the
+oldest unprocessed command, outstanding observation, pending CPU import, and
+pending renderer upload. Empty lifecycles report `None`. Command and
+observation values in one `status` result use the same clock sample; the asset
+result composes the independently owned store and renderer status values.
+
+An identical queued command/upload or already-known asset keeps its original
+age. `LatestWins` replacement starts a new age while preserving position.
+Dropped, replayed, conflicting, malformed, failed, or capacity-rejected work
+does not add or reset age. Command/import/upload processing and explicit
+eviction remove the matching timestamp. Observation age starts at successful
+permit reservation and follows that permit through GPU submission, queued or
+active worker state, and completed-awaiting-delivery state; every submission,
+result-or-error delivery, channel, or drop path releases it with capacity.
+
+The fields are aggregate process-local diagnostics. They expose no queued
+payload, content hash, request identity, system-clock timestamp, or automatic
+telemetry. Admission instants never enter canonical encoding, fingerprints,
+world state, logical hashes, replay, recovery, persisted files, or observation
+metadata. Status sampling performs bounded work only when called; there is no
+metrics thread, logging, tracing, exporter, alert, or scheduler.
 
 ## Built-in procedures
 
@@ -240,7 +265,8 @@ branch identity, and any external rollback policy.
 - The boundary is local Rust only; there is no socket, wire compatibility
   promise, session, authentication, authorization, or multi-tenant isolation.
 - Processing and polling are caller-driven. There is no long-running daemon,
-  subscription stream, shutdown protocol, or automatic retry loop.
+  subscription stream, shutdown protocol, automatic retry loop, or telemetry
+  exporter. Age status is diagnostic evidence, not an SLO or alert policy.
 - Observation payloads are owned vectors. Shared-memory leases and encoded
   delivery are deferred.
 - Recovery is into a fresh service from a complete in-memory point. Exact
@@ -267,7 +293,8 @@ See [ADR 0009](../adr/0009-recorded-engine-and-local-typed-service.md),
 [ADR 0017](../adr/0017-quiescent-live-revert-through-fresh-replacement.md),
 [ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md),
 [ADR 0019](../adr/0019-immutable-exact-hash-asset-source-files.md),
-[ADR 0030](../adr/0030-explicit-content-hash-asset-eviction.md), the
+[ADR 0030](../adr/0030-explicit-content-hash-asset-eviction.md),
+[ADR 0031](../adr/0031-monotonic-pending-work-age-status.md), the
 [gateway guide](local-gateway-and-imagination.md), the
 [recovery-file guide](../persistence/recovery-files.md), the
 [asset-file guide](../persistence/asset-files.md), and the

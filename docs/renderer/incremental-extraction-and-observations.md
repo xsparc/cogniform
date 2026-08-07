@@ -51,6 +51,17 @@ completed, and waiting for delivery. A full queue returns
 `ObservationError::CapacityExceeded`; submission does not sleep, retry, spill,
 or wait for a consumer.
 
+The permit also owns one monotonic admission instant. Service status reports
+only the saturating elapsed microseconds of the oldest live permit, from
+successful reservation through queued, active, and completed-awaiting-delivery
+states. Submission failure, successful delivery, delivery of a
+worker/readback error, channel failure,
+or any other permit drop releases both capacity and age state. A completed
+readback error retains its permit while awaiting caller delivery, exactly like
+a successful completion. Empty
+observation state reports no age. The instant is not a wall-clock timestamp,
+observation identity, metadata field, replay value, or exported signal.
+
 The worker may wait for its submitted GPU frame. That synchronization is
 outside renderer submission and cannot mutate the world or renderer scene.
 Dropping or delivering the result releases its permit; completing readback
@@ -98,8 +109,9 @@ later slices.
 
 Default offline validation exercises extraction ordering, sparse descendant
 updates, logical-only revision advancement, capacity rejection, atomic
-renderer state updates, compact-ID recycling, observation permits, and public
-metadata invariants without requiring a GPU.
+renderer state updates, compact-ID recycling, exact observation permit-age
+reservation/release, microsecond saturation, and public metadata invariants
+without requiring a GPU.
 
 Run the controlled end-to-end contract on an approved DX12 or Vulkan adapter:
 

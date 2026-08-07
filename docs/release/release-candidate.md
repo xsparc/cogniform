@@ -23,6 +23,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Machine outputs | Pass on validated profile | Exact unlit and tolerant scene/imported/overridden direct-material color and depth, exact stable entity ID, structured visibility, and quantized world-space normals from outward built-ins, source-wound assets, sphere radial directions, or approved imported directions |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
+| Pending-work age | Pass on validated profile | Empty and retained command/observation/import/upload status, duplicate retention, supersession reset, rejection/drop neutrality, processing/eviction/delivery cleanup, saturation, and restoration/revert compatibility |
 | Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, finite non-zero same-count normals, finite same-count primary coordinates with full-source validation, unit-bounded numeric materials, bounded static embedded RGB/RGBA PNG decode, independent texture accounting, exact decoded/GPU bytes, truncation corpus, typed unsupported/proxy policy |
 | Service asset resolution | Pass on validated profile | Explicit one-item import/upload renders an exact stable ID and optional shared texture; recovery retains logical references and exact-hash rehydration resumes rendering without replay mutation |
 | Asset lifecycle | Pass on validated profile | Explicit content-hash-wide eviction releases exact queued, decoded, upload, mesh, and unique-texture capacity; preserves unrelated FIFO, submitted frames, world/replay/frame state, and persisted sources; and supports exact rehydration |
@@ -74,7 +75,8 @@ The GitHub release must be marked prerelease and state:
 - source-only, early local evaluation;
 - validated Windows/Vulkan profile and build-only Ubuntu evidence;
 - no remote service, authentication, automatic checkpoint/startup, mutable
-  snapshot catalog, production SLA, or semver-stable crates.io API;
+  snapshot catalog, background telemetry exporter, production SLA, or
+  semver-stable crates.io API;
 - recovery envelopes detect corruption but provide no encryption,
   authentication, freshness, or rollback protection;
 - local recovery files are explicit create-new plaintext artifacts with no

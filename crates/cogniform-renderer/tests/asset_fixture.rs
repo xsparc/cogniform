@@ -31,6 +31,7 @@ fn approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal() {
     assets.enqueue(content_hash, bytes).unwrap();
     assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
     let upload = assets.upload_job(key).unwrap();
+    let repeated_upload = upload.clone();
     let expected_normal = triangle_normal(upload.vertices());
 
     let mut renderer =
@@ -41,6 +42,12 @@ fn approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal() {
         AssetUploadAdmission::Queued { key }
     );
     assert_eq!(renderer.asset_stats().pending_uploads, 1);
+    assert!(
+        renderer
+            .asset_stats()
+            .oldest_pending_upload_age_micros
+            .is_some()
+    );
     assert_eq!(renderer.asset_stats().resident_meshes, 0);
     let uploaded = renderer
         .process_next_asset_upload()
@@ -48,7 +55,19 @@ fn approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal() {
     assert_eq!(uploaded.key, key);
     assert_eq!(uploaded.vertex_count, 3);
     assert_eq!(renderer.asset_stats().pending_uploads, 0);
+    assert_eq!(
+        renderer.asset_stats().oldest_pending_upload_age_micros,
+        None
+    );
     assert_eq!(renderer.asset_stats().resident_meshes, 1);
+    assert_eq!(
+        renderer.enqueue_asset_upload(repeated_upload).unwrap(),
+        AssetUploadAdmission::AlreadyResident { key }
+    );
+    assert_eq!(
+        renderer.asset_stats().oldest_pending_upload_age_micros,
+        None
+    );
 
     let camera = StableEntityId::new(1).unwrap();
     let triangle = StableEntityId::new(2).unwrap();
@@ -405,6 +424,7 @@ fn content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work() 
     assert!(renderer.evict_asset(content_hash).is_already_absent());
     let empty = renderer.asset_stats();
     assert_eq!(empty.pending_uploads, 0);
+    assert_eq!(empty.oldest_pending_upload_age_micros, None);
     assert_eq!(empty.pending_bytes, 0);
     assert_eq!(empty.resident_meshes, 0);
     assert_eq!(empty.resident_bytes, 0);
