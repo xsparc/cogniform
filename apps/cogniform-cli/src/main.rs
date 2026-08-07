@@ -37,10 +37,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             run_scenario()
         }
         Some(command) if command == OsStr::new("measure-world") => {
+            let output = match arguments.next() {
+                None => measure::MeasureOutput::Human,
+                Some(argument) if argument == OsStr::new("--json") => measure::MeasureOutput::Json,
+                Some(_) => {
+                    return Err(invalid_input("measure-world accepts only optional --json"));
+                }
+            };
             if arguments.next().is_some() {
-                return Err(invalid_input("measure-world accepts no arguments"));
+                return Err(invalid_input("measure-world accepts only optional --json"));
             }
-            measure::run()
+            measure::run(output)
         }
         Some(command) if command == OsStr::new("inspect-recovery") => {
             let first = arguments
@@ -120,7 +127,7 @@ fn print_usage() {
     println!();
     println!("Usage:");
     println!("  cogniform-cli scenario  Run the canonical unattended MVP scenario");
-    println!("  cogniform-cli measure-world  Measure the controlled CPU world fixture");
+    println!("  cogniform-cli measure-world [--json]  Measure the controlled CPU world fixture");
     println!("  cogniform-cli inspect-recovery [--json] <path>  Verify an immutable recovery file");
     println!("  cogniform-cli --help    Show this help");
 }

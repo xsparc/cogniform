@@ -77,8 +77,10 @@ recovery-file persistence as a separate service-domain adapter, CF019 adds
 separate exact-hash asset-source files without creating a catalog, CF032
 allows the CLI composition root to invoke that adapter and the engine's exact
 CPU restoration preflight for offline diagnostics, and CF033 adds a versioned
-machine-readable view at that CLI boundary without moving encoding into the
-engine. Spatial
+machine-readable recovery view at that CLI boundary without moving encoding
+into the engine. CF034 similarly adds a versioned view over the existing
+controlled CPU measurement at the CLI boundary, with no engine or protocol
+encoding. Spatial
 acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -344,6 +346,13 @@ Those values use a monotonic process-local clock, are sampled only by status or
 debug inspection, and never enter durable or causal identity. Active-operation
 spans, exporters, logging, alerts, and production thresholds remain deferred.
 
+The controlled `world-create-empty-v1` fixture also has an opt-in CLI
+schema-version-one JSON view. It reports fixed fixture/profile/sample metadata
+and integer nanosecond distributions, declares `informational_only: true`, and
+includes no hardware identity or upload behavior. The default human report is
+unchanged. This view does not establish a performance threshold or replace a
+dated controlled baseline.
+
 Research targets such as 60 Hz, 3 ms p95 CPU engine work, 8 ms p95 GPU time, 8 ms for 1,000 simple operations, 30 ms for 10,000 operations, one-frame commit-to-visibility, and near-zero hot-path allocations are hypotheses until reference hardware and fixtures are recorded. Correctness gates land before performance gates; thresholds cannot be silently weakened.
 
 ## 7. External interfaces
@@ -355,6 +364,7 @@ capture complete or exact-revision local recovery state, restore it into a
 fresh service, explicitly persist/load one immutable local recovery file or
 one independent exact-hash asset-source file, inspect one recovery file through
 the complete CPU restoration preflight without GPU initialization and emit an
+optional versioned CLI JSON report, run the controlled CPU measurement with an
 optional versioned CLI JSON report, revert live recorded state,
 resolve assets, and explicitly evict one content hash from CPU/GPU residency.
 Initial
@@ -384,6 +394,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Live revert | A quiescent service builds and validates an exact historical replacement before swap, preserves the source frame frontier, clears named transient/asset state, and continues retained idempotency and ordinary branch append |
 | Recovery file | A new immutable local file stores one complete bounded envelope without overwrite; bounded load rejects non-files, growth, corruption, truncation, extension, and over-limit input before restoration |
 | Recovery inspection | One explicit CLI path is loaded read-only and passes the same configuration, complete-replay, authoritative-world, logical-hash, and frame-frontier preflight as restoration without adapter selection; default human output is unchanged and optional deterministic schema-v1 JSON remains aggregate and path/payload redacted |
+| Controlled measurement | The fixed CPU world fixture retains its human report and emits optional fixed-layout schema-v1 integer-nanosecond distributions that are explicitly informational only and written only after measurement completes |
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
 | Headless render | Outward-wound reference cuboid plus extracted plane, sphere, and bounded direct metallic-roughness directional/point-lit scenes render without a visible window |
 | Machine outputs | Entity-ID probes are exact; exact unlit and tolerant direct-material color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
@@ -408,7 +419,8 @@ recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
 rotation, recovery-inspection profile selection, broader diagnostic schemas,
-and model policy remain explicitly open. Defaults in the roadmap are
+including schemas beyond the versioned recovery and controlled-measurement CLI
+reports, and model policy remain explicitly open. Defaults in the roadmap are
 planning assumptions, not production commitments.
 
 ## 11. Verified foundation references

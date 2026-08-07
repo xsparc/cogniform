@@ -87,6 +87,10 @@ release yet; the current workspace version remains `0.0.0`.
 - deterministic compact schema-version-one JSON for opt-in recovery inspection,
   with exact fields/types/order, unchanged human output, pre-output validation,
   empty failure stdout, and a `--` escape for the reserved `--json` filename;
+- fixed-layout compact schema-version-one JSON for the controlled CPU world
+  measurement, with fixed integer-nanosecond distributions, exact
+  fields/types/order, explicit informational-only status, unchanged human
+  structure and debug warning, and complete preparation before stdout;
 - separate immutable exact-hash asset-source files with pre-I/O size and
   identity checks, shared create-new/sync/cleanup guarantees, bounded
   regular-file loading, and explicit restart rehydration evidence;
@@ -176,6 +180,10 @@ release yet; the current workspace version remains `0.0.0`.
   version one and has no JSON input, broader diagnostics contract,
   authenticity/freshness decision, asset validation, or GPU readiness claim;
   aggregate hashes and counts can still be sensitive.
+  Controlled measurement JSON is also CLI schema version one and has no
+  threshold, baseline replacement, hardware identity, arbitrary fixture/sample
+  selection, or automatic upload; timing distributions can still expose local
+  performance characteristics.
   In-place revert requires drained transient work, clears asset residency, and
   supplies no automatic rollback or freshness policy;
   future frame identity across concurrently live branches is

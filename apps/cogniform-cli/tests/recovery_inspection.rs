@@ -233,7 +233,7 @@ fn inspection_arguments_and_help_are_exact() {
             "Cogniform local headless engine\n\n",
             "Usage:\n",
             "  cogniform-cli scenario  Run the canonical unattended MVP scenario\n",
-            "  cogniform-cli measure-world  Measure the controlled CPU world fixture\n",
+            "  cogniform-cli measure-world [--json]  Measure the controlled CPU world fixture\n",
             "  cogniform-cli inspect-recovery [--json] <path>  Verify an immutable recovery file\n",
             "  cogniform-cli --help    Show this help\n",
         )

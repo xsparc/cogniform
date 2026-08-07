@@ -162,6 +162,16 @@ profile:
 cargo run --release -p cogniform-cli --locked --offline -- measure-world
 ```
 
+Scripts can request the same completed measurement as compact versioned JSON:
+
+```text
+cargo run --release -p cogniform-cli --locked --offline -- measure-world --json
+```
+
+Consumers must require `schema_version` 1 and `unit` `nanoseconds`. The report
+declares `informational_only: true`; it is not a release or merge threshold and
+its timing values can reveal characteristics of the local host or process.
+
 See [CHANGELOG.md](CHANGELOG.md) for the unreleased capability and limitation
 summary. The workspace remains `0.0.0`, source packages remain unpublished, and
 creating a tag or release requires a separate explicit maintainer action.

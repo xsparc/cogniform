@@ -720,6 +720,31 @@ expansion, deployment, versioning, and release action remain excluded. See
 [ADR 0033](../adr/0033-versioned-recovery-inspection-json.md) and the
 [recovery-file guide](../persistence/recovery-files.md).
 
+### PR 34 - CF034: Versioned controlled-measurement JSON
+
+Outcome: scripts, CI helpers, and researchers can consume the existing
+controlled CPU world measurement without parsing the unchanged human report.
+
+Gate: `cogniform-cli measure-world --json` emits one fixed-layout compact
+schema-version-one object followed by one line feed after all samples finish.
+Top-level and nested field order, JSON types, fixed fixture/profile/sample
+metadata, integer nanosecond units, monotonic distributions, and the explicit
+informational-only flag are exact. The default human labels, ordering,
+microsecond formatting, threshold statement, and debug warning remain intact.
+Invalid or extra arguments fail with empty stdout.
+
+Implemented contract: the JSON report is a CLI-private serializable view over
+the existing engine measurement result. Checked conversion from engine `u128`
+nanoseconds to JSON `u64` and complete in-memory serialization happen before
+stdout. Existing CLI serialization dependencies are reused, so no manifest,
+lockfile, package, vendor, engine, protocol, fixture, or baseline changes.
+Threshold enforcement, arbitrary fixtures/sample counts, hardware identity,
+JSON input, scenario JSON, logging/exporters, background sampling, telemetry,
+transport, authentication, CI expansion, GPU work, deployment, versioning, and
+release action remain excluded. See
+[ADR 0034](../adr/0034-versioned-controlled-measurement-json.md) and the
+[validation baseline](../operations/validation-baseline.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -727,7 +752,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
-  -> CF030 -> CF031 -> CF032 -> CF033
+  -> CF030 -> CF031 -> CF032 -> CF033 -> CF034
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -864,6 +889,11 @@ Validation expands with capability:
   JSON types, lowercase hashes, unchanged human bytes, reserved filename
   escape, pre-output semantic validation, empty failure stdout, redaction, and
   no new package/version/vendor or GPU boundary.
+- CF034: exact compact schema-version-one controlled-measurement JSON, fixed
+  top-level and distribution field order/types, integer nanoseconds, monotonic
+  distributions, explicit informational-only semantics, unchanged human
+  structure and debug warning, exact argument rejection, empty failure stdout,
+  and no manifest, lockfile, baseline, package, or GPU boundary.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
