@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF038 bounded observation-payload envelopes on 2026-08-08.
+and extended through CF039 bounded local stream framing on 2026-08-08.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -14,7 +14,7 @@ separate transport and identity design violates the assumptions below.
 |---|---|
 | Authoritative world | Only complete validated patches change state; stable IDs and revisions remain correct |
 | Accepted-event log, recovery point, and recovery file | Newly accepted patches stay complete, ordered, bounded, integrity checked, and replayable; complete or exact-revision replay bytes remain associated with non-reused frame-continuity state; explicit files never overwrite an existing target; diagnostics reveal no path or payload |
-| Observation causality | Payload, camera, frame, revision, and stable identity agree; optional binary payloads remain bounded and integrity-bound to canonical metadata |
+| Observation causality | Payload, camera, frame, revision, and stable identity agree; optional binary payloads and local frames remain bounded and integrity-bound to canonical metadata |
 | Asset state and source files | Source identity is exact; malformed or oversized input cannot become decoded or GPU-resident state; recovered references and caller-mapped source files cannot substitute different bytes |
 | Host resources | CPU, memory, queues, GPU allocations, and waits stay within declared bounds and explicit release is exactly accounted |
 | Process and GPU | Backend failures return controlled errors and do not grant access to world mutation |
@@ -40,12 +40,15 @@ snapshots and canonical replay entries.
 5. **Owned observation and metadata to payload codec.** Caller-owned values
    cross an explicit in-memory canonical-layout, bounds, and integrity boundary
    without acquiring I/O or transport authority.
-6. **Recovery file/envelope and replay bytes to recovery.** Caller-selected
+6. **Caller-owned byte stream to local frame codec.** A fixed header, declared
+   control and bulk lengths, and body bytes cross independent header-first
+   bounds and integrity checks without creating an endpoint or session.
+7. **Recovery file/envelope and replay bytes to recovery.** Caller-selected
    paths and portable bytes are untrusted until regular-file/size/growth checks,
    envelope header/version/bounds/length/frame/digest, and replay
    protocol/revision/scene-hash/predecessor/entry-hash chains have been
    independently verified.
-7. **Repository to public hosting.** Tracked content, commit metadata, workflow
+8. **Repository to public hosting.** Tracked content, commit metadata, workflow
    definitions, dependencies, and future release artifacts become public.
 
 Exact-hash asset files use the same final-file type, size, growth, create-new,
@@ -53,8 +56,10 @@ cleanup, and path-redaction boundary, followed by complete identity validation.
 The compiler and built-in procedures have no ambient filesystem, network, time,
 world, renderer, or entropy authority. The current local service creates no
 socket, listener, shared-memory segment, automatic persistent file, or model
-call. The separate storage adapter touches only an explicit caller-selected
-path when directly invoked.
+call. The local frame adapter touches only caller-supplied `std::io` values and
+does not select a path, address, endpoint, peer, or session. The separate
+storage adapter touches only an explicit caller-selected path when directly
+invoked.
 The offline inspection command composes that adapter with the exact CPU
 restoration preflight, retains no reconstructed world, and emits only aggregate
 counts, revision/frame values, and hashes. Its optional machine-readable view
@@ -92,6 +97,7 @@ Residual ratings assume the declared local single-user boundary.
 | Renderer-local IDs escape as authoritative identity | High | Frame-local compact mapping, stable IDs in public observations, exact center-pixel tests | Low |
 | Observation from an old camera or revision is accepted as current | High | Camera/frame/revision metadata, explicit staleness, source-ahead rejection, canonical scenario proof | Low |
 | Observation payload bytes are truncated, extended, corrupted, noncanonical, over-limit, or paired with different causal metadata | High | Independent complete-envelope and visibility bounds; exact kind/count/length and fixed big-endian layouts; canonical finite floats, presence, identity, and ordering; SHA-256 binding over header, canonical metadata, and payload; decode allocation only after framing, metadata, and integrity checks; all-prefix and every-byte mutation tests | Low for in-memory corruption and substitution; writer authenticity and confidentiality remain caller-owned |
+| A local frame declares excessive sections, is truncated, corrupted, noncanonical, or crosses an untrusted stream boundary | High | Fixed version/kind/header; non-zero correlation identity; independent complete/control/bulk limits checked before body allocation; exact short/interrupted I/O; canonical observation metadata and nested envelope integrity; all-prefix, every-byte, substitution, pre-body-limit, and payload-redaction tests | Low inside caller-owned bounded local I/O; endpoint identity, authentication, confidentiality, freshness, replay protection, rate limits, cancellation, and partial-write recovery remain caller-owned |
 | Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |
 | Recovery replay bytes and frame marker are separated or accidentally changed | High | Single bounded versioned envelope, exact-length parsing, domain-separated SHA-256 digest, every-byte corruption rejection before replay allocation | Low for accidental corruption; authenticity remains caller-owned |
 | A recovery path or file causes overwrite, disclosure, unbounded allocation, or partial-state adoption | High | Separate opt-in crate; encode-before-I/O; create-new only; final symlink/non-file rejection; metadata/platform allocation bound; fixed-buffer read and growth probe; complete digest validation; path-redacted errors; injected write/sync cleanup | Medium because parent-path trust, permissions, confidentiality, authenticity, freshness, and crash durability remain caller-owned |
@@ -121,8 +127,13 @@ transport, or production use.
   default.
 - Treat an observation-payload digest as corruption detection only. Do not use
   it to authenticate a writer, authorize a request, establish freshness, or
-  protect confidentiality. A future transport must authenticate its session
-  and cap declared frame length before buffering the slice passed to the codec.
+  protect confidentiality.
+- Treat a local-frame digest and correlation identity as framing and corruption
+  evidence only. Supply a bounded caller-owned stream, retain the configured
+  complete/control/bulk caps, and define endpoint identity, authentication,
+  authorization, confidentiality, freshness, replay, rate, timeout,
+  cancellation, and partial-write recovery outside the codec before exposing
+  it beyond the trusted local single-user boundary.
 - Do not pass credentials, private endpoints, or production records as scene
   text. Cogniform validates structure and bounds; it is not a secret sanitizer.
 - Stop admitting commands when capacity errors repeat. Retrying without a

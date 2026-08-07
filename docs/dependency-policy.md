@@ -69,6 +69,16 @@ runtime download, network, telemetry, or paid-service requirement. Encoding
 stays in the composition root; the engine and recovery protocol remain typed
 and encoding-free.
 
+## Existing local-framing reuse
+
+CF039 adds one workspace-local `cogniform-local-transport` crate and reuses the
+workspace's existing `cogniform-protocol`, `cogniform-observation`, `sha2`,
+`serde`, and `serde_json` graph. It adds no external package, version,
+checksum, build script, unsafe code, native code, runtime download, network,
+telemetry, or paid-service requirement. The adapter owns only framing and
+caller-supplied `std::io`; endpoint and session policy remain outside the
+crate.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

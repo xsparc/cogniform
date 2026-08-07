@@ -26,6 +26,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Headless render | Pass on validated profile | No surface/window; outward-wound Vulkan cuboid, centered plane, fixed sphere, bounded directional/point direct metallic-roughness response including imported numeric GLB materials, one sampled embedded PNG base-color texture, scene overrides, readback pressure, renderer-drop retirement, and canonical scenario evidence |
 | Machine outputs | Pass on validated profile | Exact unlit and tolerant scene/imported/overridden direct-material color and depth, exact stable entity ID, structured visibility, and quantized world-space normals from outward built-ins, source-wound assets, sphere radial directions, or approved imported directions |
 | Observation payload envelope | Pass for declared CPU profile | Fixed version-one all-kind layouts and exact fixture, canonical values and limits, metadata binding, truncation/trailing/corruption rejection, and engine source-compatible re-export without I/O or transport construction |
+| Local stream frame | Pass for declared CPU profile | Fixed version-one header and exact fixture, independent header-first complete/control/bulk limits, canonical observation-envelope composition, short/interrupted I/O, back-to-back framing, and corruption/truncation rejection over caller-owned streams without an endpoint or session |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Pending-work age | Pass on validated profile | Empty and retained command/observation/import/upload status, duplicate retention, supersession reset, rejection/drop neutrality, processing/eviction/delivery cleanup, saturation, and restoration/revert compatibility |
@@ -64,6 +65,10 @@ This does not make the current `0.0.0` workspace a supported release.
 - [ ] Re-run the CPU-only observation-envelope contract and confirm all-kind
       fixtures, canonical validation, metadata binding, corruption rejection,
       and configured limits without constructing a listener or GPU adapter.
+- [ ] Re-run the CPU-only local-frame contract and confirm the exact header,
+      header-first independent limits, short/interrupted I/O, back-to-back
+      framing, nested observation integrity, and payload-redacted failures
+      without constructing an endpoint, session, service, or GPU adapter.
 - [ ] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
       matrix, recovery-envelope, recovery-file, and asset-file
       formats/limitations, offline inspection profile/versioned output, known
@@ -122,9 +127,14 @@ The GitHub release must be marked prerelease and state:
   recovery association, or GPU readiness, nor schedule import, upload, or
   rehydration;
 - observation payload envelopes are optional in-memory corruption-detection
-  values, not authenticated or encrypted transport frames; no listener,
-  session, authorization, rate limit, pre-buffer stream cap, shared-memory
-  lease, retention policy, or automatic delivery is included;
+  values, not authenticated or encrypted messages;
+- local stream frames add a fixed header and enforce independent complete,
+  control, and bulk limits before body allocation over caller-owned I/O, but
+  provide no endpoint, listener, service loop, session identity,
+  authentication, authorization, confidentiality, freshness, replay
+  protection, rate limit, timeout/cancellation policy, shared-memory lease,
+  retention policy, writer atomicity after an I/O failure, or automatic
+  delivery;
 - historical recovery supports caller-coordinated fresh forks and quiescent
   live replacement, but provides no automatic rollback, authorization,
   freshness, branch manager, or global frame namespace across concurrent

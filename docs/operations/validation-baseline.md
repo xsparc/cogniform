@@ -54,6 +54,10 @@ and failure redaction evidence was collected on 2026-08-08.
 CF038 bounded observation-payload framing, canonical all-kind layouts,
 metadata binding, corruption rejection, and independent resource-limit
 evidence was collected on the CPU profile on 2026-08-08.
+CF039 fixed-header local stream framing, header-first independent bounds,
+short/interrupted I/O, canonical observation composition, corruption rejection,
+and payload-redacted failure evidence was collected on the CPU profile on
+2026-08-08.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -270,6 +274,33 @@ in-memory bound and allocate-after-integrity behavior, not network framing,
 authentication, confidentiality, session rate limits, shared-memory safety,
 or automatic delivery. A future stream adapter must enforce its own declared
 length cap before buffering.
+
+## Controlled local stream-framing commands
+
+CF039 ran the dependency-neutral caller-owned stream adapter without creating
+an endpoint, listener, session, service loop, renderer, or GPU adapter:
+
+```text
+cargo fmt --all --check
+cargo clippy -p cogniform-local-transport --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-local-transport --all-features --locked --offline
+```
+
+The nine integration tests pin one exact full control-frame fixture, both
+version-one frame kinds, canonical observation composition, back-to-back
+frames, clean EOF, short and interrupted reads/writes, every truncated prefix,
+trailing bytes, malformed headers, every single-byte mutation, nested metadata
+substitution and corruption, validation before writes, header-limit rejection
+before body reads, and stable payload-redacted I/O categories. Complete,
+control, and bulk limits are independent and are enforced from the fixed header
+before either body section is allocated.
+
+The adapter reads from and writes to caller-owned `std::io` values. These tests
+do not prove endpoint identity, authentication, authorization, confidentiality,
+freshness, replay protection, session rate limits, timeout/cancellation policy,
+shared-memory safety, automatic delivery, or writer atomicity after an I/O
+failure. The SHA-256 digests detect accidental corruption and substitution;
+they do not authenticate a writer.
 
 ## Controlled vertex-normal commands
 

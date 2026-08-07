@@ -139,6 +139,12 @@ lifetime, poll behavior, renderer readback, or service scheduling, and the
 service never automatically sends, stores, or encodes a result. See the
 [observation-payload envelope guide](observation-payload-envelope.md).
 
+The separate local-frame adapter can synchronously write or read canonical
+observation metadata with that payload through caller-supplied byte streams.
+It does not own this service, drive its queues, choose request/response
+schemas, open standard streams or pipes, or define a session. See the
+[local stream-framing guide](local-stream-framing.md).
+
 ## Replay ownership
 
 The engine applies patches through `RecordedWorld`. Canonical patch encoding
@@ -276,9 +282,9 @@ branch identity, and any external rollback policy.
   subscription stream, shutdown protocol, automatic retry loop, or telemetry
   exporter. Age status is diagnostic evidence, not an SLO or alert policy.
 - Observation payloads are owned vectors with an explicit bounded binary
-  envelope available to callers. Listeners, authenticated sessions,
-  pre-buffer stream framing, shared-memory leases, and automatic encoded
-  delivery are deferred.
+  envelope and header-first local stream framing available to callers.
+  Endpoint creation, operation schemas, sessions, authenticated listeners,
+  shared-memory leases, and automatic encoded delivery are deferred.
 - Recovery is into a fresh service from a complete in-memory point. Exact
   retained revisions can seed separate historical forks or replace a quiescent
   live service. A separate adapter can create/load immutable recovery files

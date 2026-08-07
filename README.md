@@ -16,8 +16,10 @@ scene revision that produced it.
 > winding fallback and bounded imported vertex normals. Owned observation
 > payloads also have an opt-in bounded version-one binary envelope that binds
 > them to canonical causal metadata for future transport adapters. It detects
-> corruption but supplies no listener, authentication, encryption, retention,
-> or automatic delivery. A bounded
+> corruption but supplies no authentication or encryption. A separate bounded
+> local-frame codec reads a fixed header and enforces control, bulk, and total
+> limits before buffering caller-owned stream bodies; it opens no process,
+> pipe, listener, or session and performs no automatic delivery. A bounded
 > in-process gateway, exact logical queries, and a
 > deterministic primitive imagination compiler are also available. The current
 > asset baseline adds content-addressed GLB geometry with optional finite vertex
@@ -69,6 +71,7 @@ implementations arrive:
 |---|---|
 | `cogniform-protocol` | Backend-neutral IDs, patches, receipts, limits, and observations |
 | `cogniform-observation` | Owned payload values plus bounded transport-neutral binary encoding and causal integrity binding |
+| `cogniform-local-transport` | Fixed bounded framing over caller-owned synchronous streams without endpoint or session authority |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
 | `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/primary-coordinate/material/embedded-PNG decoding, immutable upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
@@ -100,6 +103,9 @@ machine-readable payloads. The
 [observation-payload envelope guide](docs/protocol/observation-payload-envelope.md)
 specifies the opt-in binary layout, bounds, integrity limits, and future
 transport responsibilities. The
+[local stream-framing guide](docs/protocol/local-stream-framing.md) specifies
+the header-first pre-buffer bound, exact frame layout, synchronous I/O
+behavior, and deferred session responsibilities. The
 [local gateway guide](docs/protocol/local-gateway-and-imagination.md) documents
 command admission, idempotency, deterministic compilation, and logical queries.
 The [GLB asset guide](docs/assets/glb-subset.md) documents exact source
