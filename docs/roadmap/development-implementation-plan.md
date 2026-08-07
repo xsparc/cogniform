@@ -773,6 +773,34 @@ and release action remain excluded. See
 [canonical scenario guide](../getting-started/canonical-scenario.md), and the
 [validation baseline](../operations/validation-baseline.md).
 
+### PR 36 - CF036: Offline exact-hash asset-source inspection
+
+Outcome: a trusted local operator can verify one caller-mapped immutable asset
+source against its expected SHA-256 identity without decoding it, selecting a
+GPU adapter, or exposing its path or payload.
+
+Gate: `cogniform-cli inspect-asset <content-hash> <path>` accepts exactly one
+lowercase 64-character public `ContentHash` and one OS-native path. Hash syntax
+validates before filesystem work. The command reuses
+`AssetFileStore::default().load` so regular-file, final-symlink, size,
+allocation, growth, complete-read, and exact-hash checks remain singular.
+Success occurs only after complete verification and reports exactly the hash
+and bounded source byte count. Invalid arguments, file failures, and mismatch
+are nonzero with empty stdout and path/payload-redacted diagnostics; the file
+remains unchanged.
+
+Implemented contract: inspection drops the verified bytes without GLB/PNG
+decode, importer/service mutation, network access, upload, or GPU work. The CLI
+moves its existing workspace protocol edge from test-only to regular use; no
+external package, lockfile entry, storage API, engine, renderer, protocol type,
+or asset-format change. JSON, format validation, catalogs/discovery, manifests,
+automatic startup/import/upload/rehydration, profile selection, telemetry,
+transport, authentication, CI expansion, deployment, versioning, and release
+action remain excluded. See
+[ADR 0036](../adr/0036-offline-asset-source-inspection.md), the
+[asset-file guide](../persistence/asset-files.md), and the
+[validation baseline](../operations/validation-baseline.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -780,7 +808,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
-  -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035
+  -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -928,6 +956,12 @@ Validation expands with capability:
   19-line human bytes, pre-GPU argument rejection, complete-before-output
   behavior, and controlled human/JSON GPU regression without a new engine,
   protocol, dependency, profile, tolerance, or supported-adapter boundary.
+- CF036: exact hash/path arity and lowercase hash parsing before file work;
+  valid immutable aggregate output; option-like OS-native path; mismatch and
+  non-file empty-stdout path/payload redaction; unchanged source bytes; reuse
+  of existing bounded storage checks; and structural CPU-only execution with
+  no decode, service, network, upload, GPU, external dependency, or release
+  boundary.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

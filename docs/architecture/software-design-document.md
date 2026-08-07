@@ -82,7 +82,9 @@ into the engine. CF034 similarly adds a versioned view over the existing
 controlled CPU measurement at the CLI boundary, with no engine or protocol
 encoding. CF035 adds the same boundary-preserving machine-readable option to
 the successful canonical scenario proof while retaining its default human
-report. Spatial
+report. CF036 lets the CLI invoke the existing bounded exact-hash asset load as
+a read-only aggregate diagnostic without moving filesystem authority or asset
+bytes into the engine. Spatial
 acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -173,6 +175,10 @@ load returns no bytes until the complete file matches the caller-supplied hash.
 Recovery-to-asset association, path discovery, retention, and explicit
 load/import/upload scheduling remain caller-owned rather than becoming a
 second recovery format or hidden service lifecycle.
+The CLI may verify one explicitly mapped asset file through that same bounded
+load and report only its expected hash and byte count. This inspection neither
+discovers content nor proves format safety and never schedules decode, service,
+or GPU work.
 
 Any retained exact revision can also be represented as a complete standalone
 replay prefix and restored into a separate fresh service. The point carries the
@@ -373,7 +379,9 @@ capture complete or exact-revision local recovery state, restore it into a
 fresh service, explicitly persist/load one immutable local recovery file or
 one independent exact-hash asset-source file, inspect one recovery file through
 the complete CPU restoration preflight without GPU initialization and emit an
-optional versioned CLI JSON report, run the controlled CPU measurement with an
+optional versioned CLI JSON report, inspect one asset-source file through its
+bounded exact-hash load without decoding or GPU initialization, run the
+controlled CPU measurement with an
 optional versioned CLI JSON report, run the canonical unattended scenario with
 an optional versioned CLI JSON proof, revert live recorded state,
 resolve assets, and explicitly evict one content hash from CPU/GPU residency.
@@ -407,6 +415,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Controlled measurement | The fixed CPU world fixture retains its human report and emits optional fixed-layout schema-v1 integer-nanosecond distributions that are explicitly informational only and written only after measurement completes |
 | Canonical scenario report | The fixed 64x64 end-to-end scenario retains its 19-line human report and emits optional fixed-layout schema-v1 adapter, revision, observation, identity, pixel, and replay evidence only after the scenario succeeds |
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
+| Asset source inspection | One explicit expected hash and CLI path pass the existing bounded regular-file load; success reports only hash and byte count, mutates no file or service, and performs no format decode or GPU work |
 | Headless render | Outward-wound reference cuboid plus extracted plane, sphere, and bounded direct metallic-roughness directional/point-lit scenes render without a visible window |
 | Machine outputs | Entity-ID probes are exact; exact unlit and tolerant direct-material color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
@@ -431,7 +440,8 @@ snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
 rotation, recovery-inspection profile selection, broader diagnostic schemas,
 including schemas beyond the versioned recovery, controlled-measurement, and
-canonical-scenario CLI reports, and model policy remain explicitly open.
+canonical-scenario CLI reports, machine-readable asset-source inspection,
+and model policy remain explicitly open.
 Defaults in the roadmap are
 planning assumptions, not production commitments.
 

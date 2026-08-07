@@ -13,10 +13,8 @@ workspace = true
 
 [dependencies]
 cogniform-engine.workspace = true
+cogniform-protocol.workspace = true
 cogniform-storage.workspace = true
 pollster = "=0.4.0"
 serde.workspace = true
 serde_json.workspace = true
-
-[dev-dependencies]
-cogniform-protocol.workspace = true

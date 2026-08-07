@@ -19,6 +19,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Controlled CPU measurement | Pass for declared CPU profile | Fixed fixture/sample metadata, unchanged human structure, fixed-layout schema-v1 integer-nanosecond distributions, complete-before-output behavior, and explicit informational-only status |
 | Canonical scenario report | Pass on validated profile | Unchanged 19-line human proof plus fixed-layout schema-v1 adapter/revision/observation/identity/pixel/replay evidence, complete-before-output behavior, and controlled cross-mode comparison |
 | Immutable asset source file | Pass on validated profile | Pre-I/O source-size/hash validation, create-new non-overwrite, bounded regular-file load, substitution/growth rejection, injected cleanup, and separate persisted rehydration continuation |
+| Offline asset-source inspection | Pass for declared CPU profile | Strict expected-hash input, bounded complete read-only identity validation, exact aggregate human output, unchanged file evidence, empty failure stdout, and path/payload redaction without decoder, service, or GPU construction |
 | Fresh-service restoration | Pass on validated profile | Complete replay and frame state restore revision/hash/query/idempotency and continue observation and append causality |
 | Historical recovery fork | Pass on validated profile | An exact retained revision restores into a separate fresh service, preserves the source, resumes from the source frame frontier, and continues query/observe/append causality |
 | Quiescent live revert | Pass on validated profile | A fully restored historical replacement swaps only after success, rejects transient blockers without mutation, clears named cache/asset state, preserves frame/prefix idempotency, and continues a new branch |
@@ -55,6 +56,9 @@ This does not make the current `0.0.0` workspace a supported release.
 - [ ] Re-run `measure-world` human and schema-version-one JSON output in release
       mode and append rather than overwrite
       the dated baseline if hardware, fixture, or result materially changes.
+- [ ] Re-run the CPU-only asset-source inspection black-box contract and
+      confirm exact hash/byte output, file immutability, bounded failure,
+      empty failure stdout, and path/payload redaction.
 - [ ] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
       matrix, recovery-envelope, recovery-file, and asset-file
       formats/limitations, offline inspection profile/versioned output, known
@@ -106,6 +110,11 @@ The GitHub release must be marked prerelease and state:
 - exact-hash asset sources are separate create-new plaintext artifacts with no
   recovery manifest, content discovery, catalog, automatic retention/eviction,
   automatic rehydration, writer authentication, or remote-storage guarantee;
+- offline asset-source inspection accepts one caller-supplied expected hash and
+  path and proves only bounded byte identity. It has human output only, can
+  disclose a correlatable hash, and does not validate format, renderability,
+  authenticity, freshness, authorization, recovery association, or GPU
+  readiness, nor schedule import, upload, or rehydration;
 - historical recovery supports caller-coordinated fresh forks and quiescent
   live replacement, but provides no automatic rollback, authorization,
   freshness, branch manager, or global frame namespace across concurrent

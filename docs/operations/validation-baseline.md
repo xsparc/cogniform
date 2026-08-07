@@ -45,6 +45,9 @@ informational-only evidence was collected on 2026-08-08.
 CF035 fixed-layout schema-version-one canonical-scenario JSON, unchanged human
 bytes, pre-GPU argument rejection, complete-before-output behavior, and
 controlled cross-mode GPU evidence was collected on 2026-08-08.
+CF036 CPU-only immutable asset-source inspection, exact lowercase-hash
+argument handling, file immutability, bounded complete identity validation,
+and path/payload-redacted failure evidence was collected on 2026-08-08.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -196,6 +199,34 @@ exact-pinned vendored `serde` and `serde_json` packages; no package, version,
 vendor source, engine, renderer, or recovery-file format changed. Because the
 slice is entirely at the CPU CLI presentation boundary, no GPU test or new
 adapter claim is required.
+
+## Controlled asset-source inspection commands
+
+CF036 ran the focused CLI and storage contracts without a GPU adapter:
+
+```text
+cargo check -p cogniform-cli --locked --offline
+cargo test -p cogniform-cli --bin cogniform-cli --locked --offline
+cargo test -p cogniform-cli --test asset_inspection --locked --offline
+cargo test -p cogniform-storage --test asset_file --locked --offline
+```
+
+CLI unit and black-box tests pin strict public `ContentHash` parsing, exact
+one-hash/one-path argument handling, byte-for-byte success output, ordinary
+option-like filenames, unchanged input files, empty failure stdout, and
+path/payload-redacted hash-mismatch and filesystem diagnostics. The existing
+storage contract retains the default 16 MiB bound, final regular-file check,
+snapshotted allocation, fixed-buffer read, growth probe, and complete SHA-256
+comparison before bytes return. The CLI drops those bytes after recording the
+checked length and never constructs a decoder, service, or `HeadlessRenderer`.
+No GPU test or additional adapter claim is required.
+
+Passing proves only that one trusted local hash-to-path mapping contains the
+expected bytes under the default source limit. It does not prove format
+validity, importer acceptance, renderability, authenticity, freshness,
+authorization, recovery association, or GPU readiness, and it schedules no
+import, upload, or rehydration. Output is human-only; adding a machine-readable
+asset-source diagnostic remains a separately reviewed schema change.
 
 ## Controlled vertex-normal commands
 

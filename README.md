@@ -168,6 +168,19 @@ Consumers must require `schema_version` 1. The JSON still contains potentially
 sensitive aggregate hashes and counts; failures write no partial JSON to
 stdout.
 
+To verify one caller-mapped immutable asset source against its expected hash
+without decoding it or selecting a GPU adapter:
+
+```text
+cargo run -p cogniform-cli --locked --offline -- inspect-asset <content-hash> assets/triangle.glb
+```
+
+The command reports only the verified lowercase hash and bounded source byte
+count. Paths and payloads remain redacted and the file is not modified. A pass
+does not prove format validity, renderability, writer authenticity, freshness,
+or association with a recovery point; see the
+[asset-file guide](docs/persistence/asset-files.md).
+
 The controlled CPU fixture is informational and should be run in the optimized
 profile:
 
