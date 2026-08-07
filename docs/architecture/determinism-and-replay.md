@@ -107,13 +107,21 @@ through a fixed stack buffer, and rejects growth with an extra-byte probe. The
 complete envelope must then pass exact length and digest validation; a verified
 replay prefix is never returned as file-load success.
 
+`inspect_recovery_point` runs the exact synchronous CPU preflight shared with
+fresh-service restoration and returns only aggregate entry/byte counts,
+revision/frame values, and final logical/replay hashes. The CLI composes that
+contract with `RecoveryFileStore::load` as `inspect-recovery <path>` under its
+fixed local profile. It retains no reconstructed world or payload and performs
+no adapter selection, GPU initialization, file mutation, or service adoption.
+
 Errors retain operation and standard error kind but no path or content. Files
 remain plaintext and unauthenticated. The caller owns parent-directory trust,
 permissions, confidentiality, freshness, retention, and cleanup of a reported
 partial file. File synchronization is not a cross-platform directory-entry or
 power-loss guarantee. See the
 [recovery-file guide](../persistence/recovery-files.md) and
-[ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md).
+[ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md), and
+[ADR 0032](../adr/0032-offline-recovery-file-inspection.md).
 
 ## Historical recovery forks
 

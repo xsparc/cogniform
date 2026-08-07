@@ -30,7 +30,7 @@ pub use cogniform_renderer::{
     AdapterSummary, AssetUploadAdmission, AssetUploadOutcome, RendererAssetEviction,
     RendererAssetStats, RendererError,
 };
-pub use engine::{CogniformEngine, EngineConfig};
+pub use engine::{CogniformEngine, EngineConfig, inspect_recovery_point};
 pub use error::{EngineError, GatewayError, LocalRevertError, LocalServiceError, ObservationError};
 pub use gateway::{
     GatewayAdmission, GatewayCommand, GatewayConfig, GatewayQueueStats, GatewayResponse,
@@ -43,7 +43,7 @@ pub use measurement::{
 pub use observation::{
     EntityVisibility, Observation, ObservationPayload, ObservationQueue, ObservationRequest,
 };
-pub use recovery::{EngineRecoveryPoint, RecoveryPointCodecError};
+pub use recovery::{EngineRecoveryPoint, RecoveryInspection, RecoveryPointCodecError};
 pub use scenario::{
     CanonicalScenarioConfig, CanonicalScenarioError, CanonicalScenarioReport, ObservationEvidence,
     run_canonical_scenario,

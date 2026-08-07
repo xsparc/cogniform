@@ -69,12 +69,14 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-renderer` | `wgpu` feature negotiation, headless targets, primitive rendering, and color/depth/normal/ID outputs | Consumes extracted render data; never mutable world access |
 | `cogniform-engine` | Bounded channels, domain lifecycle, frame/revision correlation, composition, and complete in-memory restoration | Orchestrates through public interfaces; does not absorb domain state or perform persistence |
 | `cogniform-storage` | Explicit create-new and bounded-load adapters for local recovery envelopes and exact-hash asset sources | Depends on public engine recovery values, replay bounds, and asset identities; owns filesystem authority without world, renderer, replay, decode, or upload access |
-| `cogniform-cli` | Local sample client, replay and diagnostic commands | Depends on public engine/protocol interfaces only |
+| `cogniform-cli` | Local sample client, replay and diagnostic commands | Composes public engine/protocol interfaces and explicit service adapters such as storage; owns no domain state |
 
 CF006 establishes the semantic compiler as a separate pure crate while its
 offline gateway remains in the engine composition boundary. CF018 establishes
-recovery-file persistence as a separate service-domain adapter, and CF019 adds
-separate exact-hash asset-source files without creating a catalog. Spatial
+recovery-file persistence as a separate service-domain adapter, CF019 adds
+separate exact-hash asset-source files without creating a catalog, and CF032
+allows the CLI composition root to invoke that adapter and the engine's exact
+CPU restoration preflight for offline diagnostics. Spatial
 acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -92,14 +94,18 @@ protocol <- world <- replay
     +---------- engine ------------+
                    ^       ^
                    |       |
-                  CLI    storage
+                   |     storage
+                   |       ^
+                   +--- CLI
 ```
 
 The diagram shows allowed information flow, not permission to create circular Cargo dependencies. Shared render DTOs belong in a dependency-neutral boundary rather than making world depend on renderer.
 
 The compiler depends only on protocol values and deterministic hashing. Engine
 may orchestrate compiler, world, renderer, and replay through their public
-interfaces; compiler never reads mutable world state.
+interfaces; compiler never reads mutable world state. Storage depends on the
+public recovery and asset identities it persists. The CLI may compose engine
+and storage but must not move filesystem authority into the engine.
 
 ## 3. Core contracts and invariants
 
@@ -345,7 +351,8 @@ procedure through an ordinary patch, apply patch, query scene,
 request observation, subscribe to bounded feedback, explain compilation,
 capture complete or exact-revision local recovery state, restore it into a
 fresh service, explicitly persist/load one immutable local recovery file or
-one independent exact-hash asset-source file, revert live recorded state,
+one independent exact-hash asset-source file, inspect one recovery file through
+the complete CPU restoration preflight without GPU initialization, revert live recorded state,
 resolve assets, and explicitly evict one content hash from CPU/GPU residency.
 Initial
 implementation can use in-process Rust types and
@@ -373,6 +380,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Historical fork | An exact retained revision restores into a fresh service without source mutation or reuse of a frame issued before capture, then continues query/observe/append causality |
 | Live revert | A quiescent service builds and validates an exact historical replacement before swap, preserves the source frame frontier, clears named transient/asset state, and continues retained idempotency and ordinary branch append |
 | Recovery file | A new immutable local file stores one complete bounded envelope without overwrite; bounded load rejects non-files, growth, corruption, truncation, extension, and over-limit input before restoration |
+| Recovery inspection | One explicit CLI path is loaded read-only and passes the same configuration, complete-replay, authoritative-world, logical-hash, and frame-frontier preflight as restoration without adapter selection; output is aggregate and path/payload redacted |
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
 | Headless render | Outward-wound reference cuboid plus extracted plane, sphere, and bounded direct metallic-roughness directional/point-lit scenes render without a visible window |
 | Machine outputs | Entity-ID probes are exact; exact unlit and tolerant direct-material color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
@@ -396,7 +404,8 @@ protocol/authentication, tenancy, observation retention, automatic startup,
 recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
-rotation, and model policy remain explicitly open. Defaults in the roadmap are
+rotation, recovery-inspection profile selection and machine-readable output,
+and model policy remain explicitly open. Defaults in the roadmap are
 planning assumptions, not production commitments.
 
 ## 11. Verified foundation references

@@ -35,7 +35,10 @@ scene revision that produced it.
 > complete caller-owned in-memory recovery point. That point has a deterministic
 > bounded envelope for portable corruption detection. An explicit storage
 > adapter can create a new immutable local recovery file and load it within the
-> same bound. It can separately retain one exact-hash asset source in another
+> same bound. The CLI can inspect one such file read-only through the complete
+> CPU restoration preflight, reporting only aggregate revision/frame/count/hash
+> evidence without selecting a GPU or exposing the path or replay payload. It
+> can separately retain one exact-hash asset source in another
 > immutable bounded file so a caller can explicitly rehydrate a restored
 > logical reference. Neither adapter claims encryption, authentication,
 > automatic startup/rehydration, a recovery-to-asset catalog, or crash-atomic
@@ -129,6 +132,17 @@ cargo run -p cogniform-cli --locked --offline -- scenario
 The command opens no window and performs no network call. It verifies the room,
 table, light, camera, atomic update, exact query, color/entity-ID/visibility
 causality, and replay hash contract before returning success.
+
+To inspect one immutable recovery file without selecting a GPU adapter:
+
+```text
+cargo run -p cogniform-cli --locked --offline -- inspect-recovery state/checkpoint-0001.cnfr
+```
+
+This read-only diagnostic uses the fixed `default-local-64x64` profile and
+prints only aggregate replay/revision/frame/hash evidence. A pass does not prove
+writer authenticity, freshness, asset residency, or GPU/service readiness; see
+the [recovery-file guide](docs/persistence/recovery-files.md).
 
 The controlled CPU fixture is informational and should be run in the optimized
 profile:

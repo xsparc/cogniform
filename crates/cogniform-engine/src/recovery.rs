@@ -1,7 +1,8 @@
 use core::fmt;
 
-use cogniform_protocol::FrameId;
-use cogniform_replay::{ReplayConfig, ReplayConfigError};
+use cogniform_protocol::{FrameId, SceneRevision};
+use cogniform_replay::{ReplayConfig, ReplayConfigError, ReplayEntryHash};
+use cogniform_world::LogicalSceneHash;
 use sha2::{Digest, Sha256};
 
 const RECOVERY_MAGIC: &[u8; 6] = b"CNFRCP";
@@ -13,6 +14,77 @@ const REPLAY_LENGTH_OFFSET: usize = FRAME_OFFSET + size_of::<u64>();
 const REPLAY_OFFSET: usize = REPLAY_LENGTH_OFFSET + size_of::<u32>();
 const DIGEST_BYTES: usize = 32;
 const ENVELOPE_OVERHEAD_BYTES: usize = REPLAY_OFFSET + DIGEST_BYTES;
+
+/// Aggregate evidence produced by CPU-only recovery inspection.
+///
+/// The summary proves that the complete replay stream and next-frame frontier
+/// satisfy the same pre-GPU restoration checks as a fresh engine. It contains
+/// no replay payload, entity value, filesystem path, renderer, or asset state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecoveryInspection {
+    replay_entries: u32,
+    replay_bytes: u64,
+    scene_revision: SceneRevision,
+    next_frame_id: FrameId,
+    logical_hash: LogicalSceneHash,
+    final_entry_hash: ReplayEntryHash,
+}
+
+impl RecoveryInspection {
+    pub(crate) const fn new(
+        replay_entries: u32,
+        replay_bytes: u64,
+        scene_revision: SceneRevision,
+        next_frame_id: FrameId,
+        logical_hash: LogicalSceneHash,
+        final_entry_hash: ReplayEntryHash,
+    ) -> Self {
+        Self {
+            replay_entries,
+            replay_bytes,
+            scene_revision,
+            next_frame_id,
+            logical_hash,
+            final_entry_hash,
+        }
+    }
+
+    /// Returns the number of completely verified accepted events.
+    #[must_use]
+    pub const fn replay_entries(self) -> u32 {
+        self.replay_entries
+    }
+
+    /// Returns the complete encoded replay-stream byte count.
+    #[must_use]
+    pub const fn replay_bytes(self) -> u64 {
+        self.replay_bytes
+    }
+
+    /// Returns the authoritative revision reconstructed by replay.
+    #[must_use]
+    pub const fn scene_revision(self) -> SceneRevision {
+        self.scene_revision
+    }
+
+    /// Returns the first frame identity available to a later restoration.
+    #[must_use]
+    pub const fn next_frame_id(self) -> FrameId {
+        self.next_frame_id
+    }
+
+    /// Returns the canonical logical hash reconstructed by replay.
+    #[must_use]
+    pub const fn logical_hash(self) -> LogicalSceneHash {
+        self.logical_hash
+    }
+
+    /// Returns the final replay-entry hash, or the zero predecessor when empty.
+    #[must_use]
+    pub const fn final_entry_hash(self) -> ReplayEntryHash {
+        self.final_entry_hash
+    }
+}
 
 /// Complete in-memory state required to restore engine causality.
 ///
