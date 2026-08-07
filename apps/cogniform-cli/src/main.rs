@@ -43,13 +43,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             measure::run()
         }
         Some(command) if command == OsStr::new("inspect-recovery") => {
-            let path = arguments
+            let first = arguments
                 .next()
                 .ok_or_else(|| invalid_input("inspect-recovery requires one path"))?;
+            let (output, candidate) = if first == OsStr::new("--json") {
+                (
+                    recovery::RecoveryOutput::Json,
+                    arguments
+                        .next()
+                        .ok_or_else(|| invalid_input("inspect-recovery requires one path"))?,
+                )
+            } else {
+                (recovery::RecoveryOutput::Human, first)
+            };
+            let path = if candidate == OsStr::new("--") {
+                arguments
+                    .next()
+                    .ok_or_else(|| invalid_input("inspect-recovery requires one path"))?
+            } else {
+                candidate
+            };
             if arguments.next().is_some() {
                 return Err(invalid_input("inspect-recovery accepts exactly one path"));
             }
-            recovery::run(&path)
+            recovery::run(&path, output)
         }
         Some(command) if command == OsStr::new("help") || command == OsStr::new("--help") => {
             if arguments.next().is_some() {
@@ -104,7 +121,7 @@ fn print_usage() {
     println!("Usage:");
     println!("  cogniform-cli scenario  Run the canonical unattended MVP scenario");
     println!("  cogniform-cli measure-world  Measure the controlled CPU world fixture");
-    println!("  cogniform-cli inspect-recovery <path>  Verify an immutable recovery file");
+    println!("  cogniform-cli inspect-recovery [--json] <path>  Verify an immutable recovery file");
     println!("  cogniform-cli --help    Show this help");
 }
 

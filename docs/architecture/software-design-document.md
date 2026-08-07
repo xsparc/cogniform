@@ -74,9 +74,11 @@ The first workspace should prove boundaries without prematurely creating every e
 CF006 establishes the semantic compiler as a separate pure crate while its
 offline gateway remains in the engine composition boundary. CF018 establishes
 recovery-file persistence as a separate service-domain adapter, CF019 adds
-separate exact-hash asset-source files without creating a catalog, and CF032
+separate exact-hash asset-source files without creating a catalog, CF032
 allows the CLI composition root to invoke that adapter and the engine's exact
-CPU restoration preflight for offline diagnostics. Spatial
+CPU restoration preflight for offline diagnostics, and CF033 adds a versioned
+machine-readable view at that CLI boundary without moving encoding into the
+engine. Spatial
 acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -352,7 +354,8 @@ request observation, subscribe to bounded feedback, explain compilation,
 capture complete or exact-revision local recovery state, restore it into a
 fresh service, explicitly persist/load one immutable local recovery file or
 one independent exact-hash asset-source file, inspect one recovery file through
-the complete CPU restoration preflight without GPU initialization, revert live recorded state,
+the complete CPU restoration preflight without GPU initialization and emit an
+optional versioned CLI JSON report, revert live recorded state,
 resolve assets, and explicitly evict one content hash from CPU/GPU residency.
 Initial
 implementation can use in-process Rust types and
@@ -380,7 +383,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Historical fork | An exact retained revision restores into a fresh service without source mutation or reuse of a frame issued before capture, then continues query/observe/append causality |
 | Live revert | A quiescent service builds and validates an exact historical replacement before swap, preserves the source frame frontier, clears named transient/asset state, and continues retained idempotency and ordinary branch append |
 | Recovery file | A new immutable local file stores one complete bounded envelope without overwrite; bounded load rejects non-files, growth, corruption, truncation, extension, and over-limit input before restoration |
-| Recovery inspection | One explicit CLI path is loaded read-only and passes the same configuration, complete-replay, authoritative-world, logical-hash, and frame-frontier preflight as restoration without adapter selection; output is aggregate and path/payload redacted |
+| Recovery inspection | One explicit CLI path is loaded read-only and passes the same configuration, complete-replay, authoritative-world, logical-hash, and frame-frontier preflight as restoration without adapter selection; default human output is unchanged and optional deterministic schema-v1 JSON remains aggregate and path/payload redacted |
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
 | Headless render | Outward-wound reference cuboid plus extracted plane, sphere, and bounded direct metallic-roughness directional/point-lit scenes render without a visible window |
 | Machine outputs | Entity-ID probes are exact; exact unlit and tolerant direct-material color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
@@ -404,7 +407,7 @@ protocol/authentication, tenancy, observation retention, automatic startup,
 recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
-rotation, recovery-inspection profile selection and machine-readable output,
+rotation, recovery-inspection profile selection, broader diagnostic schemas,
 and model policy remain explicitly open. Defaults in the roadmap are
 planning assumptions, not production commitments.
 

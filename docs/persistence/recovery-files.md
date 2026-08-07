@@ -1,7 +1,8 @@
 # Immutable local recovery files
 
-Status: implemented by CF018 for explicit caller-driven local persistence and
-extended by CF032 with read-only offline inspection.
+Status: implemented by CF018 for explicit caller-driven local persistence,
+extended by CF032 with read-only offline inspection, and extended by CF033
+with an opt-in versioned CLI JSON report.
 
 `cogniform-storage` keeps filesystem authority outside `cogniform-engine`.
 It persists the existing `EngineRecoveryPoint` envelope; it does not define a
@@ -69,6 +70,32 @@ service restoration. A successful report contains only:
 - final scene revision and next frame identity; and
 - final logical scene hash and replay-entry hash.
 
+The default report above is human-readable and remains unchanged. Automation
+can request the CLI-owned version-one JSON report:
+
+```text
+cargo run -p cogniform-cli --locked --offline -- inspect-recovery --json state/checkpoint-0001.cnfr
+```
+
+Version one is one compact JSON object followed by exactly one line-feed byte.
+Field order, names, and JSON types are part of the tested CLI contract:
+
+| Order | Field | JSON type | Meaning |
+|---:|---|---|---|
+| 1 | `schema_version` | number | Exact value `1` |
+| 2 | `profile` | string | Exact value `default-local-64x64` |
+| 3 | `replay_entries` | number | Verified replay entry count |
+| 4 | `replay_bytes` | number | Encoded replay byte count |
+| 5 | `scene_revision` | number | Final authoritative revision |
+| 6 | `next_frame` | number | Next unreserved frame identity |
+| 7 | `logical_hash` | string | Lowercase hexadecimal logical scene hash |
+| 8 | `final_entry_hash` | string | Lowercase hexadecimal final replay-entry hash |
+
+Use `inspect-recovery --json -- <path>` when the exact path begins with the
+reserved filename `--json`. Scripts must select and validate
+`schema_version`; do not parse the human output. Any incompatible report
+change requires a new schema version.
+
 The command performs no write, directory creation, adapter selection, GPU
 initialization, service restoration, asset loading, or network work. Both
 success and failure output omit the supplied path and replay payload. A passing
@@ -94,14 +121,17 @@ The adapter provides no directory creation, overwrite, rename, delete, file
 discovery, snapshot catalog, retention/rotation, automatic checkpoint,
 automatic startup/rollback, encryption, signing, key management, remote or
 object storage, bundled asset/transient persistence, or background worker.
-The inspection command adds no discovery, profile negotiation, machine-readable
-output schema, or automatic restore behavior.
+The inspection command adds no discovery, profile negotiation, JSON input,
+general diagnostic schema, or automatic restore behavior. Aggregate hashes,
+counts, revisions, and frame identities can still be sensitive correlation
+data even though the report omits the path and payload.
 Exact-hash asset sources may be persisted independently through
 `AssetFileStore`; Cogniform does not associate those files with a recovery
 point or load them automatically.
 
 See [ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md),
-[ADR 0032](../adr/0032-offline-recovery-file-inspection.md), the
+[ADR 0032](../adr/0032-offline-recovery-file-inspection.md),
+[ADR 0033](../adr/0033-versioned-recovery-inspection-json.md), the
 [asset-file guide](asset-files.md), the
 [replay guide](../architecture/determinism-and-replay.md), and the
 [failure and recovery guide](../operations/failure-and-recovery.md).

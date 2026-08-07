@@ -84,6 +84,9 @@ release yet; the current workspace version remains `0.0.0`.
 - CPU-only aggregate recovery inspection plus a read-only
   `inspect-recovery <path>` CLI command that reuses the complete restoration
   preflight and redacts paths and replay payloads;
+- deterministic compact schema-version-one JSON for opt-in recovery inspection,
+  with exact fields/types/order, unchanged human output, pre-output validation,
+  empty failure stdout, and a `--` escape for the reserved `--json` filename;
 - separate immutable exact-hash asset-source files with pre-I/O size and
   identity checks, shared create-new/sync/cleanup guarantees, bounded
   regular-file loading, and explicit restart rehydration evidence;
@@ -97,6 +100,9 @@ release yet; the current workspace version remains `0.0.0`.
   `inspect_recovery_point`, while the CLI composition root now depends on the
   existing storage crate. These are additive surfaces in the still-unpublished
   `0.0.0` workspace; no version or release action was taken;
+- `cogniform-cli` now directly reuses the existing exact-pinned vendored
+  `serde` and `serde_json` packages for its private schema-v1 inspection view;
+  no package, version, engine/protocol schema, or recovery-file format changed;
 - `GatewayQueueStats`, `LocalServiceStatus`, `AssetStoreStats`, and
   `RendererAssetStats` add optional elapsed-microsecond age fields. This is an
   additive runtime contract and a source-breaking change for exhaustive public
@@ -166,9 +172,10 @@ release yet; the current workspace version remains `0.0.0`.
   provide no automatic startup, overwrite, directory-sync guarantee,
   encryption, authentication, or key management; there is no asset
   discovery/catalog, retention/eviction, bundle, or automatic rehydration.
-  Offline inspection uses one fixed profile and has no machine-readable output
-  schema, authenticity/freshness decision, asset validation, or GPU readiness
-  claim.
+  Offline inspection uses one fixed profile. Its optional JSON is CLI schema
+  version one and has no JSON input, broader diagnostics contract,
+  authenticity/freshness decision, asset validation, or GPU readiness claim;
+  aggregate hashes and counts can still be sensitive.
   In-place revert requires drained transient work, clears asset residency, and
   supplies no automatic rollback or freshness policy;
   future frame identity across concurrently live branches is

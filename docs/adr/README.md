@@ -38,5 +38,6 @@ earlier one and links the history.
 | [0030](0030-explicit-content-hash-asset-eviction.md) | Accepted | Reclaim all CPU/GPU asset state for one content hash through an explicit caller-driven operation |
 | [0031](0031-monotonic-pending-work-age-status.md) | Accepted | Report monotonic oldest-pending age for every caller-driven local-service queue |
 | [0032](0032-offline-recovery-file-inspection.md) | Accepted | Inspect one immutable recovery file through the exact CPU restoration preflight without GPU or payload exposure |
+| [0033](0033-versioned-recovery-inspection-json.md) | Accepted | Emit a deterministic versioned recovery-inspection JSON report at the CLI boundary |
 
 New records use four sections: context, decision, consequences, and status.

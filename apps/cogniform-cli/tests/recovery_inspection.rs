@@ -53,6 +53,42 @@ fn valid_recovery_is_verified_without_gpu_or_path_output() {
 }
 
 #[test]
+fn json_recovery_report_is_exact_versioned_and_path_redacted() {
+    let directory = TestDirectory::new("json");
+    let path = directory.path().join("--json");
+    let config = EngineConfig::new(64, 64);
+    let recovery = empty_recovery(7);
+    RecoveryFileStore::new(config.replay)
+        .unwrap()
+        .create_new(&path, &recovery)
+        .unwrap();
+    let inspection = inspect_recovery_point(&config, &recovery).unwrap();
+    let before = fs::read(&path).unwrap();
+
+    let output = command()
+        .current_dir(directory.path())
+        .args(["inspect-recovery", "--json", "--", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let expected = format!(
+        "{{\"schema_version\":1,\"profile\":\"default-local-64x64\",\
+         \"replay_entries\":0,\"replay_bytes\":{},\"scene_revision\":0,\
+         \"next_frame\":7,\"logical_hash\":\"{}\",\
+         \"final_entry_hash\":\"{}\"}}\n",
+        inspection.replay_bytes(),
+        inspection.logical_hash(),
+        inspection.final_entry_hash(),
+    );
+    assert_eq!(stdout, expected);
+    assert!(!stdout.contains("--json"));
+    assert!(!stdout.contains("CNFRPL1"));
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
 fn semantic_replay_failure_is_nonzero_and_path_redacted() {
     let directory = TestDirectory::new("semantic");
     let path = directory.path().join("secret-semantic-marker.cnf");
@@ -68,6 +104,7 @@ fn semantic_replay_failure_is_nonzero_and_path_redacted() {
 
     let output = command()
         .arg("inspect-recovery")
+        .arg("--json")
         .arg(&path)
         .output()
         .unwrap();
@@ -144,6 +181,21 @@ fn inspection_arguments_and_help_are_exact() {
         "error: inspect-recovery requires one path\n"
     );
 
+    for option in ["--json", "--"] {
+        let missing = command()
+            .args(["inspect-recovery", option])
+            .output()
+            .unwrap();
+        assert!(!missing.status.success());
+        assert!(missing.stdout.is_empty());
+        assert_eq!(
+            String::from_utf8(missing.stderr)
+                .unwrap()
+                .replace("\r\n", "\n"),
+            "error: inspect-recovery requires one path\n"
+        );
+    }
+
     let extra = command()
         .args(["inspect-recovery", "first", "second"])
         .output()
@@ -152,6 +204,19 @@ fn inspection_arguments_and_help_are_exact() {
     assert!(extra.stdout.is_empty());
     assert_eq!(
         String::from_utf8(extra.stderr)
+            .unwrap()
+            .replace("\r\n", "\n"),
+        "error: inspect-recovery accepts exactly one path\n"
+    );
+
+    let extra_json = command()
+        .args(["inspect-recovery", "--json", "first", "second"])
+        .output()
+        .unwrap();
+    assert!(!extra_json.status.success());
+    assert!(extra_json.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(extra_json.stderr)
             .unwrap()
             .replace("\r\n", "\n"),
         "error: inspect-recovery accepts exactly one path\n"
@@ -169,7 +234,7 @@ fn inspection_arguments_and_help_are_exact() {
             "Usage:\n",
             "  cogniform-cli scenario  Run the canonical unattended MVP scenario\n",
             "  cogniform-cli measure-world  Measure the controlled CPU world fixture\n",
-            "  cogniform-cli inspect-recovery <path>  Verify an immutable recovery file\n",
+            "  cogniform-cli inspect-recovery [--json] <path>  Verify an immutable recovery file\n",
             "  cogniform-cli --help    Show this help\n",
         )
     );
