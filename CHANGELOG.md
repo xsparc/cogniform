@@ -103,6 +103,10 @@ release yet; the current workspace version remains `0.0.0`.
   inspection, with exact fields/types/order, unchanged human output,
   complete verification and serialization before stdout, option-like path
   handling, and empty failure stdout;
+- a separate `cogniform-observation` crate with a bounded deterministic
+  version-one binary envelope for all five owned observation payload kinds,
+  fixed big-endian layouts, strict canonical values and counts, typed failures,
+  and SHA-256 binding to canonical causal metadata before decoded allocation;
 - separate immutable exact-hash asset-source files with pre-I/O size and
   identity checks, shared create-new/sync/cleanup guarantees, bounded
   regular-file loading, and explicit restart rehydration evidence;
@@ -204,6 +208,10 @@ release yet; the current workspace version remains `0.0.0`.
   bounded byte identity only, not format validity, renderability, authenticity,
   freshness, recovery association, or authorization; hash values can still
   correlate private content.
+  Observation payload envelopes are in-memory corruption-detection values,
+  not authenticated or encrypted transport frames; the codec does not supply
+  a listener, session, authorization, rate limiting, pre-buffer stream cap,
+  shared memory, compression, retention, or automatic delivery.
   In-place revert requires drained transient work, clears asset residency, and
   supplies no automatic rollback or freshness policy;
   future frame identity across concurrently live branches is

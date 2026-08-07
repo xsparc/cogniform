@@ -23,6 +23,9 @@ pub use cogniform_assets::{
     AssetStoreEviction, AssetStoreStats, AssetUploadJob, AssetVertex, UnsupportedAssetPolicy,
     content_hash,
 };
+pub use cogniform_observation::{
+    EntityVisibility, ObservationEnvelopeError, ObservationPayload, ObservationPayloadLimits,
+};
 pub use cogniform_procedural::{
     BuiltinProcedure, CuboidGrid, ProcedureError, ProcedureLimits, ProcedureRequest,
 };
@@ -40,9 +43,7 @@ pub use measurement::{
     MeasurementError, MeasurementProfile, TimingDistribution, WorldMeasurement,
     measure_controlled_world_fixture,
 };
-pub use observation::{
-    EntityVisibility, Observation, ObservationPayload, ObservationQueue, ObservationRequest,
-};
+pub use observation::{Observation, ObservationQueue, ObservationRequest};
 pub use recovery::{EngineRecoveryPoint, RecoveryInspection, RecoveryPointCodecError};
 pub use scenario::{
     CanonicalScenarioConfig, CanonicalScenarioError, CanonicalScenarioReport, ObservationEvidence,

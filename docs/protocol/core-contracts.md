@@ -95,10 +95,16 @@ approved imported vertex normals may also be interpolated. Background pixels
 are absent. Structured visibility metadata
 has no pixel dimensions.
 
-Bulk image bytes and vectors are deliberately absent. Renderer and future
-transport adapters must keep payload storage separate from this causal
-envelope. Older schema-v1 clients that exhaustively enumerate observation kinds
-must update before accepting `normal` metadata.
+Bulk image bytes and vectors remain absent from canonical metadata. The
+separate `cogniform-observation` crate owns all five payload value types and an
+opt-in bounded version-one binary envelope. Its digest binds the exact
+canonical metadata JSON to fixed big-endian payload bytes, so adapters can
+keep bulk storage separate without inventing a new causal association. The
+codec performs no I/O and provides integrity detection rather than transport
+authentication or encryption. See the
+[observation-payload envelope guide](observation-payload-envelope.md). Older
+schema-v1 clients that exhaustively enumerate observation kinds must update
+before accepting `normal` metadata.
 
 ## Imaginations and logical queries
 

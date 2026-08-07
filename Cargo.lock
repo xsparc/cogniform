@@ -158,6 +158,7 @@ version = "0.0.0"
 dependencies = [
  "cogniform-assets",
  "cogniform-compiler",
+ "cogniform-observation",
  "cogniform-procedural",
  "cogniform-protocol",
  "cogniform-renderer",
@@ -165,6 +166,14 @@ dependencies = [
  "cogniform-world",
  "png",
  "pollster",
+ "sha2",
+]
+
+[[package]]
+name = "cogniform-observation"
+version = "0.0.0"
+dependencies = [
+ "cogniform-protocol",
  "sha2",
 ]
 

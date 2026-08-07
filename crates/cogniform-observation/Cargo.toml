@@ -1,0 +1,16 @@
+[package]
+name = "cogniform-observation"
+description = "Bounded transport-neutral observation payload envelopes for Cogniform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+cogniform-protocol.workspace = true
+sha2.workspace = true

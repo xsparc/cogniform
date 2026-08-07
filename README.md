@@ -13,7 +13,11 @@ scene revision that produced it.
 > directional/point direct metallic-roughness rendering, and revision-linked
 > color/depth/entity-ID/visibility plus
 > quantized world-space normal observations are implemented, including flat
-> winding fallback and bounded imported vertex normals. A bounded
+> winding fallback and bounded imported vertex normals. Owned observation
+> payloads also have an opt-in bounded version-one binary envelope that binds
+> them to canonical causal metadata for future transport adapters. It detects
+> corruption but supplies no listener, authentication, encryption, retention,
+> or automatic delivery. A bounded
 > in-process gateway, exact logical queries, and a
 > deterministic primitive imagination compiler are also available. The current
 > asset baseline adds content-addressed GLB geometry with optional finite vertex
@@ -64,6 +68,7 @@ implementations arrive:
 | Package | Intended responsibility |
 |---|---|
 | `cogniform-protocol` | Backend-neutral IDs, patches, receipts, limits, and observations |
+| `cogniform-observation` | Owned payload values plus bounded transport-neutral binary encoding and causal integrity binding |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
 | `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/primary-coordinate/material/embedded-PNG decoding, immutable upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
@@ -92,6 +97,9 @@ limitations. The
 [extraction and observation guide](docs/renderer/incremental-extraction-and-observations.md)
 documents sparse world updates, frame causality, pressure behavior, and owned
 machine-readable payloads. The
+[observation-payload envelope guide](docs/protocol/observation-payload-envelope.md)
+specifies the opt-in binary layout, bounds, integrity limits, and future
+transport responsibilities. The
 [local gateway guide](docs/protocol/local-gateway-and-imagination.md) documents
 command admission, idempotency, deterministic compilation, and logical queries.
 The [GLB asset guide](docs/assets/glb-subset.md) documents exact source
