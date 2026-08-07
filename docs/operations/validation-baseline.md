@@ -48,6 +48,9 @@ controlled cross-mode GPU evidence was collected on 2026-08-08.
 CF036 CPU-only immutable asset-source inspection, exact lowercase-hash
 argument handling, file immutability, bounded complete identity validation,
 and path/payload-redacted failure evidence was collected on 2026-08-08.
+CF037 fixed-layout schema-version-one asset-source inspection JSON, unchanged
+human bytes, complete-before-output serialization, option-like path behavior,
+and failure redaction evidence was collected on 2026-08-08.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -221,12 +224,22 @@ comparison before bytes return. The CLI drops those bytes after recording the
 checked length and never constructs a decoder, service, or `HeadlessRenderer`.
 No GPU test or additional adapter claim is required.
 
-Passing proves only that one trusted local hash-to-path mapping contains the
-expected bytes under the default source limit. It does not prove format
-validity, importer acceptance, renderability, authenticity, freshness,
+CF037 repeated the focused commands above after adding the CLI-only JSON view.
+Black-box tests pin the exact compact object, field order and JSON types,
+single-line-feed framing, lowercase hash, positional `--json` path behavior,
+unchanged human bytes, file immutability, empty failure stdout, and path/payload
+redaction. Report construction and serialization finish before the single
+stdout write. Existing CLI Serde dependencies are reused; no manifest,
+lockfile, package, version, vendor source, engine, renderer, protocol, storage,
+or asset format changed.
+
+Passing either output mode proves only that one trusted local hash-to-path
+mapping contains the expected bytes under the default source limit. It does
+not prove format validity, importer acceptance, renderability, authenticity,
+freshness,
 authorization, recovery association, or GPU readiness, and it schedules no
-import, upload, or rehydration. Output is human-only; adding a machine-readable
-asset-source diagnostic remains a separately reviewed schema change.
+import, upload, or rehydration. Schema version one remains CLI-private and
+establishes no general diagnostics contract.
 
 ## Controlled vertex-normal commands
 

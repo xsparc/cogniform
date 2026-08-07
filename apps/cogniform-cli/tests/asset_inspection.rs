@@ -38,19 +38,54 @@ fn valid_asset_is_verified_without_mutation_or_payload_output() {
 }
 
 #[test]
-fn option_like_path_is_an_ordinary_asset_path() {
+fn json_report_is_exact_versioned_and_path_payload_redacted() {
+    let directory = TestDirectory::new("json");
+    let path = directory.path().join("private-json-asset.glb");
+    let source = b"private json asset source";
+    fs::write(&path, source).unwrap();
+    let hash = content_hash(source);
+    let before = fs::read(&path).unwrap();
+
+    let output = command()
+        .arg("inspect-asset")
+        .arg("--json")
+        .arg(hash.to_string())
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    assert_eq!(
+        normalize(output.stdout),
+        format!(
+            "{{\"schema_version\":1,\"content_hash\":\"{hash}\",\"source_bytes\":{}}}\n",
+            source.len()
+        )
+    );
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn option_like_path_is_ordinary_in_both_output_modes() {
     let directory = TestDirectory::new("option-path");
     let path = directory.path().join("--json");
     let source = b"option-like path fixture";
     fs::write(&path, source).unwrap();
     let hash = content_hash(source);
 
-    let output = command()
+    let human = command()
         .current_dir(directory.path())
         .args(["inspect-asset", &hash.to_string(), "--json"])
         .output()
         .unwrap();
-    assert_success(&output);
+    assert_success(&human);
+
+    let json = command()
+        .current_dir(directory.path())
+        .args(["inspect-asset", "--json", &hash.to_string(), "--json"])
+        .output()
+        .unwrap();
+    assert_success(&json);
+    assert!(normalize(json.stdout).starts_with("{\"schema_version\":1,"));
     assert_eq!(fs::read(path).unwrap(), source);
 }
 
@@ -62,30 +97,45 @@ fn mismatch_and_non_file_failures_are_path_and_payload_redacted() {
     fs::write(&path, marker).unwrap();
     let expected = content_hash(b"different expected source");
 
-    let mismatch = command()
-        .arg("inspect-asset")
-        .arg(expected.to_string())
-        .arg(&path)
-        .output()
-        .unwrap();
-    assert_failure_redacted(mismatch, directory.marker(), marker);
+    for json in [false, true] {
+        let mut mismatch = command();
+        mismatch.arg("inspect-asset");
+        if json {
+            mismatch.arg("--json");
+        }
+        let mismatch = mismatch
+            .arg(expected.to_string())
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert_failure_redacted(mismatch, directory.marker(), marker);
 
-    let non_file = command()
-        .arg("inspect-asset")
-        .arg(content_hash(b"").to_string())
-        .arg(directory.path())
-        .output()
-        .unwrap();
-    let stderr = assert_failure_redacted(non_file, directory.marker(), marker);
-    assert_eq!(
-        stderr,
-        "error: asset file load target is not a regular file\n"
-    );
+        let mut non_file = command();
+        non_file.arg("inspect-asset");
+        if json {
+            non_file.arg("--json");
+        }
+        let non_file = non_file
+            .arg(content_hash(b"").to_string())
+            .arg(directory.path())
+            .output()
+            .unwrap();
+        let stderr = assert_failure_redacted(non_file, directory.marker(), marker);
+        assert_eq!(
+            stderr,
+            "error: asset file load target is not a regular file\n"
+        );
+    }
 }
 
 #[test]
 fn arguments_are_exact_and_reject_before_file_work() {
-    for arguments in [&["inspect-asset"][..], &["inspect-asset", valid_hash()][..]] {
+    for arguments in [
+        &["inspect-asset"][..],
+        &["inspect-asset", valid_hash()][..],
+        &["inspect-asset", "--json"][..],
+        &["inspect-asset", "--json", valid_hash()][..],
+    ] {
         let output = command().args(arguments).output().unwrap();
         assert!(!output.status.success());
         assert!(output.stdout.is_empty());
@@ -108,6 +158,17 @@ fn arguments_are_exact_and_reject_before_file_work() {
         );
     }
 
+    let repeated_json = command()
+        .args(["inspect-asset", "--json", "--json", "missing-path-marker"])
+        .output()
+        .unwrap();
+    assert!(!repeated_json.status.success());
+    assert!(repeated_json.stdout.is_empty());
+    assert_eq!(
+        normalize(repeated_json.stderr),
+        "error: inspect-asset content hash must be 64 lowercase hexadecimal characters\n"
+    );
+
     let extra = command()
         .args(["inspect-asset", valid_hash(), "first", "second"])
         .output()
@@ -116,7 +177,18 @@ fn arguments_are_exact_and_reject_before_file_work() {
     assert!(extra.stdout.is_empty());
     assert_eq!(
         normalize(extra.stderr),
-        "error: inspect-asset accepts one content hash and one path\n"
+        "error: inspect-asset accepts optional --json, one content hash, and one path\n"
+    );
+
+    let extra_json = command()
+        .args(["inspect-asset", "--json", valid_hash(), "first", "second"])
+        .output()
+        .unwrap();
+    assert!(!extra_json.status.success());
+    assert!(extra_json.stdout.is_empty());
+    assert_eq!(
+        normalize(extra_json.stderr),
+        "error: inspect-asset accepts optional --json, one content hash, and one path\n"
     );
 }
 

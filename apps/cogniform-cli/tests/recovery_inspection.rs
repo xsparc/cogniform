@@ -235,7 +235,7 @@ fn inspection_arguments_and_help_are_exact() {
             "  cogniform-cli scenario [--json]  Run the canonical unattended MVP scenario\n",
             "  cogniform-cli measure-world [--json]  Measure the controlled CPU world fixture\n",
             "  cogniform-cli inspect-recovery [--json] <path>  Verify an immutable recovery file\n",
-            "  cogniform-cli inspect-asset <content-hash> <path>  Verify an immutable asset source file\n",
+            "  cogniform-cli inspect-asset [--json] <content-hash> <path>  Verify an immutable asset source file\n",
             "  cogniform-cli --help    Show this help\n",
         )
     );

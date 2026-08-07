@@ -172,7 +172,7 @@ To verify one caller-mapped immutable asset source against its expected hash
 without decoding it or selecting a GPU adapter:
 
 ```text
-cargo run -p cogniform-cli --locked --offline -- inspect-asset <content-hash> assets/triangle.glb
+cargo run -p cogniform-cli --locked --offline -- inspect-asset [--json] <content-hash> assets/triangle.glb
 ```
 
 The command reports only the verified lowercase hash and bounded source byte
@@ -180,6 +180,9 @@ count. Paths and payloads remain redacted and the file is not modified. A pass
 does not prove format validity, renderability, writer authenticity, freshness,
 or association with a recovery point; see the
 [asset-file guide](docs/persistence/asset-files.md).
+Without `--json`, the three-line human report is unchanged. JSON is one compact
+line with CLI `schema_version` 1, `content_hash`, and `source_bytes`; consumers
+must require version 1. Failures write no partial JSON to stdout.
 
 The controlled CPU fixture is informational and should be run in the optimized
 profile:

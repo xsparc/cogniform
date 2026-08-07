@@ -801,6 +801,29 @@ action remain excluded. See
 [asset-file guide](../persistence/asset-files.md), and the
 [validation baseline](../operations/validation-baseline.md).
 
+### PR 37 - CF037: Versioned asset-source inspection JSON
+
+Outcome: scripts and local operators can consume stable machine-readable
+asset-source identity evidence without parsing the human report or weakening
+the CF036 storage and privacy boundary.
+
+Gate: `cogniform-cli inspect-asset --json <content-hash> <path>` retains the
+exact strict hash and single OS-native path contract. The default human output
+is byte-for-byte unchanged, and a positional path named `--json` remains
+ordinary input. After complete bounded file and SHA-256 verification, JSON is
+constructed and serialized in memory as one compact LF-terminated object with
+fixed order and types: integer `schema_version` 1, lowercase string
+`content_hash`, and integer `source_bytes`. Failures are nonzero with empty
+stdout and path/payload-redacted diagnostics in both modes.
+
+Implemented contract: the schema is private to the CLI and reuses its existing
+Serde dependencies. No package, vendor, lockfile, storage API, engine,
+renderer, protocol, asset-format, decode, service, upload, rehydration, GPU,
+CI, deployment, version, or release boundary changes. See
+[ADR 0037](../adr/0037-versioned-asset-source-inspection-json.md), the
+[asset-file guide](../persistence/asset-files.md), and the
+[validation baseline](../operations/validation-baseline.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -808,7 +831,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
-  -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036
+  -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -962,6 +985,11 @@ Validation expands with capability:
   of existing bounded storage checks; and structural CPU-only execution with
   no decode, service, network, upload, GPU, external dependency, or release
   boundary.
+- CF037: exact compact schema-version-one asset-source inspection JSON, fixed
+  field order/types and LF framing, lowercase hash, unchanged human bytes,
+  positional `--json` filename behavior, complete verification and in-memory
+  serialization before stdout, empty failure stdout, redaction, and no new
+  package, lockfile, core schema, or GPU boundary.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

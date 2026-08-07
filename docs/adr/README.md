@@ -42,5 +42,6 @@ earlier one and links the history.
 | [0034](0034-versioned-controlled-measurement-json.md) | Accepted | Emit versioned informational controlled-measurement JSON at the CLI boundary |
 | [0035](0035-versioned-canonical-scenario-json.md) | Accepted | Emit a deterministic versioned canonical-scenario proof at the CLI boundary |
 | [0036](0036-offline-asset-source-inspection.md) | Accepted | Verify one immutable asset-source file against its expected content hash without decode or GPU work |
+| [0037](0037-versioned-asset-source-inspection-json.md) | Accepted | Emit deterministic versioned asset-source inspection JSON at the CLI boundary |
 
 New records use four sections: context, decision, consequences, and status.
