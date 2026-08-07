@@ -669,6 +669,32 @@ deployment, and release action remain excluded. See
 [local gateway guide](../protocol/local-gateway-and-imagination.md), and the
 [local service guide](../protocol/local-service.md).
 
+### PR 32 - CF032: Offline recovery-file inspection
+
+Outcome: a local operator can validate one immutable recovery file through the
+complete CPU restoration preflight and inspect bounded aggregate evidence
+without requiring a compatible GPU or exposing replay contents.
+
+Gate: `inspect_recovery_point` reuses restoration configuration, complete-tail,
+frame-frontier, authoritative replay, revision, and logical-hash checks and
+returns only entry/byte counts, final revision, next frame, logical hash, and
+final replay-entry hash. `cogniform-cli inspect-recovery <path>` accepts exactly
+one OS-native path, uses the declared `default-local-64x64` profile, loads
+through `RecoveryFileStore`, performs no writes or adapter selection, and keeps
+success/error output path- and payload-redacted.
+
+Implemented contract: malformed, corrupt, truncated, extended, oversized,
+growing, or non-file inputs fail at the existing bounded storage/envelope
+boundary; semantically invalid replay or frame state fails at the exact engine
+preflight. Passing proves CPU restorable state under the declared profile, not
+GPU compatibility, asset residency, authenticity, freshness, or authorization.
+Automatic startup/restore, catalogs, path discovery, latest pointers, directory
+sync, asset association/rehydration, profile selection, JSON output, remote
+transport, authentication, CI expansion, deployment, versioning, and release
+action remain excluded. See
+[ADR 0032](../adr/0032-offline-recovery-file-inspection.md) and the
+[recovery-file guide](../persistence/recovery-files.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -676,7 +702,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF005 -> CF006 -> CF007 -> CF008 -> CF009 -> CF011 -> CF012 -> CF013
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
-  -> CF030 -> CF031
+  -> CF030 -> CF031 -> CF032
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -804,6 +830,11 @@ Validation expands with capability:
   time, duplicate and supersession semantics, rejection/drop neutrality,
   processing/eviction/delivery cleanup, saturation, empty status, and
   controlled service lifecycle regressions.
+- CF032: valid empty/nonempty aggregate recovery inspection; exact reuse of
+  complete replay/world/frame preflight; storage corruption, truncation,
+  extension, growth, oversize, and non-file rejection; semantic replay/frame
+  rejection; exact CLI argument/help behavior; path/payload redaction; file
+  immutability; and ordinary CPU-only CI evidence without adapter selection.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

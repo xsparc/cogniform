@@ -34,6 +34,8 @@ explicit rehydration evidence was collected on that profile on 2026-08-07.
 CF031 deterministic monotonic pending-work age and controlled
 command/observation/import/upload lifecycle evidence was collected on that
 profile on 2026-08-07.
+CF032 CPU-only recovery-file inspection, fixed-profile semantic preflight,
+path redaction, and read-only CLI evidence was collected on 2026-08-07.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -123,6 +125,30 @@ live/replayed logical hash
 `db23b22d98da433d6050c0cd863f3a736832c7bae2ca674cdbee3dae8ed25106`.
 No timing threshold, exporter, logging, transport, deployment, or additional
 supported platform is introduced.
+
+## Controlled recovery-inspection commands
+
+CF032 ran the focused engine, storage, and CLI contracts without a GPU adapter:
+
+```text
+cargo clippy -p cogniform-engine -p cogniform-storage -p cogniform-cli --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-engine -p cogniform-storage -p cogniform-cli --all-features --locked --offline
+```
+
+Engine tests prove valid empty and nonempty reconstruction, exact aggregate
+revision/frame/logical/replay-hash evidence, complete semantic replay rejection,
+and a frame frontier behind accepted evidence. Storage tests retain regular-
+file, metadata/allocation, growth, corruption, truncation, extension, and
+oversize rejection. CLI black-box tests prove exact one-path/help behavior,
+valid fixed-profile output, nonzero storage and semantic failures, unchanged
+file bytes, and path/payload redaction. These ordinary tests invoke the
+synchronous CPU inspection function and never construct `HeadlessRenderer` or
+select an adapter; no additional GPU compatibility claim is made.
+
+Inspection uses `default-local-64x64`. It does not validate asset residency,
+writer authenticity, freshness, authorization, automatic startup, or later GPU
+service initialization, and it adds no performance threshold or supported
+platform.
 
 ## Controlled vertex-normal commands
 

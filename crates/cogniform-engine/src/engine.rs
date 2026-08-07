@@ -14,7 +14,10 @@ use cogniform_replay::{
 };
 use cogniform_world::{AuthoritativeWorld, LogicalSceneHash, WorldConfig};
 
-use crate::{EngineError, EngineRecoveryPoint, Observation, ObservationQueue, ObservationRequest};
+use crate::{
+    EngineError, EngineRecoveryPoint, Observation, ObservationQueue, ObservationRequest,
+    RecoveryInspection,
+};
 
 /// Bounds and domain configuration for one local engine instance.
 #[derive(Debug, Clone)]
@@ -47,6 +50,41 @@ impl EngineConfig {
         self.observation_capacity = capacity;
         self
     }
+}
+
+/// Fully verifies one recovery point without selecting an adapter or initializing a GPU.
+///
+/// This runs the same configuration, complete-stream, frame-frontier, and
+/// authoritative replay preflight used by [`CogniformEngine::restore`]. The
+/// returned value is aggregate evidence only; no mutable service, renderer,
+/// observation worker, asset state, or replay payload is retained.
+pub fn inspect_recovery_point(
+    config: &EngineConfig,
+    recovery: &EngineRecoveryPoint,
+) -> Result<RecoveryInspection, EngineError> {
+    let world = CogniformEngine::prepare_restore(config, recovery)?;
+    let verification = world
+        .log()
+        .verify()
+        .map_err(|error| EngineError::Replay(ReplayError::Integrity(error)))?;
+    let logical_hash = world
+        .world()
+        .logical_hash()
+        .map_err(EngineError::WorldInvariant)?;
+    debug_assert_eq!(verification.final_revision(), world.world().revision());
+    debug_assert!(
+        verification
+            .final_scene_hash()
+            .is_none_or(|hash| hash == logical_hash)
+    );
+    Ok(RecoveryInspection::new(
+        verification.entry_count(),
+        recovery.replay_bytes().len() as u64,
+        world.world().revision(),
+        recovery.next_frame_id(),
+        logical_hash,
+        verification.final_entry_hash(),
+    ))
 }
 
 /// Local composition of one authoritative world, renderer, and observation path.
@@ -369,7 +407,11 @@ pub(crate) fn validate_config(config: &EngineConfig) -> Result<(), EngineError> 
 
 #[cfg(test)]
 mod tests {
-    use cogniform_replay::ReplayTailErrorKind;
+    use cogniform_protocol::{
+        ConflictPolicy, CreateEntity, DeliverySemantic, IdempotencyKey, PatchBudget,
+        SceneOperation, SchemaVersion, StableEntityId, TransactionId,
+    };
+    use cogniform_replay::{ReplayEntryHash, ReplayTailErrorKind};
 
     use super::*;
 
@@ -409,6 +451,74 @@ mod tests {
         assert!(matches!(
             error,
             EngineError::Replay(ReplayError::Tail(error))
+                if matches!(error.kind(), ReplayTailErrorKind::InvalidHeader)
+        ));
+    }
+
+    #[test]
+    fn recovery_inspection_replays_nonempty_state_without_renderer_initialization() {
+        let config = EngineConfig::new(64, 64);
+        let mut world = RecordedWorld::new(config.world, config.replay).unwrap();
+        let patch = ScenePatch {
+            schema_version: SchemaVersion::V1,
+            transaction_id: TransactionId::new(1).unwrap(),
+            idempotency_key: IdempotencyKey::new(2).unwrap(),
+            base_revision: SceneRevision::INITIAL,
+            conflict_policy: ConflictPolicy::RequireExactBase,
+            delivery: DeliverySemantic::MustApply,
+            declared_budget: PatchBudget::default(),
+            operations: vec![SceneOperation::Create(CreateEntity {
+                entity_id: StableEntityId::new(3).unwrap(),
+                components: Vec::new(),
+            })],
+        };
+        world.apply_patch(&patch, FrameId::new(7).unwrap()).unwrap();
+        let expected_hash = world.world().logical_hash().unwrap();
+        let expected_entry_hash = world.log().verify().unwrap().final_entry_hash();
+        let recovery =
+            EngineRecoveryPoint::from_parts(world.log().to_bytes(), FrameId::new(8).unwrap());
+
+        let inspection = inspect_recovery_point(&config, &recovery).unwrap();
+        assert_eq!(inspection.replay_entries(), 1);
+        assert_eq!(
+            inspection.replay_bytes(),
+            recovery.replay_bytes().len() as u64
+        );
+        assert_eq!(inspection.scene_revision(), SceneRevision::new(1));
+        assert_eq!(inspection.next_frame_id(), FrameId::new(8).unwrap());
+        assert_eq!(inspection.logical_hash(), expected_hash);
+        assert_eq!(inspection.final_entry_hash(), expected_entry_hash);
+
+        let behind = EngineRecoveryPoint::from_parts(
+            recovery.replay_bytes().to_vec(),
+            FrameId::new(6).unwrap(),
+        );
+        assert!(matches!(
+            inspect_recovery_point(&config, &behind),
+            Err(EngineError::RecoveryFrameBehindReplay {
+                next_frame_id,
+                recorded_frame_id,
+            }) if next_frame_id == FrameId::new(6).unwrap()
+                && recorded_frame_id == FrameId::new(7).unwrap()
+        ));
+    }
+
+    #[test]
+    fn recovery_inspection_handles_empty_state_and_rejects_invalid_semantics() {
+        let config = EngineConfig::new(64, 64);
+        let empty = RecordedWorld::new(config.world, config.replay).unwrap();
+        let recovery =
+            EngineRecoveryPoint::from_parts(empty.log().to_bytes(), FrameId::new(1).unwrap());
+        let inspection = inspect_recovery_point(&config, &recovery).unwrap();
+        assert_eq!(inspection.replay_entries(), 0);
+        assert_eq!(inspection.scene_revision(), SceneRevision::INITIAL);
+        assert_eq!(inspection.final_entry_hash(), ReplayEntryHash::ZERO);
+
+        let invalid =
+            EngineRecoveryPoint::from_parts(b"not-a-replay".to_vec(), FrameId::new(1).unwrap());
+        assert!(matches!(
+            inspect_recovery_point(&config, &invalid),
+            Err(EngineError::Replay(ReplayError::Tail(error)))
                 if matches!(error.kind(), ReplayTailErrorKind::InvalidHeader)
         ));
     }

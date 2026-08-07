@@ -26,6 +26,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | Recovery-file target already exists or its parent is absent | Return a path-redacted create-new error; never overwrite the target or create a directory | storage create-new unit tests |
 | Recovery-file write or sync fails | Return the failing operation/error kind and whether the partial file was removed or may remain; never return a success receipt | injected storage write/sync tests |
 | Recovery-file target is non-regular, symlinked, over-limit, growing, truncated, extended, or corrupt | Reject before unbounded allocation or recovery-point return; never accept a verified prefix as a complete file | storage load and envelope-corruption tests |
+| Offline recovery inspection sees invalid replay semantics or a stale frame frontier | Reject the complete file after bounded load and before adapter selection; print no path or payload and adopt no world state | CF032 engine and CLI inspection tests |
 | Asset-file source is oversized or does not match its expected hash | Reject before any filesystem operation or target creation | asset-file preflight tests |
 | Asset-file target exists, write/sync fails, or load sees a non-file, symlink, over-limit/growing source, or hash substitution | Never overwrite; report cleanup for a failed create; return no bytes before complete bounded identity validation | asset-file unit and controlled persisted-rehydration tests |
 | Historical revision is newer than the retained log | Return the requested and latest revisions without changing the source service | exact-revision replay and controlled historical-fork tests |
@@ -126,6 +127,15 @@ path out of general logs; errors intentionally report only the operation and
 standard error kind. A successfully loaded envelope is still plaintext,
 unauthenticated, and not proof of freshness, and `LocalService::restore` must
 perform its complete replay/world/frame validation before use.
+
+For a read-only diagnosis under the declared default local profile, run
+`cogniform-cli inspect-recovery <path>`. Success reports only bounded counts,
+revision/frame values, and final logical/replay hashes. Failure remains nonzero
+and path-redacted whether storage/envelope validation or complete semantic
+preflight rejects the file. The command neither modifies the file nor restores
+a service, initializes a GPU, discovers another file, or repairs a bad suffix.
+A passing result is not writer authentication, freshness, GPU compatibility,
+or asset-residency evidence.
 
 File `sync_all` is not a portable guarantee that the directory entry or storage
 hardware survives power loss. Automatic latest-pointer replacement, directory

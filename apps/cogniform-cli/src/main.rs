@@ -6,10 +6,11 @@ use cogniform_engine::{
     CanonicalScenarioConfig, LocalService, LocalServiceConfig, run_canonical_scenario,
 };
 
-const SCENARIO_WIDTH: u32 = 64;
-const SCENARIO_HEIGHT: u32 = 64;
+const LOCAL_PROFILE_WIDTH: u32 = 64;
+const LOCAL_PROFILE_HEIGHT: u32 = 64;
 
 mod measure;
+mod recovery;
 
 fn main() -> ExitCode {
     match run() {
@@ -41,6 +42,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             measure::run()
         }
+        Some(command) if command == OsStr::new("inspect-recovery") => {
+            let path = arguments
+                .next()
+                .ok_or_else(|| invalid_input("inspect-recovery requires one path"))?;
+            if arguments.next().is_some() {
+                return Err(invalid_input("inspect-recovery accepts exactly one path"));
+            }
+            recovery::run(&path)
+        }
         Some(command) if command == OsStr::new("help") || command == OsStr::new("--help") => {
             if arguments.next().is_some() {
                 return Err(invalid_input("help accepts no arguments"));
@@ -54,8 +64,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn run_scenario() -> Result<(), Box<dyn std::error::Error>> {
     let mut service = pollster::block_on(LocalService::new(LocalServiceConfig::new(
-        SCENARIO_WIDTH,
-        SCENARIO_HEIGHT,
+        LOCAL_PROFILE_WIDTH,
+        LOCAL_PROFILE_HEIGHT,
     )))?;
     let adapter = service.adapter().clone();
     let report = run_canonical_scenario(&mut service, CanonicalScenarioConfig::default())?;
@@ -94,6 +104,7 @@ fn print_usage() {
     println!("Usage:");
     println!("  cogniform-cli scenario  Run the canonical unattended MVP scenario");
     println!("  cogniform-cli measure-world  Measure the controlled CPU world fixture");
+    println!("  cogniform-cli inspect-recovery <path>  Verify an immutable recovery file");
     println!("  cogniform-cli --help    Show this help");
 }
 

@@ -1,6 +1,7 @@
 # Immutable local recovery files
 
-Status: implemented by CF018 for explicit caller-driven local persistence.
+Status: implemented by CF018 for explicit caller-driven local persistence and
+extended by CF032 with read-only offline inspection.
 
 `cogniform-storage` keeps filesystem authority outside `cogniform-engine`.
 It persists the existing `EngineRecoveryPoint` envelope; it does not define a
@@ -49,6 +50,32 @@ or changed content returns an error and no partial recovery point. Passing the
 loaded point to `LocalService::restore` still performs complete replay, world,
 hash-chain, renderer-revision, and frame-continuity validation.
 
+## Offline inspection
+
+Inspect a caller-selected file under the declared default local profile without
+creating a service or selecting a GPU adapter:
+
+```text
+cargo run -p cogniform-cli --locked --offline -- inspect-recovery state/checkpoint-0001.cnfr
+```
+
+The command accepts exactly one OS-native path. It loads through
+`RecoveryFileStore`, then runs the same configuration, complete-stream,
+frame-frontier, and authoritative-world replay preflight used before fresh-
+service restoration. A successful report contains only:
+
+- profile name (`default-local-64x64`);
+- verified replay entry and encoded-byte counts;
+- final scene revision and next frame identity; and
+- final logical scene hash and replay-entry hash.
+
+The command performs no write, directory creation, adapter selection, GPU
+initialization, service restoration, asset loading, or network work. Both
+success and failure output omit the supplied path and replay payload. A passing
+inspection proves only that CPU restoration preflight succeeds under this fixed
+profile; GPU compatibility, asset residency, writer authenticity, freshness,
+authorization, and a later service initialization remain unproven.
+
 ## Security and durability boundary
 
 Filesystem paths are caller authority. Do not accept a path from an untrusted
@@ -67,11 +94,14 @@ The adapter provides no directory creation, overwrite, rename, delete, file
 discovery, snapshot catalog, retention/rotation, automatic checkpoint,
 automatic startup/rollback, encryption, signing, key management, remote or
 object storage, bundled asset/transient persistence, or background worker.
+The inspection command adds no discovery, profile negotiation, machine-readable
+output schema, or automatic restore behavior.
 Exact-hash asset sources may be persisted independently through
 `AssetFileStore`; Cogniform does not associate those files with a recovery
 point or load them automatically.
 
-See [ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md), the
+See [ADR 0018](../adr/0018-immutable-bounded-local-recovery-files.md),
+[ADR 0032](../adr/0032-offline-recovery-file-inspection.md), the
 [asset-file guide](asset-files.md), the
 [replay guide](../architecture/determinism-and-replay.md), and the
 [failure and recovery guide](../operations/failure-and-recovery.md).
