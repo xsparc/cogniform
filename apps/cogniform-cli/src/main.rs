@@ -5,6 +5,7 @@ use std::{env, ffi::OsStr, io, process::ExitCode};
 const LOCAL_PROFILE_WIDTH: u32 = 64;
 const LOCAL_PROFILE_HEIGHT: u32 = 64;
 
+mod asset;
 mod measure;
 mod recovery;
 mod scenario;
@@ -79,6 +80,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             recovery::run(&path, output)
         }
+        Some(command) if command == OsStr::new("inspect-asset") => {
+            let encoded_hash = arguments.next().ok_or_else(|| {
+                invalid_input("inspect-asset requires one content hash and one path")
+            })?;
+            let path = arguments.next().ok_or_else(|| {
+                invalid_input("inspect-asset requires one content hash and one path")
+            })?;
+            if arguments.next().is_some() {
+                return Err(invalid_input(
+                    "inspect-asset accepts one content hash and one path",
+                ));
+            }
+            let expected_hash = asset::parse_content_hash(&encoded_hash)?;
+            asset::run(expected_hash, &path)
+        }
         Some(command) if command == OsStr::new("help") || command == OsStr::new("--help") => {
             if arguments.next().is_some() {
                 return Err(invalid_input("help accepts no arguments"));
@@ -97,6 +113,9 @@ fn print_usage() {
     println!("  cogniform-cli scenario [--json]  Run the canonical unattended MVP scenario");
     println!("  cogniform-cli measure-world [--json]  Measure the controlled CPU world fixture");
     println!("  cogniform-cli inspect-recovery [--json] <path>  Verify an immutable recovery file");
+    println!(
+        "  cogniform-cli inspect-asset <content-hash> <path>  Verify an immutable asset source file"
+    );
     println!("  cogniform-cli --help    Show this help");
 }
 

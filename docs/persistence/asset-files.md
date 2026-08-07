@@ -67,6 +67,27 @@ neither scene revision, logical hash, nor replay bytes.
 never deletes or modifies this independently mapped source file. A caller may
 later load the same approved file and explicitly rehydrate the exact hash.
 
+## Read-only CLI inspection
+
+A trusted local operator can verify one explicit hash-to-path mapping without
+decoding or selecting a GPU adapter:
+
+```text
+cargo run -p cogniform-cli --locked --offline -- inspect-asset <64-character-lowercase-content-hash> assets/triangle.glb
+```
+
+The command parses the expected public `ContentHash`, then performs the same
+default bounded regular-file load and complete SHA-256 comparison described
+above. Only after success does it print the expected hash and exact source byte
+count. The path and payload are omitted, and the file remains unchanged.
+Failures are nonzero with empty stdout and path/payload-redacted diagnostics.
+
+Passing proves byte identity under the default 16 MiB source limit. It does not
+parse GLB or PNG, prove importer acceptance or renderability, authenticate the
+writer, select a fresh file, associate the source with recovery state, or
+schedule import, upload, or rehydration. The command has no JSON mode; a path
+whose filename is `--json` is ordinary input.
+
 ## Security and durability boundary
 
 Paths and hash-to-path associations are caller authority. Do not derive paths
