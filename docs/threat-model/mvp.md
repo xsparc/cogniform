@@ -1,8 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF036 CPU-only immutable asset-source inspection on
-2026-08-08.
+and extended through CF037 versioned asset-source inspection JSON on 2026-08-08.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -69,6 +68,8 @@ The asset-source inspection command accepts one explicit expected hash and
 path, reuses the bounded storage load, drops the verified bytes, and emits only
 that hash and the byte count. It never invokes a decoder, service, importer,
 renderer, upload, rehydration, or automatic path discovery.
+Its optional machine-readable view is CLI-only, schema-versioned, and serialized
+in memory after complete verification; the default human report is unchanged.
 
 ## Threat and control matrix
 
@@ -94,7 +95,7 @@ Residual ratings assume the declared local single-user boundary.
 | Measurement diagnostics create a hidden performance gate or disclose a host fingerprint | High | Explicit local invocation; fixed fixture and sample counts; schema-v1 integer timings marked `informational_only`; no hardware identity, system metadata, threshold, automatic upload, exporter, or background sampling; complete preparation before stdout | Low inside the trusted local boundary; operators still control timing disclosure |
 | Scenario diagnostics expose adapter identity or correlatable run evidence, emit a partial proof, or imply portable support | High | Explicit `--json`; complete scenario and in-memory schema-v1 serialization before stdout; fixed profile/scenario; exact cross-mode tests; no path, payload, timing, upload, exporter, background sampling, or added support claim; invalid arguments reject before adapter selection | Low inside the trusted local boundary; operators still control adapter and run-evidence disclosure |
 | An asset path or source file causes overwrite, disclosure, unbounded allocation, substitution, or unsafe implicit rehydration | High | Separate opt-in adapter; source size/hash checks before I/O; create-new only; bounded regular-file load and growth probe; complete expected-hash validation before return; path-redacted errors; explicit later import/upload; injected cleanup and controlled restart evidence | Medium because path mapping, parent trust, permissions, confidentiality, writer authenticity, freshness, retention, and crash durability remain caller-owned |
-| Offline asset-source diagnostics disclose a path or payload, trust substituted bytes, mutate the file, or trigger decode, service, or GPU side effects | High | Exact one-hash/one-path CLI; strict expected-hash parsing before I/O; shared bounded read-only storage load and complete identity check; aggregate human-only output; dropped bytes; path/payload-redacted errors; empty failure stdout; ordinary CPU black-box tests | Low inside the trusted local boundary; operators still control path access and hash disclosure |
+| Offline asset-source diagnostics disclose a path or payload, trust substituted bytes, emit partial machine output, mutate the file, or trigger decode, service, or GPU side effects | High | Exact one-hash/one-path CLI; strict expected-hash parsing before I/O; shared bounded read-only storage load and complete identity check; aggregate human/schema-v1 JSON output serialized before one stdout write; dropped bytes; path/payload-redacted errors; empty failure stdout; ordinary CPU black-box tests | Low inside the trusted local boundary; operators still control path access and hash disclosure |
 | A historical fork reuses a frame identity issued before capture or mutates the live source | High | Exact contiguous replay prefixes are copied with the source's current next frame identity; controlled tests preserve source status/hash/bytes and prove query/observe/append continuation | Low for pre-capture reuse; future cross-branch identity and freshness remain caller-owned |
 | A stale, unintended, or busy live revert silently loses authoritative or transient state | High | Local caller-only API, explicit older revision, exact quiescence blockers, fresh replacement before swap, no event on failure, explicit removed-tail/cache/asset receipt, controlled continuation test | Low inside the local trusted-caller boundary; authorization and freshness remain caller-owned |
 | Scene text or replay data discloses caller secrets | High | No automatic logging, upload, persistence, or release; explicit storage errors/debug omit path and content; operator warning and public-repo scan | Medium |
@@ -157,8 +158,8 @@ transport, or production use.
 - Use `inspect-asset` only for a trusted local expected-hash-to-path mapping.
   Keep the reported hash private when it could correlate sensitive content,
   and do not treat a pass as format validation, authorization, freshness,
-  recovery association, import approval, or GPU readiness. Its human output is
-  not a stable automation schema.
+  recovery association, import approval, or GPU readiness. Scripts should
+  require JSON `schema_version` 1 instead of parsing human output.
 - On replay tail failure, inspect only the verified prefix and preserve the
   rejected bytes for private diagnosis. Never adopt that prefix as successful
   `LocalService` recovery, skip an entry, or continue after the bad suffix.
@@ -185,8 +186,8 @@ transport, or production use.
 
 Remote transport, authentication, tenancy, automatic or mutable persistence,
 recovery discovery/profile negotiation, diagnostic schemas beyond the
-versioned recovery, controlled-measurement, and canonical-scenario CLI reports,
-including any machine-readable asset-source inspection, asset catalogs,
+versioned recovery, controlled-measurement, canonical-scenario, and
+asset-source-inspection CLI reports, asset catalogs,
 automatic eviction/rehydration, shared memory, third-party
 Wasm, model execution, arbitrary shaders, binary
 releases, telemetry export, and production deployment each add a trust

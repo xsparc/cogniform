@@ -99,6 +99,10 @@ release yet; the current workspace version remains `0.0.0`.
   verification of one caller-mapped immutable asset source, with exact
   lowercase hash parsing, aggregate hash/byte output, file immutability, and
   path/payload-redacted failures before any decode or GPU work;
+- deterministic compact schema-version-one JSON for opt-in asset-source
+  inspection, with exact fields/types/order, unchanged human output,
+  complete verification and serialization before stdout, option-like path
+  handling, and empty failure stdout;
 - separate immutable exact-hash asset-source files with pre-I/O size and
   identity checks, shared create-new/sync/cleanup guarantees, bounded
   regular-file loading, and explicit restart rehydration evidence;
@@ -196,10 +200,10 @@ release yet; the current workspace version remains `0.0.0`.
   input, scenario/profile/adapter selection, performance threshold, automatic
   upload, exporter, or additional support claim; adapter identity and exact run
   evidence can fingerprint or correlate the local host.
-  Asset-source inspection has human output only and proves bounded byte
-  identity, not format validity, renderability, authenticity, freshness,
-  recovery association, or authorization; hash values can still correlate
-  private content.
+  Asset-source inspection has optional CLI schema-version-one JSON and proves
+  bounded byte identity only, not format validity, renderability, authenticity,
+  freshness, recovery association, or authorization; hash values can still
+  correlate private content.
   In-place revert requires drained transient work, clears asset residency, and
   supplies no automatic rollback or freshness policy;
   future frame identity across concurrently live branches is

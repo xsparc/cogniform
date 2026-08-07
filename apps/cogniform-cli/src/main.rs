@@ -81,19 +81,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             recovery::run(&path, output)
         }
         Some(command) if command == OsStr::new("inspect-asset") => {
-            let encoded_hash = arguments.next().ok_or_else(|| {
+            let first = arguments.next().ok_or_else(|| {
                 invalid_input("inspect-asset requires one content hash and one path")
             })?;
+            let (output, encoded_hash) = if first == OsStr::new("--json") {
+                (
+                    asset::AssetOutput::Json,
+                    arguments.next().ok_or_else(|| {
+                        invalid_input("inspect-asset requires one content hash and one path")
+                    })?,
+                )
+            } else {
+                (asset::AssetOutput::Human, first)
+            };
             let path = arguments.next().ok_or_else(|| {
                 invalid_input("inspect-asset requires one content hash and one path")
             })?;
             if arguments.next().is_some() {
                 return Err(invalid_input(
-                    "inspect-asset accepts one content hash and one path",
+                    "inspect-asset accepts optional --json, one content hash, and one path",
                 ));
             }
             let expected_hash = asset::parse_content_hash(&encoded_hash)?;
-            asset::run(expected_hash, &path)
+            asset::run(expected_hash, &path, output)
         }
         Some(command) if command == OsStr::new("help") || command == OsStr::new("--help") => {
             if arguments.next().is_some() {
@@ -114,7 +124,7 @@ fn print_usage() {
     println!("  cogniform-cli measure-world [--json]  Measure the controlled CPU world fixture");
     println!("  cogniform-cli inspect-recovery [--json] <path>  Verify an immutable recovery file");
     println!(
-        "  cogniform-cli inspect-asset <content-hash> <path>  Verify an immutable asset source file"
+        "  cogniform-cli inspect-asset [--json] <content-hash> <path>  Verify an immutable asset source file"
     );
     println!("  cogniform-cli --help    Show this help");
 }

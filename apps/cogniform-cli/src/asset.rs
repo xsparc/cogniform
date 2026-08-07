@@ -6,8 +6,16 @@ use std::{
 
 use cogniform_protocol::ContentHash;
 use cogniform_storage::AssetFileStore;
+use serde::Serialize;
 
+const SCHEMA_VERSION: u32 = 1;
 const INVALID_HASH: &str = "inspect-asset content hash must be 64 lowercase hexadecimal characters";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AssetOutput {
+    Human,
+    Json,
+}
 
 pub(crate) fn parse_content_hash(encoded: &OsStr) -> io::Result<ContentHash> {
     encoded
@@ -20,6 +28,7 @@ pub(crate) fn parse_content_hash(encoded: &OsStr) -> io::Result<ContentHash> {
 pub(crate) fn run(
     expected_hash: ContentHash,
     path: &OsStr,
+    output: AssetOutput,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let source = AssetFileStore::default().load(Path::new(path), expected_hash)?;
     let source_bytes = u64::try_from(source.len()).map_err(|_| {
@@ -30,11 +39,31 @@ pub(crate) fn run(
     })?;
     drop(source);
 
-    let encoded = format!(
-        "Cogniform asset source inspection passed\ncontent hash: {expected_hash}\nsource bytes: {source_bytes}\n"
-    );
-    io::stdout().lock().write_all(encoded.as_bytes())?;
+    let encoded = match output {
+        AssetOutput::Human => format!(
+            "Cogniform asset source inspection passed\ncontent hash: {expected_hash}\nsource bytes: {source_bytes}\n"
+        )
+        .into_bytes(),
+        AssetOutput::Json => {
+            let report = AssetInspectionReport {
+                schema_version: SCHEMA_VERSION,
+                content_hash: expected_hash.to_string(),
+                source_bytes,
+            };
+            let mut encoded = serde_json::to_vec(&report)?;
+            encoded.push(b'\n');
+            encoded
+        }
+    };
+    io::stdout().lock().write_all(&encoded)?;
     Ok(())
+}
+
+#[derive(Serialize)]
+struct AssetInspectionReport {
+    schema_version: u32,
+    content_hash: String,
+    source_bytes: u64,
 }
 
 #[cfg(test)]
