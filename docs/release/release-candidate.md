@@ -29,6 +29,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Local stream frame | Pass for declared CPU profile | Fixed version-one header and exact fixture, independent header-first complete/control/bulk limits, canonical observation-envelope composition, short/interrupted I/O, back-to-back framing, and corruption/truncation rejection over caller-owned streams without an endpoint or session |
 | Local-session messages | Pass for declared CPU profile | Exact schema-v1 client/server LF fixtures, every-variant round trips, outer-only correlation, effective byte/nesting bounds, direction/version/unknown/canonical/substitution/nested validation, exact-revision observation admission, and no executor or endpoint |
 | Local-session executor | Pass for declared CPU profile | One hello, field-wise peer/local/service limits, deterministic one-command advancement, exact terminal command/observation correlation, one-time pending, two-frame output cap, redacted failures, quiescent close, and a passing controlled service adapter without endpoint authority |
+| Local stdio session | Pass for declared CPU and controlled Windows profile | Exact pre-adapter argument/terminal/first-frame behavior, half-duplex no-read-while-live scheduling, negotiated bounds, positive-cadence fixed completion deadline, partial-output/flush/fatal handling, stable diagnostics, and a passing controlled child-process hello/patch/query/observation/close exchange |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Pending-work age | Pass on validated profile | Empty and retained command/observation/import/upload status, duplicate retention, supersession reset, rejection/drop neutrality, processing/eviction/delivery cleanup, saturation, and restoration/revert compatibility |
@@ -71,6 +72,11 @@ This does not make the current `0.0.0` workspace a supported release.
       header-first independent limits, short/interrupted I/O, back-to-back
       framing, nested observation integrity, and payload-redacted failures
       without constructing an endpoint, session, service, or GPU adapter.
+- [ ] Re-run the CPU stdio fake-stream/CLI contract and the controlled ignored
+      child-process session on an approved adapter; confirm exact arguments,
+      immediate clean EOF, hello limit adoption, half-duplex terminal delivery,
+      deadline/fault behavior, applied/query/observation causality, orderly
+      close, and no trailing output.
 - [ ] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
       matrix, recovery-envelope, recovery-file, and asset-file
       formats/limitations, offline inspection profile/versioned output, known
@@ -132,7 +138,8 @@ The GitHub release must be marked prerelease and state:
   values, not authenticated or encrypted messages;
 - local stream frames add a fixed header and enforce independent complete,
   control, and bulk limits before body allocation over caller-owned I/O, but
-  provide no endpoint, listener, service loop, session identity,
+  provide no endpoint, listener, service loop, or session identity by
+  themselves and add no
   authentication, authorization, confidentiality, freshness, replay
   protection, rate limit, timeout/cancellation policy, shared-memory lease,
   retention policy, writer atomicity after an I/O failure, or automatic
@@ -140,9 +147,16 @@ The GitHub release must be marked prerelease and state:
 - local-session messages define only bounded in-memory control values and frame
   adaptation; the separate local executor sequences one caller-driven
   lifecycle and executes one supplied local service. Neither owns stdin/stdout,
-  recovers partial writes, authenticates or authorizes a peer, enforces remote
-  freshness/replay/rate/tenancy policy, schedules itself, or creates an
-  endpoint;
+  schedules itself, or creates an endpoint;
+- `cogniform-cli serve-stdio` supplies one fixed inherited redirected-stream
+  owner and one 64x64 local service. It is half-duplex, flushes every frame,
+  polls live completion every 2 ms under a 15-second deadline, and terminates
+  on truncation, corruption, incomplete session EOF, fatal service/executor
+  state, deadline, write, or flush failure. It does not recover or retry a
+  partial write, preempt a blocked synchronous operation, create a pipe,
+  listener, socket, or process, authenticate or authorize a peer, add
+  confidentiality/freshness/replay/rate/tenancy policy, supervise/restart the
+  child, or support configurable, multi-client, full-duplex, or remote use;
 - historical recovery supports caller-coordinated fresh forks and quiescent
   live replacement, but provides no automatic rollback, authorization,
   freshness, branch manager, or global frame namespace across concurrent

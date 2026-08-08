@@ -19,7 +19,14 @@ scene revision that produced it.
 > corruption but supplies no authentication or encryption. A separate bounded
 > local-frame codec reads a fixed header and enforces control, bulk, and total
 > limits before buffering caller-owned stream bodies; it opens no process,
-> pipe, listener, or session and performs no automatic delivery. A bounded
+> pipe, listener, or session and performs no automatic delivery. Separate
+> bounded session-schema and caller-driven executor crates add exact
+> hello/patch/query/observation/close correlation without endpoint authority.
+> The CLI now composes those boundaries as one fixed-profile, half-duplex
+> `serve-stdio` child-process command over inherited redirected streams, with
+> negotiated limits, per-frame flush, capped polling, and stable redacted
+> failures. It creates no pipe, listener, daemon, or remote security boundary.
+> A bounded
 > in-process gateway, exact logical queries, and a
 > deterministic primitive imagination compiler are also available. The current
 > asset baseline adds content-addressed GLB geometry with optional finite vertex
@@ -82,7 +89,7 @@ implementations arrive:
 | `cogniform-renderer` | Headless GPU ownership and color/depth/normal/identity outputs |
 | `cogniform-engine` | Bounded orchestration and revision/frame correlation |
 | `cogniform-storage` | Explicit create-new and bounded-load recovery and exact-hash asset-source files |
-| `cogniform-cli` | Local sample, replay, and diagnostic commands |
+| `cogniform-cli` | Local sample, diagnostics, and one fixed-profile inherited-stdio session composition root |
 
 See the [software design document](docs/architecture/software-design-document.md),
 [implementation plan](docs/roadmap/development-implementation-plan.md), and
@@ -113,8 +120,10 @@ specifies canonical client/server control variants, outer-only correlation,
 exact-revision observation admission, and effective bounds. The
 [local-session executor guide](docs/protocol/local-session-executor.md)
 specifies hello sequencing, service mapping, deterministic advancement, exact
-terminal correlation, bounded observation delivery, and the deferred endpoint
-boundary. The
+terminal correlation, and bounded observation delivery without endpoint
+authority. The [local stdio-session guide](docs/protocol/local-stdio-session.md)
+specifies the CLI-owned pipe-only endpoint, negotiated frame policy,
+half-duplex completion, flushing, deadlines, EOF, and failure behavior. The
 [local gateway guide](docs/protocol/local-gateway-and-imagination.md) documents
 command admission, idempotency, deterministic compilation, and logical queries.
 The [GLB asset guide](docs/assets/glb-subset.md) documents exact source
@@ -168,6 +177,23 @@ Consumers must require `schema_version` 1 and `scenario`
 correlate the local host, so the report is opt-in and must not be uploaded or
 published by default. See the
 [canonical scenario guide](docs/getting-started/canonical-scenario.md).
+
+For a local agent loop, a parent process can launch the exact child command
+`cogniform-cli serve-stdio` with both stdin and stdout piped. Do not run it
+interactively or treat stdout as text: stdout contains only binary CF039 frames,
+and the command rejects terminal stdin or stdout before adapter creation. It
+uses one fixed `default-local-64x64` service, reads no next request until the
+current correlation is terminal, polls at a capped 2 millisecond interval, and
+applies a fixed 15 second live-operation deadline. The parent owns process and
+pipe creation, identity, authorization, confidentiality, freshness, and
+supervision. See the [stdio quickstart](docs/getting-started/local-stdio-session.md)
+and [protocol contract](docs/protocol/local-stdio-session.md).
+
+The controlled GPU-backed child proof is opt-in:
+
+```text
+cargo test --release -p cogniform-cli --test stdio_session --all-features --locked --offline -- --ignored
+```
 
 To inspect one immutable recovery file without selecting a GPU adapter:
 

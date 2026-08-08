@@ -47,6 +47,12 @@ or automatic startup/rehydration; operators compose those concerns.
 | Built-in cuboid topology or orientation regresses | Initialization-only tests require six faces, two non-degenerate outward triangles per face, exact axis normals, zero primary coordinates, 36 vertices, and the fixed 1,152-byte payload | CF025/CF028 renderer unit and controlled adapter tests |
 | Built-in sphere generation or selection regresses | Initialization-only topology tests require the exact finite 672-vertex, 21,504-byte payload, outward winding, unit radial normals, zero primary coordinates, direct/fallback selection, and resident-asset precedence; frames never tessellate or substitute another shape | CF022/CF028 renderer unit and scene tests |
 | Observation requested from wrong/ahead source | Return typed causal error; do not relabel the frame | revision-causality tests |
+| A local frame is over-limit, truncated, corrupted, noncanonical, or direction-invalid | Reject before returning a frame/message; allocate bodies only after header limits pass; do not resynchronize or expose payloads | CF039-CF040 framing/message fixtures and corruption tests |
+| Local-session input violates hello, correlation, capacity, exact-revision, or quiescent-close rules | Emit one bounded stable failure when possible, preserve service invariants, and release each terminal correlation exactly once | CF041 executor model and controlled service tests |
+| `serve-stdio` is given extra arguments or an interactive standard stream | Reject before adapter/service selection with empty binary stdout and one stable stderr category | CF042 CLI argument and terminal-preflight tests |
+| `serve-stdio` reaches frame-boundary EOF before any frame | Exit successfully without constructing the local service or writing output | CF042 fake-stream and piped child-process tests |
+| `serve-stdio` reaches EOF after a complete pre-hello frame or active hello, receives truncation/corruption, or exceeds a live-operation deadline | Terminate the child session nonzero with one stable redacted category; do not retry or read another frame | CF042 fake-stream scheduling and deadline tests |
+| `serve-stdio` encounters service/executor failure or writes/flushes only part of an output | Flush a complete fatal service frame when available, then terminate; otherwise report output/executor failure, preserve any physical prefix, and never retry or resynchronize | CF042 fatal-service, write-zero, prefix-write, flush, and executor-fault tests |
 | Public path or credential pattern staged | Fail with rule/path only; never echo the matched value | public-repository safeguard fixtures |
 
 Run the CPU failure matrix through the ordinary offline workspace suite:
@@ -85,6 +91,28 @@ Keep the authoritative revision returned by the last accepted receipt. Correct
 the complete request and resubmit with a fresh transaction/idempotency key and
 the current exact base revision. Do not split an invalid atomic operation list
 unless that changes the intended transaction semantics.
+
+### Fixed-profile stdio-session failure
+
+The launching parent owns both redirected streams, the child lifetime, and any
+sensitive frame bytes. Only EOF at a frame boundary before the first frame is
+a clean no-op. After any complete input frame, an EOF without orderly `close`
+is failure. Truncation, corruption, fatal service/executor state, operation
+deadline, write, or flush failure also ends the session; discard that child and
+stream rather than retrying a whole frame or attempting resynchronization.
+
+Treat stdout as binary protocol data only and stderr as its stable aggregate
+diagnostic channel. Do not merge them, print logs on stdout, or assume an
+errored output wrote zero bytes: a physical frame prefix may already have
+reached the parent. The 15-second deadline governs only repeated completion
+polling and cannot interrupt a blocking read, write, flush, adapter/service
+initialization, or synchronous executor/renderer call. The parent must enforce
+any stronger process-level timeout and kill/reap policy.
+
+This fixed inherited-stdio profile authenticates no peer, encrypts no data,
+creates no pipe or listener, and performs no automatic restart. Do not expose
+it as a remote or multi-tenant endpoint. See the
+[stdio-session guide](../protocol/local-stdio-session.md) for the exact flow.
 
 ### Procedure rejection
 
@@ -258,4 +286,5 @@ persistence, production supervision, or remote service claims are introduced.
 See the [MVP threat model](../threat-model/mvp.md), the
 [recovery-file guide](../persistence/recovery-files.md), the
 [asset-file guide](../persistence/asset-files.md), and the
-[local service contract](../protocol/local-service.md).
+[local service contract](../protocol/local-service.md), plus the
+[stdio-session guide](../protocol/local-stdio-session.md).

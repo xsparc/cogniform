@@ -81,5 +81,8 @@ cargo test -p cogniform-engine --test canonical_mvp --locked --offline -- --igno
 cargo test --release -p cogniform-cli --test scenario_output --locked --offline -- --ignored
 ```
 
-See the [local service contract](../protocol/local-service.md) for the API,
-bounds, and deferred transport/persistence work.
+See the [local service contract](../protocol/local-service.md) for the API and
+bounds. To drive the same service contract as a bounded binary session over
+inherited redirected standard I/O, use the separate
+[`serve-stdio` quickstart](local-stdio-session.md); the canonical scenario
+remains a fixed self-contained conformance flow.

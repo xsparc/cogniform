@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF041 bounded local-session execution on 2026-08-08.
+and extended through CF042 bounded fixed-profile stdio execution on 2026-08-09.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -18,6 +18,7 @@ separate transport and identity design violates the assumptions below.
 | Asset state and source files | Source identity is exact; malformed or oversized input cannot become decoded or GPU-resident state; recovered references and caller-mapped source files cannot substitute different bytes |
 | Host resources | CPU, memory, queues, GPU allocations, and waits stay within declared bounds and explicit release is exactly accounted |
 | Process and GPU | Backend failures return controlled errors and do not grant access to world mutation |
+| Local session streams | Inherited binary input/output remains bounded, direction-correct, causally correlated, explicitly flushed, and fail-closed without payload-bearing diagnostics or whole-frame retry |
 | Repository and release | No credentials, private workflow state, paid calls, or unreviewed artifacts enter public history |
 
 Availability is bounded rather than guaranteed. Confidentiality applies to
@@ -50,12 +51,17 @@ snapshots and canonical replay entries.
    cross explicit hello/lifecycle, peer/local/service limit, correlation,
    command-order, observation-delivery, output, and quiescent-close checks
    without acquiring endpoint or automatic scheduling authority.
-9. **Recovery file/envelope and replay bytes to recovery.** Caller-selected
+9. **Inherited standard streams to the CLI session driver.** A parent-owned
+   redirected binary stream crosses exact argument/terminal preflight, bounded
+   frame/message decoding, half-duplex scheduling, per-frame output/flush, a
+   fixed live-operation deadline, and fail-closed shutdown. This is one local
+   endpoint policy, not peer authentication or remote transport security.
+10. **Recovery file/envelope and replay bytes to recovery.** Caller-selected
    paths and portable bytes are untrusted until regular-file/size/growth checks,
    envelope header/version/bounds/length/frame/digest, and replay
    protocol/revision/scene-hash/predecessor/entry-hash chains have been
    independently verified.
-9. **Repository to public hosting.** Tracked content, commit metadata, workflow
+11. **Repository to public hosting.** Tracked content, commit metadata, workflow
    definitions, dependencies, and future release artifacts become public.
 
 Exact-hash asset files use the same final-file type, size, growth, create-new,
@@ -68,6 +74,10 @@ does not select a path, address, endpoint, peer, or session. The separate
 local-session codec opens no I/O and executes no decoded request. The separate
 executor owns one supplied service and advances only when its caller invokes a
 method; it opens no endpoint and starts no thread, timer, or runtime loop. The
+CLI's fixed `serve-stdio` composition locks one inherited redirected stream
+pair, drives the executor half-duplex, flushes each frame, and enforces a
+completion-poll deadline. It creates no pipe, listener, socket, child process,
+daemon, identity boundary, or remote-security policy. The
 storage adapter touches only an explicit caller-selected path when directly
 invoked.
 The offline inspection command composes that adapter with the exact CPU
@@ -110,6 +120,7 @@ Residual ratings assume the declared local single-user boundary.
 | A local frame declares excessive sections, is truncated, corrupted, noncanonical, or crosses an untrusted stream boundary | High | Fixed version/kind/header; non-zero correlation identity; independent complete/control/bulk limits checked before body allocation; exact short/interrupted I/O; canonical observation metadata and nested envelope integrity; all-prefix, every-byte, substitution, pre-body-limit, and payload-redaction tests | Low inside caller-owned bounded local I/O; endpoint identity, authentication, confidentiality, freshness, replay protection, rate limits, cancellation, and partial-write recovery remain caller-owned |
 | Local control bytes substitute a direction, version, nested value, correlation, or over-limit shape | High | Separate client/server roots; outer-only correlation; pre-decode byte/nesting caps; unknown-field and canonical-byte rejection; nested core validation; self-consistent hello limits; stable redacted failures; exact fixtures and malformed/substitution tests | Low for in-memory local decoding; lifecycle state, execution authorization, endpoint identity, confidentiality, freshness, replay/rate policy, and partial-write handling remain outside the codec |
 | Valid local-session work exhausts correlations, misroutes terminal results, bypasses lifecycle, or emits an over-limit completion | High | One hello and terminal close; peer/local/service limit intersection; fixed live-correlation cap; ordered key/ID maps; exact queued/replayed/dropped/superseded/completed/error release; one command plus one observation poll and at most two outputs per call; completed-frame preflight; stable redacted failure mapping; model tests | Low inside the trusted caller-driven boundary; authorization, endpoint identity, confidentiality, freshness/replay/rate policy, deadlines, cancellation, and partial-write handling remain outside the executor |
+| A stdio peer sends malformed or incomplete frames, abandons a live session, stalls completion, or causes partial output | High | Exact args and terminal checks before adapter selection; clean EOF only before the first frame; negotiated bounds; half-duplex no-read-while-live driver; positive-cadence 15-second completion deadline; encode-before-write and per-frame flush; stable redacted fatal categories; no whole-frame retry or resynchronization; fake-stream and controlled child-process tests | Low inside a parent-owned local single-user process boundary; physical output prefixes, blocking synchronous calls, peer authorization, confidentiality, freshness/replay/rate policy, process supervision, and remote exposure remain caller-owned |
 | Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |
 | Recovery replay bytes and frame marker are separated or accidentally changed | High | Single bounded versioned envelope, exact-length parsing, domain-separated SHA-256 digest, every-byte corruption rejection before replay allocation | Low for accidental corruption; authenticity remains caller-owned |
 | A recovery path or file causes overwrite, disclosure, unbounded allocation, or partial-state adoption | High | Separate opt-in crate; encode-before-I/O; create-new only; final symlink/non-file rejection; metadata/platform allocation bound; fixed-buffer read and growth probe; complete digest validation; path-redacted errors; injected write/sync cleanup | Medium because parent-path trust, permissions, confidentiality, authenticity, freshness, and crash durability remain caller-owned |
@@ -125,7 +136,7 @@ Residual ratings assume the declared local single-user boundary.
 | GPU driver/device failure corrupts authoritative world state | High | World commits precede only immutable extraction; renderer cannot mutate world; errors are typed; fresh-service restoration is documented | Medium |
 | Dependency or workflow supply chain introduces unreviewed code | High | Exact lockfile, checked-in vendor sources, pinned action digest, read-only workflow permissions, cargo-deny policy | Medium |
 | Credential or private path enters the public repository | High | Local and CI Git-object scan, redacted findings, GitHub secret scanning/push protection, staged scan procedure | Low |
-| Local API is deployed as a remote or multi-tenant security boundary | Critical | Explicitly unsupported; no listener/auth/session surface exists | Not applicable inside scope; Critical if assumption is violated |
+| Local API or inherited-stdio session is deployed as a remote or multi-tenant security boundary | Critical | Explicitly unsupported; no listener, peer identity, authentication, authorization, confidentiality, freshness/replay, rate, or tenancy surface exists | Not applicable inside scope; Critical if assumption is violated |
 
 No Critical or High residual risk remains inside the declared profile. Medium
 residuals are accepted for an early local source candidate and must be revisited
@@ -148,9 +159,16 @@ transport, or production use.
   it beyond the trusted local single-user boundary.
 - Treat local-session control messages as validated instructions, not authorized
   actions. The local executor enforces lifecycle and maps each supported variant
-  explicitly; a future endpoint must still add peer identity, authorization,
-  confidentiality, freshness/replay, rate, timeout/cancellation, and shutdown
-  policy before accepting an untrusted stream.
+  explicitly. The fixed stdio command adds only inherited-stream ownership,
+  half-duplex scheduling, a completion deadline, flush, and shutdown policy;
+  it does not add peer identity, authorization, confidentiality,
+  freshness/replay, rate/tenancy control, preemptive cancellation, or remote
+  safety.
+- Launch `serve-stdio` only with parent-owned redirected binary stdin/stdout.
+  Keep stdout separate from diagnostics, protect observation and scene bytes as
+  sensitive, and discard the child/stream after any failure. A partial output
+  prefix may remain; never retry a whole frame or attempt resynchronization.
+  The parent must impose any stronger process timeout and kill/reap policy.
 - Do not pass credentials, private endpoints, or production records as scene
   text. Cogniform validates structure and bounds; it is not a secret sanitizer.
 - Stop admitting commands when capacity errors repeat. Retrying without a

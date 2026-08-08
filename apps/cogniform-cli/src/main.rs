@@ -9,6 +9,7 @@ mod asset;
 mod measure;
 mod recovery;
 mod scenario;
+mod serve_stdio;
 
 fn main() -> ExitCode {
     match run() {
@@ -105,6 +106,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let expected_hash = asset::parse_content_hash(&encoded_hash)?;
             asset::run(expected_hash, &path, output)
         }
+        Some(command) if command == OsStr::new("serve-stdio") => {
+            if arguments.next().is_some() {
+                return Err(invalid_input("serve-stdio accepts no arguments"));
+            }
+            serve_stdio::run()?;
+            Ok(())
+        }
         Some(command) if command == OsStr::new("help") || command == OsStr::new("--help") => {
             if arguments.next().is_some() {
                 return Err(invalid_input("help accepts no arguments"));
@@ -126,6 +134,7 @@ fn print_usage() {
     println!(
         "  cogniform-cli inspect-asset [--json] <content-hash> <path>  Verify an immutable asset source file"
     );
+    println!("  cogniform-cli serve-stdio  Run one bounded binary session over redirected stdio");
     println!("  cogniform-cli --help    Show this help");
 }
 

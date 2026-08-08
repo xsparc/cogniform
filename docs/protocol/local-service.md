@@ -149,9 +149,11 @@ The separate local-session codec defines direction-specific values without
 executing them. CF041's separate executor now owns one quiescent service,
 intersects limits, maps patch/query/observation variants to these methods, and
 retains exact correlations through explicit caller-driven advancement. Neither
-layer opens an endpoint or runs an automatic loop. See the
+layer opens an endpoint or runs an automatic loop. CF042's CLI composition now
+owns one fixed inherited-stdio loop without changing either boundary. See the
 [local-session message guide](local-session-messages.md) and
-[executor guide](local-session-executor.md).
+[executor guide](local-session-executor.md), plus the
+[stdio-session guide](local-stdio-session.md).
 
 ## Replay ownership
 
@@ -284,15 +286,19 @@ branch identity, and any external rollback policy.
 
 ## Known limitations
 
-- The boundary is local Rust only; there is no socket, wire compatibility
-  promise, session, authentication, authorization, or multi-tenant isolation.
+- The service API boundary is local Rust only. The separate fixed inherited-
+  stdio session carries versioned local frames but provides no socket, named
+  pipe, general wire-compatibility promise, authentication, authorization, or
+  multi-tenant isolation.
 - Processing and polling are caller-driven. There is no long-running daemon,
   subscription stream, shutdown protocol, automatic retry loop, or telemetry
   exporter. Age status is diagnostic evidence, not an SLO or alert policy.
 - Observation payloads are owned vectors with an explicit bounded binary
   envelope and header-first local stream framing available to callers.
-  Endpoint creation, operation schemas, sessions, authenticated listeners,
-  shared-memory leases, and automatic encoded delivery are deferred.
+  One fixed operation schema/session and inherited-stdio delivery loop now
+  exist in the CLI; endpoint creation, configurable/multi-client sessions,
+  authenticated listeners, shared-memory leases, and automatic startup remain
+  deferred.
 - Recovery is into a fresh service from a complete in-memory point. Exact
   retained revisions can seed separate historical forks or replace a quiescent
   live service. A separate adapter can create/load immutable recovery files

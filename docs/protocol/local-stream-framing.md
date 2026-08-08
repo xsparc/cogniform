@@ -1,8 +1,8 @@
 # Local stream framing
 
 CF039 defines a bounded synchronous frame over caller-owned local byte streams.
-It is the pre-buffer boundary needed by a future standard-input/standard-output
-agent session, but it is not itself a CLI command, process supervisor, pipe,
+CF042 now uses that boundary in the CLI's fixed-profile inherited-stdio
+session, but this crate is not itself a CLI command, process supervisor, pipe,
 listener, socket, daemon, or session protocol.
 
 The `cogniform-local-transport` crate operates only on supplied
@@ -85,13 +85,15 @@ versioned hello, patch, query, observation, failure, and close control values.
 It reuses this frame's outer correlation ID and exact control bounds, but it
 does not own `Read`, `Write`, stdin/stdout, a service, a scheduler, or shutdown.
 
-## Deferred endpoint boundary
+## Endpoint boundary
 
 The separate [CF041 executor](local-session-executor.md) now defines bounded
-caller-driven lifecycle, service mapping, and deterministic advancement. A
-future stdio composition root must still define stream ownership, scheduling,
-cancellation, stream-failure policy, shutdown, and bounded rate/cost handling.
-A remote listener additionally requires authenticated
+caller-driven lifecycle, service mapping, and deterministic advancement.
+CF042's [`serve-stdio` composition](local-stdio-session.md) supplies one fixed
+local policy for inherited redirected standard I/O, half-duplex scheduling,
+per-frame flush, live-operation deadlines, stream failures, and shutdown.
+Those decisions remain outside this framing crate and do not create a named
+pipe, listener, socket, or process. A remote listener additionally requires authenticated
 identity, authorization, confidentiality, replay/freshness protection, and
 tenancy isolation. Shared-memory handle negotiation and lease lifetime are
 also separate work. This crate supplies none of those policies and must not be
