@@ -10,8 +10,8 @@ use cogniform_protocol::{
 use sha2::{Digest, Sha256};
 
 use crate::{
-    CompilationDecision, CompilationDecisionCode, CompilationResult, CompileError,
-    UnresolvedConstraint, UnresolvedConstraintCode,
+    COMPILATION_SCHEMA_VERSION, CompilationDecision, CompilationDecisionCode, CompilationLimits,
+    CompilationResult, CompileError, UnresolvedConstraint, UnresolvedConstraintCode,
 };
 
 const ENTITY_ID_DOMAIN: &[u8] = b"cogniform.imagination.entity.v1\0";
@@ -54,6 +54,8 @@ impl CompilationSceneView {
 pub struct CompilerConfig {
     /// Public runtime limits applied before compilation.
     pub runtime_limits: RuntimeLimits,
+    /// Transport-neutral bounds applied to the completed compiler result.
+    pub compilation_limits: CompilationLimits,
     /// Maximum deterministic hash attempts used to avoid stable-ID collisions.
     pub max_entity_id_attempts: NonZeroU32,
 }
@@ -64,6 +66,7 @@ impl CompilerConfig {
     pub const fn new(runtime_limits: RuntimeLimits) -> Self {
         Self {
             runtime_limits,
+            compilation_limits: CompilationLimits::for_runtime_limits(runtime_limits),
             max_entity_id_attempts: NonZeroU32::new(32).expect("constant is non-zero"),
         }
     }
@@ -119,31 +122,42 @@ impl DeterministicCompiler {
             resolve_placements(&mut entities, &key_index, &mut unresolved);
         }
         if !unresolved.is_empty() {
-            unresolved.sort_by(unresolved_order);
+            decisions.sort_by(CompilationDecision::canonical_cmp);
+            unresolved.sort_by(UnresolvedConstraint::canonical_cmp);
             unresolved.dedup();
-            return Ok(CompilationResult {
+            let result = CompilationResult {
+                schema_version: COMPILATION_SCHEMA_VERSION,
                 imagination_id: imagination.imagination_id,
                 scene_revision: scene.revision,
                 patch: None,
                 decisions,
                 unresolved,
-            });
+            };
+            result
+                .validate_with_limits(&self.config.compilation_limits)
+                .map_err(CompileError::InvalidCompilationResult)?;
+            return Ok(result);
         }
 
         append_relation_decisions(&entities, &mut decisions);
-        decisions.sort_by(decision_order);
+        decisions.sort_by(CompilationDecision::canonical_cmp);
         let patch = build_patch(imagination, &entities);
         patch
             .validate_with_limits(&self.config.runtime_limits)
             .map_err(CompileError::InvalidNormalizedPatch)?;
 
-        Ok(CompilationResult {
+        let result = CompilationResult {
+            schema_version: COMPILATION_SCHEMA_VERSION,
             imagination_id: imagination.imagination_id,
             scene_revision: scene.revision,
             patch: Some(patch),
             decisions,
             unresolved,
-        })
+        };
+        result
+            .validate_with_limits(&self.config.compilation_limits)
+            .map_err(CompileError::InvalidCompilationResult)?;
+        Ok(result)
     }
 
     fn plan_entities(
@@ -799,24 +813,4 @@ fn relation_issue(
         related_key: Some(related.clone()),
         entity_id: None,
     }
-}
-
-fn decision_order(left: &CompilationDecision, right: &CompilationDecision) -> std::cmp::Ordering {
-    left.entity_key
-        .cmp(&right.entity_key)
-        .then_with(|| left.code.cmp(&right.code))
-        .then_with(|| left.relation_index.cmp(&right.relation_index))
-}
-
-fn unresolved_order(
-    left: &UnresolvedConstraint,
-    right: &UnresolvedConstraint,
-) -> std::cmp::Ordering {
-    left.relation_index
-        .cmp(&right.relation_index)
-        .then_with(|| left.constraint_index.cmp(&right.constraint_index))
-        .then_with(|| left.code.cmp(&right.code))
-        .then_with(|| left.entity_key.cmp(&right.entity_key))
-        .then_with(|| left.related_key.cmp(&right.related_key))
-        .then_with(|| left.entity_id.cmp(&right.entity_id))
 }

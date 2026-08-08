@@ -148,9 +148,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cogniform-compilation"
+version = "0.0.0"
+dependencies = [
+ "cogniform-protocol",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cogniform-compiler"
 version = "0.0.0"
 dependencies = [
+ "cogniform-compilation",
  "cogniform-protocol",
  "sha2",
 ]

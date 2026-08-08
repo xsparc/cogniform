@@ -1,7 +1,8 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF042 bounded fixed-profile stdio execution on 2026-08-09.
+and extended through CF043 bounded transport-neutral compilation results on
+2026-08-09.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -15,6 +16,7 @@ separate transport and identity design violates the assumptions below.
 | Authoritative world | Only complete validated patches change state; stable IDs and revisions remain correct |
 | Accepted-event log, recovery point, and recovery file | Newly accepted patches stay complete, ordered, bounded, integrity checked, and replayable; complete or exact-revision replay bytes remain associated with non-reused frame-continuity state; explicit files never overwrite an existing target; diagnostics reveal no path or payload |
 | Observation causality | Request schema and exact expected revision reject before capacity/renderer work; payload, camera, frame, revision, and stable identity agree; optional binary payloads and local frames remain bounded and integrity-bound to canonical metadata |
+| Compilation outcomes | Source imagination/revision, normalized patch, decisions, and unresolved constraints remain bounded, canonical, ordered, unique, and role-consistent before adapter use |
 | Asset state and source files | Source identity is exact; malformed or oversized input cannot become decoded or GPU-resident state; recovered references and caller-mapped source files cannot substitute different bytes |
 | Host resources | CPU, memory, queues, GPU allocations, and waits stay within declared bounds and explicit release is exactly accounted |
 | Process and GPU | Backend failures return controlled errors and do not grant access to world mutation |
@@ -31,43 +33,49 @@ snapshots and canonical replay entries.
 1. **Caller to protocol and pure preparation.** Patches, imagination,
    procedures, queries, IDs, labels, limits, and observation requests are
    untrusted typed or JSON-derived data.
-2. **Asset file/bytes to storage and decoder.** A caller-selected path, claimed
+2. **Compilation values to result schema.** A nested optional patch, decision
+   and unresolved collections, scene text, and canonical JSON cross explicit
+   version, byte/nesting, logical/text/count, role, order, uniqueness, outcome,
+   and revision checks without acquiring compiler execution or I/O authority.
+3. **Asset file/bytes to storage and decoder.** A caller-selected path, claimed
    SHA-256 identity, and GLB/embedded PNG bytes cross bounded file checks before
    separately crossing into strict, explicitly scheduled parsers.
-3. **World to renderer.** The renderer receives immutable compact extraction,
+4. **World to renderer.** The renderer receives immutable compact extraction,
    never mutable ECS state or an authorization decision.
-4. **Renderer to observation worker.** GPU readback crosses an asynchronous
+5. **Renderer to observation worker.** GPU readback crosses an asynchronous
    fixed-capacity lease and returns owned validated payloads.
-5. **Owned observation and metadata to payload codec.** Caller-owned values
+6. **Owned observation and metadata to payload codec.** Caller-owned values
    cross an explicit in-memory canonical-layout, bounds, and integrity boundary
    without acquiring I/O or transport authority.
-6. **Caller-owned byte stream to local frame codec.** A fixed header, declared
+7. **Caller-owned byte stream to local frame codec.** A fixed header, declared
    control and bulk lengths, and body bytes cross independent header-first
    bounds and integrity checks without creating an endpoint or session.
-7. **Control bytes to local-session schema.** Direction-specific client/server
+8. **Control bytes to local-session schema.** Direction-specific client/server
    JSON crosses byte/nesting, version, unknown-field, canonical-byte, nested
    protocol-value, and effective-limit checks without execution or I/O.
-8. **Session values to one local-service executor.** Validated instructions
+9. **Session values to one local-service executor.** Validated instructions
    cross explicit hello/lifecycle, peer/local/service limit, correlation,
    command-order, observation-delivery, output, and quiescent-close checks
    without acquiring endpoint or automatic scheduling authority.
-9. **Inherited standard streams to the CLI session driver.** A parent-owned
+10. **Inherited standard streams to the CLI session driver.** A parent-owned
    redirected binary stream crosses exact argument/terminal preflight, bounded
    frame/message decoding, half-duplex scheduling, per-frame output/flush, a
    fixed live-operation deadline, and fail-closed shutdown. This is one local
    endpoint policy, not peer authentication or remote transport security.
-10. **Recovery file/envelope and replay bytes to recovery.** Caller-selected
+11. **Recovery file/envelope and replay bytes to recovery.** Caller-selected
    paths and portable bytes are untrusted until regular-file/size/growth checks,
    envelope header/version/bounds/length/frame/digest, and replay
    protocol/revision/scene-hash/predecessor/entry-hash chains have been
    independently verified.
-11. **Repository to public hosting.** Tracked content, commit metadata, workflow
+12. **Repository to public hosting.** Tracked content, commit metadata, workflow
    definitions, dependencies, and future release artifacts become public.
 
 Exact-hash asset files use the same final-file type, size, growth, create-new,
 cleanup, and path-redaction boundary, followed by complete identity validation.
-The compiler and built-in procedures have no ambient filesystem, network, time,
-world, renderer, or entropy authority. The current local service creates no
+The compiler, compilation-result value crate, and built-in procedures have no
+ambient filesystem, network, time, world, renderer, or entropy authority. The
+result crate performs no compilation or session execution. The current local
+service creates no
 socket, listener, shared-memory segment, automatic persistent file, or model
 call. The local frame adapter touches only caller-supplied `std::io` values and
 does not select a path, address, endpoint, peer, or session. The separate
@@ -106,6 +114,7 @@ Residual ratings assume the declared local single-user boundary.
 | Threat | Inherent risk | Controls and evidence | Residual |
 |---|---|---|---|
 | Oversized or deeply nested messages exhaust CPU or memory | High | Pre-decode byte/nesting caps, bounded collections and budgets, fail-before-mutation tests | Low |
+| A malformed, substituted, reordered, or semantically inconsistent compilation result reaches an adapter | High | Exact schema version and canonical LF bytes; unknown/duplicate/code rejection; independent encoded/logical/text/count/patch bounds; code-specific field roles; strict order/uniqueness; patch/outcome/revision invariants; bounded re-encoding; no invalid codec result; no invalid completed compiler result; mandatory validation under each future adapter's own limits | Low before any future adapter adds its own session and identity policy; canonical bytes provide no authentication, authorization, confidentiality, or transport approval |
 | Malformed, substituted, or adversarial GLB/PNG allocates excessively or reaches GPU state | High | Service-owned exact-hash admission, source/decoded/count limits, strict geometry/image subset, exact 32-byte expanded-vertex reservation, finite non-zero same-count normal, full-source finite same-count primary-coordinate, unit-bounded numeric material validation, PNG dimension/pixel/working/decoded bounds, separately reserved unique GPU texture count/bytes, exact-pinned vendored decoder, explicit one-item processing, empty recovery residency, truncation corpus, unsafe proxy exclusions | Medium |
 | Stale, conflicting, or partially invalid patch mutates part of the world | High | Exact base revision, complete preflight plan, atomic commit, invariant/property tests | Low |
 | Idempotency-key reuse duplicates or substitutes work | High | Retained canonical command fingerprint, transaction identity, conflict error, exact replayed receipt | Low |
