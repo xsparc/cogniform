@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF043 bounded transport-neutral compilation results on
+and extended through CF044 versioned local imagination sessions on
 2026-08-09.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
@@ -52,10 +52,12 @@ snapshots and canonical replay entries.
    bounds and integrity checks without creating an endpoint or session.
 8. **Control bytes to local-session schema.** Direction-specific client/server
    JSON crosses byte/nesting, version, unknown-field, canonical-byte, nested
-   protocol-value, and effective-limit checks without execution or I/O.
+   protocol/compilation-value, role, and effective-limit checks without
+   execution or I/O.
 9. **Session values to one local-service executor.** Validated instructions
    cross explicit hello/lifecycle, peer/local/service limit, correlation,
-   command-order, observation-delivery, output, and quiescent-close checks
+   typed patch/imagination command-order, exact replay, observation-delivery,
+   output, and quiescent-close checks
    without acquiring endpoint or automatic scheduling authority.
 10. **Inherited standard streams to the CLI session driver.** A parent-owned
    redirected binary stream crosses exact argument/terminal preflight, bounded
@@ -114,7 +116,8 @@ Residual ratings assume the declared local single-user boundary.
 | Threat | Inherent risk | Controls and evidence | Residual |
 |---|---|---|---|
 | Oversized or deeply nested messages exhaust CPU or memory | High | Pre-decode byte/nesting caps, bounded collections and budgets, fail-before-mutation tests | Low |
-| A malformed, substituted, reordered, or semantically inconsistent compilation result reaches an adapter | High | Exact schema version and canonical LF bytes; unknown/duplicate/code rejection; independent encoded/logical/text/count/patch bounds; code-specific field roles; strict order/uniqueness; patch/outcome/revision invariants; bounded re-encoding; no invalid codec result; no invalid completed compiler result; mandatory validation under each future adapter's own limits | Low before any future adapter adds its own session and identity policy; canonical bytes provide no authentication, authorization, confidentiality, or transport approval |
+| A malformed, substituted, reordered, or semantically inconsistent compilation result reaches an adapter | High | Exact schema version and canonical LF bytes; unknown/duplicate/code rejection; independent encoded/logical/text/count/patch bounds; code-specific field roles; strict order/uniqueness; patch/outcome/revision invariants; bounded re-encoding; no invalid codec result; no invalid completed compiler result; CF044 installs local-session bounds before compilation/application; mandatory validation under each later adapter's own limits | Low inside the CF044 local single-client mapping; canonical bytes provide no authentication, authorization, confidentiality, or remote-transport approval |
+| A local-session imagination changes version, exceeds negotiated result bounds, misbinds identity/receipt roles, or replays through duplicate compilation/mutation | High | Version-locked hello; field-wise compilation-limit negotiation; nested canonical result validation; imagination/key/transaction/revision/operation/status role checks; one typed command FIFO; exact-once correlation release; gateway-retained replay returned at admission without `process_next` | Low inside the single-client local inherited-stream boundary; no peer authentication, confidentiality, or remote replay policy |
 | Malformed, substituted, or adversarial GLB/PNG allocates excessively or reaches GPU state | High | Service-owned exact-hash admission, source/decoded/count limits, strict geometry/image subset, exact 32-byte expanded-vertex reservation, finite non-zero same-count normal, full-source finite same-count primary-coordinate, unit-bounded numeric material validation, PNG dimension/pixel/working/decoded bounds, separately reserved unique GPU texture count/bytes, exact-pinned vendored decoder, explicit one-item processing, empty recovery residency, truncation corpus, unsafe proxy exclusions | Medium |
 | Stale, conflicting, or partially invalid patch mutates part of the world | High | Exact base revision, complete preflight plan, atomic commit, invariant/property tests | Low |
 | Idempotency-key reuse duplicates or substitutes work | High | Retained canonical command fingerprint, transaction identity, conflict error, exact replayed receipt | Low |

@@ -80,10 +80,12 @@ not control or observation payload values.
 
 ## Session-schema boundary
 
-The [CF040 local-session schema](local-session-messages.md) now defines
-versioned hello, patch, query, observation, failure, and close control values.
-It reuses this frame's outer correlation ID and exact control bounds, but it
-does not own `Read`, `Write`, stdin/stdout, a service, a scheduler, or shutdown.
+The [local-session schema](local-session-messages.md) defines versioned hello,
+patch, query, observation, failure, and close control values. CF044's schema
+version two additionally maps bounded imagination submission and compilation
+outcomes. Both versions reuse this frame's outer correlation ID and exact
+control bounds, but the framing crate does not own `Read`, `Write`,
+stdin/stdout, a service, a scheduler, or shutdown.
 
 ## Endpoint boundary
 
@@ -92,6 +94,8 @@ caller-driven lifecycle, service mapping, and deterministic advancement.
 CF042's [`serve-stdio` composition](local-stdio-session.md) supplies one fixed
 local policy for inherited redirected standard I/O, half-duplex scheduling,
 per-frame flush, live-operation deadlines, stream failures, and shutdown.
+CF044 extends that existing composition through schema version two; it does
+not add another endpoint or alter framing.
 Those decisions remain outside this framing crate and do not create a named
 pipe, listener, socket, or process. A remote listener additionally requires authenticated
 identity, authorization, confidentiality, replay/freshness protection, and

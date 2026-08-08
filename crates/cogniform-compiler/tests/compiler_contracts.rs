@@ -1,8 +1,9 @@
 //! Determinism, explanation, constraint, and budget contracts for the compiler.
 
 use cogniform_compiler::{
-    COMPILATION_SCHEMA_VERSION, CompilationDecisionCode, CompilationLimits, CompilationSceneView,
-    CompileError, CompilerConfig, DeterministicCompiler, UnresolvedConstraintCode,
+    COMPILATION_SCHEMA_VERSION, CompilationCodecError, CompilationDecisionCode, CompilationLimits,
+    CompilationSceneView, CompileError, CompilerConfig, DeterministicCompiler,
+    UnresolvedConstraintCode,
 };
 use cogniform_protocol::{
     ComponentValue, DeliverySemantic, FiniteF32, IdempotencyKey, ImaginationBudget,
@@ -191,6 +192,51 @@ fn explicit_report_limits_fail_before_a_result_is_returned() {
         DeterministicCompiler::new(config).compile(&request, &scene),
         Err(CompileError::InvalidCompilationResult(error))
             if error.kind() == cogniform_compiler::CompilationValidationKind::DecisionLimitExceeded
+    ));
+}
+
+#[test]
+fn encoded_and_nesting_report_limits_fail_before_a_result_is_returned() {
+    let runtime_limits = RuntimeLimits::default();
+    let request = imagination(vec![entity("table", [2.0, 1.0, 1.0])]);
+    let scene = CompilationSceneView::new(SceneRevision::new(7), []);
+    let default_config = CompilerConfig::new(runtime_limits);
+    let baseline = DeterministicCompiler::new(default_config)
+        .compile(&request, &scene)
+        .unwrap();
+    let encoded = baseline
+        .to_canonical_json(&default_config.compilation_limits)
+        .unwrap();
+
+    let encoded_limited = CompilerConfig {
+        compilation_limits: CompilationLimits {
+            max_encoded_bytes: core::num::NonZeroU64::new(
+                u64::try_from(encoded.len()).unwrap() - 1,
+            )
+            .unwrap(),
+            ..default_config.compilation_limits
+        },
+        ..default_config
+    };
+    assert!(matches!(
+        DeterministicCompiler::new(encoded_limited).compile(&request, &scene),
+        Err(CompileError::InvalidCompilationEncoding(
+            CompilationCodecError::EncodedSizeExceeded { .. }
+        ))
+    ));
+
+    let nesting_limited = CompilerConfig {
+        compilation_limits: CompilationLimits {
+            max_json_nesting_depth: core::num::NonZeroU16::new(1).unwrap(),
+            ..default_config.compilation_limits
+        },
+        ..default_config
+    };
+    assert!(matches!(
+        DeterministicCompiler::new(nesting_limited).compile(&request, &scene),
+        Err(CompileError::InvalidCompilationEncoding(
+            CompilationCodecError::NestingLimitExceeded { .. }
+        ))
     ));
 }
 

@@ -22,6 +22,9 @@ scene revision that produced it.
 > pipe, listener, or session and performs no automatic delivery. Separate
 > bounded session-schema and caller-driven executor crates add exact
 > hello/patch/query/observation/close correlation without endpoint authority.
+> Schema version two now also carries bounded semantic imagination,
+> deterministic compilation outcomes, optional applied receipts, and exact retained
+> replay while version-one bytes remain fixed.
 > The CLI now composes those boundaries as one fixed-profile, half-duplex
 > `serve-stdio` child-process command over inherited redirected streams, with
 > negotiated limits, per-frame flush, capped polling, and stable redacted
@@ -31,8 +34,9 @@ scene revision that produced it.
 > deterministic primitive imagination compiler are also available. Compiler
 > outcomes now live in a separate bounded schema-version-one value crate with
 > exact canonical LF JSON, explicit report limits, ordered explanations, and
-> strict compiled-versus-unresolved invariants; no session message carries
-> them yet. The current
+> strict compiled-versus-unresolved invariants; the version-two local session
+> validates and carries those values without moving compiler execution into the
+> schema crate. The current
 > asset baseline adds content-addressed GLB geometry with optional finite vertex
 > normals, one retained finite primary coordinate set, and unit-bounded numeric
 > metallic-roughness materials, plus one bounded embedded PNG base-color
@@ -83,7 +87,7 @@ implementations arrive:
 | `cogniform-protocol` | Backend-neutral IDs, patches, receipts, limits, and observations |
 | `cogniform-observation` | Owned payload values plus bounded transport-neutral binary encoding and causal integrity binding |
 | `cogniform-local-transport` | Fixed bounded framing over caller-owned synchronous streams without endpoint or session authority |
-| `cogniform-local-session` | Canonical direction-specific local patch/query/observation control messages without service execution or endpoint authority |
+| `cogniform-local-session` | Canonical direction-specific local patch/imagination/query/observation control messages without service execution or endpoint authority |
 | `cogniform-local-executor` | Bounded caller-driven session lifecycle, service mapping, and exact correlation release without endpoint or runtime-loop authority |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
@@ -122,7 +126,8 @@ the header-first pre-buffer bound, exact frame layout, synchronous I/O
 behavior, and deferred endpoint responsibilities. The
 [local-session message guide](docs/protocol/local-session-messages.md)
 specifies canonical client/server control variants, outer-only correlation,
-exact-revision observation admission, and effective bounds. The
+version-two compilation limits and imagination roles, exact-revision
+observation admission, and effective bounds. The
 [local-session executor guide](docs/protocol/local-session-executor.md)
 specifies hello sequencing, service mapping, deterministic advancement, exact
 terminal correlation, and bounded observation delivery without endpoint

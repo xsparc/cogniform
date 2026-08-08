@@ -66,8 +66,8 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-compilation` | Versioned bounded compiler outcomes, report validation, and canonical JSON | Depends only on protocol and existing serialization; owns no compiler execution, session, service, world, renderer, or I/O |
 | `cogniform-observation` | Owned observation payload values and bounded transport-neutral binary envelopes | Depends only on protocol and deterministic hashing; owns no renderer, service, I/O, session, or shared-memory resource |
 | `cogniform-local-transport` | Fixed bounded frames over caller-owned synchronous streams | Depends only on protocol, observation values, deterministic hashing, and standard I/O traits; opens no endpoint and owns no session or service state |
-| `cogniform-local-session` | Versioned direction-specific control values and canonical bounded CF039 control bytes | Depends only on protocol and local transport; executes no service work and opens no endpoint |
-| `cogniform-local-executor` | Bounded caller-driven session lifecycle, service mapping, and exact correlation ownership | Depends on engine plus the protocol/session/transport boundaries; owns one supplied local service but no endpoint, I/O, thread, timer, or runtime loop |
+| `cogniform-local-session` | Versioned direction-specific control values and canonical bounded CF039 control bytes | Depends only on compilation values, protocol, and local transport; executes no service work and opens no endpoint |
+| `cogniform-local-executor` | Bounded caller-driven session lifecycle, service mapping, and exact correlation ownership | Depends on compilation values, engine, and the protocol/session/transport boundaries; owns one supplied local service but no endpoint, I/O, thread, timer, or runtime loop |
 | `cogniform-compiler` | Pure seeded primitive imagination normalization | Depends only on compilation values, protocol, and deterministic hashing; owns no world/service state |
 | `cogniform-world` | `hecs` implementation, stable-ID index, validation, atomic commit, hierarchy, transforms, queries | Depends on protocol/math; never renderer or service |
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
@@ -111,6 +111,12 @@ CF043 extracts compiler outcome values into `cogniform-compilation`, adds an
 exact bounded schema-version-one LF JSON contract, and preserves compiler
 re-exports. It changes no compiler normalization or gateway behavior and gives
 no session or transport layer compiler-execution authority.
+CF044 adds local-session schema version two with explicit compilation-limit
+negotiation, semantic submission, deterministic completion, and exact retained
+replay. Effective result bounds are installed in the service compiler before
+semantic admission so over-limit compilation cannot apply a patch. Version-one
+bytes remain fixed; the executor maps both command kinds through the existing gateway and the stdio loop remains generic and
+half-duplex.
 Spatial acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -119,6 +125,9 @@ or dependency footprint.
 
 ```text
 protocol <- compilation <- compiler
+              ^
+              |
+        local session
 
 protocol <- world <- replay
     ^
@@ -285,8 +294,9 @@ limit before body allocation. This is framing over caller-owned I/O, not a
 session, subscription, service scheduler, or secure remote endpoint.
 
 The separate local-session schema assigns canonical LF-terminated meaning to
-control bytes for hello/limits, patch admission and completion, exact-revision
-query and observation work, stable redacted failures, and closure. Client and
+control bytes for hello/limits, patch admission and completion, version-two
+imagination admission and bounded compilation completion, exact-revision query
+and observation work, stable redacted failures, and closure. Client and
 server roots are direction-specific, and the outer frame value is the only
 correlation identity. `ObservationRequest` names its exact expected revision;
 schema and revision reject before capacity reservation or renderer submission,
@@ -294,8 +304,9 @@ and completion verifies the rendered source again. The schema codec executes
 no operation and owns no lifecycle or I/O.
 
 The separate local-session executor requires exactly one hello and intersects
-peer receive, local frame, and service runtime limits before work. It owns
-bounded ordered patch and observation correlation maps, maps every gateway
+peer receive, local frame, and service runtime limits before work. Version two
+also intersects explicit compilation-result limits. It owns bounded ordered
+typed command and observation correlation maps, maps every gateway
 admission to an exact live or terminal outcome, advances at most one command
 and polls at most one observation completion per explicit call, emits pending
 at most once per observation, and returns no more than two validated frames.
@@ -307,7 +318,7 @@ The CLI's `serve-stdio` command supplies that missing local runtime policy for
 one deliberately narrow profile. It validates exact arguments and redirected
 standard streams before adapter selection, treats only immediate frame-boundary
 EOF as a clean no-op, negotiates hello limits before subsequent frames, flushes
-each server frame, and drives every admitted patch or observation to a terminal
+each server frame, and drives every admitted patch, imagination, or observation to a terminal
 result before reading again. Repeated completion polling has a fixed 2 ms
 cadence and 15-second total deadline, but synchronous read, write, flush,
 service initialization, and executor calls are not preempted. A failure may
@@ -439,8 +450,10 @@ All agent data, labels, assets, procedures, and transport messages are untrusted
   vectors; require transports to cap frames before buffering;
 - validate each completed compiler result against its schema version, complete
   result bounds, nested patch bounds, field roles, canonical order, unique
-  keys, outcome shape, and source revision before return; future adapters must
-  repeat result validation under their own declared limits;
+  keys, outcome shape, canonical encoded bytes/nesting, and source revision
+  before return; CF044 installs the negotiated local-session bounds into the
+  compiler before semantic work, and later adapters must repeat validation
+  under their own declared limits;
 - read local frame headers into fixed storage and reject invalid correlation,
   section layout, arithmetic, and independent control/bulk/total bounds before
   declared body allocation; retain only stable I/O categories on failure;
@@ -493,7 +506,8 @@ explicitly encode or decode one bounded metadata-bound observation payload,
 explicitly frame schema-owned control bytes or complete observations over a
 caller-owned synchronous local stream,
 explicitly encode or decode one bounded direction-specific local-session
-control message without executing it,
+control message without executing it, including version-two imagination and
+compilation-result roles,
 execute one bounded caller-driven local session over an owned service without
 opening an endpoint or starting an automatic loop,
 capture complete or exact-revision local recovery state, restore it into a
@@ -528,6 +542,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Atomic transaction | Any invalid operation rejects the complete patch and preserves prior revision/hash |
 | Idempotency | Repeated key returns the same receipt without duplicate mutation |
 | Compilation result contract | Exact compiled and unresolved schema-version-one LF fixtures round-trip under explicit encoded, nesting, logical, text, decision, unresolved, and nested-patch bounds; noncanonical bytes, unsupported/unknown fields or codes, invalid roles/order/duplicates/outcomes/revisions, and substitutions reject; compiler normalization and patch bytes remain unchanged while moved public names retain source-path re-exports |
+| Local imagination session | Exact version-one bytes remain fixed; version-two hello negotiates and pre-installs compilation bounds, semantic submission returns every admission plus exact compiled/unresolved completion and replay, submitted identity/revision roles are bound, mixed command supersession preserves FIFO position, and no over-limit or replay path duplicates compilation or mutation |
 | Hierarchy | Cycles/depth violations reject atomically; propagation order is stable |
 | Replay | Repeating accepted canonical events yields the exact logical hash |
 | Restoration | A bounded integrity-checked recovery envelope round-trips exact replay/frame state; the decoded complete point restores logical/replay state and continues frame/revision causality in a fresh service |
@@ -568,8 +583,7 @@ snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
 rotation, recovery-inspection profile selection, broader diagnostic schemas,
 including schemas beyond the versioned recovery, controlled-measurement, and
-canonical-scenario and asset-source-inspection CLI reports, versioned
-imagination/compilation session mapping and correlation, and model policy remain
+canonical-scenario and asset-source-inspection CLI reports, and model policy remain
 explicitly open.
 Defaults in the roadmap are
 planning assumptions, not production commitments.

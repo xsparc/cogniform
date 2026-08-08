@@ -49,7 +49,8 @@ received and adapter work began.
 
 Every immediate executor output is encoded completely through CF039, physical
 short writes are completed within that one logical write attempt, and stdout
-is flushed before the next output or input. After an accepted patch or observation, the
+is flushed before the next output or input. After an accepted patch,
+version-two imagination, or observation, the
 command reads no next request while `live_correlations` is nonzero. It drives
 the executor to a terminal result first:
 
@@ -109,12 +110,17 @@ endpoints, permissions, retention, and disclosure.
 The command does not create a process, path, named pipe, file, socket,
 listener, shared-memory allocation, daemon, service installation, telemetry
 exporter, or persistent record. It supports one client, one service,
-half-duplex operation, and only the CF040 patch/query/observation/close schema.
-Imagination, procedures, asset, recovery, administrative operations, remote
+half-duplex operation, and the versioned local
+patch/imagination/query/observation/close schema. Version-two imagination uses
+the existing deterministic compiler and gateway; the stream driver does not
+compile, apply, replay, or schedule independently. Procedures, asset,
+recovery, administrative operations, remote
 transport, authentication, confidentiality, tenancy, network rate policy,
-deployment, stable versioning, and release publication are outside CF042.
+deployment, stable versioning, and release publication are outside this fixed
+profile.
 
 See [ADR 0042](../adr/0042-bounded-fixed-profile-stdio-session.md), the
+[version-two mapping decision](../adr/0044-versioned-local-imagination-session-mapping.md), the
 [getting-started guide](../getting-started/local-stdio-session.md), the
 [failure guide](../operations/failure-and-recovery.md), and the
 [threat model](../threat-model/mvp.md).

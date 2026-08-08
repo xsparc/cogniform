@@ -4,6 +4,7 @@ use cogniform_assets::{
     AssetAdmission, AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetStore, AssetStoreConfig,
     AssetStoreEviction, AssetStoreStats,
 };
+use cogniform_compiler::CompilationLimits;
 use cogniform_procedural::{ProcedureArtifact, ProcedureRequest, execute};
 use cogniform_protocol::{
     ContentHash, FrameId, ImaginationEnvelope, RuntimeLimits, ScenePatch, SceneQuery,
@@ -299,6 +300,20 @@ impl LocalService {
         patch: ScenePatch,
     ) -> Result<GatewayAdmission, LocalServiceError> {
         self.gateway.submit_patch(patch).map_err(Into::into)
+    }
+
+    /// Configures bounded results for future imagination compilation.
+    ///
+    /// This is intended for a quiescent local adapter immediately after its
+    /// versioned limit handshake. Existing retained replay values are not
+    /// rewritten.
+    pub fn configure_compilation_limits(
+        &mut self,
+        limits: CompilationLimits,
+    ) -> Result<(), LocalServiceError> {
+        self.gateway
+            .configure_compilation_limits(limits)
+            .map_err(Into::into)
     }
 
     /// Admits one validated imagination under its declared delivery semantic.

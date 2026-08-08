@@ -8,19 +8,23 @@ use std::{
     time::{Duration, Instant},
 };
 
+use cogniform_compilation::CompilationLimits;
 use cogniform_engine::ObservationPayload;
 use cogniform_local_session::{
-    ClientHello, LOCAL_SESSION_SCHEMA_VERSION, LocalSessionClientKind, LocalSessionClientMessage,
+    ClientHello, ImaginationAdmissionStatus, LOCAL_SESSION_SCHEMA_VERSION,
+    LOCAL_SESSION_SCHEMA_VERSION_V2, LocalSessionClientKind, LocalSessionClientMessage,
     LocalSessionLimits, LocalSessionServerKind, PatchAdmissionStatus, QueryRequest,
-    RequestObservation, SessionClose, SubmitPatch, client_control_frame,
-    decode_server_control_frame,
+    RequestObservation, SessionClose, SubmitImagination, SubmitPatch, client_control_frame,
+    decode_server_control_frame, decode_server_control_frame_with_limits,
 };
 use cogniform_local_transport::{LocalFrame, LocalFrameConfig, encode_frame, read_frame};
 use cogniform_protocol::{
     ApplyStatus, CameraComponent, ComponentValue, ConflictPolicy, CreateEntity, DeliverySemantic,
-    FiniteF32, IdempotencyKey, LocalTransform, ObservationId, ObservationKind, ObservationQuality,
-    ObservationRequest, PatchBudget, PositiveF32, PositiveVec3, Quaternion, SceneOperation,
-    ScenePatch, SceneQuery, SceneRevision, SchemaVersion, StableEntityId, TransactionId, Vec3,
+    FiniteF32, IdempotencyKey, ImaginationBudget, ImaginationEnvelope, ImaginationId,
+    ImaginedEntity, LocalTransform, ObservationId, ObservationKind, ObservationQuality,
+    ObservationRequest, PatchBudget, PositiveF32, PositiveVec3, PrimitiveComponent, PrimitiveShape,
+    Quaternion, SceneOperation, ScenePatch, SceneQuery, SceneRevision, SceneText, SchemaVersion,
+    StableEntityId, TransactionId, Vec3,
 };
 
 const CHILD_TIMEOUT: Duration = Duration::from_secs(30);
@@ -85,6 +89,27 @@ fn controlled_child_completes_hello_patch_query_observation_and_close() {
     assert_session_output(&output.stdout, &config, ids);
 }
 
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn controlled_child_completes_v2_imagination_query_observation_replay_and_close() {
+    let config = LocalFrameConfig::default();
+    let ids = SessionIds {
+        entity: StableEntityId::new(15).unwrap(),
+        camera: StableEntityId::new(16).unwrap(),
+        observation: ObservationId::new(17).unwrap(),
+    };
+    let input = encode_v2_session_input(&config, ids);
+
+    let output = run_with_input(&input, CHILD_TIMEOUT);
+    assert!(
+        output.status.success(),
+        "{}",
+        normalize(output.stderr.clone())
+    );
+    assert!(output.stderr.is_empty());
+    assert_v2_session_output(&output.stdout, &config, ids);
+}
+
 #[derive(Clone, Copy)]
 struct SessionIds {
     entity: StableEntityId,
@@ -98,6 +123,7 @@ fn encode_session_input(config: &LocalFrameConfig, ids: SessionIds) -> Vec<u8> {
             1,
             LocalSessionClientKind::Hello(ClientHello {
                 receive_limits: LocalSessionLimits::from_config(config).unwrap(),
+                compilation_receive_limits: None,
             }),
             config,
         ),
@@ -141,6 +167,230 @@ fn encode_session_input(config: &LocalFrameConfig, ids: SessionIds) -> Vec<u8> {
         .iter()
         .flat_map(|frame| encode_frame(frame, config).unwrap())
         .collect()
+}
+
+fn encode_v2_session_input(config: &LocalFrameConfig, ids: SessionIds) -> Vec<u8> {
+    let request = imagination(ids.entity);
+    let frames = [
+        client_v2(
+            1,
+            LocalSessionClientKind::Hello(ClientHello {
+                receive_limits: LocalSessionLimits::from_config(config).unwrap(),
+                compilation_receive_limits: Some(CompilationLimits::default()),
+            }),
+            config,
+        ),
+        client_v2(
+            2,
+            LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                imagination: request.clone(),
+            }),
+            config,
+        ),
+        client_v2(
+            3,
+            LocalSessionClientKind::SubmitPatch(SubmitPatch {
+                patch: camera_patch(ids.camera),
+            }),
+            config,
+        ),
+        client_v2(
+            4,
+            LocalSessionClientKind::Query(QueryRequest {
+                query: SceneQuery {
+                    schema_version: SchemaVersion::V1,
+                    scene_revision: SceneRevision::new(2),
+                    entity_ids: vec![ids.entity],
+                    component_kinds: Vec::new(),
+                    limit: NonZeroU32::new(1).unwrap(),
+                },
+            }),
+            config,
+        ),
+        client_v2(
+            5,
+            LocalSessionClientKind::RequestObservation(RequestObservation {
+                request: ObservationRequest {
+                    schema_version: SchemaVersion::V1,
+                    observation_id: ids.observation,
+                    scene_revision: SceneRevision::new(2),
+                    camera_id: ids.camera,
+                    kind: ObservationKind::Visibility,
+                    quality: ObservationQuality::Low,
+                },
+            }),
+            config,
+        ),
+        client_v2(
+            6,
+            LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                imagination: request,
+            }),
+            config,
+        ),
+        client_v2(7, LocalSessionClientKind::Close(SessionClose {}), config),
+    ];
+    frames
+        .iter()
+        .flat_map(|frame| encode_frame(frame, config).unwrap())
+        .collect()
+}
+
+fn assert_v2_session_output(output: &[u8], config: &LocalFrameConfig, ids: SessionIds) {
+    let limits = CompilationLimits::default();
+    let mut bytes = output;
+    let hello_frame = read_frame(&mut bytes, config).unwrap().unwrap();
+    assert_eq!(hello_frame.correlation_id().get(), 1);
+    let (_, hello) =
+        decode_server_control_frame_with_limits(&hello_frame, config, &limits).unwrap();
+    let LocalSessionServerKind::Hello(hello) = hello.message else {
+        panic!("expected version-two server hello");
+    };
+    assert_eq!(hello.effective_compilation_limits, Some(limits));
+    let effective_config = hello.effective_limits.to_frame_config().unwrap();
+
+    let imagination_admission = read_frame(&mut bytes, &effective_config).unwrap().unwrap();
+    assert_eq!(imagination_admission.correlation_id().get(), 2);
+    let (_, imagination_admission) =
+        decode_server_control_frame_with_limits(&imagination_admission, &effective_config, &limits)
+            .unwrap();
+    assert!(matches!(
+        imagination_admission.message,
+        LocalSessionServerKind::ImaginationAdmission(admission)
+            if admission.status == ImaginationAdmissionStatus::Queued
+    ));
+    let imagination_completion = read_frame(&mut bytes, &effective_config).unwrap().unwrap();
+    assert_eq!(imagination_completion.correlation_id().get(), 2);
+    let (_, imagination_completion) = decode_server_control_frame_with_limits(
+        &imagination_completion,
+        &effective_config,
+        &limits,
+    )
+    .unwrap();
+    let LocalSessionServerKind::ImaginationCompleted(first_completion) =
+        imagination_completion.message
+    else {
+        panic!("expected imagination completion");
+    };
+    assert_eq!(
+        first_completion.compilation.imagination_id,
+        ImaginationId::new(101).unwrap()
+    );
+    assert!(first_completion.compilation.unresolved.is_empty());
+    assert!(matches!(
+        first_completion.receipt,
+        Some(ref receipt)
+            if receipt.status == ApplyStatus::Applied
+                && receipt.new_revision == SceneRevision::new(1)
+    ));
+
+    assert_patch_v2(&mut bytes, &effective_config, &limits);
+    assert_query_v2(&mut bytes, &effective_config, &limits, ids.entity);
+    assert_observation_v2(&mut bytes, &effective_config, &limits, ids);
+
+    let replay_frame = read_frame(&mut bytes, &effective_config).unwrap().unwrap();
+    assert_eq!(replay_frame.correlation_id().get(), 6);
+    let (_, replay) =
+        decode_server_control_frame_with_limits(&replay_frame, &effective_config, &limits).unwrap();
+    let LocalSessionServerKind::ImaginationAdmission(admission) = replay.message else {
+        panic!("expected replay admission");
+    };
+    let ImaginationAdmissionStatus::Replayed { completion } = admission.status else {
+        panic!("expected retained imagination replay");
+    };
+    assert_eq!(completion.compilation, first_completion.compilation);
+    assert!(matches!(
+        completion.receipt,
+        Some(receipt) if receipt.status == ApplyStatus::IdempotentReplay
+    ));
+
+    let close_frame = read_frame(&mut bytes, &effective_config).unwrap().unwrap();
+    assert_eq!(close_frame.correlation_id().get(), 7);
+    let (_, close) =
+        decode_server_control_frame_with_limits(&close_frame, &effective_config, &limits).unwrap();
+    assert!(matches!(close.message, LocalSessionServerKind::Closed(_)));
+    assert!(read_frame(&mut bytes, &effective_config).unwrap().is_none());
+}
+
+fn assert_patch_v2(bytes: &mut &[u8], config: &LocalFrameConfig, limits: &CompilationLimits) {
+    let admission = read_frame(bytes, config).unwrap().unwrap();
+    assert_eq!(admission.correlation_id().get(), 3);
+    let (_, admission) =
+        decode_server_control_frame_with_limits(&admission, config, limits).unwrap();
+    assert!(matches!(
+        admission.message,
+        LocalSessionServerKind::PatchAdmission(admission)
+            if admission.status == PatchAdmissionStatus::Queued
+    ));
+    let completion = read_frame(bytes, config).unwrap().unwrap();
+    assert_eq!(completion.correlation_id().get(), 3);
+    let (_, completion) =
+        decode_server_control_frame_with_limits(&completion, config, limits).unwrap();
+    assert!(matches!(
+        completion.message,
+        LocalSessionServerKind::PatchCompleted(completion)
+            if completion.receipt.status == ApplyStatus::Applied
+                && completion.receipt.new_revision == SceneRevision::new(2)
+    ));
+}
+
+fn assert_query_v2(
+    bytes: &mut &[u8],
+    config: &LocalFrameConfig,
+    limits: &CompilationLimits,
+    entity_id: StableEntityId,
+) {
+    let frame = read_frame(bytes, config).unwrap().unwrap();
+    assert_eq!(frame.correlation_id().get(), 4);
+    let (_, result) = decode_server_control_frame_with_limits(&frame, config, limits).unwrap();
+    assert!(matches!(
+        result.message,
+        LocalSessionServerKind::QueryResult(result)
+            if result.result.scene_revision == SceneRevision::new(2)
+                && result.result.entities.len() == 1
+                && result.result.entities[0].entity_id == entity_id
+    ));
+}
+
+fn assert_observation_v2(
+    bytes: &mut &[u8],
+    config: &LocalFrameConfig,
+    limits: &CompilationLimits,
+    ids: SessionIds,
+) {
+    let accepted = read_frame(bytes, config).unwrap().unwrap();
+    assert_eq!(accepted.correlation_id().get(), 5);
+    let (_, accepted) = decode_server_control_frame_with_limits(&accepted, config, limits).unwrap();
+    assert!(matches!(
+        accepted.message,
+        LocalSessionServerKind::ObservationAccepted(reference)
+            if reference.observation_id == ids.observation
+                && reference.scene_revision == SceneRevision::new(2)
+    ));
+    let mut pending = 0;
+    loop {
+        let frame = read_frame(bytes, config).unwrap().unwrap();
+        assert_eq!(frame.correlation_id().get(), 5);
+        match frame {
+            LocalFrame::Observation {
+                metadata, payload, ..
+            } => {
+                assert_eq!(metadata.scene_revision, SceneRevision::new(2));
+                assert!(matches!(payload, ObservationPayload::Visibility(_)));
+                break;
+            }
+            frame @ LocalFrame::Control { .. } => {
+                let (_, message) =
+                    decode_server_control_frame_with_limits(&frame, config, limits).unwrap();
+                assert!(matches!(
+                    message.message,
+                    LocalSessionServerKind::ObservationPending(_)
+                ));
+                pending += 1;
+                assert_eq!(pending, 1);
+            }
+        }
+    }
 }
 
 fn assert_session_output(output: &[u8], config: &LocalFrameConfig, ids: SessionIds) {
@@ -284,6 +534,75 @@ fn client(
         config,
     )
     .unwrap()
+}
+
+fn client_v2(
+    correlation_id: u64,
+    message: LocalSessionClientKind,
+    config: &LocalFrameConfig,
+) -> LocalFrame {
+    client_control_frame(
+        NonZeroU64::new(correlation_id).unwrap(),
+        &LocalSessionClientMessage {
+            schema_version: LOCAL_SESSION_SCHEMA_VERSION_V2,
+            message,
+        },
+        config,
+    )
+    .unwrap()
+}
+
+fn imagination(entity_id: StableEntityId) -> ImaginationEnvelope {
+    ImaginationEnvelope {
+        schema_version: SchemaVersion::V1,
+        imagination_id: ImaginationId::new(101).unwrap(),
+        transaction_id: TransactionId::new(102).unwrap(),
+        idempotency_key: IdempotencyKey::new(103).unwrap(),
+        base_revision: SceneRevision::INITIAL,
+        delivery: DeliverySemantic::MustApply,
+        seed: 104,
+        declared_budget: ImaginationBudget::default(),
+        entities: vec![ImaginedEntity {
+            key: SceneText::new("table").unwrap(),
+            preferred_id: Some(entity_id),
+            name: None,
+            primitive: PrimitiveComponent {
+                shape: PrimitiveShape::Cuboid,
+                dimensions: PositiveVec3 {
+                    x: positive(1.0),
+                    y: positive(1.0),
+                    z: positive(1.0),
+                },
+            },
+            transform: None,
+            material: None,
+        }],
+        relations: Vec::new(),
+        constraints: Vec::new(),
+    }
+}
+
+fn camera_patch(camera_id: StableEntityId) -> ScenePatch {
+    ScenePatch {
+        schema_version: SchemaVersion::V1,
+        transaction_id: TransactionId::new(112).unwrap(),
+        idempotency_key: IdempotencyKey::new(113).unwrap(),
+        base_revision: SceneRevision::new(1),
+        conflict_policy: ConflictPolicy::RequireExactBase,
+        delivery: DeliverySemantic::MustApply,
+        declared_budget: PatchBudget::default(),
+        operations: vec![SceneOperation::Create(CreateEntity {
+            entity_id: camera_id,
+            components: vec![
+                ComponentValue::LocalTransform(transform(3.0)),
+                ComponentValue::Camera(CameraComponent {
+                    vertical_fov_radians: positive(core::f32::consts::FRAC_PI_2),
+                    near: positive(0.1),
+                    far: positive(100.0),
+                }),
+            ],
+        })],
+    }
 }
 
 fn scene_patch(entity_id: StableEntityId, camera_id: StableEntityId) -> ScenePatch {

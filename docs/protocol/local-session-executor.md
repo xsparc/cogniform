@@ -9,6 +9,8 @@ boundary.
 CF042's separate [`serve-stdio` composition](local-stdio-session.md) supplies
 one fixed caller that owns inherited redirected I/O, bounded polling, deadlines,
 flushes, and shutdown without changing this crate's authority.
+CF044 extends the same state machine with schema-version-two imagination
+commands while preserving version-one behavior.
 
 ## Lifecycle
 
@@ -16,7 +18,7 @@ flushes, and shutdown without changing this crate's authority.
 |---|---|---|
 | awaiting hello | exactly one client `hello` | field-wise effective limits and active state |
 | awaiting hello | any other valid client message | `protocol_state` failure |
-| active | patch, query, observation, or quiescent close | explicitly mapped service behavior |
+| active | patch, imagination in version two, query, observation, or quiescent close | explicitly mapped service behavior |
 | active | another hello or a duplicate live correlation | `protocol_state` failure |
 | closed | any input | `protocol_state` failure; no service work |
 
@@ -34,6 +36,15 @@ The hello result is the field-wise minimum of:
 - the caller-configured local frame and runtime limits; and
 - the owned service's runtime limits.
 
+For version two, compilation limits are independently intersected across the
+peer advertisement, caller-configured executor policy, and the service
+compiler's runtime-derived bounds. Version one omits compilation limits
+exactly. The executor installs the effective result limits into the quiescent
+service compiler before admitting semantic work, so encoded, nesting, logical,
+text, count, and nested-patch limit failures occur before patch application.
+The negotiated schema version is fixed for the session; later messages with
+another version fail before service work.
+
 The nested per-entity component count is also capped by the effective total
 component count. The effective control ceiling is recapped by effective runtime
 encoded bytes, and the resulting `LocalSessionLimits` converts to the exact
@@ -50,23 +61,30 @@ by a small redacted `limit_exceeded` response under the original correlation.
 ## Correlation and command semantics
 
 Only the CF039 outer non-zero value is a session correlation. Query and terminal
-admission responses release immediately. Live patch behavior is:
+admission responses release immediately. Patch and imagination commands share
+one typed FIFO/correlation map so gateway ordering and cross-kind latest-value
+supersession remain exact. Live command behavior is:
 
 | Gateway admission or completion | Correlation behavior |
 |---|---|
 | `queued` | retain the new correlation and FIFO position |
 | `already_queued` | terminal for the new correlation; retain the original live mapping |
 | `dropped` | terminal for the new correlation |
-| `replayed` | terminal for the new correlation with its idempotent receipt |
+| `replayed` | terminal for the new correlation with the cached completion; a compiled replay has an idempotent receipt and an unresolved replay has none |
 | `superseded` | reject and release the discarded correlation; retain the replacement at the same position |
-| newly `applied` | emit `patch_completed` and release exactly once |
-| late authoritative replay | emit terminal replayed admission and release exactly once |
+| newly applied patch | emit `patch_completed` and release exactly once |
+| newly compiled imagination | emit `imagination_completed` with an `applied` receipt and release exactly once |
+| newly unresolved imagination | emit `imagination_completed` without a patch or receipt and release exactly once |
 | processing failure | emit one stable failure and release exactly once |
 
 `advance` removes at most one locally ordered key and calls
-`LocalService::process_next` exactly once. A missing, different-key, or
-imagination response is an executor/service state invariant failure rather than
-an incorrectly correlated protocol response.
+`LocalService::process_next` exactly once. A missing, different-key, wrong-kind,
+invalid compilation, or inconsistent receipt becomes one correlated redacted
+`internal` failure and releases the live correlation rather than emitting an
+incorrectly correlated completion.
+Replayed imagination admission returns the exact retained compilation and a
+replay-marked receipt only when a patch exists; it does not call
+`process_next`, recompile, or mutate the world.
 
 ## Observation semantics
 
@@ -95,4 +113,5 @@ authorization, confidentiality, freshness and replay policy, rate controls,
 preemptive cancellation, or partial-write recovery. Any broader or remote
 endpoint must add those controls explicitly.
 See [ADR 0041](../adr/0041-bounded-caller-driven-local-session-executor.md) and
+[ADR 0044](../adr/0044-versioned-local-imagination-session-mapping.md), plus
 the [MVP threat model](../threat-model/mvp.md).

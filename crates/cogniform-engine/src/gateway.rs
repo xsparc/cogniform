@@ -5,7 +5,8 @@ use std::{
 };
 
 use cogniform_compiler::{
-    CompilationResult, CompilationSceneView, CompilerConfig, DeterministicCompiler,
+    CompilationLimits, CompilationResult, CompilationSceneView, CompilerConfig,
+    DeterministicCompiler,
 };
 use cogniform_protocol::{
     ApplyReceipt, ApplyStatus, DeliverySemantic, IdempotencyKey, ImaginationEnvelope,
@@ -203,6 +204,33 @@ impl LocalGateway {
         })
     }
 
+    /// Rebinds future deterministic compilation to narrower transport bounds.
+    ///
+    /// The command queue must be empty so every admitted imagination has one
+    /// stable compiler policy from admission through processing. Retained
+    /// completed responses are unchanged and remain subject to adapter output
+    /// validation when replayed.
+    pub(crate) fn configure_compilation_limits(
+        &mut self,
+        compilation_limits: CompilationLimits,
+    ) -> Result<(), GatewayError> {
+        if self.queue.depth() != 0 {
+            return Err(GatewayError::InvalidConfig {
+                reason: "compilation limits require an empty command queue",
+            });
+        }
+        let available = CompilationLimits::for_runtime_limits(self.limits);
+        if !compilation_limits_fit(&compilation_limits, &available) {
+            return Err(GatewayError::InvalidConfig {
+                reason: "compilation limits exceed gateway runtime policy",
+            });
+        }
+        let mut compiler_config = CompilerConfig::new(self.limits);
+        compiler_config.compilation_limits = compilation_limits;
+        self.compiler = DeterministicCompiler::new(compiler_config);
+        Ok(())
+    }
+
     /// Admits one explicit patch according to its delivery semantic.
     pub fn submit_patch(&mut self, patch: ScenePatch) -> Result<GatewayAdmission, GatewayError> {
         patch
@@ -325,6 +353,35 @@ impl LocalGateway {
             count(self.completed.len()) + self.queue.depth() < self.idempotency_capacity;
         self.queue.admit(record, has_idempotency_capacity)
     }
+}
+
+fn compilation_limits_fit(proposed: &CompilationLimits, available: &CompilationLimits) -> bool {
+    proposed.max_encoded_bytes <= available.max_encoded_bytes
+        && proposed.max_decoded_bytes <= available.max_decoded_bytes
+        && proposed.max_json_nesting_depth <= available.max_json_nesting_depth
+        && proposed.max_text_bytes <= available.max_text_bytes
+        && proposed.max_decisions <= available.max_decisions
+        && proposed.max_unresolved_constraints <= available.max_unresolved_constraints
+        && runtime_limits_fit(&proposed.patch_limits, &available.patch_limits)
+}
+
+fn runtime_limits_fit(proposed: &RuntimeLimits, available: &RuntimeLimits) -> bool {
+    proposed.max_encoded_bytes <= available.max_encoded_bytes
+        && proposed.max_decoded_bytes <= available.max_decoded_bytes
+        && proposed.max_json_nesting_depth <= available.max_json_nesting_depth
+        && proposed.max_operations <= available.max_operations
+        && proposed.max_components <= available.max_components
+        && proposed.max_components_per_entity <= available.max_components_per_entity
+        && proposed.max_text_bytes <= available.max_text_bytes
+        && proposed.max_diagnostics <= available.max_diagnostics
+        && proposed.max_queue_capacity <= available.max_queue_capacity
+        && proposed.max_imagination_entities <= available.max_imagination_entities
+        && proposed.max_imagination_relations <= available.max_imagination_relations
+        && proposed.max_imagination_constraints <= available.max_imagination_constraints
+        && proposed.max_query_entities <= available.max_query_entities
+        && proposed.max_observation_width <= available.max_observation_width
+        && proposed.max_observation_height <= available.max_observation_height
+        && proposed.max_observation_pixels <= available.max_observation_pixels
 }
 
 pub(crate) fn validate_config(

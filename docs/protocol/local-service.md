@@ -47,6 +47,7 @@ handle, renderer device, queue, staging buffer, or replay log.
 | `evict_asset` | Release all queued and resident CPU/GPU state for one content hash without changing the world or replay |
 | `asset_status` | Return aggregate CPU-store and renderer-residency counters plus optional oldest import/upload ages |
 | `submit_patch` | Validate and admit one explicit patch under its delivery semantic |
+| `configure_compilation_limits` | Rebind future imagination compilation to bounded result limits while the command queue is empty |
 | `submit_imagination` | Validate and admit one deterministic primitive imagination |
 | `submit_procedure` | Execute one pure bounded built-in procedure and admit its generated ordinary patch |
 | `process_next` | Compile/apply at most one queued mutating command |
@@ -68,6 +69,13 @@ Patch and imagination admission preserves the gateway's `MustApply`,
 does not secretly process work. `process_next` handles no more than one queued
 item, so embedders choose their own scheduling policy without an unbounded
 background loop.
+
+CF044 uses `configure_compilation_limits` once during a version-two hello,
+before session work is admitted. The supplied bounds cannot exceed the
+service's runtime-derived compiler policy. The compiler validates the complete
+canonical result, including encoded bytes and nesting, before an optional patch
+is applied. Retained replay values are not rewritten and remain subject to the
+adapter's negotiated output validation.
 
 ## Pending-work age
 

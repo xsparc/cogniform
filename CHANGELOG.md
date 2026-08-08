@@ -123,6 +123,10 @@ release yet; the current workspace version remains `0.0.0`.
   outer-only correlation; bounded pre-decode nesting/bytes and bounded output;
   strict direction/unknown/canonical/nested-value validation; and no endpoint
   or service-execution authority;
+- compatible local-session schema version two with explicit compilation-result
+  limit negotiation, bounded imagination submission, every gateway admission
+  outcome, compiled or unresolved completion roles, exact retained replay, and
+  unchanged schema-version-one canonical bytes;
 - a separate `cogniform-local-executor` crate that owns one quiescent local
   service; negotiates peer, local-frame, and service bounds; enforces one hello,
   active, quiescent-close, and terminal states; maps patch/query/observation
@@ -156,6 +160,17 @@ release yet; the current workspace version remains `0.0.0`.
   only the new local package edge; no external package, version, checksum,
   vendor source, deterministic normalization, stable ID, normalized patch
   bytes, gateway behavior, world/replay state, rendered output, version, or
+  release action changed;
+- `ClientHello`, `ServerHello`, local-session message enums,
+  `LocalExecutorConfig`, and `LocalExecutorStatus` gain version-two compilation
+  and imagination fields/variants. This is source-breaking for exhaustive Rust
+  construction or matching in the unpublished `0.0.0` workspace, while all
+  version-one wire fixtures remain exact. `LocalSessionValidationKind` adds
+  validation cases and `CompileError` adds `InvalidCompilationEncoding`, so
+  exhaustive matching on those public enums is also source-breaking. The
+  compiler now enforces negotiated canonical encoded-byte and nesting limits
+  before a normalized patch can be applied. Only workspace-local dependency
+  edges changed; no external package, checksum, version, deployment, or
   release action changed;
 
 - `cogniform-cli` now directly reuses the workspace-local local-transport,
@@ -230,11 +245,9 @@ release yet; the current workspace version remains `0.0.0`.
 - no supported release, stable crates.io API, remote transport, authentication,
   automatic persistence/startup, snapshot retention, shared memory, model
   integration, deployment, or production SLA;
-- compilation results are available only as typed or canonical in-process
-  values; the current local-session/stdio schema does not submit imagination or
-  carry compilation outcomes;
 - `serve-stdio` supports one inherited-stream client, one fixed 64x64 local
-  service, half-duplex patch/query/observation work, fixed polling/deadline, and
+  service, half-duplex patch/imagination/query/observation work, fixed
+  polling/deadline, and
   negotiated close only. It creates no process or endpoint and supplies no
   confidentiality, authorization, freshness, replay policy, cancellation,
   resynchronization, full duplex, multi-client, daemon, or remote guarantee;

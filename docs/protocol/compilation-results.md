@@ -1,7 +1,8 @@
 # Compilation result contract
 
 Status: schema version one implemented by CF043 for typed and canonical
-in-process use. No local-session message carries this value yet.
+in-process use. CF044 carries the same value through the separately versioned
+local-session schema without adding transport concerns to this contract.
 
 `cogniform-compilation` separates deterministic compiler output values from
 the `cogniform-compiler` execution implementation. It depends only on core
@@ -122,12 +123,16 @@ limits.
 
 `cogniform-compiler` re-exports the moved types, errors, limits, and schema
 constant. Its default configuration derives report limits from its existing
-runtime limits and validates the report before returning it. This does not
+runtime limits and validates the complete canonical report, including encoded
+bytes and nesting, before returning it. This does not
 change deterministic normalization, identities, patch bytes, gateway
 admission, world/replay state, or rendering.
 
-The contract does not define a session message, correlation identity,
+The contract does not itself define a session message, correlation identity,
 executor action, stdio behavior, model response, external JSON Schema,
-transport endpoint, authentication boundary, or release format. Those require
-separate adapters and approval. See [ADR 0043](../adr/0043-bounded-transport-neutral-compilation-results.md)
-and the [local gateway guide](local-gateway-and-imagination.md).
+transport endpoint, authentication boundary, or release format. CF044's
+separate [local-session schema](local-session-messages.md) maps the value under
+explicit negotiated limits; other adapters still require separate approval.
+See [ADR 0043](../adr/0043-bounded-transport-neutral-compilation-results.md),
+[ADR 0044](../adr/0044-versioned-local-imagination-session-mapping.md), and the
+[local gateway guide](local-gateway-and-imagination.md).

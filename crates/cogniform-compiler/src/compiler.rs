@@ -133,9 +133,7 @@ impl DeterministicCompiler {
                 decisions,
                 unresolved,
             };
-            result
-                .validate_with_limits(&self.config.compilation_limits)
-                .map_err(CompileError::InvalidCompilationResult)?;
+            validate_completed_result(&result, &self.config.compilation_limits)?;
             return Ok(result);
         }
 
@@ -154,9 +152,7 @@ impl DeterministicCompiler {
             decisions,
             unresolved,
         };
-        result
-            .validate_with_limits(&self.config.compilation_limits)
-            .map_err(CompileError::InvalidCompilationResult)?;
+        validate_completed_result(&result, &self.config.compilation_limits)?;
         Ok(result)
     }
 
@@ -239,6 +235,21 @@ impl DeterministicCompiler {
             attempts: self.config.max_entity_id_attempts.get(),
         })
     }
+}
+
+fn validate_completed_result(
+    result: &CompilationResult,
+    limits: &CompilationLimits,
+) -> Result<(), CompileError> {
+    result
+        .to_canonical_json(limits)
+        .map(|_| ())
+        .map_err(|error| match error {
+            cogniform_compilation::CompilationCodecError::InvalidResult(validation) => {
+                CompileError::InvalidCompilationResult(validation)
+            }
+            error => CompileError::InvalidCompilationEncoding(error),
+        })
 }
 
 #[derive(Debug, Clone)]

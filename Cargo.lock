@@ -136,6 +136,7 @@ dependencies = [
 name = "cogniform-cli"
 version = "0.0.0"
 dependencies = [
+ "cogniform-compilation",
  "cogniform-engine",
  "cogniform-local-executor",
  "cogniform-local-session",
@@ -186,6 +187,7 @@ dependencies = [
 name = "cogniform-local-executor"
 version = "0.0.0"
 dependencies = [
+ "cogniform-compilation",
  "cogniform-engine",
  "cogniform-local-session",
  "cogniform-local-transport",
@@ -197,6 +199,7 @@ dependencies = [
 name = "cogniform-local-session"
 version = "0.0.0"
 dependencies = [
+ "cogniform-compilation",
  "cogniform-local-transport",
  "cogniform-observation",
  "cogniform-protocol",

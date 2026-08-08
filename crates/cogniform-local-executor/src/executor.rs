@@ -1,20 +1,25 @@
 use core::num::{NonZeroU32, NonZeroU64};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use cogniform_compilation::{CompilationLimits, CompilationResult};
 use cogniform_engine::{
     EngineError, GatewayAdmission, GatewayError, GatewayResponse, LocalService, LocalServiceError,
     ObservationDelivery, ObservationError, ObservationPayload,
 };
 use cogniform_local_session::{
-    LOCAL_SESSION_SCHEMA_VERSION, LocalSessionClientKind, LocalSessionError, LocalSessionLimits,
-    LocalSessionServerKind, LocalSessionServerMessage, ObservationReference, PatchAdmission,
-    PatchAdmissionStatus, PatchCompletion, QueryResponse, ServerHello, SessionClosed,
-    SessionFailure, SessionFailureCode, decode_client_control_frame, server_control_frame,
+    ImaginationAdmission, ImaginationAdmissionStatus, ImaginationCompletion,
+    LOCAL_SESSION_SCHEMA_VERSION, LOCAL_SESSION_SCHEMA_VERSION_V2, LocalSessionClientKind,
+    LocalSessionError, LocalSessionLimits, LocalSessionServerKind, LocalSessionServerMessage,
+    ObservationReference, PatchAdmission, PatchAdmissionStatus, PatchCompletion, QueryResponse,
+    ServerHello, SessionClosed, SessionFailure, SessionFailureCode, decode_client_control_frame,
+    decode_client_control_frame_with_limits, intersect_compilation_limits, server_control_frame,
+    server_control_frame_with_limits,
 };
 use cogniform_local_transport::{LocalFrame, LocalFrameConfig, encode_frame};
 use cogniform_protocol::{
-    ApplyStatus, IdempotencyKey, ObservationId, ObservationMetadata, ObservationRequest,
-    RuntimeLimits, ScenePatch, SceneQuery, SceneQueryResult,
+    ApplyStatus, IdempotencyKey, ImaginationEnvelope, ImaginationId, ObservationId,
+    ObservationMetadata, ObservationRequest, RuntimeLimits, ScenePatch, SceneQuery,
+    SceneQueryResult, SceneRevision, TransactionId,
 };
 
 use crate::LocalExecutorError;
@@ -27,6 +32,8 @@ pub const MAX_OUTPUT_FRAMES_PER_CALL: usize = 2;
 pub struct LocalExecutorConfig {
     /// Local receive policy used before and during negotiation.
     pub receive_config: LocalFrameConfig,
+    /// Local policy for compilation results sent through schema version two.
+    pub compilation_limits: CompilationLimits,
     /// Maximum command and observation correlations live at once.
     pub max_live_correlations: NonZeroU32,
     /// Exact maximum frames returned by one handle or advance call.
@@ -37,6 +44,7 @@ impl Default for LocalExecutorConfig {
     fn default() -> Self {
         Self {
             receive_config: LocalFrameConfig::default(),
+            compilation_limits: CompilationLimits::default(),
             max_live_correlations: NonZeroU32::new(1_024).expect("constant is non-zero"),
             max_output_frames_per_call: NonZeroU32::new(
                 u32::try_from(MAX_OUTPUT_FRAMES_PER_CALL).expect("constant fits u32"),
@@ -70,6 +78,8 @@ pub struct LocalExecutorStatus {
     pub max_output_frames_per_call: u32,
     /// Admitted patches awaiting one-command advancement.
     pub pending_patches: u32,
+    /// Admitted semantic requests awaiting one-command advancement.
+    pub pending_imaginations: u32,
     /// Accepted observations awaiting completion delivery.
     pub pending_observations: u32,
 }
@@ -124,6 +134,12 @@ impl LocalSessionExecutor {
         self.core.negotiated_limits()
     }
 
+    /// Returns effective compilation-result limits after a version-two hello.
+    #[must_use]
+    pub const fn negotiated_compilation_limits(&self) -> Option<CompilationLimits> {
+        self.core.negotiated_compilation_limits()
+    }
+
     /// Returns read-only access to the owned local service.
     #[must_use]
     pub const fn service(&self) -> &LocalService {
@@ -145,11 +161,15 @@ impl LocalSessionExecutor {
 enum SessionState {
     AwaitingHello,
     Active {
+        schema_version: u16,
         limits: LocalSessionLimits,
+        compilation_limits: Option<CompilationLimits>,
         frame_config: LocalFrameConfig,
     },
     Closed {
+        schema_version: u16,
         limits: LocalSessionLimits,
+        compilation_limits: Option<CompilationLimits>,
         frame_config: LocalFrameConfig,
     },
 }
@@ -159,8 +179,8 @@ struct SessionCore<S> {
     config: LocalExecutorConfig,
     state: SessionState,
     live_correlations: BTreeSet<NonZeroU64>,
-    patch_correlations: BTreeMap<IdempotencyKey, NonZeroU64>,
-    patch_order: VecDeque<IdempotencyKey>,
+    command_correlations: BTreeMap<IdempotencyKey, PendingCommand>,
+    command_order: VecDeque<IdempotencyKey>,
     observation_correlations: BTreeMap<ObservationId, PendingObservation>,
     observation_order: VecDeque<ObservationId>,
     observation_pending_reported: BTreeSet<ObservationId>,
@@ -193,6 +213,16 @@ impl<S: SessionService> SessionCore<S> {
                 reason: "effective local receive limits are inconsistent",
             }
         })?;
+        let service_compilation_limits =
+            CompilationLimits::for_runtime_limits(service_runtime_limits);
+        let receive_compilation_limits =
+            CompilationLimits::for_runtime_limits(effective_local_limits.runtime_limits);
+        config.compilation_limits =
+            intersect_compilation_limits(config.compilation_limits, service_compilation_limits)
+                .and_then(|limits| intersect_compilation_limits(limits, receive_compilation_limits))
+                .map_err(|_| LocalExecutorError::InvalidConfig {
+                    reason: "compilation limits are inconsistent",
+                })?;
         config.max_live_correlations = NonZeroU32::new(
             config.max_live_correlations.get().min(
                 config
@@ -244,8 +274,8 @@ impl<S: SessionService> SessionCore<S> {
             config,
             state: SessionState::AwaitingHello,
             live_correlations: BTreeSet::new(),
-            patch_correlations: BTreeMap::new(),
-            patch_order: VecDeque::new(),
+            command_correlations: BTreeMap::new(),
+            command_order: VecDeque::new(),
             observation_correlations: BTreeMap::new(),
             observation_order: VecDeque::new(),
             observation_pending_reported: BTreeSet::new(),
@@ -255,80 +285,171 @@ impl<S: SessionService> SessionCore<S> {
     fn handle_frame(&mut self, frame: &LocalFrame) -> Result<Vec<LocalFrame>, LocalExecutorError> {
         let correlation_id = frame.correlation_id();
         let decode_config = self.current_frame_config().clone();
-        let message = match decode_client_control_frame(frame, &decode_config) {
+        let negotiated_compilation_limits = self.negotiated_compilation_limits();
+        let decoded = if let Some(limits) = negotiated_compilation_limits.as_ref() {
+            decode_client_control_frame_with_limits(frame, &decode_config, limits)
+        } else {
+            decode_client_control_frame(frame, &decode_config)
+        };
+        let message = match decoded {
             Ok((_, message)) => message,
             Err(error) => {
                 let code = classify_session_error(&error);
-                return single_failure(correlation_id, code, &decode_config);
+                return match self.state {
+                    SessionState::AwaitingHello => {
+                        single_failure(correlation_id, code, &decode_config)
+                    }
+                    SessionState::Active { .. } | SessionState::Closed { .. } => {
+                        single_failure_for(correlation_id, code, &self.current_output_context())
+                    }
+                };
             }
         };
-
-        match &self.state {
-            SessionState::AwaitingHello => match message.message {
-                LocalSessionClientKind::Hello(hello) => {
-                    let Ok(limits) = hello.receive_limits.negotiate(&self.config.receive_config)
-                    else {
-                        return single_failure(
-                            correlation_id,
-                            SessionFailureCode::LimitExceeded,
-                            &decode_config,
-                        );
-                    };
-                    let frame_config = limits.to_frame_config().map_err(|_| {
-                        LocalExecutorError::InvalidConfig {
-                            reason: "negotiated limits are inconsistent",
-                        }
-                    })?;
-                    let output = control_frame(
-                        correlation_id,
-                        LocalSessionServerKind::Hello(ServerHello {
-                            effective_limits: limits,
-                        }),
-                        &frame_config,
-                    )?;
-                    self.state = SessionState::Active {
-                        limits,
-                        frame_config,
-                    };
-                    Ok(vec![output])
-                }
-                _ => single_failure(
-                    correlation_id,
-                    SessionFailureCode::ProtocolState,
-                    &decode_config,
-                ),
-            },
-            SessionState::Closed { .. } => single_failure(
+        match self.status().phase {
+            LocalExecutorPhase::AwaitingHello => self.handle_hello(
                 correlation_id,
-                SessionFailureCode::ProtocolState,
+                message.schema_version,
+                &message.message,
                 &decode_config,
             ),
-            SessionState::Active { .. } => {
-                if self.live_correlations.contains(&correlation_id) {
-                    return single_failure(
+            LocalExecutorPhase::Active => {
+                self.handle_active(correlation_id, message.schema_version, message.message)
+            }
+            LocalExecutorPhase::Closed => single_failure_for(
+                correlation_id,
+                SessionFailureCode::ProtocolState,
+                &self.current_output_context(),
+            ),
+        }
+    }
+
+    fn handle_hello(
+        &mut self,
+        correlation_id: NonZeroU64,
+        schema_version: u16,
+        message: &LocalSessionClientKind,
+        decode_config: &LocalFrameConfig,
+    ) -> Result<Vec<LocalFrame>, LocalExecutorError> {
+        let pre_session_context = SessionOutputContext {
+            schema_version,
+            frame_config: decode_config.clone(),
+            compilation_limits: None,
+        };
+        let LocalSessionClientKind::Hello(hello) = message else {
+            return single_failure_for(
+                correlation_id,
+                SessionFailureCode::ProtocolState,
+                &pre_session_context,
+            );
+        };
+        let Ok(limits) = hello.receive_limits.negotiate(&self.config.receive_config) else {
+            return single_failure_for(
+                correlation_id,
+                SessionFailureCode::LimitExceeded,
+                &pre_session_context,
+            );
+        };
+        let frame_config =
+            limits
+                .to_frame_config()
+                .map_err(|_| LocalExecutorError::InvalidConfig {
+                    reason: "negotiated limits are inconsistent",
+                })?;
+        let compilation_limits = if schema_version == LOCAL_SESSION_SCHEMA_VERSION_V2 {
+            let Some(advertised) = hello.compilation_receive_limits else {
+                return single_failure_for(
+                    correlation_id,
+                    SessionFailureCode::InvalidMessage,
+                    &pre_session_context,
+                );
+            };
+            match intersect_compilation_limits(advertised, self.config.compilation_limits) {
+                Ok(limits) => Some(limits),
+                Err(_) => {
+                    return single_failure_for(
                         correlation_id,
-                        SessionFailureCode::ProtocolState,
-                        &decode_config,
+                        SessionFailureCode::LimitExceeded,
+                        &pre_session_context,
                     );
                 }
-                match message.message {
-                    LocalSessionClientKind::Hello(_) => single_failure(
-                        correlation_id,
-                        SessionFailureCode::ProtocolState,
-                        &decode_config,
-                    ),
-                    LocalSessionClientKind::SubmitPatch(submit) => {
-                        self.submit_patch(correlation_id, submit.patch, &decode_config)
-                    }
-                    LocalSessionClientKind::Query(request) => {
-                        self.query(correlation_id, &request.query, &decode_config)
-                    }
-                    LocalSessionClientKind::RequestObservation(request) => {
-                        self.request_observation(correlation_id, request.request, &decode_config)
-                    }
-                    LocalSessionClientKind::Close(_) => self.close(correlation_id, &decode_config),
-                }
             }
+        } else {
+            None
+        };
+        if let Some(compilation_limits) = compilation_limits
+            && let Err(code) = self
+                .service
+                .configure_compilation_limits(compilation_limits)
+        {
+            return single_failure_for(
+                correlation_id,
+                code,
+                &SessionOutputContext {
+                    schema_version,
+                    frame_config,
+                    compilation_limits: Some(compilation_limits),
+                },
+            );
+        }
+        let output = control_frame_for(
+            correlation_id,
+            LocalSessionServerKind::Hello(ServerHello {
+                effective_limits: limits,
+                effective_compilation_limits: compilation_limits,
+            }),
+            schema_version,
+            &frame_config,
+            compilation_limits.as_ref(),
+        )?;
+        self.state = SessionState::Active {
+            schema_version,
+            limits,
+            compilation_limits,
+            frame_config,
+        };
+        Ok(vec![output])
+    }
+
+    fn handle_active(
+        &mut self,
+        correlation_id: NonZeroU64,
+        schema_version: u16,
+        message: LocalSessionClientKind,
+    ) -> Result<Vec<LocalFrame>, LocalExecutorError> {
+        let output_context = self.current_output_context();
+        if schema_version != output_context.schema_version {
+            return single_failure_for(
+                correlation_id,
+                SessionFailureCode::UnsupportedVersion,
+                &output_context,
+            );
+        }
+        if self.live_correlations.contains(&correlation_id) {
+            return single_failure_for(
+                correlation_id,
+                SessionFailureCode::ProtocolState,
+                &output_context,
+            );
+        }
+        match message {
+            LocalSessionClientKind::Hello(_) => single_failure_for(
+                correlation_id,
+                SessionFailureCode::ProtocolState,
+                &output_context,
+            ),
+            LocalSessionClientKind::SubmitPatch(submit) => {
+                self.submit_patch(correlation_id, submit.patch, &output_context)
+            }
+            LocalSessionClientKind::SubmitImagination(submit) => {
+                self.submit_imagination(correlation_id, submit.imagination, &output_context)
+            }
+            LocalSessionClientKind::Query(request) => {
+                self.query(correlation_id, &request.query, &output_context)
+            }
+            LocalSessionClientKind::RequestObservation(request) => {
+                self.request_observation(correlation_id, request.request, &output_context)
+            }
+            LocalSessionClientKind::Close(_) => self.close(correlation_id, &output_context),
         }
     }
 
@@ -336,24 +457,26 @@ impl<S: SessionService> SessionCore<S> {
         &mut self,
         correlation_id: NonZeroU64,
         patch: ScenePatch,
-        frame_config: &LocalFrameConfig,
+        context: &SessionOutputContext,
     ) -> Result<Vec<LocalFrame>, LocalExecutorError> {
         if self.live_capacity_reached()
             && self.service.snapshot().command_depth < self.service.command_capacity()
         {
-            return single_failure(
+            return single_failure_for(
                 correlation_id,
                 SessionFailureCode::CapacityExceeded,
-                frame_config,
+                context,
             );
         }
+        let submitted_key = patch.idempotency_key;
         let admission = match self.service.submit_patch(patch) {
             Ok(admission) => admission,
-            Err(code) => return single_failure(correlation_id, code, frame_config),
+            Err(code) => return single_failure_for(correlation_id, code, context),
         };
         match admission {
             GatewayAdmission::Queued { idempotency_key } => {
-                if count(self.patch_order.len()) >= self.service.command_capacity() {
+                ensure_admission_key(submitted_key, idempotency_key)?;
+                if count(self.command_order.len()) >= self.service.command_capacity() {
                     return Err(LocalExecutorError::StateInvariant {
                         reason: "service queued a patch beyond its declared capacity",
                     });
@@ -362,16 +485,23 @@ impl<S: SessionService> SessionCore<S> {
                     correlation_id,
                     idempotency_key,
                     PatchAdmissionStatus::Queued,
-                    frame_config,
+                    context,
                 )?;
                 self.reserve_correlation(correlation_id)?;
-                self.patch_correlations
-                    .insert(idempotency_key, correlation_id);
-                self.patch_order.push_back(idempotency_key);
+                self.command_correlations
+                    .insert(idempotency_key, PendingCommand::patch(correlation_id));
+                self.command_order.push_back(idempotency_key);
                 Ok(vec![output])
             }
             GatewayAdmission::AlreadyQueued { idempotency_key } => {
-                if !self.patch_correlations.contains_key(&idempotency_key) {
+                ensure_admission_key(submitted_key, idempotency_key)?;
+                if !matches!(
+                    self.command_correlations.get(&idempotency_key),
+                    Some(PendingCommand {
+                        kind: PendingCommandKind::Patch,
+                        ..
+                    })
+                ) {
                     return Err(LocalExecutorError::StateInvariant {
                         reason: "already-queued patch had no live correlation",
                     });
@@ -380,15 +510,18 @@ impl<S: SessionService> SessionCore<S> {
                     correlation_id,
                     idempotency_key,
                     PatchAdmissionStatus::AlreadyQueued,
-                    frame_config,
+                    context,
                 )?])
             }
-            GatewayAdmission::Dropped { idempotency_key } => Ok(vec![patch_admission_frame(
-                correlation_id,
-                idempotency_key,
-                PatchAdmissionStatus::Dropped,
-                frame_config,
-            )?]),
+            GatewayAdmission::Dropped { idempotency_key } => {
+                ensure_admission_key(submitted_key, idempotency_key)?;
+                Ok(vec![patch_admission_frame(
+                    correlation_id,
+                    idempotency_key,
+                    PatchAdmissionStatus::Dropped,
+                    context,
+                )?])
+            }
             GatewayAdmission::Replayed { response } => {
                 let GatewayResponse::PatchApplied { receipt } = *response else {
                     return Err(LocalExecutorError::StateInvariant {
@@ -396,25 +529,233 @@ impl<S: SessionService> SessionCore<S> {
                     });
                 };
                 let idempotency_key = receipt.idempotency_key;
-                Ok(vec![control_or_limit_failure(
+                ensure_admission_key(submitted_key, idempotency_key)?;
+                Ok(vec![control_or_limit_failure_for(
                     correlation_id,
                     LocalSessionServerKind::PatchAdmission(PatchAdmission {
                         idempotency_key,
                         status: PatchAdmissionStatus::Replayed { receipt },
                     }),
-                    frame_config,
+                    context,
                 )?])
             }
             GatewayAdmission::Superseded {
                 idempotency_key,
                 superseded_idempotency_key,
-            } => self.handle_supersession(
+            } => {
+                ensure_admission_key(submitted_key, idempotency_key)?;
+                self.handle_supersession(
+                    correlation_id,
+                    idempotency_key,
+                    superseded_idempotency_key,
+                    context,
+                )
+            }
+        }
+    }
+
+    fn submit_imagination(
+        &mut self,
+        correlation_id: NonZeroU64,
+        imagination: ImaginationEnvelope,
+        context: &SessionOutputContext,
+    ) -> Result<Vec<LocalFrame>, LocalExecutorError> {
+        if context.schema_version != LOCAL_SESSION_SCHEMA_VERSION_V2
+            || context.compilation_limits.is_none()
+        {
+            return single_failure_for(
                 correlation_id,
+                SessionFailureCode::UnsupportedVersion,
+                context,
+            );
+        }
+        if self.live_capacity_reached()
+            && self.service.snapshot().command_depth < self.service.command_capacity()
+        {
+            return single_failure_for(
+                correlation_id,
+                SessionFailureCode::CapacityExceeded,
+                context,
+            );
+        }
+        let submitted = SubmittedImagination::from_envelope(&imagination);
+        let admission = match self.service.submit_imagination(imagination) {
+            Ok(admission) => admission,
+            Err(code) => return single_failure_for(correlation_id, code, context),
+        };
+        self.handle_imagination_admission(correlation_id, submitted, admission, context)
+    }
+
+    fn handle_imagination_admission(
+        &mut self,
+        correlation_id: NonZeroU64,
+        submitted: SubmittedImagination,
+        admission: GatewayAdmission,
+        context: &SessionOutputContext,
+    ) -> Result<Vec<LocalFrame>, LocalExecutorError> {
+        match admission {
+            GatewayAdmission::Queued { idempotency_key } => {
+                ensure_admission_key(submitted.idempotency_key, idempotency_key)?;
+                if count(self.command_order.len()) >= self.service.command_capacity() {
+                    return Err(LocalExecutorError::StateInvariant {
+                        reason: "service queued an imagination beyond its declared capacity",
+                    });
+                }
+                let output = imagination_admission_frame(
+                    correlation_id,
+                    submitted.imagination_id,
+                    idempotency_key,
+                    ImaginationAdmissionStatus::Queued,
+                    context,
+                )?;
+                self.reserve_correlation(correlation_id)?;
+                self.command_correlations.insert(
+                    idempotency_key,
+                    PendingCommand::imagination(correlation_id, submitted),
+                );
+                self.command_order.push_back(idempotency_key);
+                Ok(vec![output])
+            }
+            GatewayAdmission::AlreadyQueued { idempotency_key } => {
+                ensure_admission_key(submitted.idempotency_key, idempotency_key)?;
+                if !matches!(
+                    self.command_correlations.get(&idempotency_key),
+                    Some(PendingCommand {
+                        kind: PendingCommandKind::Imagination { submitted: pending },
+                        ..
+                    }) if *pending == submitted
+                ) {
+                    return Err(LocalExecutorError::StateInvariant {
+                        reason: "already-queued imagination had no matching live correlation",
+                    });
+                }
+                Ok(vec![imagination_admission_frame(
+                    correlation_id,
+                    submitted.imagination_id,
+                    idempotency_key,
+                    ImaginationAdmissionStatus::AlreadyQueued,
+                    context,
+                )?])
+            }
+            GatewayAdmission::Dropped { idempotency_key } => {
+                ensure_admission_key(submitted.idempotency_key, idempotency_key)?;
+                Ok(vec![imagination_admission_frame(
+                    correlation_id,
+                    submitted.imagination_id,
+                    idempotency_key,
+                    ImaginationAdmissionStatus::Dropped,
+                    context,
+                )?])
+            }
+            GatewayAdmission::Replayed { response } => {
+                self.handle_imagination_replay(correlation_id, submitted, *response, context)
+            }
+            GatewayAdmission::Superseded {
                 idempotency_key,
                 superseded_idempotency_key,
-                frame_config,
-            ),
+            } => {
+                ensure_admission_key(submitted.idempotency_key, idempotency_key)?;
+                self.handle_imagination_supersession(
+                    correlation_id,
+                    submitted,
+                    idempotency_key,
+                    superseded_idempotency_key,
+                    context,
+                )
+            }
         }
+    }
+
+    fn handle_imagination_replay(
+        &self,
+        correlation_id: NonZeroU64,
+        submitted: SubmittedImagination,
+        response: GatewayResponse,
+        context: &SessionOutputContext,
+    ) -> Result<Vec<LocalFrame>, LocalExecutorError> {
+        let GatewayResponse::ImaginationProcessed {
+            compilation,
+            receipt,
+        } = response
+        else {
+            return Err(LocalExecutorError::StateInvariant {
+                reason: "imagination admission replayed a non-imagination response",
+            });
+        };
+        let completion = imagination_completion(
+            submitted,
+            *compilation,
+            receipt,
+            ApplyStatus::IdempotentReplay,
+            &CompilationLimits::for_runtime_limits(self.service.runtime_limits()),
+            context,
+        );
+        let completion = match completion {
+            Ok(completion) => completion,
+            Err(LocalExecutorError::StateInvariant { .. }) => {
+                return single_failure_for(correlation_id, SessionFailureCode::Internal, context);
+            }
+            Err(error) => return Err(error),
+        };
+        Ok(vec![imagination_admission_frame(
+            correlation_id,
+            submitted.imagination_id,
+            submitted.idempotency_key,
+            ImaginationAdmissionStatus::Replayed {
+                completion: Box::new(completion),
+            },
+            context,
+        )?])
+    }
+
+    fn handle_imagination_supersession(
+        &mut self,
+        correlation_id: NonZeroU64,
+        submitted: SubmittedImagination,
+        idempotency_key: IdempotencyKey,
+        superseded_idempotency_key: IdempotencyKey,
+        context: &SessionOutputContext,
+    ) -> Result<Vec<LocalFrame>, LocalExecutorError> {
+        let old_correlation = self
+            .command_correlations
+            .get(&superseded_idempotency_key)
+            .map(|pending| pending.correlation_id)
+            .ok_or(LocalExecutorError::StateInvariant {
+                reason: "superseded command had no live correlation",
+            })?;
+        let rejected = failure_frame_for(
+            old_correlation,
+            SessionFailureCode::CommandRejected,
+            context,
+        )?;
+        let admitted = imagination_admission_frame(
+            correlation_id,
+            submitted.imagination_id,
+            idempotency_key,
+            ImaginationAdmissionStatus::Superseded {
+                superseded_idempotency_key,
+            },
+            context,
+        )?;
+        let Some(position) = self
+            .command_order
+            .iter()
+            .position(|key| *key == superseded_idempotency_key)
+        else {
+            return Err(LocalExecutorError::StateInvariant {
+                reason: "superseded command was absent from local order",
+            });
+        };
+        self.command_order[position] = idempotency_key;
+        self.command_correlations
+            .remove(&superseded_idempotency_key);
+        self.release_correlation(old_correlation)?;
+        self.reserve_correlation(correlation_id)?;
+        self.command_correlations.insert(
+            idempotency_key,
+            PendingCommand::imagination(correlation_id, submitted),
+        );
+        Ok(vec![rejected, admitted])
     }
 
     fn handle_supersession(
@@ -422,19 +763,19 @@ impl<S: SessionService> SessionCore<S> {
         correlation_id: NonZeroU64,
         idempotency_key: IdempotencyKey,
         superseded_idempotency_key: IdempotencyKey,
-        frame_config: &LocalFrameConfig,
+        context: &SessionOutputContext,
     ) -> Result<Vec<LocalFrame>, LocalExecutorError> {
         let old_correlation = self
-            .patch_correlations
+            .command_correlations
             .get(&superseded_idempotency_key)
-            .copied()
+            .map(|pending| pending.correlation_id)
             .ok_or(LocalExecutorError::StateInvariant {
                 reason: "superseded patch had no live correlation",
             })?;
-        let rejected = failure_frame(
+        let rejected = failure_frame_for(
             old_correlation,
             SessionFailureCode::CommandRejected,
-            frame_config,
+            context,
         )?;
         let admitted = patch_admission_frame(
             correlation_id,
@@ -442,10 +783,10 @@ impl<S: SessionService> SessionCore<S> {
             PatchAdmissionStatus::Superseded {
                 superseded_idempotency_key,
             },
-            frame_config,
+            context,
         )?;
         let Some(position) = self
-            .patch_order
+            .command_order
             .iter()
             .position(|key| *key == superseded_idempotency_key)
         else {
@@ -453,12 +794,13 @@ impl<S: SessionService> SessionCore<S> {
                 reason: "superseded patch was absent from local order",
             });
         };
-        self.patch_order[position] = idempotency_key;
-        self.patch_correlations.remove(&superseded_idempotency_key);
+        self.command_order[position] = idempotency_key;
+        self.command_correlations
+            .remove(&superseded_idempotency_key);
         self.release_correlation(old_correlation)?;
         self.reserve_correlation(correlation_id)?;
-        self.patch_correlations
-            .insert(idempotency_key, correlation_id);
+        self.command_correlations
+            .insert(idempotency_key, PendingCommand::patch(correlation_id));
         Ok(vec![rejected, admitted])
     }
 
@@ -466,15 +808,15 @@ impl<S: SessionService> SessionCore<S> {
         &self,
         correlation_id: NonZeroU64,
         query: &SceneQuery,
-        frame_config: &LocalFrameConfig,
+        context: &SessionOutputContext,
     ) -> Result<Vec<LocalFrame>, LocalExecutorError> {
         match self.service.query(query) {
-            Ok(result) => Ok(vec![control_or_limit_failure(
+            Ok(result) => Ok(vec![control_or_limit_failure_for(
                 correlation_id,
                 LocalSessionServerKind::QueryResult(QueryResponse { result }),
-                frame_config,
+                context,
             )?]),
-            Err(code) => single_failure(correlation_id, code, frame_config),
+            Err(code) => single_failure_for(correlation_id, code, context),
         }
     }
 
@@ -482,48 +824,44 @@ impl<S: SessionService> SessionCore<S> {
         &mut self,
         correlation_id: NonZeroU64,
         request: ObservationRequest,
-        frame_config: &LocalFrameConfig,
+        context: &SessionOutputContext,
     ) -> Result<Vec<LocalFrame>, LocalExecutorError> {
         if self.live_capacity_reached()
             || count(self.observation_order.len()) >= self.service.observation_capacity()
         {
-            return single_failure(
+            return single_failure_for(
                 correlation_id,
                 SessionFailureCode::CapacityExceeded,
-                frame_config,
+                context,
             );
         }
         if self
             .observation_correlations
             .contains_key(&request.observation_id)
         {
-            return single_failure(
+            return single_failure_for(
                 correlation_id,
                 SessionFailureCode::ObservationRejected,
-                frame_config,
+                context,
             );
         }
         let (width, height) = self.service.observation_dimensions();
         let pixels = u64::from(width).saturating_mul(u64::from(height));
-        let limits = &frame_config.runtime_limits;
+        let limits = &context.frame_config.runtime_limits;
         if width > limits.max_observation_width.get()
             || height > limits.max_observation_height.get()
             || pixels > limits.max_observation_pixels.get()
         {
-            return single_failure(
-                correlation_id,
-                SessionFailureCode::LimitExceeded,
-                frame_config,
-            );
+            return single_failure_for(correlation_id, SessionFailureCode::LimitExceeded, context);
         }
         let reference = observation_reference(request);
-        let output = control_frame(
+        let output = control_frame_for_context(
             correlation_id,
             LocalSessionServerKind::ObservationAccepted(reference),
-            frame_config,
+            context,
         )?;
         if let Err(code) = self.service.request_observation(request) {
-            return single_failure(correlation_id, code, frame_config);
+            return single_failure_for(correlation_id, code, context);
         }
         self.reserve_correlation(correlation_id)?;
         self.observation_correlations.insert(
@@ -540,25 +878,21 @@ impl<S: SessionService> SessionCore<S> {
     fn close(
         &mut self,
         correlation_id: NonZeroU64,
-        frame_config: &LocalFrameConfig,
+        context: &SessionOutputContext,
     ) -> Result<Vec<LocalFrame>, LocalExecutorError> {
         let snapshot = self.service.snapshot();
         if !self.live_correlations.is_empty()
-            || !self.patch_order.is_empty()
+            || !self.command_order.is_empty()
             || !self.observation_order.is_empty()
             || snapshot.command_depth != 0
             || snapshot.outstanding_observations != 0
         {
-            return single_failure(
-                correlation_id,
-                SessionFailureCode::ProtocolState,
-                frame_config,
-            );
+            return single_failure_for(correlation_id, SessionFailureCode::ProtocolState, context);
         }
-        let output = control_frame(
+        let output = control_frame_for_context(
             correlation_id,
             LocalSessionServerKind::Closed(SessionClosed {}),
-            frame_config,
+            context,
         )?;
         let Some(limits) = self.negotiated_limits() else {
             return Err(LocalExecutorError::StateInvariant {
@@ -566,66 +900,28 @@ impl<S: SessionService> SessionCore<S> {
             });
         };
         self.state = SessionState::Closed {
+            schema_version: context.schema_version,
             limits,
-            frame_config: frame_config.clone(),
+            compilation_limits: context.compilation_limits,
+            frame_config: context.frame_config.clone(),
         };
         Ok(vec![output])
     }
 
     fn advance(&mut self) -> Result<Vec<LocalFrame>, LocalExecutorError> {
-        let frame_config = match &self.state {
-            SessionState::Active { frame_config, .. } => frame_config.clone(),
+        let context = match &self.state {
+            SessionState::Active { .. } => self.current_output_context(),
             SessionState::AwaitingHello | SessionState::Closed { .. } => return Ok(Vec::new()),
         };
         let mut output = Vec::with_capacity(MAX_OUTPUT_FRAMES_PER_CALL);
-        if let Some(idempotency_key) = self.patch_order.pop_front() {
-            let correlation_id = self.patch_correlations.remove(&idempotency_key).ok_or(
-                LocalExecutorError::StateInvariant {
-                    reason: "ordered patch had no live correlation",
-                },
-            )?;
-            let message = match self.service.process_next() {
-                Ok(Some(GatewayResponse::PatchApplied { receipt }))
-                    if receipt.idempotency_key == idempotency_key =>
-                {
-                    if receipt.status == ApplyStatus::Applied {
-                        LocalSessionServerKind::PatchCompleted(PatchCompletion { receipt })
-                    } else {
-                        LocalSessionServerKind::PatchAdmission(PatchAdmission {
-                            idempotency_key,
-                            status: PatchAdmissionStatus::Replayed { receipt },
-                        })
-                    }
-                }
-                Ok(Some(GatewayResponse::PatchApplied { .. })) => {
-                    return Err(LocalExecutorError::StateInvariant {
-                        reason: "processed patch identity did not match local order",
-                    });
-                }
-                Ok(Some(GatewayResponse::ImaginationProcessed { .. })) => {
-                    return Err(LocalExecutorError::StateInvariant {
-                        reason: "patch order produced an imagination response",
-                    });
-                }
-                Ok(None) => {
-                    return Err(LocalExecutorError::StateInvariant {
-                        reason: "service omitted an ordered patch response",
-                    });
-                }
-                Err(code) => LocalSessionServerKind::Failure(SessionFailure { code }),
-            };
-            output.push(control_or_limit_failure(
-                correlation_id,
-                message,
-                &frame_config,
-            )?);
-            self.release_correlation(correlation_id)?;
+        if let Some(command) = self.advance_command(&context)? {
+            output.push(command);
         }
 
         if !self.observation_order.is_empty() {
             match self.service.poll_observation() {
                 Ok(Some(delivery)) => {
-                    output.push(self.observation_delivery_frame(delivery, &frame_config)?);
+                    output.push(self.observation_delivery_frame(delivery, &context)?);
                 }
                 Ok(None) => {
                     if let Some(observation_id) = self
@@ -639,10 +935,10 @@ impl<S: SessionService> SessionCore<S> {
                             observation_id,
                             scene_revision: pending.scene_revision,
                         };
-                        output.push(control_frame(
+                        output.push(control_frame_for_context(
                             pending.correlation_id,
                             LocalSessionServerKind::ObservationPending(reference),
-                            &frame_config,
+                            &context,
                         )?);
                         self.observation_pending_reported.insert(observation_id);
                     }
@@ -651,7 +947,7 @@ impl<S: SessionService> SessionCore<S> {
                     let observation_id = self.observation_order[0];
                     let correlation_id =
                         self.observation_correlations[&observation_id].correlation_id;
-                    output.push(failure_frame(correlation_id, code, &frame_config)?);
+                    output.push(failure_frame_for(correlation_id, code, &context)?);
                     self.release_observation(observation_id, correlation_id)?;
                 }
             }
@@ -660,10 +956,80 @@ impl<S: SessionService> SessionCore<S> {
         Ok(output)
     }
 
+    fn advance_command(
+        &mut self,
+        context: &SessionOutputContext,
+    ) -> Result<Option<LocalFrame>, LocalExecutorError> {
+        let Some(idempotency_key) = self.command_order.pop_front() else {
+            return Ok(None);
+        };
+        let pending = self.command_correlations.remove(&idempotency_key).ok_or(
+            LocalExecutorError::StateInvariant {
+                reason: "ordered command had no live correlation",
+            },
+        )?;
+        let correlation_id = pending.correlation_id;
+        let service_compilation_limits =
+            CompilationLimits::for_runtime_limits(self.service.runtime_limits());
+        let message = match (pending.kind, self.service.process_next()) {
+            (PendingCommandKind::Patch, Ok(Some(GatewayResponse::PatchApplied { receipt })))
+                if receipt.idempotency_key == idempotency_key
+                    && receipt.status == ApplyStatus::Applied =>
+            {
+                Ok(LocalSessionServerKind::PatchCompleted(PatchCompletion {
+                    receipt,
+                }))
+            }
+            (
+                PendingCommandKind::Imagination { submitted },
+                Ok(Some(GatewayResponse::ImaginationProcessed {
+                    compilation,
+                    receipt,
+                })),
+            ) => imagination_completion(
+                submitted,
+                *compilation,
+                receipt,
+                ApplyStatus::Applied,
+                &service_compilation_limits,
+                context,
+            )
+            .map(LocalSessionServerKind::ImaginationCompleted),
+            (PendingCommandKind::Patch, Ok(Some(GatewayResponse::PatchApplied { .. }))) => {
+                Err(LocalExecutorError::StateInvariant {
+                    reason: "processed patch receipt did not match local order",
+                })
+            }
+            (PendingCommandKind::Patch, Ok(Some(GatewayResponse::ImaginationProcessed { .. })))
+            | (
+                PendingCommandKind::Imagination { .. },
+                Ok(Some(GatewayResponse::PatchApplied { .. })),
+            ) => Err(LocalExecutorError::StateInvariant {
+                reason: "processed command kind did not match local order",
+            }),
+            (_, Ok(None)) => Err(LocalExecutorError::StateInvariant {
+                reason: "service omitted an ordered command response",
+            }),
+            (_, Err(code)) => Ok(LocalSessionServerKind::Failure(SessionFailure { code })),
+        };
+        let message = match message {
+            Ok(message) => message,
+            Err(LocalExecutorError::StateInvariant { .. }) => {
+                LocalSessionServerKind::Failure(SessionFailure {
+                    code: SessionFailureCode::Internal,
+                })
+            }
+            Err(error) => return Err(error),
+        };
+        let output = control_or_limit_failure_for(correlation_id, message, context)?;
+        self.release_correlation(correlation_id)?;
+        Ok(Some(output))
+    }
+
     fn observation_delivery_frame(
         &mut self,
         delivery: ServiceObservationDelivery,
-        frame_config: &LocalFrameConfig,
+        context: &SessionOutputContext,
     ) -> Result<LocalFrame, LocalExecutorError> {
         let observation_id = delivery.observation_id();
         let correlation_id = self
@@ -680,18 +1046,14 @@ impl<S: SessionService> SessionCore<S> {
                     metadata,
                     payload,
                 };
-                if encode_frame(&frame, frame_config).is_ok() {
+                if encode_frame(&frame, &context.frame_config).is_ok() {
                     frame
                 } else {
-                    failure_frame(
-                        correlation_id,
-                        SessionFailureCode::LimitExceeded,
-                        frame_config,
-                    )?
+                    failure_frame_for(correlation_id, SessionFailureCode::LimitExceeded, context)?
                 }
             }
             ServiceObservationDelivery::Failed { code, .. } => {
-                failure_frame(correlation_id, code, frame_config)?
+                failure_frame_for(correlation_id, code, context)?
             }
         };
         self.release_observation(observation_id, correlation_id)?;
@@ -723,6 +1085,32 @@ impl<S: SessionService> SessionCore<S> {
             SessionState::AwaitingHello => &self.config.receive_config,
             SessionState::Active { frame_config, .. }
             | SessionState::Closed { frame_config, .. } => frame_config,
+        }
+    }
+
+    fn current_output_context(&self) -> SessionOutputContext {
+        match &self.state {
+            SessionState::AwaitingHello => SessionOutputContext {
+                schema_version: LOCAL_SESSION_SCHEMA_VERSION,
+                frame_config: self.config.receive_config.clone(),
+                compilation_limits: None,
+            },
+            SessionState::Active {
+                schema_version,
+                frame_config,
+                compilation_limits,
+                ..
+            }
+            | SessionState::Closed {
+                schema_version,
+                frame_config,
+                compilation_limits,
+                ..
+            } => SessionOutputContext {
+                schema_version: *schema_version,
+                frame_config: frame_config.clone(),
+                compilation_limits: *compilation_limits,
+            },
         }
     }
 
@@ -765,7 +1153,20 @@ impl<S: SessionService> SessionCore<S> {
             live_correlations: count(self.live_correlations.len()),
             live_correlation_capacity: self.config.max_live_correlations.get(),
             max_output_frames_per_call: self.config.max_output_frames_per_call.get(),
-            pending_patches: count(self.patch_order.len()),
+            pending_patches: count(
+                self.command_correlations
+                    .values()
+                    .filter(|pending| matches!(pending.kind, PendingCommandKind::Patch))
+                    .count(),
+            ),
+            pending_imaginations: count(
+                self.command_correlations
+                    .values()
+                    .filter(|pending| {
+                        matches!(pending.kind, PendingCommandKind::Imagination { .. })
+                    })
+                    .count(),
+            ),
             pending_observations: count(self.observation_order.len()),
         }
     }
@@ -778,22 +1179,114 @@ impl<S: SessionService> SessionCore<S> {
             }
         }
     }
+
+    const fn negotiated_compilation_limits(&self) -> Option<CompilationLimits> {
+        match &self.state {
+            SessionState::AwaitingHello => None,
+            SessionState::Active {
+                compilation_limits, ..
+            }
+            | SessionState::Closed {
+                compilation_limits, ..
+            } => *compilation_limits,
+        }
+    }
 }
 
 fn patch_admission_frame(
     correlation_id: NonZeroU64,
     idempotency_key: IdempotencyKey,
     status: PatchAdmissionStatus,
-    frame_config: &LocalFrameConfig,
+    context: &SessionOutputContext,
 ) -> Result<LocalFrame, LocalExecutorError> {
-    control_frame(
+    control_frame_for_context(
         correlation_id,
         LocalSessionServerKind::PatchAdmission(PatchAdmission {
             idempotency_key,
             status,
         }),
-        frame_config,
+        context,
     )
+}
+
+fn imagination_admission_frame(
+    correlation_id: NonZeroU64,
+    imagination_id: ImaginationId,
+    idempotency_key: IdempotencyKey,
+    status: ImaginationAdmissionStatus,
+    context: &SessionOutputContext,
+) -> Result<LocalFrame, LocalExecutorError> {
+    control_or_limit_failure_for(
+        correlation_id,
+        LocalSessionServerKind::ImaginationAdmission(ImaginationAdmission {
+            imagination_id,
+            idempotency_key,
+            status,
+        }),
+        context,
+    )
+}
+
+fn imagination_completion(
+    submitted: SubmittedImagination,
+    compilation: CompilationResult,
+    receipt: Option<cogniform_protocol::ApplyReceipt>,
+    expected_status: ApplyStatus,
+    service_compilation_limits: &CompilationLimits,
+    context: &SessionOutputContext,
+) -> Result<ImaginationCompletion, LocalExecutorError> {
+    if context.compilation_limits.is_none() {
+        return Err(LocalExecutorError::StateInvariant {
+            reason: "imagination completion had no negotiated compilation limits",
+        });
+    }
+    compilation
+        .to_canonical_json(service_compilation_limits)
+        .map_err(|_| LocalExecutorError::StateInvariant {
+            reason: "service produced an invalid compilation result",
+        })?;
+    if compilation.imagination_id != submitted.imagination_id {
+        return Err(LocalExecutorError::StateInvariant {
+            reason: "processed imagination identity did not match local order",
+        });
+    }
+    if compilation.scene_revision != submitted.base_revision {
+        return Err(LocalExecutorError::StateInvariant {
+            reason: "processed imagination revision did not match submitted work",
+        });
+    }
+    match (&compilation.patch, &receipt) {
+        (Some(patch), Some(receipt))
+            if patch.idempotency_key == submitted.idempotency_key
+                && patch.transaction_id == submitted.transaction_id
+                && receipt.idempotency_key == submitted.idempotency_key
+                && receipt.status == expected_status => {}
+        (None, None) => {}
+        _ => {
+            return Err(LocalExecutorError::StateInvariant {
+                reason: "processed imagination result and receipt roles were inconsistent",
+            });
+        }
+    }
+    Ok(ImaginationCompletion {
+        imagination_id: submitted.imagination_id,
+        idempotency_key: submitted.idempotency_key,
+        compilation,
+        receipt,
+    })
+}
+
+fn ensure_admission_key(
+    submitted: IdempotencyKey,
+    admitted: IdempotencyKey,
+) -> Result<(), LocalExecutorError> {
+    if submitted == admitted {
+        Ok(())
+    } else {
+        Err(LocalExecutorError::StateInvariant {
+            reason: "gateway admission identity did not match submitted command",
+        })
+    }
 }
 
 fn single_failure(
@@ -816,37 +1309,140 @@ fn failure_frame(
     )
 }
 
+fn single_failure_for(
+    correlation_id: NonZeroU64,
+    code: SessionFailureCode,
+    context: &SessionOutputContext,
+) -> Result<Vec<LocalFrame>, LocalExecutorError> {
+    Ok(vec![failure_frame_for(correlation_id, code, context)?])
+}
+
+fn failure_frame_for(
+    correlation_id: NonZeroU64,
+    code: SessionFailureCode,
+    context: &SessionOutputContext,
+) -> Result<LocalFrame, LocalExecutorError> {
+    control_frame_for_context(
+        correlation_id,
+        LocalSessionServerKind::Failure(SessionFailure { code }),
+        context,
+    )
+}
+
 fn control_frame(
     correlation_id: NonZeroU64,
     message: LocalSessionServerKind,
     frame_config: &LocalFrameConfig,
 ) -> Result<LocalFrame, LocalExecutorError> {
-    let frame = server_control_frame(
+    control_frame_for(
         correlation_id,
-        &LocalSessionServerMessage {
-            schema_version: LOCAL_SESSION_SCHEMA_VERSION,
-            message,
-        },
+        message,
+        LOCAL_SESSION_SCHEMA_VERSION,
         frame_config,
+        None,
     )
+}
+
+fn control_frame_for_context(
+    correlation_id: NonZeroU64,
+    message: LocalSessionServerKind,
+    context: &SessionOutputContext,
+) -> Result<LocalFrame, LocalExecutorError> {
+    control_frame_for(
+        correlation_id,
+        message,
+        context.schema_version,
+        &context.frame_config,
+        context.compilation_limits.as_ref(),
+    )
+}
+
+fn control_frame_for(
+    correlation_id: NonZeroU64,
+    message: LocalSessionServerKind,
+    schema_version: u16,
+    frame_config: &LocalFrameConfig,
+    compilation_limits: Option<&CompilationLimits>,
+) -> Result<LocalFrame, LocalExecutorError> {
+    let message = LocalSessionServerMessage {
+        schema_version,
+        message,
+    };
+    let frame = if let Some(limits) = compilation_limits {
+        server_control_frame_with_limits(correlation_id, &message, frame_config, limits)
+    } else {
+        server_control_frame(correlation_id, &message, frame_config)
+    }
     .map_err(|_| LocalExecutorError::OutputRejected)?;
     encode_frame(&frame, frame_config).map_err(|_| LocalExecutorError::OutputRejected)?;
     Ok(frame)
 }
 
-fn control_or_limit_failure(
+fn control_or_limit_failure_for(
     correlation_id: NonZeroU64,
     message: LocalSessionServerKind,
-    frame_config: &LocalFrameConfig,
+    context: &SessionOutputContext,
 ) -> Result<LocalFrame, LocalExecutorError> {
-    match control_frame(correlation_id, message, frame_config) {
+    match control_frame_for_context(correlation_id, message, context) {
         Ok(frame) => Ok(frame),
-        Err(LocalExecutorError::OutputRejected) => failure_frame(
-            correlation_id,
-            SessionFailureCode::LimitExceeded,
-            frame_config,
-        ),
+        Err(LocalExecutorError::OutputRejected) => {
+            failure_frame_for(correlation_id, SessionFailureCode::LimitExceeded, context)
+        }
         Err(error) => Err(error),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SessionOutputContext {
+    schema_version: u16,
+    frame_config: LocalFrameConfig,
+    compilation_limits: Option<CompilationLimits>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingCommand {
+    correlation_id: NonZeroU64,
+    kind: PendingCommandKind,
+}
+
+impl PendingCommand {
+    const fn patch(correlation_id: NonZeroU64) -> Self {
+        Self {
+            correlation_id,
+            kind: PendingCommandKind::Patch,
+        }
+    }
+
+    const fn imagination(correlation_id: NonZeroU64, submitted: SubmittedImagination) -> Self {
+        Self {
+            correlation_id,
+            kind: PendingCommandKind::Imagination { submitted },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PendingCommandKind {
+    Patch,
+    Imagination { submitted: SubmittedImagination },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SubmittedImagination {
+    imagination_id: ImaginationId,
+    transaction_id: TransactionId,
+    idempotency_key: IdempotencyKey,
+    base_revision: SceneRevision,
+}
+
+impl SubmittedImagination {
+    const fn from_envelope(imagination: &ImaginationEnvelope) -> Self {
+        Self {
+            imagination_id: imagination.imagination_id,
+            transaction_id: imagination.transaction_id,
+            idempotency_key: imagination.idempotency_key,
+            base_revision: imagination.base_revision,
+        }
     }
 }
 
@@ -888,7 +1484,15 @@ trait SessionService {
     fn observation_capacity(&self) -> u32;
     fn observation_dimensions(&self) -> (u32, u32);
     fn snapshot(&self) -> ServiceSnapshot;
+    fn configure_compilation_limits(
+        &mut self,
+        limits: CompilationLimits,
+    ) -> Result<(), SessionFailureCode>;
     fn submit_patch(&mut self, patch: ScenePatch) -> Result<GatewayAdmission, SessionFailureCode>;
+    fn submit_imagination(
+        &mut self,
+        imagination: ImaginationEnvelope,
+    ) -> Result<GatewayAdmission, SessionFailureCode>;
     fn process_next(&mut self) -> Result<Option<GatewayResponse>, SessionFailureCode>;
     fn query(&self, query: &SceneQuery) -> Result<SceneQueryResult, SessionFailureCode>;
     fn request_observation(
@@ -923,8 +1527,24 @@ impl SessionService for LocalService {
         }
     }
 
+    fn configure_compilation_limits(
+        &mut self,
+        limits: CompilationLimits,
+    ) -> Result<(), SessionFailureCode> {
+        self.configure_compilation_limits(limits)
+            .map_err(|error| classify_service_error(&error, ServiceOperation::Command))
+    }
+
     fn submit_patch(&mut self, patch: ScenePatch) -> Result<GatewayAdmission, SessionFailureCode> {
         self.submit_patch(patch)
+            .map_err(|error| classify_service_error(&error, ServiceOperation::Command))
+    }
+
+    fn submit_imagination(
+        &mut self,
+        imagination: ImaginationEnvelope,
+    ) -> Result<GatewayAdmission, SessionFailureCode> {
+        self.submit_imagination(imagination)
             .map_err(|error| classify_service_error(&error, ServiceOperation::Command))
     }
 
@@ -988,6 +1608,9 @@ fn classify_service_error(
 }
 
 fn classify_gateway_error(error: &GatewayError, operation: ServiceOperation) -> SessionFailureCode {
+    if error.is_compilation_limit_exceeded() {
+        return SessionFailureCode::LimitExceeded;
+    }
     match error {
         GatewayError::CommandCapacityExceeded { .. }
         | GatewayError::IdempotencyCapacityExceeded
@@ -1082,14 +1705,18 @@ mod tests {
     use core::num::NonZeroU32;
     use std::collections::VecDeque;
 
+    use cogniform_compilation::{UnresolvedConstraint, UnresolvedConstraintCode};
     use cogniform_local_session::{
         ClientHello, LocalSessionClientMessage, QueryRequest, RequestObservation, SessionClose,
-        SubmitPatch, client_control_frame, decode_server_control_frame,
+        SubmitImagination, SubmitPatch, client_control_frame, decode_server_control_frame,
+        decode_server_control_frame_with_limits,
     };
     use cogniform_protocol::{
         ApplyReceipt, ApplyTiming, ConflictPolicy, DeleteEntity, DeliverySemantic, FrameId,
-        ImageDimensions, ObservationKind, ObservationQuality, ObservationStaleness, PatchBudget,
-        SceneOperation, SceneRevision, SceneText, SchemaVersion, StableEntityId, TransactionId,
+        ImageDimensions, ImaginationBudget, ImaginedEntity, ObservationKind, ObservationQuality,
+        ObservationStaleness, PatchBudget, PositiveF32, PositiveVec3, PrimitiveComponent,
+        PrimitiveShape, SceneOperation, SceneRevision, SceneText, SchemaVersion, StableEntityId,
+        TransactionId,
     };
 
     use super::*;
@@ -1103,7 +1730,9 @@ mod tests {
         observation_capacity: Option<u32>,
         observation_dimensions: Option<(u32, u32)>,
         command_depth: Cell<u32>,
+        process_calls: Cell<u32>,
         outstanding_observations: Cell<u32>,
+        compilation_limits: Cell<Option<CompilationLimits>>,
         admissions: RefCell<VecDeque<Result<GatewayAdmission, SessionFailureCode>>>,
         responses: RefCell<VecDeque<Result<Option<GatewayResponse>, SessionFailureCode>>>,
         query_results: RefCell<VecDeque<Result<SceneQueryResult, SessionFailureCode>>>,
@@ -1136,6 +1765,14 @@ mod tests {
             }
         }
 
+        fn configure_compilation_limits(
+            &mut self,
+            limits: CompilationLimits,
+        ) -> Result<(), SessionFailureCode> {
+            self.compilation_limits.set(Some(limits));
+            Ok(())
+        }
+
         fn submit_patch(
             &mut self,
             patch: ScenePatch,
@@ -1151,10 +1788,35 @@ mod tests {
             result
         }
 
+        fn submit_imagination(
+            &mut self,
+            imagination: ImaginationEnvelope,
+        ) -> Result<GatewayAdmission, SessionFailureCode> {
+            let result = self.admissions.get_mut().pop_front().unwrap_or({
+                Ok(GatewayAdmission::Queued {
+                    idempotency_key: imagination.idempotency_key,
+                })
+            });
+            if matches!(result, Ok(GatewayAdmission::Queued { .. })) {
+                self.command_depth.set(self.command_depth.get() + 1);
+            }
+            result
+        }
+
         fn process_next(&mut self) -> Result<Option<GatewayResponse>, SessionFailureCode> {
+            self.process_calls.set(self.process_calls.get() + 1);
             self.command_depth
                 .set(self.command_depth.get().saturating_sub(1));
-            self.responses.get_mut().pop_front().unwrap_or(Ok(None))
+            let result = self.responses.get_mut().pop_front().unwrap_or(Ok(None));
+            if let (
+                Some(limits),
+                Ok(Some(GatewayResponse::ImaginationProcessed { compilation, .. })),
+            ) = (self.compilation_limits.get(), &result)
+                && compilation.to_canonical_json(&limits).is_err()
+            {
+                return Err(SessionFailureCode::LimitExceeded);
+            }
+            result
         }
 
         fn query(&self, query: &SceneQuery) -> Result<SceneQueryResult, SessionFailureCode> {
@@ -1221,6 +1883,68 @@ mod tests {
         }
     }
 
+    fn imagination(nonce: u128, delivery: DeliverySemantic) -> ImaginationEnvelope {
+        ImaginationEnvelope {
+            schema_version: SchemaVersion::V1,
+            imagination_id: ImaginationId::new(nonce + 200).unwrap(),
+            transaction_id: TransactionId::new(nonce).unwrap(),
+            idempotency_key: IdempotencyKey::new(nonce + 100).unwrap(),
+            base_revision: SceneRevision::new(7),
+            delivery,
+            seed: 42,
+            declared_budget: ImaginationBudget::default(),
+            entities: vec![ImaginedEntity {
+                key: SceneText::new("table").unwrap(),
+                preferred_id: None,
+                name: None,
+                primitive: PrimitiveComponent {
+                    shape: PrimitiveShape::Cuboid,
+                    dimensions: PositiveVec3 {
+                        x: PositiveF32::new(1.0).unwrap(),
+                        y: PositiveF32::new(1.0).unwrap(),
+                        z: PositiveF32::new(1.0).unwrap(),
+                    },
+                },
+                transform: None,
+                material: None,
+            }],
+            relations: Vec::new(),
+            constraints: Vec::new(),
+        }
+    }
+
+    fn compilation(
+        imagination: &ImaginationEnvelope,
+        patch: Option<ScenePatch>,
+    ) -> CompilationResult {
+        CompilationResult {
+            schema_version: cogniform_compilation::COMPILATION_SCHEMA_VERSION,
+            imagination_id: imagination.imagination_id,
+            scene_revision: imagination.base_revision,
+            patch,
+            decisions: Vec::new(),
+            unresolved: Vec::new(),
+        }
+    }
+
+    fn unresolved_compilation(imagination: &ImaginationEnvelope) -> CompilationResult {
+        CompilationResult {
+            schema_version: cogniform_compilation::COMPILATION_SCHEMA_VERSION,
+            imagination_id: imagination.imagination_id,
+            scene_revision: imagination.base_revision,
+            patch: None,
+            decisions: Vec::new(),
+            unresolved: vec![UnresolvedConstraint {
+                code: UnresolvedConstraintCode::RequiredEntityMissing,
+                relation_index: None,
+                constraint_index: Some(0),
+                entity_key: None,
+                related_key: None,
+                entity_id: Some(StableEntityId::new(999).unwrap()),
+            }],
+        }
+    }
+
     fn query() -> SceneQuery {
         SceneQuery {
             schema_version: SchemaVersion::V1,
@@ -1277,6 +2001,22 @@ mod tests {
         .unwrap()
     }
 
+    fn client_frame_v2(
+        correlation_id: u64,
+        message: LocalSessionClientKind,
+        config: &LocalFrameConfig,
+    ) -> LocalFrame {
+        client_control_frame(
+            correlation(correlation_id),
+            &LocalSessionClientMessage {
+                schema_version: LOCAL_SESSION_SCHEMA_VERSION_V2,
+                message,
+            },
+            config,
+        )
+        .unwrap()
+    }
+
     fn hello(core: &mut SessionCore<TestService>) {
         let config = LocalFrameConfig::default();
         let output = core
@@ -1284,6 +2024,7 @@ mod tests {
                 1,
                 LocalSessionClientKind::Hello(ClientHello {
                     receive_limits: LocalSessionLimits::from_config(&config).unwrap(),
+                    compilation_receive_limits: None,
                 }),
                 &config,
             ))
@@ -1295,8 +2036,42 @@ mod tests {
         ));
     }
 
+    fn hello_v2(core: &mut SessionCore<TestService>) {
+        let config = LocalFrameConfig::default();
+        let compilation_limits = CompilationLimits::default();
+        let output = core
+            .handle_frame(&client_frame_v2(
+                1,
+                LocalSessionClientKind::Hello(ClientHello {
+                    receive_limits: LocalSessionLimits::from_config(&config).unwrap(),
+                    compilation_receive_limits: Some(compilation_limits),
+                }),
+                &config,
+            ))
+            .unwrap();
+        assert_eq!(output.len(), 1);
+        assert!(matches!(
+            server_kind_v2(&output[0], &config, &compilation_limits),
+            LocalSessionServerKind::Hello(ServerHello {
+                effective_compilation_limits: Some(limits),
+                ..
+            }) if limits == compilation_limits
+        ));
+    }
+
     fn server_kind(frame: &LocalFrame, config: &LocalFrameConfig) -> LocalSessionServerKind {
         decode_server_control_frame(frame, config)
+            .unwrap()
+            .1
+            .message
+    }
+
+    fn server_kind_v2(
+        frame: &LocalFrame,
+        config: &LocalFrameConfig,
+        compilation_limits: &CompilationLimits,
+    ) -> LocalSessionServerKind {
+        decode_server_control_frame_with_limits(frame, config, compilation_limits)
             .unwrap()
             .1
             .message
@@ -1414,6 +2189,43 @@ mod tests {
     }
 
     #[test]
+    fn version_two_compilation_limits_negotiate_fieldwise() {
+        let frame_config = LocalFrameConfig::default();
+        let executor_config = LocalExecutorConfig {
+            compilation_limits: CompilationLimits {
+                max_decisions: NonZeroU32::new(100).unwrap(),
+                ..CompilationLimits::default()
+            },
+            ..LocalExecutorConfig::default()
+        };
+        let advertised = CompilationLimits {
+            max_encoded_bytes: NonZeroU64::new(2_000_000).unwrap(),
+            ..CompilationLimits::default()
+        };
+        let expected =
+            intersect_compilation_limits(executor_config.compilation_limits, advertised).unwrap();
+        let mut core = SessionCore::new(TestService::default(), executor_config).unwrap();
+        let output = core
+            .handle_frame(&client_frame_v2(
+                1,
+                LocalSessionClientKind::Hello(ClientHello {
+                    receive_limits: LocalSessionLimits::from_config(&frame_config).unwrap(),
+                    compilation_receive_limits: Some(advertised),
+                }),
+                &frame_config,
+            ))
+            .unwrap();
+        assert_eq!(core.negotiated_compilation_limits(), Some(expected));
+        assert!(matches!(
+            server_kind_v2(&output[0], &frame_config, &expected),
+            LocalSessionServerKind::Hello(ServerHello {
+                effective_compilation_limits: Some(limits),
+                ..
+            }) if limits == expected
+        ));
+    }
+
+    #[test]
     fn exactly_one_hello_precedes_service_work_and_close_is_terminal() {
         let config = LocalFrameConfig::default();
         let mut core = core(TestService::default());
@@ -1426,12 +2238,27 @@ mod tests {
             .unwrap();
         assert_failure(&prehello[0], SessionFailureCode::ProtocolState, &config);
 
+        let prehello_v2 = core
+            .handle_frame(&client_frame_v2(
+                20,
+                LocalSessionClientKind::Query(QueryRequest { query: query() }),
+                &config,
+            ))
+            .unwrap();
+        assert!(matches!(
+            server_kind_v2(&prehello_v2[0], &config, &CompilationLimits::default()),
+            LocalSessionServerKind::Failure(SessionFailure {
+                code: SessionFailureCode::ProtocolState,
+            })
+        ));
+
         hello(&mut core);
         let duplicate = core
             .handle_frame(&client_frame(
                 3,
                 LocalSessionClientKind::Hello(ClientHello {
                     receive_limits: LocalSessionLimits::from_config(&config).unwrap(),
+                    compilation_receive_limits: None,
                 }),
                 &config,
             ))
@@ -1459,6 +2286,449 @@ mod tests {
             .unwrap();
         assert_failure(&postclose[0], SessionFailureCode::ProtocolState, &config);
         assert!(core.advance().unwrap().is_empty());
+    }
+
+    #[test]
+    fn imagination_completion_replay_and_version_lock_are_exact_once() {
+        let config = LocalFrameConfig::default();
+        let limits = CompilationLimits::default();
+        let request = imagination(20, DeliverySemantic::MustApply);
+        let normalized_patch = patch(20, DeliverySemantic::MustApply);
+        let compiled = compilation(&request, Some(normalized_patch.clone()));
+        let applied = receipt(&normalized_patch, ApplyStatus::Applied);
+        let mut replay_receipt = applied.clone();
+        replay_receipt.status = ApplyStatus::IdempotentReplay;
+        let service = TestService::default();
+        service
+            .responses
+            .borrow_mut()
+            .push_back(Ok(Some(GatewayResponse::ImaginationProcessed {
+                compilation: Box::new(compiled.clone()),
+                receipt: Some(applied.clone()),
+            })));
+        let mut core = core(service);
+        hello_v2(&mut core);
+
+        let admitted = core
+            .handle_frame(&client_frame_v2(
+                2,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                    imagination: request.clone(),
+                }),
+                &config,
+            ))
+            .unwrap();
+        assert!(matches!(
+            server_kind_v2(&admitted[0], &config, &limits),
+            LocalSessionServerKind::ImaginationAdmission(ImaginationAdmission {
+                status: ImaginationAdmissionStatus::Queued,
+                ..
+            })
+        ));
+        assert_eq!(core.status().pending_imaginations, 1);
+        assert_eq!(core.status().pending_patches, 0);
+
+        let completed = core.advance().unwrap();
+        assert_eq!(completed[0].correlation_id(), correlation(2));
+        assert!(matches!(
+            server_kind_v2(&completed[0], &config, &limits),
+            LocalSessionServerKind::ImaginationCompleted(ImaginationCompletion {
+                imagination_id,
+                idempotency_key,
+                compilation,
+                receipt: Some(receipt),
+            }) if imagination_id == request.imagination_id
+                && idempotency_key == request.idempotency_key
+                && compilation == compiled
+                && receipt == applied
+        ));
+        assert_eq!(core.status().live_correlations, 0);
+        assert_eq!(core.service.process_calls.get(), 1);
+
+        core.service
+            .admissions
+            .borrow_mut()
+            .push_back(Ok(GatewayAdmission::Replayed {
+                response: Box::new(GatewayResponse::ImaginationProcessed {
+                    compilation: Box::new(compiled.clone()),
+                    receipt: Some(replay_receipt.clone()),
+                }),
+            }));
+        let replayed = core
+            .handle_frame(&client_frame_v2(
+                3,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                    imagination: request.clone(),
+                }),
+                &config,
+            ))
+            .unwrap();
+        let LocalSessionServerKind::ImaginationAdmission(admission) =
+            server_kind_v2(&replayed[0], &config, &limits)
+        else {
+            panic!("expected imagination replay admission");
+        };
+        assert_eq!(admission.imagination_id, request.imagination_id);
+        assert_eq!(admission.idempotency_key, request.idempotency_key);
+        let ImaginationAdmissionStatus::Replayed { completion } = admission.status else {
+            panic!("expected retained completion");
+        };
+        assert_eq!(completion.compilation, compiled);
+        assert_eq!(completion.receipt, Some(replay_receipt));
+        assert_eq!(core.service.process_calls.get(), 1);
+        assert_eq!(core.status().live_correlations, 0);
+
+        let mixed_version = core
+            .handle_frame(&client_frame(
+                4,
+                LocalSessionClientKind::Query(QueryRequest { query: query() }),
+                &config,
+            ))
+            .unwrap();
+        assert!(matches!(
+            server_kind_v2(&mixed_version[0], &config, &limits),
+            LocalSessionServerKind::Failure(SessionFailure {
+                code: SessionFailureCode::UnsupportedVersion,
+            })
+        ));
+    }
+
+    #[test]
+    fn imagination_already_queued_and_dropped_admissions_are_terminal() {
+        let config = LocalFrameConfig::default();
+        let limits = CompilationLimits::default();
+        let request = imagination(25, DeliverySemantic::MustApply);
+        let mut core = core(TestService::default());
+        hello_v2(&mut core);
+        core.handle_frame(&client_frame_v2(
+            2,
+            LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                imagination: request.clone(),
+            }),
+            &config,
+        ))
+        .unwrap();
+
+        core.service
+            .admissions
+            .borrow_mut()
+            .push_back(Ok(GatewayAdmission::AlreadyQueued {
+                idempotency_key: request.idempotency_key,
+            }));
+        let already_queued = core
+            .handle_frame(&client_frame_v2(
+                3,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                    imagination: request,
+                }),
+                &config,
+            ))
+            .unwrap();
+        assert!(matches!(
+            server_kind_v2(&already_queued[0], &config, &limits),
+            LocalSessionServerKind::ImaginationAdmission(ImaginationAdmission {
+                status: ImaginationAdmissionStatus::AlreadyQueued,
+                ..
+            })
+        ));
+        assert_eq!(core.status().live_correlations, 1);
+
+        let dropped_request = imagination(26, DeliverySemantic::BestEffort);
+        core.service
+            .admissions
+            .borrow_mut()
+            .push_back(Ok(GatewayAdmission::Dropped {
+                idempotency_key: dropped_request.idempotency_key,
+            }));
+        let dropped = core
+            .handle_frame(&client_frame_v2(
+                4,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                    imagination: dropped_request,
+                }),
+                &config,
+            ))
+            .unwrap();
+        assert!(matches!(
+            server_kind_v2(&dropped[0], &config, &limits),
+            LocalSessionServerKind::ImaginationAdmission(ImaginationAdmission {
+                status: ImaginationAdmissionStatus::Dropped,
+                ..
+            })
+        ));
+        assert_eq!(core.status().live_correlations, 1);
+    }
+
+    #[test]
+    fn active_v2_decode_failure_preserves_the_negotiated_version() {
+        let config = LocalFrameConfig::default();
+        let limits = CompilationLimits::default();
+        let mut core = core(TestService::default());
+        hello_v2(&mut core);
+        let malformed = LocalFrame::Control {
+            correlation_id: correlation(5),
+            bytes: b"{}\n".to_vec(),
+        };
+        let malformed = core.handle_frame(&malformed).unwrap();
+        assert!(matches!(
+            server_kind_v2(&malformed[0], &config, &limits),
+            LocalSessionServerKind::Failure(SessionFailure {
+                code: SessionFailureCode::InvalidMessage,
+            })
+        ));
+    }
+
+    #[test]
+    fn imagination_supersession_releases_old_correlation_and_retains_new_kind() {
+        let config = LocalFrameConfig::default();
+        let limits = CompilationLimits::default();
+        let delivery = DeliverySemantic::LatestWins {
+            supersession_key: SceneText::new("draft/scene").unwrap(),
+        };
+        let first = imagination(30, delivery.clone());
+        let second = imagination(31, delivery);
+        let first_key = first.idempotency_key;
+        let second_key = second.idempotency_key;
+        let second_patch = patch(31, second.delivery.clone());
+        let second_compilation = compilation(&second, Some(second_patch.clone()));
+        let service = TestService::default();
+        service.admissions.borrow_mut().extend([
+            Ok(GatewayAdmission::Queued {
+                idempotency_key: first_key,
+            }),
+            Ok(GatewayAdmission::Superseded {
+                idempotency_key: second_key,
+                superseded_idempotency_key: first_key,
+            }),
+        ]);
+        service
+            .responses
+            .borrow_mut()
+            .push_back(Ok(Some(GatewayResponse::ImaginationProcessed {
+                compilation: Box::new(second_compilation.clone()),
+                receipt: Some(receipt(&second_patch, ApplyStatus::Applied)),
+            })));
+        let mut executor = core(service);
+        hello_v2(&mut executor);
+        executor
+            .handle_frame(&client_frame_v2(
+                2,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination { imagination: first }),
+                &config,
+            ))
+            .unwrap();
+        let superseded = executor
+            .handle_frame(&client_frame_v2(
+                3,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                    imagination: second,
+                }),
+                &config,
+            ))
+            .unwrap();
+        assert_eq!(superseded.len(), 2);
+        assert_eq!(superseded[0].correlation_id(), correlation(2));
+        assert!(matches!(
+            server_kind_v2(&superseded[0], &config, &limits),
+            LocalSessionServerKind::Failure(SessionFailure {
+                code: SessionFailureCode::CommandRejected,
+            })
+        ));
+        assert_eq!(superseded[1].correlation_id(), correlation(3));
+        assert!(matches!(
+            server_kind_v2(&superseded[1], &config, &limits),
+            LocalSessionServerKind::ImaginationAdmission(ImaginationAdmission {
+                status: ImaginationAdmissionStatus::Superseded {
+                    superseded_idempotency_key,
+                },
+                ..
+            }) if superseded_idempotency_key == first_key
+        ));
+        assert_eq!(executor.status().live_correlations, 1);
+        assert_eq!(executor.status().pending_imaginations, 1);
+        let completed = executor.advance().unwrap();
+        assert_eq!(completed[0].correlation_id(), correlation(3));
+        assert!(matches!(
+            server_kind_v2(&completed[0], &config, &limits),
+            LocalSessionServerKind::ImaginationCompleted(ImaginationCompletion {
+                compilation,
+                ..
+            }) if compilation == second_compilation
+        ));
+        assert_eq!(executor.status().live_correlations, 0);
+    }
+
+    #[test]
+    fn patch_to_imagination_supersession_replaces_pending_kind() {
+        let config = LocalFrameConfig::default();
+        let limits = CompilationLimits::default();
+        let delivery = DeliverySemantic::LatestWins {
+            supersession_key: SceneText::new("draft/cross-kind").unwrap(),
+        };
+
+        let old_patch = patch(50, delivery.clone());
+        let new_imagination = imagination(51, delivery.clone());
+        let normalized_patch = patch(51, delivery.clone());
+        let compiled = compilation(&new_imagination, Some(normalized_patch.clone()));
+        let service = TestService::default();
+        service.admissions.borrow_mut().extend([
+            Ok(GatewayAdmission::Queued {
+                idempotency_key: old_patch.idempotency_key,
+            }),
+            Ok(GatewayAdmission::Superseded {
+                idempotency_key: new_imagination.idempotency_key,
+                superseded_idempotency_key: old_patch.idempotency_key,
+            }),
+        ]);
+        service
+            .responses
+            .borrow_mut()
+            .push_back(Ok(Some(GatewayResponse::ImaginationProcessed {
+                compilation: Box::new(compiled),
+                receipt: Some(receipt(&normalized_patch, ApplyStatus::Applied)),
+            })));
+        let mut patch_to_imagination = core(service);
+        hello_v2(&mut patch_to_imagination);
+        patch_to_imagination
+            .handle_frame(&client_frame_v2(
+                2,
+                LocalSessionClientKind::SubmitPatch(SubmitPatch {
+                    patch: old_patch.clone(),
+                }),
+                &config,
+            ))
+            .unwrap();
+        let replacement = patch_to_imagination
+            .handle_frame(&client_frame_v2(
+                3,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                    imagination: new_imagination,
+                }),
+                &config,
+            ))
+            .unwrap();
+        assert_eq!(replacement[0].correlation_id(), correlation(2));
+        assert_eq!(replacement[1].correlation_id(), correlation(3));
+        assert_eq!(patch_to_imagination.status().pending_patches, 0);
+        assert_eq!(patch_to_imagination.status().pending_imaginations, 1);
+        let completed = patch_to_imagination.advance().unwrap();
+        assert_eq!(completed[0].correlation_id(), correlation(3));
+        assert!(matches!(
+            server_kind_v2(&completed[0], &config, &limits),
+            LocalSessionServerKind::ImaginationCompleted(_)
+        ));
+    }
+
+    #[test]
+    fn imagination_to_patch_supersession_replaces_pending_kind() {
+        let config = LocalFrameConfig::default();
+        let limits = CompilationLimits::default();
+        let delivery = DeliverySemantic::LatestWins {
+            supersession_key: SceneText::new("draft/cross-kind").unwrap(),
+        };
+        let old_imagination = imagination(60, delivery.clone());
+        let new_patch = patch(61, delivery);
+        let service = TestService::default();
+        service.admissions.borrow_mut().extend([
+            Ok(GatewayAdmission::Queued {
+                idempotency_key: old_imagination.idempotency_key,
+            }),
+            Ok(GatewayAdmission::Superseded {
+                idempotency_key: new_patch.idempotency_key,
+                superseded_idempotency_key: old_imagination.idempotency_key,
+            }),
+        ]);
+        service
+            .responses
+            .borrow_mut()
+            .push_back(Ok(Some(GatewayResponse::PatchApplied {
+                receipt: receipt(&new_patch, ApplyStatus::Applied),
+            })));
+        let mut imagination_to_patch = core(service);
+        hello_v2(&mut imagination_to_patch);
+        imagination_to_patch
+            .handle_frame(&client_frame_v2(
+                2,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                    imagination: old_imagination,
+                }),
+                &config,
+            ))
+            .unwrap();
+        let replacement = imagination_to_patch
+            .handle_frame(&client_frame_v2(
+                3,
+                LocalSessionClientKind::SubmitPatch(SubmitPatch { patch: new_patch }),
+                &config,
+            ))
+            .unwrap();
+        assert_eq!(replacement[0].correlation_id(), correlation(2));
+        assert_eq!(replacement[1].correlation_id(), correlation(3));
+        assert_eq!(imagination_to_patch.status().pending_patches, 1);
+        assert_eq!(imagination_to_patch.status().pending_imaginations, 0);
+        let completed = imagination_to_patch.advance().unwrap();
+        assert_eq!(completed[0].correlation_id(), correlation(3));
+        assert!(matches!(
+            server_kind_v2(&completed[0], &config, &limits),
+            LocalSessionServerKind::PatchCompleted(_)
+        ));
+        assert_eq!(imagination_to_patch.status().live_correlations, 0);
+    }
+
+    #[test]
+    fn unresolved_imagination_and_service_error_are_terminal_without_receipts() {
+        let config = LocalFrameConfig::default();
+        let limits = CompilationLimits::default();
+        let unresolved_request = imagination(40, DeliverySemantic::MustApply);
+        let unresolved = unresolved_compilation(&unresolved_request);
+        let failed_request = imagination(41, DeliverySemantic::MustApply);
+        let service = TestService::default();
+        service.responses.borrow_mut().extend([
+            Ok(Some(GatewayResponse::ImaginationProcessed {
+                compilation: Box::new(unresolved.clone()),
+                receipt: None,
+            })),
+            Err(SessionFailureCode::Internal),
+        ]);
+        let mut core = core(service);
+        hello_v2(&mut core);
+
+        core.handle_frame(&client_frame_v2(
+            2,
+            LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                imagination: unresolved_request,
+            }),
+            &config,
+        ))
+        .unwrap();
+        let completion = core.advance().unwrap();
+        assert!(matches!(
+            server_kind_v2(&completion[0], &config, &limits),
+            LocalSessionServerKind::ImaginationCompleted(ImaginationCompletion {
+                compilation,
+                receipt: None,
+                ..
+            }) if compilation == unresolved
+        ));
+        assert_eq!(core.status().live_correlations, 0);
+
+        core.handle_frame(&client_frame_v2(
+            3,
+            LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                imagination: failed_request,
+            }),
+            &config,
+        ))
+        .unwrap();
+        let failed = core.advance().unwrap();
+        assert!(matches!(
+            server_kind_v2(&failed[0], &config, &limits),
+            LocalSessionServerKind::Failure(SessionFailure {
+                code: SessionFailureCode::Internal,
+            })
+        ));
+        assert_eq!(core.status().live_correlations, 0);
+        assert_eq!(core.status().pending_imaginations, 0);
     }
 
     #[test]
@@ -1509,6 +2779,201 @@ mod tests {
     }
 
     #[test]
+    fn negotiated_result_limits_fail_before_completion_and_release_once() {
+        let config = LocalFrameConfig::default();
+        let request = imagination(70, DeliverySemantic::MustApply);
+        let normalized_patch = patch(70, DeliverySemantic::MustApply);
+        let compiled = compilation(&request, Some(normalized_patch.clone()));
+        let default_limits = CompilationLimits::default();
+        let encoded_bytes = compiled.to_canonical_json(&default_limits).unwrap().len();
+        let mut encoded_limited = default_limits;
+        encoded_limited.max_encoded_bytes = NonZeroU64::new(
+            u64::try_from(encoded_bytes)
+                .unwrap()
+                .checked_sub(1)
+                .unwrap(),
+        )
+        .unwrap();
+        let mut nesting_limited = default_limits;
+        nesting_limited.max_json_nesting_depth = core::num::NonZeroU16::new(1).unwrap();
+
+        for negotiated in [encoded_limited, nesting_limited] {
+            let service = TestService::default();
+            service.responses.borrow_mut().push_back(Ok(Some(
+                GatewayResponse::ImaginationProcessed {
+                    compilation: Box::new(compiled.clone()),
+                    receipt: Some(receipt(&normalized_patch, ApplyStatus::Applied)),
+                },
+            )));
+            let mut core = core(service);
+            core.handle_frame(&client_frame_v2(
+                1,
+                LocalSessionClientKind::Hello(ClientHello {
+                    receive_limits: LocalSessionLimits::from_config(&config).unwrap(),
+                    compilation_receive_limits: Some(negotiated),
+                }),
+                &config,
+            ))
+            .unwrap();
+            assert_eq!(core.service.compilation_limits.get(), Some(negotiated));
+
+            core.handle_frame(&client_frame_v2(
+                2,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                    imagination: request.clone(),
+                }),
+                &config,
+            ))
+            .unwrap();
+            let failed = core.advance().unwrap();
+            assert!(matches!(
+                server_kind_v2(&failed[0], &config, &negotiated),
+                LocalSessionServerKind::Failure(SessionFailure {
+                    code: SessionFailureCode::LimitExceeded,
+                })
+            ));
+            assert_eq!(core.status().live_correlations, 0);
+            assert_eq!(core.status().pending_imaginations, 0);
+            assert_eq!(core.service.process_calls.get(), 1);
+
+            let mut replay_receipt = receipt(&normalized_patch, ApplyStatus::IdempotentReplay);
+            replay_receipt.status = ApplyStatus::IdempotentReplay;
+            core.service
+                .admissions
+                .borrow_mut()
+                .push_back(Ok(GatewayAdmission::Replayed {
+                    response: Box::new(GatewayResponse::ImaginationProcessed {
+                        compilation: Box::new(compiled.clone()),
+                        receipt: Some(replay_receipt),
+                    }),
+                }));
+            let replay = core
+                .handle_frame(&client_frame_v2(
+                    3,
+                    LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                        imagination: request.clone(),
+                    }),
+                    &config,
+                ))
+                .unwrap();
+            assert!(matches!(
+                server_kind_v2(&replay[0], &config, &negotiated),
+                LocalSessionServerKind::Failure(SessionFailure {
+                    code: SessionFailureCode::LimitExceeded,
+                })
+            ));
+            assert_eq!(core.service.process_calls.get(), 1);
+            assert_eq!(core.status().live_correlations, 0);
+        }
+    }
+
+    #[test]
+    fn imagination_completion_binds_submitted_transaction_and_revision() {
+        let config = LocalFrameConfig::default();
+        let request = imagination(80, DeliverySemantic::MustApply);
+        let normalized_patch = patch(80, DeliverySemantic::MustApply);
+
+        let mut wrong_revision = compilation(&request, Some(normalized_patch.clone()));
+        wrong_revision.scene_revision = SceneRevision::new(8);
+        wrong_revision.patch.as_mut().unwrap().base_revision = SceneRevision::new(8);
+        let mut wrong_revision_receipt = receipt(&normalized_patch, ApplyStatus::Applied);
+        wrong_revision_receipt.previous_revision = SceneRevision::new(8);
+        wrong_revision_receipt.new_revision = SceneRevision::new(9);
+        let service = TestService::default();
+        service
+            .responses
+            .borrow_mut()
+            .push_back(Ok(Some(GatewayResponse::ImaginationProcessed {
+                compilation: Box::new(wrong_revision),
+                receipt: Some(wrong_revision_receipt),
+            })));
+        let mut executor = core(service);
+        hello_v2(&mut executor);
+        executor
+            .handle_frame(&client_frame_v2(
+                2,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                    imagination: request.clone(),
+                }),
+                &config,
+            ))
+            .unwrap();
+        let failed = executor.advance().unwrap();
+        assert!(matches!(
+            server_kind_v2(&failed[0], &config, &CompilationLimits::default()),
+            LocalSessionServerKind::Failure(SessionFailure {
+                code: SessionFailureCode::Internal,
+            })
+        ));
+        assert_eq!(executor.status().live_correlations, 0);
+
+        let mut wrong_transaction = compilation(&request, Some(normalized_patch.clone()));
+        wrong_transaction.patch.as_mut().unwrap().transaction_id = TransactionId::new(999).unwrap();
+        let mut wrong_transaction_receipt =
+            receipt(&normalized_patch, ApplyStatus::IdempotentReplay);
+        wrong_transaction_receipt.transaction_id = TransactionId::new(999).unwrap();
+        let service = TestService::default();
+        service
+            .admissions
+            .borrow_mut()
+            .push_back(Ok(GatewayAdmission::Replayed {
+                response: Box::new(GatewayResponse::ImaginationProcessed {
+                    compilation: Box::new(wrong_transaction),
+                    receipt: Some(wrong_transaction_receipt),
+                }),
+            }));
+        let mut executor = core(service);
+        hello_v2(&mut executor);
+        let failed = executor
+            .handle_frame(&client_frame_v2(
+                2,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                    imagination: request.clone(),
+                }),
+                &config,
+            ))
+            .unwrap();
+        assert!(matches!(
+            server_kind_v2(&failed[0], &config, &CompilationLimits::default()),
+            LocalSessionServerKind::Failure(SessionFailure {
+                code: SessionFailureCode::Internal,
+            })
+        ));
+        assert_eq!(executor.status().live_correlations, 0);
+
+        let mut unresolved = unresolved_compilation(&request);
+        unresolved.scene_revision = SceneRevision::new(8);
+        let service = TestService::default();
+        service
+            .admissions
+            .borrow_mut()
+            .push_back(Ok(GatewayAdmission::Replayed {
+                response: Box::new(GatewayResponse::ImaginationProcessed {
+                    compilation: Box::new(unresolved),
+                    receipt: None,
+                }),
+            }));
+        let mut executor = core(service);
+        hello_v2(&mut executor);
+        let failed = executor
+            .handle_frame(&client_frame_v2(
+                2,
+                LocalSessionClientKind::SubmitImagination(SubmitImagination {
+                    imagination: request,
+                }),
+                &config,
+            ))
+            .unwrap();
+        assert!(matches!(
+            server_kind_v2(&failed[0], &config, &CompilationLimits::default()),
+            LocalSessionServerKind::Failure(SessionFailure {
+                code: SessionFailureCode::Internal,
+            })
+        ));
+        assert_eq!(executor.status().live_correlations, 0);
+    }
+
+    #[test]
     fn observation_identity_and_dimensions_reject_before_duplicate_service_work() {
         let config = LocalFrameConfig::default();
         let request = observation_request(62);
@@ -1555,6 +3020,7 @@ mod tests {
                 1,
                 LocalSessionClientKind::Hello(ClientHello {
                     receive_limits: hello_limits,
+                    compilation_receive_limits: None,
                 }),
                 &narrow,
             ))
@@ -1888,6 +3354,7 @@ mod tests {
                 1,
                 LocalSessionClientKind::Hello(ClientHello {
                     receive_limits: LocalSessionLimits::from_config(&receive).unwrap(),
+                    compilation_receive_limits: None,
                 }),
                 &receive,
             ))

@@ -27,10 +27,10 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Machine outputs | Pass on validated profile | Exact unlit and tolerant scene/imported/overridden direct-material color and depth, exact stable entity ID, structured visibility, and quantized world-space normals from outward built-ins, source-wound assets, sphere radial directions, or approved imported directions |
 | Observation payload envelope | Pass for declared CPU profile | Fixed version-one all-kind layouts and exact fixture, canonical values and limits, metadata binding, truncation/trailing/corruption rejection, and engine source-compatible re-export without I/O or transport construction |
 | Local stream frame | Pass for declared CPU profile | Fixed version-one header and exact fixture, independent header-first complete/control/bulk limits, canonical observation-envelope composition, short/interrupted I/O, back-to-back framing, and corruption/truncation rejection over caller-owned streams without an endpoint or session |
-| Local-session messages | Pass for declared CPU profile | Exact schema-v1 client/server LF fixtures, every-variant round trips, outer-only correlation, effective byte/nesting bounds, direction/version/unknown/canonical/substitution/nested validation, exact-revision observation admission, and no executor or endpoint |
-| Local-session executor | Pass for declared CPU profile | One hello, field-wise peer/local/service limits, deterministic one-command advancement, exact terminal command/observation correlation, one-time pending, two-frame output cap, redacted failures, quiescent close, and a passing controlled service adapter without endpoint authority |
-| Local stdio session | Pass for declared CPU and controlled Windows profile | Exact pre-adapter argument/terminal/first-frame behavior, half-duplex no-read-while-live scheduling, negotiated bounds, positive-cadence fixed completion deadline, partial-output/flush/fatal handling, stable diagnostics, and a passing controlled child-process hello/patch/query/observation/close exchange |
-| Compilation result contract | Pass for declared CPU profile | Exact compiled/unresolved schema-v1 LF fixtures, bounded canonical round trips, malformed/substituted/order/duplicate/outcome/revision rejection, nested patch validation, source-path compiler re-exports, and unchanged normalization/IDs/patch bytes without session or I/O authority; exhaustive result/config construction and `CompileError` matching are source-breaking in the unpublished `0.0.0` API |
+| Local-session messages | Pass for declared CPU profile | Exact unchanged schema-v1 client/server LF fixtures plus exact schema-v2 hello/imagination/completion/replay fixtures; outer-only correlation; negotiated frame/result bytes and nesting; direction/version/unknown/canonical/substitution/nested identity, revision, receipt, and role validation; no executor or endpoint authority; exhaustive message construction and `LocalSessionValidationKind` matching are source-breaking in the unpublished `0.0.0` API |
+| Local-session executor | Pass for declared CPU profile | One version-locked hello; field-wise peer/local/service frame and compilation limits installed before semantic work; every patch/imagination admission; both cross-kind supersession directions; deterministic one-command advancement; exact terminal command/observation correlation; compiled/unresolved/replay/service-invalid outcomes; one-time pending; two-frame output cap; redacted failures; and quiescent close |
+| Local stdio session | Pass for declared CPU and controlled Windows profile | Exact pre-adapter argument/terminal/first-frame behavior, half-duplex no-read-while-live scheduling, asymmetric version-two result-limit adoption, positive-cadence fixed completion deadline, partial-output/flush/fatal handling, stable diagnostics, and passing controlled child-process v1 patch plus v2 imagination/patch/query/observation/replay/close exchanges |
+| Compilation result contract | Pass for declared CPU profile | Exact compiled/unresolved schema-v1 LF fixtures, bounded canonical round trips, malformed/substituted/order/duplicate/outcome/revision rejection, nested patch validation, compiler pre-return encoded/nesting enforcement, source-path compiler re-exports, and unchanged normalization/IDs/patch bytes without session or I/O authority; exhaustive result/config construction and `CompileError` matching are source-breaking in the unpublished `0.0.0` API |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Pending-work age | Pass on validated profile | Empty and retained command/observation/import/upload status, duplicate retention, supersession reset, rejection/drop neutrality, processing/eviction/delivery cleanup, saturation, and restoration/revert compatibility |
@@ -85,6 +85,12 @@ This does not make the current `0.0.0` workspace a supported release.
       normalization/IDs/patch bytes, and the unpublished `0.0.0` exhaustive
       result/config construction and `CompileError` matching breaks without
       constructing a session, service, endpoint, or GPU adapter.
+- [ ] Re-run the CPU-only local-session/executor version-two contracts and the
+      controlled ignored child-process flow on an approved adapter; confirm
+      unchanged version-one fixtures, explicit compilation-limit negotiation,
+      imagination admission, compiled/unresolved completion, exact replay
+      without duplicate processing, query/observation causality, and orderly
+      close.
 - [ ] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
       matrix, recovery-envelope, recovery-file, and asset-file
       formats/limitations, offline inspection profile/versioned output, known
@@ -159,11 +165,13 @@ The GitHub release must be marked prerelease and state:
 - compilation results are bounded schema-version-one in-memory or canonical LF
   values that bind an imagination and exact scene revision to one normalized
   patch or unresolved issues. The value crate does not compile, execute,
-  mutate, authenticate, persist, or transport them, and the current
-  local-session schema does not carry imagination or compilation results;
+  mutate, authenticate, persist, or transport them. Local-session schema
+  version two can carry the values under explicit negotiated limits through
+  the existing executor and stdio profile; version one cannot;
 - `cogniform-cli serve-stdio` supplies one fixed inherited redirected-stream
   owner and one 64x64 local service. It is half-duplex, flushes every frame,
-  polls live completion every 2 ms under a 15-second deadline, and terminates
+  supports patch and version-two imagination commands, polls live completion
+  every 2 ms under a 15-second deadline, and terminates
   on truncation, corruption, incomplete session EOF, fatal service/executor
   state, deadline, write, or flush failure. It does not recover or retry a
   partial write, preempt a blocked synchronous operation, create a pipe,

@@ -1,7 +1,7 @@
 use core::fmt;
 
 use cogniform_assets::AssetError;
-use cogniform_compiler::CompileError;
+use cogniform_compiler::{CompilationCodecError, CompilationValidationKind, CompileError};
 use cogniform_procedural::ProcedureError;
 use cogniform_protocol::{
     CodecError, FrameId, IdempotencyKey, SceneRevision, StableEntityId, ValidationError,
@@ -170,6 +170,31 @@ pub enum GatewayError {
     },
     /// A produced query result violated canonical protocol invariants.
     InvalidQueryResult(ValidationError),
+}
+
+impl GatewayError {
+    /// Reports a compiler result failure caused by configured output bounds.
+    #[must_use]
+    pub const fn is_compilation_limit_exceeded(&self) -> bool {
+        matches!(
+            self,
+            Self::Compiler(CompileError::InvalidCompilationResult(error))
+                if matches!(
+                    error.kind(),
+                    CompilationValidationKind::DecisionLimitExceeded
+                        | CompilationValidationKind::UnresolvedLimitExceeded
+                        | CompilationValidationKind::TextLimitExceeded
+                        | CompilationValidationKind::DecodedSizeLimitExceeded
+                        | CompilationValidationKind::InvalidPatch
+                )
+        ) || matches!(
+            self,
+            Self::Compiler(CompileError::InvalidCompilationEncoding(
+                CompilationCodecError::EncodedSizeExceeded { .. }
+                    | CompilationCodecError::NestingLimitExceeded { .. }
+            ))
+        )
+    }
 }
 
 impl fmt::Display for GatewayError {
@@ -471,5 +496,35 @@ impl std::error::Error for ObservationError {
             | Self::SourceRevisionMismatch { .. }
             | Self::CameraMismatch { .. } => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gateway_compilation_limit_classification_is_exact() {
+        for error in [
+            CompilationCodecError::EncodedSizeExceeded {
+                actual: 2,
+                limit: 1,
+            },
+            CompilationCodecError::NestingLimitExceeded {
+                actual: 2,
+                limit: 1,
+            },
+        ] {
+            assert!(
+                GatewayError::Compiler(CompileError::InvalidCompilationEncoding(error))
+                    .is_compilation_limit_exceeded()
+            );
+        }
+        assert!(
+            !GatewayError::Compiler(CompileError::InvalidCompilationEncoding(
+                CompilationCodecError::SerializationFailed,
+            ))
+            .is_compilation_limit_exceeded()
+        );
     }
 }

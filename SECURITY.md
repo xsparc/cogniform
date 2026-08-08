@@ -55,3 +55,9 @@ single-user local profile. The
 the tested containment behavior and operational gaps. Neither document turns
 the current source workspace into a remote, multi-tenant, or production
 security boundary.
+
+Local-session schema version two validates bounded imagination and compilation
+roles, but it adds no peer identity, authorization, confidentiality, freshness,
+or remote replay policy. A parent must keep `serve-stdio` on controlled local
+redirected streams and treat scene, compilation, and observation bytes as
+sensitive.

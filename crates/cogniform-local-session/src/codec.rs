@@ -1,6 +1,7 @@
 use core::num::NonZeroU64;
 use std::io::{self, Write};
 
+use cogniform_compilation::CompilationLimits;
 use cogniform_local_transport::{LOCAL_FRAME_HEADER_BYTES, LocalFrame, LocalFrameConfig};
 use cogniform_protocol::{JsonErrorCategory, RuntimeLimits};
 use serde::{Serialize, de::DeserializeOwned};
@@ -14,7 +15,16 @@ pub fn encode_client_message(
     message: &LocalSessionClientMessage,
     config: &LocalFrameConfig,
 ) -> Result<Vec<u8>, LocalSessionError> {
-    encode(message, config)
+    encode(message, config, None)
+}
+
+/// Encodes one client message under explicit negotiated compilation bounds.
+pub fn encode_client_message_with_limits(
+    message: &LocalSessionClientMessage,
+    config: &LocalFrameConfig,
+    compilation_limits: &CompilationLimits,
+) -> Result<Vec<u8>, LocalSessionError> {
+    encode(message, config, Some(compilation_limits))
 }
 
 /// Decodes one exact canonical client message under pre-allocation bounds.
@@ -26,7 +36,20 @@ pub fn decode_client_message(
     if serde_json::from_slice::<LocalSessionServerMessage>(encoded).is_ok() {
         return Err(LocalSessionError::WrongDirection);
     }
-    decode(encoded, config)
+    decode(encoded, config, None)
+}
+
+/// Decodes one client message under explicit negotiated compilation bounds.
+pub fn decode_client_message_with_limits(
+    encoded: &[u8],
+    config: &LocalFrameConfig,
+    compilation_limits: &CompilationLimits,
+) -> Result<LocalSessionClientMessage, LocalSessionError> {
+    preflight(encoded, config)?;
+    if serde_json::from_slice::<LocalSessionServerMessage>(encoded).is_ok() {
+        return Err(LocalSessionError::WrongDirection);
+    }
+    decode(encoded, config, Some(compilation_limits))
 }
 
 /// Encodes one validated server message as canonical compact JSON followed by LF.
@@ -34,7 +57,16 @@ pub fn encode_server_message(
     message: &LocalSessionServerMessage,
     config: &LocalFrameConfig,
 ) -> Result<Vec<u8>, LocalSessionError> {
-    encode(message, config)
+    encode(message, config, None)
+}
+
+/// Encodes one server message under explicit negotiated compilation bounds.
+pub fn encode_server_message_with_limits(
+    message: &LocalSessionServerMessage,
+    config: &LocalFrameConfig,
+    compilation_limits: &CompilationLimits,
+) -> Result<Vec<u8>, LocalSessionError> {
+    encode(message, config, Some(compilation_limits))
 }
 
 /// Decodes one exact canonical server message under pre-allocation bounds.
@@ -46,7 +78,20 @@ pub fn decode_server_message(
     if serde_json::from_slice::<LocalSessionClientMessage>(encoded).is_ok() {
         return Err(LocalSessionError::WrongDirection);
     }
-    decode(encoded, config)
+    decode(encoded, config, None)
+}
+
+/// Decodes one server message under explicit negotiated compilation bounds.
+pub fn decode_server_message_with_limits(
+    encoded: &[u8],
+    config: &LocalFrameConfig,
+    compilation_limits: &CompilationLimits,
+) -> Result<LocalSessionServerMessage, LocalSessionError> {
+    preflight(encoded, config)?;
+    if serde_json::from_slice::<LocalSessionClientMessage>(encoded).is_ok() {
+        return Err(LocalSessionError::WrongDirection);
+    }
+    decode(encoded, config, Some(compilation_limits))
 }
 
 /// Wraps one canonical client message in a CF039 control frame.
@@ -58,6 +103,19 @@ pub fn client_control_frame(
     Ok(LocalFrame::Control {
         correlation_id,
         bytes: encode_client_message(message, config)?,
+    })
+}
+
+/// Wraps one canonical client message using explicit negotiated compilation bounds.
+pub fn client_control_frame_with_limits(
+    correlation_id: NonZeroU64,
+    message: &LocalSessionClientMessage,
+    config: &LocalFrameConfig,
+    compilation_limits: &CompilationLimits,
+) -> Result<LocalFrame, LocalSessionError> {
+    Ok(LocalFrame::Control {
+        correlation_id,
+        bytes: encode_client_message_with_limits(message, config, compilation_limits)?,
     })
 }
 
@@ -76,6 +134,25 @@ pub fn decode_client_control_frame(
     Ok((*correlation_id, decode_client_message(bytes, config)?))
 }
 
+/// Decodes one client control frame using explicit negotiated compilation bounds.
+pub fn decode_client_control_frame_with_limits(
+    frame: &LocalFrame,
+    config: &LocalFrameConfig,
+    compilation_limits: &CompilationLimits,
+) -> Result<(NonZeroU64, LocalSessionClientMessage), LocalSessionError> {
+    let LocalFrame::Control {
+        correlation_id,
+        bytes,
+    } = frame
+    else {
+        return Err(LocalSessionError::WrongFrameKind);
+    };
+    Ok((
+        *correlation_id,
+        decode_client_message_with_limits(bytes, config, compilation_limits)?,
+    ))
+}
+
 /// Wraps one canonical server message in a CF039 control frame.
 pub fn server_control_frame(
     correlation_id: NonZeroU64,
@@ -85,6 +162,19 @@ pub fn server_control_frame(
     Ok(LocalFrame::Control {
         correlation_id,
         bytes: encode_server_message(message, config)?,
+    })
+}
+
+/// Wraps one canonical server message using explicit negotiated compilation bounds.
+pub fn server_control_frame_with_limits(
+    correlation_id: NonZeroU64,
+    message: &LocalSessionServerMessage,
+    config: &LocalFrameConfig,
+    compilation_limits: &CompilationLimits,
+) -> Result<LocalFrame, LocalSessionError> {
+    Ok(LocalFrame::Control {
+        correlation_id,
+        bytes: encode_server_message_with_limits(message, config, compilation_limits)?,
     })
 }
 
@@ -103,18 +193,47 @@ pub fn decode_server_control_frame(
     Ok((*correlation_id, decode_server_message(bytes, config)?))
 }
 
-fn encode<T>(value: &T, config: &LocalFrameConfig) -> Result<Vec<u8>, LocalSessionError>
+/// Decodes one server control frame using explicit negotiated compilation bounds.
+pub fn decode_server_control_frame_with_limits(
+    frame: &LocalFrame,
+    config: &LocalFrameConfig,
+    compilation_limits: &CompilationLimits,
+) -> Result<(NonZeroU64, LocalSessionServerMessage), LocalSessionError> {
+    let LocalFrame::Control {
+        correlation_id,
+        bytes,
+    } = frame
+    else {
+        return Err(LocalSessionError::WrongFrameKind);
+    };
+    Ok((
+        *correlation_id,
+        decode_server_message_with_limits(bytes, config, compilation_limits)?,
+    ))
+}
+
+fn encode<T>(
+    value: &T,
+    config: &LocalFrameConfig,
+    compilation_limits: Option<&CompilationLimits>,
+) -> Result<Vec<u8>, LocalSessionError>
 where
     T: Serialize + SessionValidate,
 {
     value
-        .validate(config)
+        .validate(config, compilation_limits)
         .map_err(LocalSessionError::InvalidMessage)?;
     let limit = effective_message_limit(config)?;
-    encode_validated(value, limit)
+    let encoded = encode_validated(value, limit)?;
+    enforce_nesting(&encoded, &config.runtime_limits)?;
+    Ok(encoded)
 }
 
-fn decode<T>(encoded: &[u8], config: &LocalFrameConfig) -> Result<T, LocalSessionError>
+fn decode<T>(
+    encoded: &[u8],
+    config: &LocalFrameConfig,
+    compilation_limits: Option<&CompilationLimits>,
+) -> Result<T, LocalSessionError>
 where
     T: Serialize + DeserializeOwned + SessionValidate,
 {
@@ -131,7 +250,7 @@ where
             column: error.column(),
         })?;
     value
-        .validate(config)
+        .validate(config, compilation_limits)
         .map_err(LocalSessionError::InvalidMessage)?;
     let canonical = encode_validated(&value, limit)?;
     if canonical != encoded {

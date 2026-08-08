@@ -12,7 +12,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | Fault | Expected containment | Evidence |
 |---|---|---|
 | Oversized, deeply nested, unknown, or duplicate protocol fields | Reject before a valid message reaches world preflight | `cogniform-protocol` contract and fixture tests |
-| Compilation result is over-limit, noncanonical, reordered, duplicated, role-invalid, revision-mismatched, truncated, or substituted | The codec returns no invalid decoded value and the compiler returns no invalid completed result; every future adapter must invoke validation under its own limits before use | CF043 compilation-result fixtures, adversarial codec tests, and compiler result validation |
+| Compilation result is over-limit, noncanonical, reordered, duplicated, role-invalid, revision-mismatched, truncated, or substituted | The codec returns no invalid decoded value and the compiler returns no invalid completed result; CF044 installs negotiated local-session result bounds before compilation/application, and later adapters must invoke validation under their own limits | CF043 compilation-result fixtures and adversarial codec tests plus CF044 compiler/session/executor limit and identity tests |
 | Empty, stale, conflicting, or invalid patch operation | Preserve revision, ID index, snapshot, and logical hash | `world_contracts` atomic rejection and randomized model tests |
 | Hierarchy cycle, excess depth, or dangling relation | Reject the complete patch; preserve prior derived transforms | `hierarchy_hash` tests |
 | Idempotency key reused for different command content | Return typed conflict without duplicate compile or mutation | gateway and world idempotency tests |
@@ -50,6 +50,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | Observation requested from wrong/ahead source | Return typed causal error; do not relabel the frame | revision-causality tests |
 | A local frame is over-limit, truncated, corrupted, noncanonical, or direction-invalid | Reject before returning a frame/message; allocate bodies only after header limits pass; do not resynchronize or expose payloads | CF039-CF040 framing/message fixtures and corruption tests |
 | Local-session input violates hello, correlation, capacity, exact-revision, or quiescent-close rules | Emit one bounded stable failure when possible, preserve service invariants, and release each terminal correlation exactly once | CF041 executor model and controlled service tests |
+| Version-two imagination changes session version, exceeds compilation limits, has inconsistent result/receipt roles, is superseded, or fails during processing | Reject before service work when possible; otherwise emit one correlated terminal outcome, never duplicate compilation/mutation on retained replay, and preserve typed FIFO order | CF044 schema fixtures, executor lifecycle tests, and controlled child-process test |
 | `serve-stdio` is given extra arguments or an interactive standard stream | Reject before adapter/service selection with empty binary stdout and one stable stderr category | CF042 CLI argument and terminal-preflight tests |
 | `serve-stdio` reaches frame-boundary EOF before any frame | Exit successfully without constructing the local service or writing output | CF042 fake-stream and piped child-process tests |
 | `serve-stdio` reaches EOF after a complete pre-hello frame or active hello, receives truncation/corruption, or exceeds a live-operation deadline | Terminate the child session nonzero with one stable redacted category; do not retry or read another frame | CF042 fake-stream scheduling and deadline tests |
@@ -92,6 +93,14 @@ Keep the authoritative revision returned by the last accepted receipt. Correct
 the complete request and resubmit with a fresh transaction/idempotency key and
 the current exact base revision. Do not split an invalid atomic operation list
 unless that changes the intended transaction semantics.
+
+For imagination rejection, preserve the last authoritative revision and inspect
+the stable admission/completion role. Correct a stale base revision or declared
+budget and use a fresh identity/key for changed work. A replayed admission
+already contains the retained exact completion and must not be resubmitted as a
+request to compile or apply again. An unresolved completion is successful
+deterministic compiler output with no patch or receipt; change the semantic
+request or scene preconditions rather than treating it as a partial mutation.
 
 ### Fixed-profile stdio-session failure
 

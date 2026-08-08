@@ -45,6 +45,7 @@ fn open_session(executor: &mut LocalSessionExecutor, config: &LocalFrameConfig) 
             1,
             LocalSessionClientKind::Hello(ClientHello {
                 receive_limits: LocalSessionLimits::from_config(config).unwrap(),
+                compilation_receive_limits: None,
             }),
             config,
         ))

@@ -15,6 +15,16 @@ pub enum LocalSessionValidationKind {
     InvalidPatchAdmission,
     /// Patch completion metadata is internally inconsistent.
     InvalidPatchCompletion,
+    /// The message variant is not defined for its declared session version.
+    InvalidVersionVariant,
+    /// Compilation limits are internally inconsistent or exceed local policy.
+    InvalidCompilationLimits,
+    /// Imagination admission metadata is internally inconsistent.
+    InvalidImaginationAdmission,
+    /// Imagination completion metadata is internally inconsistent.
+    InvalidImaginationCompletion,
+    /// A nested compilation result is invalid under negotiated limits.
+    InvalidCompilationResult,
 }
 
 /// A bounded local-session validation failure.
