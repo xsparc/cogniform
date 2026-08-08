@@ -38,8 +38,8 @@ pub use limits::{PatchBudget, RuntimeLimits};
 pub use message::{
     ApplyReceipt, ApplyStatus, ApplyTiming, ConflictPolicy, CreateEntity, DeleteEntity,
     DeliverySemantic, Diagnostic, DiagnosticSeverity, ImageDimensions, ObservationKind,
-    ObservationMetadata, ObservationQuality, ObservationStaleness, QueueConfig, RemoveComponent,
-    ReparentEntity, SceneOperation, ScenePatch, SetComponent,
+    ObservationMetadata, ObservationQuality, ObservationRequest, ObservationStaleness, QueueConfig,
+    RemoveComponent, ReparentEntity, SceneOperation, ScenePatch, SetComponent,
 };
 pub use query::{SceneEntityView, SceneQuery, SceneQueryResult};
 pub use render::{

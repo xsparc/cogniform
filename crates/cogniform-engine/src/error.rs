@@ -361,6 +361,15 @@ impl From<EngineError> for LocalServiceError {
 /// Bounded observation admission, completion, or causality failure.
 #[derive(Debug)]
 pub enum ObservationError {
+    /// The request failed the public protocol contract.
+    InvalidRequest(ValidationError),
+    /// The requested exact revision is not currently authoritative.
+    RequestRevisionMismatch {
+        /// Exact revision named by the caller.
+        requested: SceneRevision,
+        /// Current authoritative revision.
+        current: SceneRevision,
+    },
     /// The configured number of outstanding requests is already admitted.
     CapacityExceeded {
         /// Maximum number of outstanding requests.
@@ -382,6 +391,13 @@ pub enum ObservationError {
         /// Latest world revision supplied by the engine.
         latest: SceneRevision,
     },
+    /// The completed frame did not represent the exact requested revision.
+    SourceRevisionMismatch {
+        /// Exact revision named by the request.
+        requested: SceneRevision,
+        /// Revision recorded by the completed frame.
+        rendered: SceneRevision,
+    },
     /// The request camera disagreed with the submitted frame source.
     CameraMismatch {
         /// Camera named by the request.
@@ -396,6 +412,15 @@ pub enum ObservationError {
 impl fmt::Display for ObservationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidRequest(error) => {
+                write!(formatter, "invalid observation request: {error}")
+            }
+            Self::RequestRevisionMismatch { requested, current } => write!(
+                formatter,
+                "observation requested revision {}, current revision is {}",
+                requested.get(),
+                current.get()
+            ),
             Self::CapacityExceeded { capacity } => {
                 write!(formatter, "observation capacity {capacity} is full")
             }
@@ -409,6 +434,15 @@ impl fmt::Display for ObservationError {
                 "frame source revision {} is newer than latest world revision {}",
                 source.get(),
                 latest.get()
+            ),
+            Self::SourceRevisionMismatch {
+                requested,
+                rendered,
+            } => write!(
+                formatter,
+                "observation requested revision {}, frame used revision {}",
+                requested.get(),
+                rendered.get()
             ),
             Self::CameraMismatch {
                 requested,
@@ -428,11 +462,13 @@ impl std::error::Error for ObservationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Renderer(error) => Some(error),
-            Self::InvalidMetadata(error) => Some(error),
+            Self::InvalidRequest(error) | Self::InvalidMetadata(error) => Some(error),
             Self::CapacityExceeded { .. }
+            | Self::RequestRevisionMismatch { .. }
             | Self::WorkerUnavailable
             | Self::WorkerStartFailed { .. }
             | Self::SourceRevisionAhead { .. }
+            | Self::SourceRevisionMismatch { .. }
             | Self::CameraMismatch { .. } => None,
         }
     }

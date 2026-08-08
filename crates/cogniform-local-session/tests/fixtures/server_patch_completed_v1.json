@@ -1,0 +1,1 @@
+{"schema_version":1,"message":{"patch_completed":{"receipt":{"schema_version":1,"transaction_id":"00000000000000000000000000000001","idempotency_key":"00000000000000000000000000000002","status":"applied","previous_revision":7,"new_revision":8,"operation_count":1,"diagnostics":[],"timing":{"decode_micros":1,"validate_micros":2,"commit_micros":3},"estimated_visible_frame":9}}}}

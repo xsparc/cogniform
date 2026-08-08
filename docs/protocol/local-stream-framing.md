@@ -30,8 +30,10 @@ bytes:
 The digest covers the 36-byte header prefix, exact control section, and exact
 bulk section, in that order. A control frame requires a non-empty control
 section and no bulk section. Its bytes are opaque to this framing layer: the
-future session that chooses a request or response schema must apply that
-schema's parsing, canonicalization, authorization, and cost rules.
+CF040's optional `cogniform-local-session` adapter supplies one bounded
+direction-specific schema for a local patch/query/observation loop. The frame
+layer remains unaware of that schema and does not parse, execute, or authorize
+it.
 
 An observation frame requires both sections. Control is the exact canonical
 LF-terminated JSON encoding of `ObservationMetadata`; bulk is its version-one
@@ -76,10 +78,17 @@ Errors retain only stable operation, section, kind, index, and byte-count
 categories. `LocalFrame` debug output reports aggregate byte or item counts,
 not control or observation payload values.
 
-## Deferred session boundary
+## Session-schema boundary
 
-A future stdio session must define request and response schemas, version
-negotiation, scheduling, cancellation, lifecycle, error policy, and bounded
+The [CF040 local-session schema](local-session-messages.md) now defines
+versioned hello, patch, query, observation, failure, and close control values.
+It reuses this frame's outer correlation ID and exact control bounds, but it
+does not own `Read`, `Write`, stdin/stdout, a service, a scheduler, or shutdown.
+
+## Deferred endpoint boundary
+
+A future executor and stdio composition root must define stateful sequencing,
+scheduling, cancellation, lifecycle, stream-failure policy, and bounded
 rate/cost handling. A remote listener additionally requires authenticated
 identity, authorization, confidentiality, replay/freshness protection, and
 tenancy isolation. Shared-memory handle negotiation and lease lifetime are

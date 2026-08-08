@@ -45,5 +45,6 @@ earlier one and links the history.
 | [0037](0037-versioned-asset-source-inspection-json.md) | Accepted | Emit deterministic versioned asset-source inspection JSON at the CLI boundary |
 | [0038](0038-bounded-observation-payload-envelope.md) | Accepted | Bind owned observation payloads to causal metadata in one bounded transport-neutral envelope |
 | [0039](0039-bounded-local-stream-framing.md) | Accepted | Bound local stream bodies from a fixed header before allocation and carry complete causal observations |
+| [0040](0040-bounded-versioned-local-session-messages.md) | Accepted | Define bounded direction-specific local-session control messages and exact-revision observation requests |
 
 New records use four sections: context, decision, consequences, and status.

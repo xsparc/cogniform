@@ -29,6 +29,7 @@ pub use cogniform_observation::{
 pub use cogniform_procedural::{
     BuiltinProcedure, CuboidGrid, ProcedureError, ProcedureLimits, ProcedureRequest,
 };
+pub use cogniform_protocol::ObservationRequest;
 pub use cogniform_renderer::{
     AdapterSummary, AssetUploadAdmission, AssetUploadOutcome, RendererAssetEviction,
     RendererAssetStats, RendererError,
@@ -43,7 +44,7 @@ pub use measurement::{
     MeasurementError, MeasurementProfile, TimingDistribution, WorldMeasurement,
     measure_controlled_world_fixture,
 };
-pub use observation::{Observation, ObservationQueue, ObservationRequest};
+pub use observation::{Observation, ObservationQueue};
 pub use recovery::{EngineRecoveryPoint, RecoveryInspection, RecoveryPointCodecError};
 pub use scenario::{
     CanonicalScenarioConfig, CanonicalScenarioError, CanonicalScenarioReport, ObservationEvidence,

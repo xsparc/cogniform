@@ -72,6 +72,7 @@ implementations arrive:
 | `cogniform-protocol` | Backend-neutral IDs, patches, receipts, limits, and observations |
 | `cogniform-observation` | Owned payload values plus bounded transport-neutral binary encoding and causal integrity binding |
 | `cogniform-local-transport` | Fixed bounded framing over caller-owned synchronous streams without endpoint or session authority |
+| `cogniform-local-session` | Canonical direction-specific local patch/query/observation control messages without service execution or endpoint authority |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
 | `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/primary-coordinate/material/embedded-PNG decoding, immutable upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
@@ -105,7 +106,11 @@ specifies the opt-in binary layout, bounds, integrity limits, and future
 transport responsibilities. The
 [local stream-framing guide](docs/protocol/local-stream-framing.md) specifies
 the header-first pre-buffer bound, exact frame layout, synchronous I/O
-behavior, and deferred session responsibilities. The
+behavior, and deferred endpoint responsibilities. The
+[local-session message guide](docs/protocol/local-session-messages.md)
+specifies canonical client/server control variants, outer-only correlation,
+exact-revision observation admission, effective bounds, and the deferred
+executor/endpoint boundary. The
 [local gateway guide](docs/protocol/local-gateway-and-imagination.md) documents
 command admission, idempotency, deterministic compilation, and logical queries.
 The [GLB asset guide](docs/assets/glb-subset.md) documents exact source

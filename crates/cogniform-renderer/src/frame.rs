@@ -231,6 +231,12 @@ impl fmt::Debug for PendingFrame {
 }
 
 impl PendingFrame {
+    /// Returns exact revision, frame, camera, and extraction causality without waiting.
+    #[must_use]
+    pub const fn metadata(&self) -> FrameMetadata {
+        self.metadata
+    }
+
     /// Waits for this submission, maps its four output buffers, and returns
     /// tightly packed CPU data.
     pub fn read(mut self) -> Result<RenderedFrame, RendererError> {

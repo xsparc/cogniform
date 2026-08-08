@@ -112,6 +112,12 @@ release yet; the current workspace version remains `0.0.0`.
   control/bulk/total limits enforced from a stack-read header before body
   allocation, exact metadata/payload validation, deterministic short and
   interrupted I/O behavior, and payload-redacted failures;
+- a separate `cogniform-local-session` crate with canonical LF-terminated
+  schema-version-one client/server hello, patch admission/completion,
+  exact-revision query/observation, stable failure, and close control messages;
+  outer-only correlation; bounded pre-decode nesting/bytes and bounded output;
+  strict direction/unknown/canonical/nested-value validation; and no endpoint
+  or service-execution authority;
 - separate immutable exact-hash asset-source files with pre-I/O size and
   identity checks, shared create-new/sync/cleanup guarantees, bounded
   regular-file loading, and explicit restart rehydration evidence;
@@ -120,6 +126,12 @@ release yet; the current workspace version remains `0.0.0`.
   checklist.
 
 ### Changed
+
+- `ObservationRequest` moves to `cogniform-protocol` with an engine re-export
+  for source compatibility and adds mandatory schema version plus exact scene
+  revision. Exhaustive construction is source-breaking in the unpublished
+  `0.0.0` workspace; revision mismatch now rejects before observation capacity
+  or renderer work, and no version or release action was taken;
 
 - `cogniform-engine` adds the aggregate `RecoveryInspection` value and
   `inspect_recovery_point`, while the CLI composition root now depends on the

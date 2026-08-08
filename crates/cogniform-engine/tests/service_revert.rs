@@ -397,9 +397,12 @@ fn submit_and_process(
 }
 
 fn request_entity_observation(service: &mut LocalService, camera_id: StableEntityId, nonce: u128) {
+    let scene_revision = service.status().scene_revision;
     service
         .request_observation(ObservationRequest {
+            schema_version: SchemaVersion::V1,
             observation_id: ObservationId::new(nonce).unwrap(),
+            scene_revision,
             camera_id,
             kind: ObservationKind::EntityId,
             quality: ObservationQuality::Low,

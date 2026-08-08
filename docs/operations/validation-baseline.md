@@ -58,6 +58,9 @@ CF039 fixed-header local stream framing, header-first independent bounds,
 short/interrupted I/O, canonical observation composition, corruption rejection,
 and payload-redacted failure evidence was collected on the CPU profile on
 2026-08-08.
+CF040 canonical direction-specific local-session messages, effective pre-decode
+bounds, exact-revision observation admission, and endpoint/executor separation
+evidence was collected on the CPU profile on 2026-08-08.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -301,6 +304,36 @@ freshness, replay protection, session rate limits, timeout/cancellation policy,
 shared-memory safety, automatic delivery, or writer atomicity after an I/O
 failure. The SHA-256 digests detect accidental corruption and substitution;
 they do not authenticate a writer.
+
+## Controlled local-session message commands
+
+CF040 ran the in-memory message and frame-adaptation boundary without opening a
+stream, creating an endpoint, executing a service, starting a scheduler, or
+initializing a renderer:
+
+```text
+cargo fmt --all --check
+cargo clippy -p cogniform-protocol -p cogniform-local-session -p cogniform-engine --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-protocol -p cogniform-local-session -p cogniform-engine --all-features --locked --offline
+```
+
+The session integration tests pin one exact LF-terminated schema-version-one
+fixture for every client/server variant, every variant's CF039 control-frame
+round trip, outer-only correlation,
+control-versus-observation frame separation, and direction, version, unknown,
+noncanonical, nested, substitution, truncation, trailing, effective byte,
+advertised-limit, core-value, and receipt-role rejection. The protocol fixture
+pins the migrated exact-revision `ObservationRequest`. The controlled adapter
+causality test requests a stale revision while observation capacity is full and
+uses an invalid camera, proving the typed revision error precedes both capacity
+and renderer work; default CPU runs compile but do not execute that ignored GPU
+test.
+
+These tests do not prove lifecycle sequencing, service error mapping, automatic
+queue processing, stdin/stdout handling, partial-write recovery, peer identity,
+authentication, authorization, confidentiality, freshness/replay protection,
+rate/tenancy policy, timeout/cancellation, or remote safety. Those remain the
+responsibility of separately reviewed executor and endpoint milestones.
 
 ## Controlled vertex-normal commands
 

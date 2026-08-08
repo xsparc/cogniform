@@ -170,6 +170,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cogniform-local-session"
+version = "0.0.0"
+dependencies = [
+ "cogniform-local-transport",
+ "cogniform-observation",
+ "cogniform-protocol",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cogniform-local-transport"
 version = "0.0.0"
 dependencies = [

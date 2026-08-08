@@ -166,7 +166,9 @@ fn assert_asset_reference(
 
 fn request(nonce: u128, camera_id: StableEntityId) -> ObservationRequest {
     ObservationRequest {
+        schema_version: SchemaVersion::V1,
         observation_id: ObservationId::new(nonce).unwrap(),
+        scene_revision: SceneRevision::new(1),
         camera_id,
         kind: ObservationKind::EntityId,
         quality: ObservationQuality::Low,

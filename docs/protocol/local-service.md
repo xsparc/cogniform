@@ -145,6 +145,14 @@ It does not own this service, drive its queues, choose request/response
 schemas, open standard streams or pipes, or define a session. See the
 [local stream-framing guide](local-stream-framing.md).
 
+The separate local-session codec defines the direction-specific values that a
+future driver may map to this service. It distinguishes patch admission from
+completion, carries exact-revision query and observation requests, and leaves
+completed observations in their existing CF039 observation frames. It does not
+call `submit_patch`, `process_next`, `query`, `request_observation`, or polling
+methods and owns no service instance or lifecycle. See the
+[local-session message guide](local-session-messages.md).
+
 ## Replay ownership
 
 The engine applies patches through `RecordedWorld`. Canonical patch encoding

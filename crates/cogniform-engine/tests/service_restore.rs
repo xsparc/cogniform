@@ -45,6 +45,21 @@ fn name_patch(
     }
 }
 
+fn normal_request(
+    nonce: u128,
+    scene_revision: SceneRevision,
+    camera_id: StableEntityId,
+) -> ObservationRequest {
+    ObservationRequest {
+        schema_version: SchemaVersion::V1,
+        observation_id: ObservationId::new(nonce).unwrap(),
+        scene_revision,
+        camera_id,
+        kind: ObservationKind::Normal,
+        quality: ObservationQuality::Low,
+    }
+}
+
 fn process_patch(
     service: &mut LocalService,
     patch: ScenePatch,
@@ -201,12 +216,7 @@ fn complete_recovery_restores_queries_observations_and_continuation() {
         assert_eq!(restored.replay_bytes(), expected_bytes);
 
         restored
-            .request_observation(ObservationRequest {
-                observation_id: ObservationId::new(500).unwrap(),
-                camera_id: report.camera_id,
-                kind: ObservationKind::Normal,
-                quality: ObservationQuality::Low,
-            })
+            .request_observation(normal_request(500, SceneRevision::new(3), report.camera_id))
             .unwrap();
         let observation = wait_for_observation(&restored);
         assert_eq!(observation.metadata().scene_revision, SceneRevision::new(3));
@@ -304,13 +314,8 @@ fn historical_recovery_fork_restores_exact_revision_and_continues() {
         assert_eq!(fork.replayed_logical_hash().unwrap(), historical_hash);
         assert_restored_query(&fork, SceneRevision::new(2), report.table_id, "table");
 
-        fork.request_observation(ObservationRequest {
-            observation_id: ObservationId::new(600).unwrap(),
-            camera_id: report.camera_id,
-            kind: ObservationKind::Normal,
-            quality: ObservationQuality::Low,
-        })
-        .unwrap();
+        fork.request_observation(normal_request(600, SceneRevision::new(2), report.camera_id))
+            .unwrap();
         let observation = wait_for_observation(&fork);
         assert_eq!(observation.metadata().scene_revision, SceneRevision::new(2));
         assert_eq!(observation.metadata().frame_id, historical.next_frame_id());
