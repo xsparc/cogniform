@@ -350,7 +350,18 @@ impl Validate for ScenePatch {
 }
 
 impl ScenePatch {
-    fn logical_size_bytes(&self) -> u64 {
+    /// Returns aggregate scene-text bytes carried by this patch.
+    #[must_use]
+    pub fn text_bytes(&self) -> u64 {
+        self.operations.iter().fold(
+            u64::try_from(self.delivery.text_bytes()).unwrap_or(u64::MAX),
+            |total, operation| total.saturating_add(operation.text_bytes()),
+        )
+    }
+
+    /// Returns deterministic logical decoded bytes carried by this patch.
+    #[must_use]
+    pub fn logical_size_bytes(&self) -> u64 {
         self.operations.iter().fold(
             2_u64
                 .saturating_add(16)

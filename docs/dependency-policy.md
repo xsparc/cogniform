@@ -113,6 +113,17 @@ I/O locking, terminal detection, flushing, monotonic time, and sleep supply the
 fixed local runtime policy; reusable protocol, transport, executor, engine,
 and renderer ownership remains unchanged.
 
+## Existing compilation-result reuse
+
+CF043 adds one workspace-local `cogniform-compilation` crate over the existing
+workspace-local `cogniform-protocol` crate and reuses the exact-pinned vendored
+`serde` 1.0.229 and `serde_json` 1.0.151 packages. `cogniform-compiler` gains
+only that local value dependency. No external package, version, checksum,
+feature, build script, unsafe code, native code, runtime download, network,
+telemetry, paid service, model, endpoint, or persistence requirement is added.
+The crate owns bounded typed values and canonical JSON only; compiler execution
+remains in `cogniform-compiler`.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

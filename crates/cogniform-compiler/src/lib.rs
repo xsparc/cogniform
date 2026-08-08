@@ -8,11 +8,11 @@
 
 mod compiler;
 mod error;
-mod report;
 
+pub use cogniform_compilation::{
+    COMPILATION_SCHEMA_VERSION, CompilationCodecError, CompilationDecision,
+    CompilationDecisionCode, CompilationLimits, CompilationResult, CompilationValidationError,
+    CompilationValidationKind, UnresolvedConstraint, UnresolvedConstraintCode,
+};
 pub use compiler::{CompilationSceneView, CompilerConfig, DeterministicCompiler};
 pub use error::CompileError;
-pub use report::{
-    CompilationDecision, CompilationDecisionCode, CompilationResult, UnresolvedConstraint,
-    UnresolvedConstraintCode,
-};

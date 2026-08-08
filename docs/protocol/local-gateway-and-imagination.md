@@ -1,8 +1,10 @@
 # Local gateway and imagination compiler
 
 Status: implemented by CF006 for offline in-process use; CF016 routes service
-procedure output through the unchanged patch gateway, and CF031 adds
-monotonic oldest-pending command age to aggregate status.
+procedure output through the unchanged patch gateway, CF031 adds monotonic
+oldest-pending command age to aggregate status, and CF043 gives compiler
+outcomes a bounded transport-neutral value contract without changing gateway
+execution.
 
 The current gateway is a Rust composition API, not a network service. It
 accepts typed `ScenePatch` and `ImaginationEnvelope` values, owns one
@@ -95,6 +97,14 @@ minimal request, and it cannot have multiple placement assignments. Relation
 or constraint failure is returned as an ordered `UnresolvedConstraint`; no
 partial patch is emitted.
 
+The complete outcome is a schema-version-one `CompilationResult` from the
+dependency-neutral `cogniform-compilation` crate. It binds the imagination ID
+and exact scene revision to either one normalized patch or at least one
+unresolved issue, carries canonical ordered unique explanations, and supports
+bounded exact LF JSON. `cogniform-compiler` preserves its original public type
+paths by re-exporting the moved values. See the
+[compilation result contract](compilation-results.md).
+
 `EntityExists` and `EntityAbsent` are the initial exact stable-ID constraints.
 The scene view revision must match `base_revision`; a mismatch is a typed
 compiler error before hashing or patch construction. Applying the normalized
@@ -128,4 +138,5 @@ for the package and lifecycle decision and
 [ADR 0016](../adr/0016-service-procedure-composition-through-ordinary-patches.md)
 for service procedure composition, and
 [ADR 0031](../adr/0031-monotonic-pending-work-age-status.md) for transient age
-semantics.
+semantics, and [ADR 0043](../adr/0043-bounded-transport-neutral-compilation-results.md)
+for the versioned result boundary.

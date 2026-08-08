@@ -976,6 +976,31 @@ hello/patch/query/observation/close exchange on an approved local adapter. See
 [stdio-session guide](../protocol/local-stdio-session.md), and the
 [validation baseline](../operations/validation-baseline.md).
 
+### PR 43 - CF043: Bounded transport-neutral compilation results
+
+Outcome: deterministic imagination compilation outcomes now have one
+dependency-neutral schema-version-one value contract before any session
+message or executor transports them.
+
+Gate: a new `cogniform-compilation` crate owns the result schema, decision and
+unresolved codes, explicit non-zero report limits, exact canonical LF JSON,
+bounded pre-decode bytes/nesting, aggregate text/logical-byte accounting,
+code-specific optional-field roles, strict order/uniqueness, and exact
+compiled-versus-unresolved outcome and revision binding. Compiled results have
+one valid normalized patch and no unresolved entry; unresolved results have no
+patch and at least one issue.
+
+`cogniform-compiler` constructs and validates the moved values and re-exports
+their original public names. Default result limits derive from the compiler's
+existing runtime limits. Normalization, stable IDs, patch bytes, gateway
+admission, world/replay state, rendering, and every CF042 schema-version-one
+session/stdio byte remain unchanged. The value crate performs no compilation,
+service/world/render mutation, I/O, endpoint work, model call, authentication,
+deployment, version, or release action. See
+[ADR 0043](../adr/0043-bounded-transport-neutral-compilation-results.md), the
+[compilation result guide](../protocol/compilation-results.md), and the
+[validation baseline](../operations/validation-baseline.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -984,7 +1009,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
-  -> CF038 -> CF039 -> CF040 -> CF041 -> CF042
+  -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1171,14 +1196,20 @@ Validation expands with capability:
   limits, partial/interrupted write and flush faults, bounded positive-cadence
   polling with a fixed deadline, fatal service/executor handling, and one
   controlled ignored child-process exchange.
+- CF043: exact compiled/unresolved schema-version-one LF fixtures; canonical
+  round trips; byte, nesting, logical, text, decision, unresolved, and nested
+  patch bounds; version/unknown/code-field/order/duplicate/outcome/revision/
+  substitution/truncation/trailing rejection; compiler re-export compatibility;
+  and unchanged normalized patch behavior without session or I/O work.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
 ## 6. Deferred roadmap
 
-After the MVP and only with evidence: configurable stdio profiles, named-pipe
-or socket creation, multiple clients, full-duplex scheduling, process
-supervision, shared-memory observation leases,
+After the MVP and only with evidence: versioned imagination/compilation session
+mapping and correlation, configurable stdio profiles, named-pipe or socket
+creation, multiple clients, full-duplex scheduling, process supervision,
+shared-memory observation leases,
 authenticated gRPC/QUIC transport, Wasmtime procedures,
 KTX2/mesh optimization, advanced culling/batching, model bridge, Gaussian
 splat plugin, browser target, fleet orchestration, and high availability. Each

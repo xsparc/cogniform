@@ -1,8 +1,8 @@
 //! Determinism, explanation, constraint, and budget contracts for the compiler.
 
 use cogniform_compiler::{
-    CompilationDecisionCode, CompilationSceneView, CompileError, CompilerConfig,
-    DeterministicCompiler, UnresolvedConstraintCode,
+    COMPILATION_SCHEMA_VERSION, CompilationDecisionCode, CompilationLimits, CompilationSceneView,
+    CompileError, CompilerConfig, DeterministicCompiler, UnresolvedConstraintCode,
 };
 use cogniform_protocol::{
     ComponentValue, DeliverySemantic, FiniteF32, IdempotencyKey, ImaginationBudget,
@@ -147,6 +147,73 @@ fn normalized_patch_is_byte_stable_across_entity_input_order() {
             .decisions
             .iter()
             .any(|decision| { decision.code == CompilationDecisionCode::AboveRelationApplied })
+    );
+}
+
+#[test]
+fn compilation_result_reexport_and_canonical_contract_are_compatible() {
+    let request = imagination(vec![entity("table", [2.0, 1.0, 1.0])]);
+    let scene = CompilationSceneView::new(SceneRevision::new(7), []);
+    let reexported: cogniform_compiler::CompilationResult =
+        DeterministicCompiler::new(CompilerConfig::default())
+            .compile(&request, &scene)
+            .unwrap();
+    assert_eq!(reexported.schema_version, COMPILATION_SCHEMA_VERSION);
+
+    let direct: cogniform_compilation::CompilationResult = reexported.clone();
+    let bytes = direct
+        .to_canonical_json(&CompilationLimits::default())
+        .unwrap();
+    assert_eq!(
+        cogniform_compilation::CompilationResult::from_canonical_json(
+            &bytes,
+            &CompilationLimits::default()
+        )
+        .unwrap(),
+        reexported
+    );
+}
+
+#[test]
+fn explicit_report_limits_fail_before_a_result_is_returned() {
+    let runtime_limits = RuntimeLimits::default();
+    let config = CompilerConfig {
+        compilation_limits: CompilationLimits {
+            max_decisions: core::num::NonZeroU32::new(1).unwrap(),
+            ..CompilationLimits::for_runtime_limits(runtime_limits)
+        },
+        ..CompilerConfig::new(runtime_limits)
+    };
+    let request = imagination(vec![entity("table", [2.0, 1.0, 1.0])]);
+    let scene = CompilationSceneView::new(SceneRevision::new(7), []);
+
+    assert!(matches!(
+        DeterministicCompiler::new(config).compile(&request, &scene),
+        Err(CompileError::InvalidCompilationResult(error))
+            if error.kind() == cogniform_compiler::CompilationValidationKind::DecisionLimitExceeded
+    ));
+}
+
+#[test]
+fn derived_report_limits_admit_defaulted_compiler_nesting() {
+    let runtime_limits = RuntimeLimits {
+        max_json_nesting_depth: core::num::NonZeroU16::new(1).unwrap(),
+        ..RuntimeLimits::default()
+    };
+    let config = CompilerConfig::new(runtime_limits);
+    let report_limits = config.compilation_limits;
+    let request = imagination(vec![entity("table", [2.0, 1.0, 1.0])]);
+    let scene = CompilationSceneView::new(SceneRevision::new(7), []);
+    let result = DeterministicCompiler::new(config)
+        .compile(&request, &scene)
+        .unwrap();
+    let encoded = result.to_canonical_json(&report_limits).unwrap();
+
+    assert_eq!(report_limits.max_json_nesting_depth.get(), 9);
+    assert_eq!(
+        cogniform_compilation::CompilationResult::from_canonical_json(&encoded, &report_limits)
+            .unwrap(),
+        result
     );
 }
 
