@@ -36,6 +36,11 @@ admission contains an `idempotent_replay` receipt whose key must match the
 admission key. `patch_completed` requires an `applied` receipt. The schema does
 not schedule or automatically process either outcome.
 
+CF041's separate [local-session executor](local-session-executor.md) now owns
+the lifecycle and explicit service mapping. Keeping that state in another crate
+preserves this schema as a reusable typed/byte contract and prevents endpoint
+I/O policy from entering message validation.
+
 `failure` has only a stable code: invalid message, unsupported version,
 protocol state, limit, revision, capacity, command, query, observation,
 service-unavailable, or internal. It carries no input echo, parser string,
@@ -84,4 +89,5 @@ stream, or define a lifecycle state machine. Those properties cannot be
 claimed by a future endpoint merely because it uses these messages.
 
 See [ADR 0040](../adr/0040-bounded-versioned-local-session-messages.md), the
-[core contracts](core-contracts.md), and the [local service](local-service.md).
+[core contracts](core-contracts.md), the [local service](local-service.md), and
+the [CF041 executor](local-session-executor.md).

@@ -10,7 +10,10 @@
 mod codec;
 mod error;
 
-use core::{fmt, num::NonZeroU64};
+use core::{
+    fmt,
+    num::{NonZeroU32, NonZeroU64},
+};
 
 use cogniform_observation::{ObservationPayload, ObservationPayloadLimits};
 use cogniform_protocol::{ObservationMetadata, RuntimeLimits};
@@ -158,5 +161,20 @@ impl LocalFrameConfig {
             runtime_limits,
             payload_limits,
         }
+    }
+
+    /// Constructs a complete configuration from independent payload bounds.
+    #[must_use]
+    pub const fn with_payload_bounds(
+        frame_limits: LocalFrameLimits,
+        runtime_limits: RuntimeLimits,
+        max_observation_envelope_bytes: NonZeroU64,
+        max_visibility_entries: NonZeroU32,
+    ) -> Self {
+        Self::new(
+            frame_limits,
+            runtime_limits,
+            ObservationPayloadLimits::new(max_observation_envelope_bytes, max_visibility_entries),
+        )
     }
 }

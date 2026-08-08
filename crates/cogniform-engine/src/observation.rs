@@ -15,7 +15,7 @@ use cogniform_observation::{
     encode_payload,
 };
 use cogniform_protocol::{
-    ImageDimensions, ObservationKind, ObservationMetadata, ObservationRequest,
+    ImageDimensions, ObservationId, ObservationKind, ObservationMetadata, ObservationRequest,
     ObservationStaleness, RuntimeLimits, SceneRevision, SchemaVersion, StableEntityId,
 };
 use cogniform_renderer::{PendingFrame, RenderedFrame};
@@ -42,6 +42,12 @@ impl Observation {
         &self.payload
     }
 
+    /// Splits the completed observation into its owned causal metadata and payload.
+    #[must_use]
+    pub fn into_parts(self) -> (ObservationMetadata, ObservationPayload) {
+        (self.metadata, self.payload)
+    }
+
     /// Explicitly encodes the owned payload without performing I/O.
     pub fn to_payload_envelope(
         &self,
@@ -54,6 +60,31 @@ impl Observation {
             runtime_limits,
             payload_limits,
         )
+    }
+}
+
+/// One correlated observation completion consumed from the bounded worker path.
+#[derive(Debug)]
+pub enum ObservationDelivery {
+    /// The requested observation completed with a validated owned value.
+    Completed(Observation),
+    /// Request-specific work failed after admission.
+    Failed {
+        /// Stable identity retained even when no observation value was produced.
+        observation_id: ObservationId,
+        /// Typed failure without observation payload bytes.
+        error: ObservationError,
+    },
+}
+
+impl ObservationDelivery {
+    /// Returns the request identity associated with this completion.
+    #[must_use]
+    pub const fn observation_id(&self) -> ObservationId {
+        match self {
+            Self::Completed(observation) => observation.metadata.observation_id,
+            Self::Failed { observation_id, .. } => *observation_id,
+        }
     }
 }
 
@@ -190,64 +221,93 @@ impl ObservationQueue {
         &self,
         latest_known_revision: SceneRevision,
     ) -> Result<Option<Observation>, ObservationError> {
+        match self.try_receive_delivery(latest_known_revision)? {
+            Some(ObservationDelivery::Completed(observation)) => Ok(Some(observation)),
+            Some(ObservationDelivery::Failed { error, .. }) => Err(error),
+            None => Ok(None),
+        }
+    }
+
+    /// Polls one completion while retaining request identity on per-request failure.
+    pub fn try_receive_delivery(
+        &self,
+        latest_known_revision: SceneRevision,
+    ) -> Result<Option<ObservationDelivery>, ObservationError> {
         let completion = match self.receiver.try_recv() {
             Ok(completion) => completion,
             Err(TryRecvError::Empty) => return Ok(None),
             Err(TryRecvError::Disconnected) => return Err(ObservationError::WorkerUnavailable),
         };
-        let ObservationCompletion {
-            permit: _permit,
-            request,
-            observed_at_unix_micros,
-            production_latency_micros,
-            frame,
-        } = completion;
-        let frame = frame.map_err(ObservationError::Renderer)?;
-        let source = frame.metadata();
-        if request.camera_id != source.camera_id {
-            return Err(ObservationError::CameraMismatch {
-                requested: request.camera_id,
-                rendered: source.camera_id,
-            });
-        }
-        if request.scene_revision != source.scene_revision {
-            return Err(ObservationError::SourceRevisionMismatch {
-                requested: request.scene_revision,
-                rendered: source.scene_revision,
-            });
-        }
-        if latest_known_revision < source.scene_revision {
-            return Err(ObservationError::SourceRevisionAhead {
-                source: source.scene_revision,
-                latest: latest_known_revision,
-            });
-        }
-        let dimensions = (request.kind != ObservationKind::Visibility).then(|| ImageDimensions {
-            width: NonZeroU32::new(frame.width()).expect("validated frame width is non-zero"),
-            height: NonZeroU32::new(frame.height()).expect("validated frame height is non-zero"),
-        });
-        let payload = payload_for(request.kind, frame);
-        let metadata = ObservationMetadata {
-            schema_version: SchemaVersion::V1,
-            observation_id: request.observation_id,
-            scene_revision: source.scene_revision,
-            frame_id: source.frame_id,
-            camera_id: source.camera_id,
-            kind: request.kind,
-            dimensions,
-            quality: request.quality,
-            observed_at_unix_micros,
-            production_latency_micros,
-            staleness: ObservationStaleness {
-                latest_known_revision,
-                revisions_behind: latest_known_revision.get() - source.scene_revision.get(),
+        let observation_id = completion.request.observation_id;
+        Ok(Some(
+            match complete_observation(completion, latest_known_revision, &self.limits) {
+                Ok(observation) => ObservationDelivery::Completed(observation),
+                Err(error) => ObservationDelivery::Failed {
+                    observation_id,
+                    error,
+                },
             },
-        };
-        metadata
-            .validate_with_limits(&self.limits)
-            .map_err(ObservationError::InvalidMetadata)?;
-        Ok(Some(Observation { metadata, payload }))
+        ))
     }
+}
+
+fn complete_observation(
+    completion: ObservationCompletion,
+    latest_known_revision: SceneRevision,
+    limits: &RuntimeLimits,
+) -> Result<Observation, ObservationError> {
+    let ObservationCompletion {
+        permit: _permit,
+        request,
+        observed_at_unix_micros,
+        production_latency_micros,
+        frame,
+    } = completion;
+    let frame = frame.map_err(ObservationError::Renderer)?;
+    let source = frame.metadata();
+    if request.camera_id != source.camera_id {
+        return Err(ObservationError::CameraMismatch {
+            requested: request.camera_id,
+            rendered: source.camera_id,
+        });
+    }
+    if request.scene_revision != source.scene_revision {
+        return Err(ObservationError::SourceRevisionMismatch {
+            requested: request.scene_revision,
+            rendered: source.scene_revision,
+        });
+    }
+    if latest_known_revision < source.scene_revision {
+        return Err(ObservationError::SourceRevisionAhead {
+            source: source.scene_revision,
+            latest: latest_known_revision,
+        });
+    }
+    let dimensions = (request.kind != ObservationKind::Visibility).then(|| ImageDimensions {
+        width: NonZeroU32::new(frame.width()).expect("validated frame width is non-zero"),
+        height: NonZeroU32::new(frame.height()).expect("validated frame height is non-zero"),
+    });
+    let payload = payload_for(request.kind, frame);
+    let metadata = ObservationMetadata {
+        schema_version: SchemaVersion::V1,
+        observation_id: request.observation_id,
+        scene_revision: source.scene_revision,
+        frame_id: source.frame_id,
+        camera_id: source.camera_id,
+        kind: request.kind,
+        dimensions,
+        quality: request.quality,
+        observed_at_unix_micros,
+        production_latency_micros,
+        staleness: ObservationStaleness {
+            latest_known_revision,
+            revisions_behind: latest_known_revision.get() - source.scene_revision.get(),
+        },
+    };
+    metadata
+        .validate_with_limits(limits)
+        .map_err(ObservationError::InvalidMetadata)?;
+    Ok(Observation { metadata, payload })
 }
 
 fn payload_for(kind: ObservationKind, frame: RenderedFrame) -> ObservationPayload {
@@ -523,10 +583,13 @@ mod tests {
         assert!(slots.oldest_age_micros_at(started_at).is_some());
 
         assert!(matches!(
-            queue.try_receive(SceneRevision::INITIAL),
-            Err(ObservationError::Renderer(
-                cogniform_renderer::RendererError::ReadbackFailed { .. }
-            ))
+            queue.try_receive_delivery(SceneRevision::INITIAL),
+            Ok(Some(ObservationDelivery::Failed {
+                observation_id,
+                error: ObservationError::Renderer(
+                    cogniform_renderer::RendererError::ReadbackFailed { .. }
+                )
+            })) if observation_id == ObservationId::new(1).unwrap()
         ));
         assert_eq!(slots.status_at(started_at), (0, None));
     }

@@ -6,8 +6,8 @@ use cogniform_assets::{
 };
 use cogniform_procedural::{ProcedureArtifact, ProcedureRequest, execute};
 use cogniform_protocol::{
-    ContentHash, FrameId, ImaginationEnvelope, ScenePatch, SceneQuery, SceneQueryResult,
-    SceneRevision, StableEntityId,
+    ContentHash, FrameId, ImaginationEnvelope, RuntimeLimits, ScenePatch, SceneQuery,
+    SceneQueryResult, SceneRevision, StableEntityId,
 };
 use cogniform_renderer::{
     AssetUploadAdmission, AssetUploadOutcome, RendererAssetEviction, RendererAssetStats,
@@ -18,7 +18,7 @@ use cogniform_world::LogicalSceneHash;
 use crate::{
     AdapterSummary, CogniformEngine, EngineConfig, EngineRecoveryPoint, GatewayAdmission,
     GatewayConfig, GatewayQueueStats, GatewayResponse, LocalGateway, LocalRevertError,
-    LocalServiceError, Observation, ObservationRequest,
+    LocalServiceError, Observation, ObservationDelivery, ObservationRequest,
 };
 use crate::{
     engine::validate_config as validate_engine_config,
@@ -357,6 +357,35 @@ impl LocalService {
             .engine()
             .try_receive_observation()
             .map_err(Into::into)
+    }
+
+    /// Polls one completion while retaining request identity on per-request failure.
+    pub fn try_receive_observation_delivery(
+        &self,
+    ) -> Result<Option<ObservationDelivery>, LocalServiceError> {
+        self.gateway
+            .engine()
+            .try_receive_observation_delivery()
+            .map_err(Into::into)
+    }
+
+    /// Returns the active bounded public protocol limits.
+    #[must_use]
+    pub const fn runtime_limits(&self) -> RuntimeLimits {
+        self.gateway.engine().runtime_limits()
+    }
+
+    /// Returns the fixed renderer dimensions used by every image observation.
+    #[must_use]
+    pub const fn observation_dimensions(&self) -> (u32, u32) {
+        let config = self.gateway.engine().renderer().config();
+        (config.width, config.height)
+    }
+
+    /// Returns the fixed uncommitted command capacity.
+    #[must_use]
+    pub const fn command_capacity(&self) -> u32 {
+        self.config.gateway.command_capacity.get()
     }
 
     /// Returns current bounded occupancy and revision state.

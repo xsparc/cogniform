@@ -28,6 +28,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Observation payload envelope | Pass for declared CPU profile | Fixed version-one all-kind layouts and exact fixture, canonical values and limits, metadata binding, truncation/trailing/corruption rejection, and engine source-compatible re-export without I/O or transport construction |
 | Local stream frame | Pass for declared CPU profile | Fixed version-one header and exact fixture, independent header-first complete/control/bulk limits, canonical observation-envelope composition, short/interrupted I/O, back-to-back framing, and corruption/truncation rejection over caller-owned streams without an endpoint or session |
 | Local-session messages | Pass for declared CPU profile | Exact schema-v1 client/server LF fixtures, every-variant round trips, outer-only correlation, effective byte/nesting bounds, direction/version/unknown/canonical/substitution/nested validation, exact-revision observation admission, and no executor or endpoint |
+| Local-session executor | Pass for declared CPU profile | One hello, field-wise peer/local/service limits, deterministic one-command advancement, exact terminal command/observation correlation, one-time pending, two-frame output cap, redacted failures, quiescent close, and a passing controlled service adapter without endpoint authority |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Pending-work age | Pass on validated profile | Empty and retained command/observation/import/upload status, duplicate retention, supersession reset, rejection/drop neutrality, processing/eviction/delivery cleanup, saturation, and restoration/revert compatibility |
@@ -137,9 +138,11 @@ The GitHub release must be marked prerelease and state:
   retention policy, writer atomicity after an I/O failure, or automatic
   delivery;
 - local-session messages define only bounded in-memory control values and frame
-  adaptation. They do not sequence a lifecycle, execute a local service, own
-  stdin/stdout, recover partial writes, authenticate or authorize a peer,
-  enforce remote replay/rate/tenancy policy, or create an endpoint;
+  adaptation; the separate local executor sequences one caller-driven
+  lifecycle and executes one supplied local service. Neither owns stdin/stdout,
+  recovers partial writes, authenticates or authorizes a peer, enforces remote
+  freshness/replay/rate/tenancy policy, schedules itself, or creates an
+  endpoint;
 - historical recovery supports caller-coordinated fresh forks and quiescent
   live replacement, but provides no automatic rollback, authorization,
   freshness, branch manager, or global frame namespace across concurrent

@@ -921,6 +921,34 @@ added. See [ADR 0040](../adr/0040-bounded-versioned-local-session-messages.md),
 the [local-session message guide](../protocol/local-session-messages.md), and
 the [validation baseline](../operations/validation-baseline.md).
 
+### PR 41 - CF041: Bounded caller-driven local-session executor
+
+Outcome: one reusable in-process state machine now runs the complete bounded
+hello/patch/query/observation/close session contract over an owned local service
+before any stdio, pipe, process, or endpoint composition receives authority.
+
+Gate: a separate `cogniform-local-executor` crate requires exactly one hello
+and intersects peer, local-frame, and service runtime limits field by field. It
+rejects pre-hello work, duplicate hello, duplicate live correlation, duplicate
+outstanding observation identity, over-limit renderer dimensions, and
+non-quiescent close. Queries are immediate and exact-revision. Patch queue,
+idempotency, replay, drop, and latest-wins supersession outcomes preserve exact
+outer correlation and deterministic queue position; one explicit `advance`
+processes no more than one command. Observation acceptance retains one bounded
+mapping, reports pending at most once, and uses correlated completion or
+failure delivery to release exactly once.
+
+Every call returns at most two already-validated frames. Oversized completed
+observations become redacted limit failures, and service diagnostics map to
+stable session codes without payloads or arbitrary strings. The executor opens
+no stream, stdin/stdout, pipe, process, file, shared memory, listener, socket,
+thread, timer, scheduler, polling loop, or endpoint and adds no timeout,
+cancellation, retry, authentication, authorization, confidentiality, remote
+replay/rate/tenancy policy, deployment, version, or release action. See
+[ADR 0041](../adr/0041-bounded-caller-driven-local-session-executor.md), the
+[local-session executor guide](../protocol/local-session-executor.md), and the
+[validation baseline](../operations/validation-baseline.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -929,7 +957,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
-  -> CF038 -> CF039 -> CF040
+  -> CF038 -> CF039 -> CF040 -> CF041
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.

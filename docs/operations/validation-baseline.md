@@ -61,6 +61,10 @@ and payload-redacted failure evidence was collected on the CPU profile on
 CF040 canonical direction-specific local-session messages, effective pre-decode
 bounds, exact-revision observation admission, and endpoint/executor separation
 evidence was collected on the CPU profile on 2026-08-08.
+CF041 bounded caller-driven lifecycle, field-wise peer/local/service limit
+intersection, exact terminal correlation, deterministic advancement, and
+payload-redacted service mapping evidence was collected on the CPU profile on
+2026-08-08.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -329,11 +333,52 @@ uses an invalid camera, proving the typed revision error precedes both capacity
 and renderer work; default CPU runs compile but do not execute that ignored GPU
 test.
 
-These tests do not prove lifecycle sequencing, service error mapping, automatic
-queue processing, stdin/stdout handling, partial-write recovery, peer identity,
+These tests alone do not prove lifecycle sequencing, service error mapping,
+stdin/stdout handling, partial-write recovery, peer identity,
 authentication, authorization, confidentiality, freshness/replay protection,
-rate/tenancy policy, timeout/cancellation, or remote safety. Those remain the
-responsibility of separately reviewed executor and endpoint milestones.
+rate/tenancy policy, timeout/cancellation, or remote safety. CF041 covers the
+first two in the next boundary; endpoint properties remain separately reviewed.
+
+## Controlled local-session executor commands
+
+CF041 ran the caller-driven state machine, engine compatibility edge, and
+production service-adapter compilation without creating an endpoint, opening a
+stream, starting an automatic runtime loop, or requiring a GPU in the default
+profile:
+
+```text
+cargo fmt --all --check
+cargo clippy -p cogniform-protocol -p cogniform-local-transport -p cogniform-local-session -p cogniform-engine -p cogniform-local-executor --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-protocol -p cogniform-local-transport -p cogniform-local-session -p cogniform-engine -p cogniform-local-executor --all-features --locked --offline
+```
+
+The twelve executor model tests cover pre-hello and post-close rejection, exactly
+one hello, service-aware field-wise limits, live-correlation capacity and
+reuse, queued/completed/replayed/dropped/already-queued/superseded patch
+semantics, deterministic replacement order, exact process-error release,
+observation acceptance, one-time pending, correlated completion/failure,
+oversized-output replacement, and the fixed two-frame output cap. Three focused
+session tests pin limit intersection and effective-frame round trips. The 25
+engine unit tests retain the legacy observation poll and prove request identity
+survives asynchronous renderer failure while its global permit is released.
+
+The ignored production integration also passed on the controlled Windows/Vulkan
+profile:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-local-executor --test local_service --locked --offline -- --ignored
+```
+
+It runs hello, patch, explicit advancement, exact query, correlated observation,
+and orderly close through the real `LocalService` adapter. Ordinary CPU-only
+validation still does not imply that controlled adapter evidence on another
+machine has passed.
+
+These tests do not prove stdin/stdout or pipe ownership, partial-write recovery,
+peer identity, authentication, authorization, confidentiality, freshness and
+remote replay policy, rate/tenancy controls, deadlines, cancellation, process
+supervision, automatic scheduling, or remote safety. Those remain endpoint and
+operations responsibilities.
 
 ## Controlled vertex-normal commands
 

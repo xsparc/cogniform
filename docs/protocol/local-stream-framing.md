@@ -87,9 +87,11 @@ does not own `Read`, `Write`, stdin/stdout, a service, a scheduler, or shutdown.
 
 ## Deferred endpoint boundary
 
-A future executor and stdio composition root must define stateful sequencing,
-scheduling, cancellation, lifecycle, stream-failure policy, and bounded
-rate/cost handling. A remote listener additionally requires authenticated
+The separate [CF041 executor](local-session-executor.md) now defines bounded
+caller-driven lifecycle, service mapping, and deterministic advancement. A
+future stdio composition root must still define stream ownership, scheduling,
+cancellation, stream-failure policy, shutdown, and bounded rate/cost handling.
+A remote listener additionally requires authenticated
 identity, authorization, confidentiality, replay/freshness protection, and
 tenancy isolation. Shared-memory handle negotiation and lease lifetime are
 also separate work. This crate supplies none of those policies and must not be

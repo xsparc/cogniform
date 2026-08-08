@@ -1,0 +1,21 @@
+[package]
+name = "cogniform-local-executor"
+description = "Bounded caller-driven local session executor for Cogniform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+cogniform-engine.workspace = true
+cogniform-local-session.workspace = true
+cogniform-local-transport.workspace = true
+cogniform-protocol.workspace = true
+
+[dev-dependencies]
+pollster = "=0.4.0"
