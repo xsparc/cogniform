@@ -63,11 +63,12 @@ The first workspace should prove boundaries without prematurely creating every e
 | Area | Responsibility | Dependency rule |
 |---|---|---|
 | `cogniform-protocol` | Stable public value types, patches, receipts, observations, limits, errors | No ECS, GPU, network, or generated transport dependency |
+| `cogniform-compilation` | Versioned bounded compiler outcomes, report validation, and canonical JSON | Depends only on protocol and existing serialization; owns no compiler execution, session, service, world, renderer, or I/O |
 | `cogniform-observation` | Owned observation payload values and bounded transport-neutral binary envelopes | Depends only on protocol and deterministic hashing; owns no renderer, service, I/O, session, or shared-memory resource |
 | `cogniform-local-transport` | Fixed bounded frames over caller-owned synchronous streams | Depends only on protocol, observation values, deterministic hashing, and standard I/O traits; opens no endpoint and owns no session or service state |
 | `cogniform-local-session` | Versioned direction-specific control values and canonical bounded CF039 control bytes | Depends only on protocol and local transport; executes no service work and opens no endpoint |
 | `cogniform-local-executor` | Bounded caller-driven session lifecycle, service mapping, and exact correlation ownership | Depends on engine plus the protocol/session/transport boundaries; owns one supplied local service but no endpoint, I/O, thread, timer, or runtime loop |
-| `cogniform-compiler` | Pure seeded primitive imagination normalization and structured explanations | Depends only on protocol and deterministic hashing; owns no world/service state |
+| `cogniform-compiler` | Pure seeded primitive imagination normalization | Depends only on compilation values, protocol, and deterministic hashing; owns no world/service state |
 | `cogniform-world` | `hecs` implementation, stable-ID index, validation, atomic commit, hierarchy, transforms, queries | Depends on protocol/math; never renderer or service |
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
 | `cogniform-renderer` | `wgpu` feature negotiation, headless targets, primitive rendering, and color/depth/normal/ID outputs | Consumes extracted render data; never mutable world access |
@@ -106,6 +107,10 @@ inherited redirected stdin/stdout pair, one fixed 64x64 local service, a
 half-duplex driver, a 2 ms completion-poll cadence, and a 15-second deadline for
 each live operation. It creates no listener or child process and does not move
 I/O, scheduling, or endpoint authority into the reusable crates.
+CF043 extracts compiler outcome values into `cogniform-compilation`, adds an
+exact bounded schema-version-one LF JSON contract, and preserves compiler
+re-exports. It changes no compiler normalization or gateway behavior and gives
+no session or transport layer compiler-execution authority.
 Spatial acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -113,15 +118,14 @@ or dependency footprint.
 ### 2.3 Dependency direction
 
 ```text
+protocol <- compilation <- compiler
+
 protocol <- world <- replay
     ^
     +---- observation
     ^
     +---- local transport <- local session
     ^
-    +---- compiler
-    ^          |
-    |          v
     +---- render extraction -> renderer
     ^                              |
     +---------- engine ------------+
@@ -137,8 +141,8 @@ CLI -> local executor
 
 The diagram shows allowed information flow, not permission to create circular Cargo dependencies. Shared render DTOs belong in a dependency-neutral boundary rather than making world depend on renderer.
 
-The compiler, observation codec, local transport frame, and local-session
-schema each depend only on
+The compiler, compilation-result codec, observation codec, local transport
+frame, and local-session schema each depend only on
 narrow public values and deterministic hashing. Engine may orchestrate
 compiler, world, renderer, observation coding, and replay through their public
 interfaces; none of those narrow adapters reads mutable world or renderer
@@ -178,6 +182,24 @@ Atomic apply follows this contract:
 8. return a receipt with previous/new revision, operation count, diagnostics, timing, and estimated visible frame.
 
 A failed atomic patch preserves revision, entity state, indexes, and logical hash. Repeating an accepted idempotency key returns the recorded receipt and does not create another revision. Empty patches are rejected rather than manufacturing revisions.
+
+#### 3.2.1 Compilation results
+
+Deterministic compilation returns one schema-version-one transport-neutral
+value containing the source imagination identity, exact immutable scene
+revision, optional normalized patch, ordered decisions, and ordered unresolved
+constraints. A valid value represents exactly one of two outcomes: compiled
+means one patch and no unresolved entry; unresolved means no patch and at least
+one issue. A nested patch uses the same schema and exact base revision.
+
+The dependency-neutral compilation crate owns stable snake-case decision and
+unresolved codes, code-specific optional-field roles, strict collection order
+and uniqueness, independent non-zero result limits, aggregate patch/report
+text and logical-byte accounting, and compact canonical JSON followed by one
+LF. Decoding enforces bytes and nesting before allocation and requires bounded
+re-encoding to equal the complete input. It performs no compilation,
+execution, mutation, I/O, endpoint work, or model call. The compiler constructs
+and validates this value and re-exports the moved public names.
 
 ### 3.3 Hierarchy and transforms
 
@@ -415,6 +437,10 @@ All agent data, labels, assets, procedures, and transport messages are untrusted
 - validate exact observation kind, count, canonical value layout, envelope
   length, and metadata-bound integrity before allocating decoded payload
   vectors; require transports to cap frames before buffering;
+- validate each completed compiler result against its schema version, complete
+  result bounds, nested patch bounds, field roles, canonical order, unique
+  keys, outcome shape, and source revision before return; future adapters must
+  repeat result validation under their own declared limits;
 - read local frame headers into fixed storage and reject invalid correlation,
   section layout, arithmetic, and independent control/bulk/total bounds before
   declared body allocation; retain only stable I/O categories on failure;
@@ -462,6 +488,7 @@ Research targets such as 60 Hz, 3 ms p95 CPU engine work, 8 ms p95 GPU time, 8 m
 The public surface stays small: apply imagination, apply a supported built-in
 procedure through an ordinary patch, apply patch, query scene,
 request observation, subscribe to bounded feedback, explain compilation,
+explicitly encode or decode one bounded schema-version-one compilation result,
 explicitly encode or decode one bounded metadata-bound observation payload,
 explicitly frame schema-owned control bytes or complete observations over a
 caller-owned synchronous local stream,
@@ -500,6 +527,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Stable identity | Entity deletion/reuse and serialization never expose/reassign an ECS handle as external identity |
 | Atomic transaction | Any invalid operation rejects the complete patch and preserves prior revision/hash |
 | Idempotency | Repeated key returns the same receipt without duplicate mutation |
+| Compilation result contract | Exact compiled and unresolved schema-version-one LF fixtures round-trip under explicit encoded, nesting, logical, text, decision, unresolved, and nested-patch bounds; noncanonical bytes, unsupported/unknown fields or codes, invalid roles/order/duplicates/outcomes/revisions, and substitutions reject; compiler normalization and patch bytes remain unchanged while moved public names retain source-path re-exports |
 | Hierarchy | Cycles/depth violations reject atomically; propagation order is stable |
 | Replay | Repeating accepted canonical events yields the exact logical hash |
 | Restoration | A bounded integrity-checked recovery envelope round-trips exact replay/frame state; the decoded complete point restores logical/replay state and continues frame/revision causality in a fresh service |
@@ -540,8 +568,9 @@ snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
 rotation, recovery-inspection profile selection, broader diagnostic schemas,
 including schemas beyond the versioned recovery, controlled-measurement, and
-canonical-scenario and asset-source-inspection CLI reports, and model policy
-remain explicitly open.
+canonical-scenario and asset-source-inspection CLI reports, versioned
+imagination/compilation session mapping and correlation, and model policy remain
+explicitly open.
 Defaults in the roadmap are
 planning assumptions, not production commitments.
 

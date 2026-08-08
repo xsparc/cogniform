@@ -68,6 +68,9 @@ payload-redacted service mapping evidence was collected on the CPU profile on
 CF042 fixed-profile inherited-stdio composition, half-duplex live-operation
 scheduling, bounded deadline and stream-fault behavior, plus one controlled
 child-process exchange were collected on 2026-08-09.
+CF043 bounded transport-neutral compilation-result schema, canonical encoding,
+resource accounting, outcome invariants, and compiler compatibility evidence
+were collected on the CPU profile on 2026-08-09.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -341,6 +344,29 @@ stdin/stdout behavior. CF041 covers the first two, and CF042 supplies one fixed
 local stdio composition. Neither boundary proves partial-write recovery, peer
 identity, authentication, authorization, confidentiality, freshness/replay
 protection, rate/tenancy policy, preemptive cancellation, or remote safety.
+
+## Bounded compilation-result commands
+
+CF043 runs entirely on the ordinary CPU profile. The focused contract proves
+exact compiled and unresolved schema-version-one fixtures, canonical round
+trips, pre-decode byte/nesting limits, bounded writer output, aggregate
+text/logical accounting, decision/unresolved/patch limits, version and unknown
+field rejection, code-field roles, strict order and uniqueness, outcome and
+revision binding, truncation/trailing rejection, and compiler re-export and
+normalized-patch compatibility:
+
+```text
+cargo fmt --all --check
+cargo clippy -p cogniform-compilation -p cogniform-compiler --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-compilation -p cogniform-compiler --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc -p cogniform-compilation -p cogniform-compiler --no-deps --all-features --locked --offline
+```
+
+The complete workspace gates remain required because the engine consumes the
+compiler re-export and `ScenePatch` adds read-only resource measurements. No
+test opens a stream or endpoint, invokes a model, mutates a service/world, or
+selects a GPU adapter. Passing this contract does not imply that CF040
+schema-version-one sessions transport imagination or compilation results.
 
 ## Controlled local-session executor commands
 

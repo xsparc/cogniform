@@ -93,6 +93,11 @@ stream, or define a lifecycle state machine. The fixed local stdio composition
 does not add those remote-security properties merely because it uses these
 messages.
 
+Schema version one also has no imagination submission or compilation-result
+variant. CF043 defines that result as a separate bounded value; carrying it
+through a session requires a separately versioned message and executor change.
+
 See [ADR 0040](../adr/0040-bounded-versioned-local-session-messages.md), the
-[core contracts](core-contracts.md), the [local service](local-service.md), and
-the [CF041 executor](local-session-executor.md).
+[core contracts](core-contracts.md), the
+[compilation result contract](compilation-results.md), the
+[local service](local-service.md), and the [CF041 executor](local-session-executor.md).

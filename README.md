@@ -28,7 +28,11 @@ scene revision that produced it.
 > failures. It creates no pipe, listener, daemon, or remote security boundary.
 > A bounded
 > in-process gateway, exact logical queries, and a
-> deterministic primitive imagination compiler are also available. The current
+> deterministic primitive imagination compiler are also available. Compiler
+> outcomes now live in a separate bounded schema-version-one value crate with
+> exact canonical LF JSON, explicit report limits, ordered explanations, and
+> strict compiled-versus-unresolved invariants; no session message carries
+> them yet. The current
 > asset baseline adds content-addressed GLB geometry with optional finite vertex
 > normals, one retained finite primary coordinate set, and unit-bounded numeric
 > metallic-roughness materials, plus one bounded embedded PNG base-color
@@ -81,6 +85,7 @@ implementations arrive:
 | `cogniform-local-transport` | Fixed bounded framing over caller-owned synchronous streams without endpoint or session authority |
 | `cogniform-local-session` | Canonical direction-specific local patch/query/observation control messages without service execution or endpoint authority |
 | `cogniform-local-executor` | Bounded caller-driven session lifecycle, service mapping, and exact correlation release without endpoint or runtime-loop authority |
+| `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
 | `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/primary-coordinate/material/embedded-PNG decoding, immutable upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
@@ -126,6 +131,9 @@ specifies the CLI-owned pipe-only endpoint, negotiated frame policy,
 half-duplex completion, flushing, deadlines, EOF, and failure behavior. The
 [local gateway guide](docs/protocol/local-gateway-and-imagination.md) documents
 command admission, idempotency, deterministic compilation, and logical queries.
+The [compilation-result guide](docs/protocol/compilation-results.md) specifies
+the transport-neutral schema, limits, canonical encoding, entry roles,
+ordering, and outcome invariants without adding a session or endpoint.
 The [GLB asset guide](docs/assets/glb-subset.md) documents exact source
 admission, the approved format subset, lifecycle and explicit eviction,
 capacity limits, proxy policy, texture sampling contract, and controlled GPU

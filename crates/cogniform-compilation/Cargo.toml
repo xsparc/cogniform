@@ -1,6 +1,6 @@
 [package]
-name = "cogniform-compiler"
-description = "Deterministic semantic imagination compiler for Cogniform"
+name = "cogniform-compilation"
+description = "Bounded transport-neutral compilation result values for Cogniform"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,6 +12,6 @@ publish = false
 workspace = true
 
 [dependencies]
-cogniform-compilation.workspace = true
 cogniform-protocol.workspace = true
-sha2.workspace = true
+serde.workspace = true
+serde_json.workspace = true

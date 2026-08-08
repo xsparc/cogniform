@@ -2,7 +2,9 @@
 
 Status: schema version 1 implemented by CF001 and extended through CF007;
 CF016 composes existing procedure values into the local service without adding
-a protocol or gateway command variant.
+a protocol or gateway command variant. CF043 adds read-only patch text/logical
+resource measurements for exact enclosing-value accounting without changing
+the patch schema or bytes.
 
 `cogniform-protocol` is the dependency-neutral boundary between Cogniform's
 world, render, and service domains. It contains values only: no ECS handles,

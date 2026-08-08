@@ -20,6 +20,11 @@ release yet; the current workspace version remains `0.0.0`.
   background GPU retirement;
 - deterministic primitive imagination compilation and pure seeded built-in
   cuboid-grid procedures;
+- a separate `cogniform-compilation` crate with schema-version-one compiler
+  outcomes, explicit non-zero report limits, exact canonical LF JSON, bounded
+  pre-decode and output allocation, strict entry roles/order/uniqueness, and
+  exact compiled-versus-unresolved patch/revision invariants without execution
+  or I/O authority;
 - local-service execution of pure bounded procedures through ordinary patch
   admission, idempotency, processing, query, replay, and restoration;
 - bounded content-addressed GLB admission, CPU decode, renderer upload, and
@@ -139,6 +144,20 @@ release yet; the current workspace version remains `0.0.0`.
 
 ### Changed
 
+- compiler decision, unresolved, and result values move to
+  `cogniform-compilation`; `cogniform-compiler` re-exports their original names,
+  derives report limits from its existing runtime limits, and validates every
+  completed result. `CompilationResult` gains mandatory schema version and
+  `CompilerConfig` gains explicit result limits, so exhaustive construction is
+  source-breaking in the unpublished `0.0.0` workspace;
+  `CompileError::InvalidCompilationResult` likewise changes exhaustive error
+  matching. `ScenePatch` exposes read-only aggregate text and logical
+  size measurements for exact enclosing-value accounting. `Cargo.lock` gains
+  only the new local package edge; no external package, version, checksum,
+  vendor source, deterministic normalization, stable ID, normalized patch
+  bytes, gateway behavior, world/replay state, rendered output, version, or
+  release action changed;
+
 - `cogniform-cli` now directly reuses the workspace-local local-transport,
   local-session, and local-executor crates. `Cargo.lock` gains only those local
   package edges; no external package, version, checksum, or vendor source
@@ -211,6 +230,9 @@ release yet; the current workspace version remains `0.0.0`.
 - no supported release, stable crates.io API, remote transport, authentication,
   automatic persistence/startup, snapshot retention, shared memory, model
   integration, deployment, or production SLA;
+- compilation results are available only as typed or canonical in-process
+  values; the current local-session/stdio schema does not submit imagination or
+  carry compilation outcomes;
 - `serve-stdio` supports one inherited-stream client, one fixed 64x64 local
   service, half-duplex patch/query/observation work, fixed polling/deadline, and
   negotiated close only. It creates no process or endpoint and supplies no

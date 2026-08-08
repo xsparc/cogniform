@@ -12,6 +12,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | Fault | Expected containment | Evidence |
 |---|---|---|
 | Oversized, deeply nested, unknown, or duplicate protocol fields | Reject before a valid message reaches world preflight | `cogniform-protocol` contract and fixture tests |
+| Compilation result is over-limit, noncanonical, reordered, duplicated, role-invalid, revision-mismatched, truncated, or substituted | The codec returns no invalid decoded value and the compiler returns no invalid completed result; every future adapter must invoke validation under its own limits before use | CF043 compilation-result fixtures, adversarial codec tests, and compiler result validation |
 | Empty, stale, conflicting, or invalid patch operation | Preserve revision, ID index, snapshot, and logical hash | `world_contracts` atomic rejection and randomized model tests |
 | Hierarchy cycle, excess depth, or dangling relation | Reject the complete patch; preserve prior derived transforms | `hierarchy_hash` tests |
 | Idempotency key reused for different command content | Return typed conflict without duplicate compile or mutation | gateway and world idempotency tests |

@@ -30,6 +30,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Local-session messages | Pass for declared CPU profile | Exact schema-v1 client/server LF fixtures, every-variant round trips, outer-only correlation, effective byte/nesting bounds, direction/version/unknown/canonical/substitution/nested validation, exact-revision observation admission, and no executor or endpoint |
 | Local-session executor | Pass for declared CPU profile | One hello, field-wise peer/local/service limits, deterministic one-command advancement, exact terminal command/observation correlation, one-time pending, two-frame output cap, redacted failures, quiescent close, and a passing controlled service adapter without endpoint authority |
 | Local stdio session | Pass for declared CPU and controlled Windows profile | Exact pre-adapter argument/terminal/first-frame behavior, half-duplex no-read-while-live scheduling, negotiated bounds, positive-cadence fixed completion deadline, partial-output/flush/fatal handling, stable diagnostics, and a passing controlled child-process hello/patch/query/observation/close exchange |
+| Compilation result contract | Pass for declared CPU profile | Exact compiled/unresolved schema-v1 LF fixtures, bounded canonical round trips, malformed/substituted/order/duplicate/outcome/revision rejection, nested patch validation, source-path compiler re-exports, and unchanged normalization/IDs/patch bytes without session or I/O authority; exhaustive result/config construction and `CompileError` matching are source-breaking in the unpublished `0.0.0` API |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Pending-work age | Pass on validated profile | Empty and retained command/observation/import/upload status, duplicate retention, supersession reset, rejection/drop neutrality, processing/eviction/delivery cleanup, saturation, and restoration/revert compatibility |
@@ -77,6 +78,13 @@ This does not make the current `0.0.0` workspace a supported release.
       immediate clean EOF, hello limit adoption, half-duplex terminal delivery,
       deadline/fault behavior, applied/query/observation causality, orderly
       close, and no trailing output.
+- [ ] Re-run the CPU-only compilation-result and compiler contracts; confirm
+      exact compiled/unresolved fixtures, byte/nesting/logical/text/count/patch
+      bounds, canonical equality, code-field roles, order/uniqueness,
+      outcome/revision binding, source-path compiler re-exports, unchanged
+      normalization/IDs/patch bytes, and the unpublished `0.0.0` exhaustive
+      result/config construction and `CompileError` matching breaks without
+      constructing a session, service, endpoint, or GPU adapter.
 - [ ] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
       matrix, recovery-envelope, recovery-file, and asset-file
       formats/limitations, offline inspection profile/versioned output, known
@@ -148,6 +156,11 @@ The GitHub release must be marked prerelease and state:
   adaptation; the separate local executor sequences one caller-driven
   lifecycle and executes one supplied local service. Neither owns stdin/stdout,
   schedules itself, or creates an endpoint;
+- compilation results are bounded schema-version-one in-memory or canonical LF
+  values that bind an imagination and exact scene revision to one normalized
+  patch or unresolved issues. The value crate does not compile, execute,
+  mutate, authenticate, persist, or transport them, and the current
+  local-session schema does not carry imagination or compilation results;
 - `cogniform-cli serve-stdio` supplies one fixed inherited redirected-stream
   owner and one 64x64 local service. It is half-duplex, flushes every frame,
   polls live completion every 2 ms under a 15-second deadline, and terminates

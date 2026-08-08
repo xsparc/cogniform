@@ -1,5 +1,6 @@
 use core::fmt;
 
+use cogniform_compilation::CompilationValidationError;
 use cogniform_protocol::{SceneRevision, ValidationError};
 
 /// Deterministic compilation failure that prevents a normalized result.
@@ -23,6 +24,8 @@ pub enum CompileError {
     },
     /// The normalized patch violated a downstream public patch invariant.
     InvalidNormalizedPatch(ValidationError),
+    /// The completed report violated its versioned result contract.
+    InvalidCompilationResult(CompilationValidationError),
 }
 
 impl fmt::Display for CompileError {
@@ -45,6 +48,9 @@ impl fmt::Display for CompileError {
             Self::InvalidNormalizedPatch(error) => {
                 write!(formatter, "invalid normalized patch: {error}")
             }
+            Self::InvalidCompilationResult(error) => {
+                write!(formatter, "invalid compilation result: {error}")
+            }
         }
     }
 }
@@ -53,6 +59,7 @@ impl std::error::Error for CompileError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::InvalidImagination(error) | Self::InvalidNormalizedPatch(error) => Some(error),
+            Self::InvalidCompilationResult(error) => Some(error),
             Self::SceneRevisionMismatch { .. } | Self::EntityIdDerivationExhausted { .. } => None,
         }
     }
