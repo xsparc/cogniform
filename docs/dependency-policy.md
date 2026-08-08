@@ -102,6 +102,17 @@ session crate preserves its production dependency boundary. The executor owns
 only bounded in-memory state and one supplied local service; endpoint I/O and
 runtime scheduling remain outside the crate.
 
+## Existing stdio composition reuse
+
+CF042 adds workspace-local `cogniform-local-executor`,
+`cogniform-local-session`, and `cogniform-local-transport` edges to the
+existing `cogniform-cli` composition root. It adds no external package,
+version, checksum, feature, build script, unsafe code, native code, runtime
+download, network, telemetry, or paid-service requirement. Standard-library
+I/O locking, terminal detection, flushing, monotonic time, and sleep supply the
+fixed local runtime policy; reusable protocol, transport, executor, engine,
+and renderer ownership remains unchanged.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

@@ -6,6 +6,10 @@ owned in-process [`LocalService`](local-service.md). The
 endpoint, stdio loop, scheduler, process supervisor, or remote security
 boundary.
 
+CF042's separate [`serve-stdio` composition](local-stdio-session.md) supplies
+one fixed caller that owns inherited redirected I/O, bounded polling, deadlines,
+flushes, and shutdown without changing this crate's authority.
+
 ## Lifecycle
 
 | Phase | Accepted input | Result |
@@ -85,8 +89,10 @@ revision, capacity, command, query, observation, unavailable, or internal
 without retaining payloads or arbitrary error strings.
 
 The executor validates lifecycle and resource behavior; it does not establish
-that a peer is allowed to act. A future endpoint must add peer identity,
-authentication, authorization, confidentiality, freshness and replay policy,
-rate controls, deadlines, cancellation, partial-write recovery, and shutdown.
+that a peer is allowed to act. The fixed stdio caller adds a local operation
+deadline and shutdown policy, but not peer identity, authentication,
+authorization, confidentiality, freshness and replay policy, rate controls,
+preemptive cancellation, or partial-write recovery. Any broader or remote
+endpoint must add those controls explicitly.
 See [ADR 0041](../adr/0041-bounded-caller-driven-local-session-executor.md) and
 the [MVP threat model](../threat-model/mvp.md).

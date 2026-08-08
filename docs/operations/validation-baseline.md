@@ -65,6 +65,9 @@ CF041 bounded caller-driven lifecycle, field-wise peer/local/service limit
 intersection, exact terminal correlation, deterministic advancement, and
 payload-redacted service mapping evidence was collected on the CPU profile on
 2026-08-08.
+CF042 fixed-profile inherited-stdio composition, half-duplex live-operation
+scheduling, bounded deadline and stream-fault behavior, plus one controlled
+child-process exchange were collected on 2026-08-09.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -333,11 +336,11 @@ uses an invalid camera, proving the typed revision error precedes both capacity
 and renderer work; default CPU runs compile but do not execute that ignored GPU
 test.
 
-These tests alone do not prove lifecycle sequencing, service error mapping,
-stdin/stdout handling, partial-write recovery, peer identity,
-authentication, authorization, confidentiality, freshness/replay protection,
-rate/tenancy policy, timeout/cancellation, or remote safety. CF041 covers the
-first two in the next boundary; endpoint properties remain separately reviewed.
+These tests alone do not prove lifecycle sequencing, service error mapping, or
+stdin/stdout behavior. CF041 covers the first two, and CF042 supplies one fixed
+local stdio composition. Neither boundary proves partial-write recovery, peer
+identity, authentication, authorization, confidentiality, freshness/replay
+protection, rate/tenancy policy, preemptive cancellation, or remote safety.
 
 ## Controlled local-session executor commands
 
@@ -374,11 +377,54 @@ and orderly close through the real `LocalService` adapter. Ordinary CPU-only
 validation still does not imply that controlled adapter evidence on another
 machine has passed.
 
-These tests do not prove stdin/stdout or pipe ownership, partial-write recovery,
-peer identity, authentication, authorization, confidentiality, freshness and
-remote replay policy, rate/tenancy controls, deadlines, cancellation, process
-supervision, automatic scheduling, or remote safety. Those remain endpoint and
-operations responsibilities.
+These tests do not prove stdin/stdout or pipe ownership. CF042 separately
+supplies one fixed inherited-stdio owner, completion deadline, and half-duplex
+schedule. Partial-write recovery, peer identity, authentication, authorization,
+confidentiality, freshness and remote replay policy, rate/tenancy controls,
+preemptive cancellation, process supervision, configurable scheduling, and
+remote safety remain outside that profile.
+
+## Controlled fixed-profile stdio-session commands
+
+CF042 ran the CLI adapter, fake stream/scheduler boundary, and argument/help
+contract in the ordinary CPU profile:
+
+```text
+cargo fmt --all --check
+cargo clippy -p cogniform-cli --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-cli --all-features --locked --offline
+```
+
+The unit and black-box tests cover exact arguments; terminal preflight; clean
+immediate EOF without service construction; first-frame truncation/corruption;
+hello limit adoption; no next input read while a patch or observation remains
+live; partial/interrupted output; write-zero, prefix-write, and flush failure;
+positive-cadence fake-clock timeout without busy spin; active and pre-hello
+EOF; fatal service frames; executor/service creation failures; and stable
+payload-redacted diagnostics. Each logical output frame is encoded before its
+write and flushed separately, but an operating-system write failure can leave
+a physical prefix and is never retried as a whole frame.
+
+The ignored child-process integration passed in release mode on the controlled
+Windows profile on 2026-08-09:
+
+```text
+cargo test --release -p cogniform-cli --test stdio_session --all-features --locked --offline -- --ignored --nocapture
+```
+
+The parent test owns the pipes and a 30-second kill/reap guard. It drives
+hello, one applied patch, an exact-revision query, one visibility observation,
+and quiescent close through the real 64x64 service, proving exact correlations,
+revision-one evidence, at most one pending response, and no trailing output.
+This evidence applies only to the approved local adapter available on that
+host; it adds no portable GPU or backend claim.
+
+The command's 15-second deadline bounds repeated live-operation completion
+polling at a 2 ms cadence. It does not preempt a blocked input read, output
+write/flush, adapter/service initialization, executor call, or renderer call.
+The command creates no named pipe, listener, socket, process, daemon, shared
+memory lease, configuration profile, remote authentication boundary, or
+automatic restart policy.
 
 ## Controlled vertex-normal commands
 

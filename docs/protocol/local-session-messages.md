@@ -5,6 +5,10 @@ CF040 assigns bounded schema-owned meaning to the control bytes carried by a
 contract, not an executable service, stdio command, process supervisor, pipe,
 listener, socket, or remote protocol.
 
+CF042's separate [`serve-stdio` composition](local-stdio-session.md) executes
+this contract without adding endpoint ownership or scheduling to the schema
+crate.
+
 ## Direction and correlation
 
 `cogniform-local-session` exposes distinct `LocalSessionClientMessage` and
@@ -85,8 +89,9 @@ The session codec provides input bounding, schema validation, canonicalization,
 and corruption-compatible framing composition. It does not authenticate the
 peer, authorize operations, encrypt bytes, provide confidentiality, prevent
 replay, isolate tenants, enforce a rate policy, recover a partially written
-stream, or define a lifecycle state machine. Those properties cannot be
-claimed by a future endpoint merely because it uses these messages.
+stream, or define a lifecycle state machine. The fixed local stdio composition
+does not add those remote-security properties merely because it uses these
+messages.
 
 See [ADR 0040](../adr/0040-bounded-versioned-local-session-messages.md), the
 [core contracts](core-contracts.md), the [local service](local-service.md), and

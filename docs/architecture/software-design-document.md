@@ -73,7 +73,7 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-renderer` | `wgpu` feature negotiation, headless targets, primitive rendering, and color/depth/normal/ID outputs | Consumes extracted render data; never mutable world access |
 | `cogniform-engine` | Bounded channels, domain lifecycle, frame/revision correlation, composition, and complete in-memory restoration | Orchestrates through public interfaces; does not absorb domain state or perform persistence |
 | `cogniform-storage` | Explicit create-new and bounded-load adapters for local recovery envelopes and exact-hash asset sources | Depends on public engine recovery values, replay bounds, and asset identities; owns filesystem authority without world, renderer, replay, decode, or upload access |
-| `cogniform-cli` | Local sample client, replay and diagnostic commands | Composes public engine/protocol interfaces and explicit service adapters such as storage; owns no domain state |
+| `cogniform-cli` | Local sample client, bounded inherited-stdio session, replay, and diagnostic commands | Composes public engine/protocol interfaces and explicit service adapters such as storage and the local-session executor; owns no domain state |
 
 CF006 establishes the semantic compiler as a separate pure crate while its
 offline gateway remains in the engine composition boundary. CF018 establishes
@@ -101,6 +101,11 @@ executor or endpoint ownership. CF041 adds a separate caller-driven executor
 that owns one local service, intersects peer/local/service limits, advances one
 command and one observation poll per explicit call, and releases each live
 correlation exactly once without acquiring endpoint or scheduling authority.
+CF042 composes those accepted boundaries only in the CLI: `serve-stdio` owns one
+inherited redirected stdin/stdout pair, one fixed 64x64 local service, a
+half-duplex driver, a 2 ms completion-poll cadence, and a 15-second deadline for
+each live operation. It creates no listener or child process and does not move
+I/O, scheduling, or endpoint authority into the reusable crates.
 Spatial acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -127,6 +132,7 @@ protocol <- world <- replay
                    +--- CLI
 
 local transport <- local session <- local executor -> engine
+CLI -> local executor
 ```
 
 The diagram shows allowed information flow, not permission to create circular Cargo dependencies. Shared render DTOs belong in a dependency-neutral boundary rather than making world depend on renderer.
@@ -139,7 +145,10 @@ interfaces; none of those narrow adapters reads mutable world or renderer
 state. Local transport receives only caller-owned standard I/O values and does
 not create an endpoint. The local executor composes the schema with engine
 service APIs while leaving both narrower crates unaware of each other; its
-caller explicitly drives every transition. Storage depends on the public
+caller explicitly drives every transition. The CLI's fixed-profile stdio
+composition owns the inherited stream, scheduling, flush, and shutdown policy
+while depending on those existing boundaries; it creates no reverse
+dependency. Storage depends on the public
 recovery and asset identities it persists. The CLI may compose engine and storage but must not
 move filesystem authority into the engine.
 
@@ -271,6 +280,17 @@ at most once per observation, and returns no more than two validated frames.
 Quiescent close is explicit and post-close input cannot reach the service. The
 executor creates no endpoint, runtime loop, thread, timer, retry, deadline, or
 authorization boundary.
+
+The CLI's `serve-stdio` command supplies that missing local runtime policy for
+one deliberately narrow profile. It validates exact arguments and redirected
+standard streams before adapter selection, treats only immediate frame-boundary
+EOF as a clean no-op, negotiates hello limits before subsequent frames, flushes
+each server frame, and drives every admitted patch or observation to a terminal
+result before reading again. Repeated completion polling has a fixed 2 ms
+cadence and 15-second total deadline, but synchronous read, write, flush,
+service initialization, and executor calls are not preempted. A failure may
+leave a physical output prefix and never triggers whole-frame retry or stream
+resynchronization.
 
 ## 4. Rendering and assets
 
@@ -497,6 +517,8 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Observation payload envelope | All five payload kinds round-trip fixed version-one layouts; bounds, canonical values, metadata substitution, truncation, extension, and every-byte corruption reject before decoded output is returned |
 | Local stream framing | Fixed version-one control and observation frames round-trip under short/interrupted I/O; header limits reject before body reads, clean EOF differs from truncation, back-to-back boundaries survive, and malformed/corrupted/substituted input returns no frame |
 | Local-session messages | Every schema-version-one client/server variant round-trips exact LF bytes; direction, version, unknown fields, noncanonical bytes, nesting, substitutions, nested values, receipt roles, frame kind, and effective limits fail closed before returning a message |
+| Local-session executor | One caller-driven service session negotiates field-wise limits, preserves exact patch/observation correlations through deterministic bounded advancement, emits stable failures, and closes only when quiescent |
+| Local stdio session | Exact arguments and redirected streams are checked before adapter selection; immediate EOF is a clean no-op, while complete-session EOF, truncation, corruption, service/executor failure, deadline, write, and flush failures terminate with stable redacted diagnostics and no whole-frame retry |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
 | Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |
@@ -512,7 +534,7 @@ CF009 resolves the initial candidate packaging and validation profile in
 publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
 artifacts, additional texture roles/tangent-space normals and the remaining visual-quality surface, remote
-protocol/authentication, session execution and endpoint lifecycle, tenancy, observation retention, automatic startup,
+protocol/authentication, configurable or multi-client endpoint lifecycle, tenancy, observation retention, automatic startup,
 recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log

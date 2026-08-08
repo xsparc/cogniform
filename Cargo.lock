@@ -137,6 +137,9 @@ name = "cogniform-cli"
 version = "0.0.0"
 dependencies = [
  "cogniform-engine",
+ "cogniform-local-executor",
+ "cogniform-local-session",
+ "cogniform-local-transport",
  "cogniform-protocol",
  "cogniform-storage",
  "pollster",

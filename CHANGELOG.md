@@ -124,6 +124,12 @@ release yet; the current workspace version remains `0.0.0`.
   work with exact bounded correlation and deterministic one-command advance;
   returns at most two validated frames per call; and creates no endpoint,
   thread, timer, process, or automatic polling loop;
+- `cogniform-cli serve-stdio`, a fixed `default-local-64x64` half-duplex binary
+  composition root over inherited redirected stdin/stdout, with pre-adapter
+  argument/terminal/first-EOF handling, immediate post-hello negotiated frame
+  policy, individual frame flush, 2 millisecond capped polling, a 15 second
+  live-operation deadline, fatal service-frame handling, and stable redacted
+  diagnostics;
 - separate immutable exact-hash asset-source files with pre-I/O size and
   identity checks, shared create-new/sync/cleanup guarantees, bounded
   regular-file loading, and explicit restart rehydration evidence;
@@ -132,6 +138,11 @@ release yet; the current workspace version remains `0.0.0`.
   checklist.
 
 ### Changed
+
+- `cogniform-cli` now directly reuses the workspace-local local-transport,
+  local-session, and local-executor crates. `Cargo.lock` gains only those local
+  package edges; no external package, version, checksum, or vendor source
+  changed;
 
 - `cogniform-engine` and `LocalService` add correlated observation-delivery
   polling that retains `ObservationId` on request-specific asynchronous
@@ -200,6 +211,11 @@ release yet; the current workspace version remains `0.0.0`.
 - no supported release, stable crates.io API, remote transport, authentication,
   automatic persistence/startup, snapshot retention, shared memory, model
   integration, deployment, or production SLA;
+- `serve-stdio` supports one inherited-stream client, one fixed 64x64 local
+  service, half-duplex patch/query/observation work, fixed polling/deadline, and
+  negotiated close only. It creates no process or endpoint and supplies no
+  confidentiality, authorization, freshness, replay policy, cancellation,
+  resynchronization, full duplex, multi-client, daemon, or remote guarantee;
 - the validated full-runtime profile is currently Windows 11 x86_64 with a
   Vulkan discrete GPU; other runtime platforms/backends remain unverified;
 - renderer materials support base color plus bounded direct metallic-roughness

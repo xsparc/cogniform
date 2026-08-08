@@ -854,7 +854,7 @@ and the [validation baseline](../operations/validation-baseline.md).
 
 ### PR 39 - CF039: Bounded local stream framing
 
-Outcome: a future stdio agent session can reject declared local-stream bodies
+Outcome: a later stdio agent session can reject declared local-stream bodies
 before allocation and carry complete CF038 observations without inventing a
 second metadata/payload association or opening a remote security boundary.
 
@@ -949,6 +949,33 @@ replay/rate/tenancy policy, deployment, version, or release action. See
 [local-session executor guide](../protocol/local-session-executor.md), and the
 [validation baseline](../operations/validation-baseline.md).
 
+### PR 42 - CF042: Bounded fixed-profile stdio session
+
+Outcome: `cogniform-cli serve-stdio` now composes CF039 framing, CF040 messages,
+and the CF041 executor into the first executable local agent loop over one
+inherited redirected stdin/stdout pair and one fixed 64x64 local service.
+
+Gate: exact arguments and terminal misuse reject before adapter selection. A
+frame-boundary EOF before any frame is a successful no-op; truncation,
+corruption, EOF after a complete pre-hello frame or active hello, service or
+executor failure, output/flush failure, and operation timeout terminate with a
+stable redacted stderr category. Hello is emitted first, its effective frame
+limits apply immediately, every frame is flushed, and admitted patch or
+observation work reaches one terminal response before another input read. Live
+completion uses a positive 2 ms poll cadence and fixed 15-second deadline, with
+no busy spin or whole-frame retry; synchronous I/O, initialization, and
+executor calls are not preempted. A failed write may leave a physical prefix.
+
+The command creates no pipe, process, file, listener, socket, thread, shared
+memory, daemon, configuration profile, remote identity, authentication,
+authorization, confidentiality, freshness/replay/rate/tenancy policy,
+deployment, version, or release action. CPU fake-stream tests cover scheduling
+and fault behavior, while one controlled ignored child-process test proves the
+hello/patch/query/observation/close exchange on an approved local adapter. See
+[ADR 0042](../adr/0042-bounded-fixed-profile-stdio-session.md), the
+[stdio-session guide](../protocol/local-stdio-session.md), and the
+[validation baseline](../operations/validation-baseline.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -957,7 +984,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
-  -> CF038 -> CF039 -> CF040 -> CF041
+  -> CF038 -> CF039 -> CF040 -> CF041 -> CF042
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1135,14 +1162,23 @@ Validation expands with capability:
   exact-revision observation admission ahead of capacity and renderer work;
   and source-compatible engine re-export without endpoint, executor, or GPU
   output changes.
+- CF041: field-wise hello limits, exact patch and observation correlation
+  lifecycle, deterministic bounded advancement, pending-at-most-once behavior,
+  quiescent close, over-limit completion replacement, stable redacted failures,
+  and controlled service composition without endpoint authority.
+- CF042: exact pre-adapter argument/terminal/first-frame behavior, immediate
+  clean EOF, half-duplex no-read-while-live scheduling, negotiated frame
+  limits, partial/interrupted write and flush faults, bounded positive-cadence
+  polling with a fixed deadline, fatal service/executor handling, and one
+  controlled ignored child-process exchange.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
 ## 6. Deferred roadmap
 
-After the MVP and only with evidence: an executor that maps the versioned local
-messages to the typed service, a bounded stdio composition root over CF039,
-shared-memory observation leases,
+After the MVP and only with evidence: configurable stdio profiles, named-pipe
+or socket creation, multiple clients, full-duplex scheduling, process
+supervision, shared-memory observation leases,
 authenticated gRPC/QUIC transport, Wasmtime procedures,
 KTX2/mesh optimization, advanced culling/batching, model bridge, Gaussian
 splat plugin, browser target, fleet orchestration, and high availability. Each

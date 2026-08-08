@@ -47,5 +47,6 @@ earlier one and links the history.
 | [0039](0039-bounded-local-stream-framing.md) | Accepted | Bound local stream bodies from a fixed header before allocation and carry complete causal observations |
 | [0040](0040-bounded-versioned-local-session-messages.md) | Accepted | Define bounded direction-specific local-session control messages and exact-revision observation requests |
 | [0041](0041-bounded-caller-driven-local-session-executor.md) | Accepted | Execute one bounded caller-driven local session with exact correlation lifecycle and no endpoint authority |
+| [0042](0042-bounded-fixed-profile-stdio-session.md) | Accepted | Compose one bounded fixed-profile half-duplex session over inherited redirected standard I/O |
 
 New records use four sections: context, decision, consequences, and status.
