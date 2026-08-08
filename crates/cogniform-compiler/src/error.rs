@@ -1,6 +1,6 @@
 use core::fmt;
 
-use cogniform_compilation::CompilationValidationError;
+use cogniform_compilation::{CompilationCodecError, CompilationValidationError};
 use cogniform_protocol::{SceneRevision, ValidationError};
 
 /// Deterministic compilation failure that prevents a normalized result.
@@ -26,6 +26,8 @@ pub enum CompileError {
     InvalidNormalizedPatch(ValidationError),
     /// The completed report violated its versioned result contract.
     InvalidCompilationResult(CompilationValidationError),
+    /// The completed report could not fit its bounded canonical representation.
+    InvalidCompilationEncoding(CompilationCodecError),
 }
 
 impl fmt::Display for CompileError {
@@ -51,6 +53,9 @@ impl fmt::Display for CompileError {
             Self::InvalidCompilationResult(error) => {
                 write!(formatter, "invalid compilation result: {error}")
             }
+            Self::InvalidCompilationEncoding(error) => {
+                write!(formatter, "invalid compilation result encoding: {error}")
+            }
         }
     }
 }
@@ -60,6 +65,7 @@ impl std::error::Error for CompileError {
         match self {
             Self::InvalidImagination(error) | Self::InvalidNormalizedPatch(error) => Some(error),
             Self::InvalidCompilationResult(error) => Some(error),
+            Self::InvalidCompilationEncoding(error) => Some(error),
             Self::SceneRevisionMismatch { .. } | Self::EntityIdDerivationExhausted { .. } => None,
         }
     }

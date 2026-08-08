@@ -13,6 +13,7 @@ use cogniform_local_executor::{
 };
 use cogniform_local_session::{
     LocalSessionServerKind, SessionFailureCode, decode_server_control_frame,
+    decode_server_control_frame_with_limits,
 };
 use cogniform_local_transport::{LocalFrame, LocalFrameConfig, read_frame, write_frame};
 
@@ -176,6 +177,7 @@ where
 fn closed_result(status: LocalExecutorStatus) -> Result<(), ServeStdioError> {
     if status.live_correlations == 0
         && status.pending_patches == 0
+        && status.pending_imaginations == 0
         && status.pending_observations == 0
     {
         Ok(())
@@ -187,6 +189,8 @@ fn closed_result(status: LocalExecutorStatus) -> Result<(), ServeStdioError> {
 fn validate_status(status: LocalExecutorStatus) -> Result<(), ServeStdioError> {
     let pending = status
         .pending_patches
+        .checked_add(status.pending_imaginations)
+        .ok_or(ServeStdioError::ExecutorFailed)?
         .checked_add(status.pending_observations)
         .ok_or(ServeStdioError::ExecutorFailed)?;
     if pending > status.live_correlations
@@ -269,32 +273,66 @@ impl SessionDriver for LocalSessionExecutor {
         frames: &[LocalFrame],
         frame_config: &LocalFrameConfig,
     ) -> Result<bool, ServeStdioError> {
-        output_contains_fatal_service_failure(frames, frame_config)
+        if let Some(limits) = self.negotiated_compilation_limits() {
+            output_contains_fatal_service_failure_with(frames, frame_config, |frame, config| {
+                decode_server_control_frame_with_limits(frame, config, &limits)
+                    .map(|(_, message)| message)
+            })
+        } else {
+            output_contains_fatal_service_failure_with(frames, frame_config, |frame, config| {
+                decode_server_control_frame(frame, config).map(|(_, message)| message)
+            })
+        }
     }
 }
 
+#[cfg(test)]
 fn output_contains_fatal_service_failure(
     frames: &[LocalFrame],
     frame_config: &LocalFrameConfig,
 ) -> Result<bool, ServeStdioError> {
+    output_contains_fatal_service_failure_with(frames, frame_config, |frame, config| {
+        decode_server_control_frame(frame, config).map(|(_, message)| message)
+    })
+}
+
+fn output_contains_fatal_service_failure_with<F>(
+    frames: &[LocalFrame],
+    frame_config: &LocalFrameConfig,
+    mut decode: F,
+) -> Result<bool, ServeStdioError>
+where
+    F: FnMut(
+        &LocalFrame,
+        &LocalFrameConfig,
+    ) -> Result<
+        cogniform_local_session::LocalSessionServerMessage,
+        cogniform_local_session::LocalSessionError,
+    >,
+{
     for frame in frames {
         let LocalFrame::Control { .. } = frame else {
             continue;
         };
-        let (_, message) = decode_server_control_frame(frame, frame_config)
-            .map_err(|_| ServeStdioError::ExecutorFailed)?;
-        if matches!(
-            message.message,
-            LocalSessionServerKind::Failure(failure)
-                if matches!(
-                    failure.code,
-                    SessionFailureCode::ServiceUnavailable | SessionFailureCode::Internal
-                )
-        ) {
+        let message = decode(frame, frame_config).map_err(|_| ServeStdioError::ExecutorFailed)?;
+        if message_is_fatal_service_failure(&message) {
             return Ok(true);
         }
     }
     Ok(false)
+}
+
+fn message_is_fatal_service_failure(
+    message: &cogniform_local_session::LocalSessionServerMessage,
+) -> bool {
+    matches!(
+        &message.message,
+        LocalSessionServerKind::Failure(failure)
+            if matches!(
+                failure.code,
+                SessionFailureCode::ServiceUnavailable | SessionFailureCode::Internal
+            )
+    )
 }
 
 trait SessionClock {
@@ -367,9 +405,11 @@ impl std::error::Error for ServeStdioError {}
 mod tests {
     use std::{cell::RefCell, collections::VecDeque, io, num::NonZeroU64, rc::Rc};
 
+    use cogniform_compilation::CompilationLimits;
     use cogniform_local_session::{
-        LOCAL_SESSION_SCHEMA_VERSION, LocalSessionServerMessage, SessionFailure,
-        server_control_frame,
+        LOCAL_SESSION_SCHEMA_VERSION, LOCAL_SESSION_SCHEMA_VERSION_V2, LocalSessionLimits,
+        LocalSessionServerMessage, ServerHello, SessionFailure, server_control_frame,
+        server_control_frame_with_limits,
     };
     use cogniform_local_transport::{LocalFrameLimits, encode_frame};
 
@@ -478,6 +518,7 @@ mod tests {
                 live_correlation_capacity: 8,
                 max_output_frames_per_call: 2,
                 pending_patches: 0,
+                pending_imaginations: 0,
                 pending_observations: self.live_correlations,
             }
         }
@@ -962,6 +1003,44 @@ mod tests {
                 Ok(expected)
             );
         }
+    }
+
+    #[test]
+    fn production_fatal_classifier_uses_negotiated_v2_compilation_limits() {
+        let config = LocalFrameConfig::default();
+        let compilation_limits = CompilationLimits {
+            max_decisions: core::num::NonZeroU32::new(1).unwrap(),
+            ..CompilationLimits::default()
+        };
+        let frame = server_control_frame_with_limits(
+            NonZeroU64::new(1).unwrap(),
+            &LocalSessionServerMessage {
+                schema_version: LOCAL_SESSION_SCHEMA_VERSION_V2,
+                message: LocalSessionServerKind::Hello(ServerHello {
+                    effective_limits: LocalSessionLimits::from_config(&config).unwrap(),
+                    effective_compilation_limits: Some(compilation_limits),
+                }),
+            },
+            &config,
+            &compilation_limits,
+        )
+        .unwrap();
+
+        assert_eq!(
+            output_contains_fatal_service_failure_with(
+                std::slice::from_ref(&frame),
+                &config,
+                |frame, config| {
+                    decode_server_control_frame_with_limits(frame, config, &compilation_limits)
+                        .map(|(_, message)| message)
+                }
+            ),
+            Ok(false)
+        );
+        assert_eq!(
+            output_contains_fatal_service_failure(&[frame], &config),
+            Err(ServeStdioError::ExecutorFailed)
+        );
     }
 
     #[test]

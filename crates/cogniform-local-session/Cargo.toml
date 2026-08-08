@@ -9,6 +9,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+cogniform-compilation.workspace = true
 cogniform-local-transport.workspace = true
 cogniform-protocol.workspace = true
 serde.workspace = true

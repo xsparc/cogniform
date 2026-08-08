@@ -2,14 +2,21 @@
 
 use core::num::{NonZeroU16, NonZeroU32, NonZeroU64};
 
+use cogniform_compilation::{
+    COMPILATION_SCHEMA_VERSION, CompilationLimits, CompilationResult, UnresolvedConstraint,
+    UnresolvedConstraintCode,
+};
 use cogniform_local_session::{
-    ClientHello, LOCAL_SESSION_SCHEMA_VERSION, LocalSessionClientKind, LocalSessionClientMessage,
-    LocalSessionError, LocalSessionLimits, LocalSessionServerKind, LocalSessionServerMessage,
-    LocalSessionValidationKind, ObservationReference, PatchAdmission, PatchAdmissionStatus,
-    PatchCompletion, QueryRequest, QueryResponse, RequestObservation, ServerHello, SessionClose,
-    SessionClosed, SessionFailure, SessionFailureCode, SubmitPatch, client_control_frame,
-    decode_client_control_frame, decode_client_message, decode_server_control_frame,
-    decode_server_message, encode_client_message, encode_server_message, server_control_frame,
+    ClientHello, ImaginationAdmission, ImaginationAdmissionStatus, ImaginationCompletion,
+    LOCAL_SESSION_SCHEMA_VERSION, LOCAL_SESSION_SCHEMA_VERSION_V2, LocalSessionClientKind,
+    LocalSessionClientMessage, LocalSessionError, LocalSessionLimits, LocalSessionServerKind,
+    LocalSessionServerMessage, LocalSessionValidationKind, ObservationReference, PatchAdmission,
+    PatchAdmissionStatus, PatchCompletion, QueryRequest, QueryResponse, RequestObservation,
+    ServerHello, SessionClose, SessionClosed, SessionFailure, SessionFailureCode,
+    SubmitImagination, SubmitPatch, client_control_frame, decode_client_control_frame,
+    decode_client_message, decode_server_control_frame, decode_server_message,
+    decode_server_message_with_limits, encode_client_message, encode_server_message,
+    encode_server_message_with_limits, server_control_frame,
 };
 use cogniform_local_transport::{
     LOCAL_FRAME_HEADER_BYTES, LocalFrame, LocalFrameConfig, LocalFrameLimits,
@@ -17,10 +24,11 @@ use cogniform_local_transport::{
 use cogniform_observation::ObservationPayload;
 use cogniform_protocol::{
     ApplyReceipt, ApplyStatus, ApplyTiming, ConflictPolicy, DeleteEntity, DeliverySemantic,
-    FrameId, IdempotencyKey, ObservationId, ObservationKind, ObservationMetadata,
-    ObservationQuality, ObservationRequest, ObservationStaleness, PatchBudget, RuntimeLimits,
-    SceneOperation, ScenePatch, SceneQuery, SceneQueryResult, SceneRevision, SchemaVersion,
-    StableEntityId, TransactionId,
+    FrameId, IdempotencyKey, ImaginationBudget, ImaginationEnvelope, ImaginationId, ImaginedEntity,
+    ObservationId, ObservationKind, ObservationMetadata, ObservationQuality, ObservationRequest,
+    ObservationStaleness, PatchBudget, PositiveF32, PositiveVec3, PrimitiveComponent,
+    PrimitiveShape, RuntimeLimits, SceneOperation, ScenePatch, SceneQuery, SceneQueryResult,
+    SceneRevision, SceneText, SchemaVersion, StableEntityId, TransactionId,
 };
 
 const CLIENT_HELLO_FIXTURE: &[u8] = include_bytes!("fixtures/client_hello_v1.json");
@@ -41,6 +49,14 @@ const SERVER_OBSERVATION_PENDING_FIXTURE: &[u8] =
     include_bytes!("fixtures/server_observation_pending_v1.json");
 const SERVER_FAILURE_FIXTURE: &[u8] = include_bytes!("fixtures/server_failure_v1.json");
 const SERVER_CLOSED_FIXTURE: &[u8] = include_bytes!("fixtures/server_closed_v1.json");
+const CLIENT_HELLO_V2_FIXTURE: &[u8] = include_bytes!("fixtures/client_hello_v2.json");
+const CLIENT_IMAGINATION_V2_FIXTURE: &[u8] =
+    include_bytes!("fixtures/client_submit_imagination_v2.json");
+const SERVER_HELLO_V2_FIXTURE: &[u8] = include_bytes!("fixtures/server_hello_v2.json");
+const SERVER_IMAGINATION_COMPLETED_V2_FIXTURE: &[u8] =
+    include_bytes!("fixtures/server_imagination_completed_v2.json");
+const SERVER_IMAGINATION_REPLAYED_UNRESOLVED_V2_FIXTURE: &[u8] =
+    include_bytes!("fixtures/server_imagination_replayed_unresolved_v2.json");
 
 fn id(value: u128) -> StableEntityId {
     StableEntityId::new(value).unwrap()
@@ -107,6 +123,88 @@ fn receipt(status: ApplyStatus) -> ApplyReceipt {
     }
 }
 
+fn imagination() -> ImaginationEnvelope {
+    ImaginationEnvelope {
+        schema_version: SchemaVersion::V1,
+        imagination_id: ImaginationId::new(1).unwrap(),
+        transaction_id: TransactionId::new(1).unwrap(),
+        idempotency_key: IdempotencyKey::new(2).unwrap(),
+        base_revision: SceneRevision::new(7),
+        delivery: DeliverySemantic::MustApply,
+        seed: 11,
+        declared_budget: ImaginationBudget::default(),
+        entities: vec![ImaginedEntity {
+            key: SceneText::new("table").unwrap(),
+            preferred_id: None,
+            name: None,
+            primitive: PrimitiveComponent {
+                shape: PrimitiveShape::Cuboid,
+                dimensions: PositiveVec3 {
+                    x: PositiveF32::new(1.0).unwrap(),
+                    y: PositiveF32::new(1.0).unwrap(),
+                    z: PositiveF32::new(1.0).unwrap(),
+                },
+            },
+            transform: None,
+            material: None,
+        }],
+        relations: Vec::new(),
+        constraints: Vec::new(),
+    }
+}
+
+fn compiled_result() -> CompilationResult {
+    CompilationResult {
+        schema_version: COMPILATION_SCHEMA_VERSION,
+        imagination_id: ImaginationId::new(1).unwrap(),
+        scene_revision: SceneRevision::new(7),
+        patch: Some(patch()),
+        decisions: Vec::new(),
+        unresolved: Vec::new(),
+    }
+}
+
+fn unresolved_result() -> CompilationResult {
+    CompilationResult {
+        schema_version: COMPILATION_SCHEMA_VERSION,
+        imagination_id: ImaginationId::new(1).unwrap(),
+        scene_revision: SceneRevision::new(7),
+        patch: None,
+        decisions: Vec::new(),
+        unresolved: vec![UnresolvedConstraint {
+            code: UnresolvedConstraintCode::RequiredEntityMissing,
+            relation_index: None,
+            constraint_index: Some(0),
+            entity_key: None,
+            related_key: None,
+            entity_id: Some(id(3)),
+        }],
+    }
+}
+
+fn v2_client(message: LocalSessionClientKind) -> LocalSessionClientMessage {
+    LocalSessionClientMessage {
+        schema_version: LOCAL_SESSION_SCHEMA_VERSION_V2,
+        message,
+    }
+}
+
+fn v2_server(message: LocalSessionServerKind) -> LocalSessionServerMessage {
+    LocalSessionServerMessage {
+        schema_version: LOCAL_SESSION_SCHEMA_VERSION_V2,
+        message,
+    }
+}
+
+fn completion(result: CompilationResult, status: Option<ApplyStatus>) -> ImaginationCompletion {
+    ImaginationCompletion {
+        imagination_id: ImaginationId::new(1).unwrap(),
+        idempotency_key: IdempotencyKey::new(2).unwrap(),
+        compilation: result,
+        receipt: status.map(receipt),
+    }
+}
+
 fn client(message: LocalSessionClientKind) -> LocalSessionClientMessage {
     LocalSessionClientMessage {
         schema_version: LOCAL_SESSION_SCHEMA_VERSION,
@@ -168,6 +266,7 @@ fn exact_schema_v1_fixtures_are_stable_and_lf_terminated() {
         (
             client(LocalSessionClientKind::Hello(ClientHello {
                 receive_limits: session_limits(),
+                compilation_receive_limits: None,
             })),
             CLIENT_HELLO_FIXTURE,
         ),
@@ -208,6 +307,7 @@ fn exact_schema_v1_fixtures_are_stable_and_lf_terminated() {
         (
             server(LocalSessionServerKind::Hello(ServerHello {
                 effective_limits: session_limits(),
+                effective_compilation_limits: None,
             })),
             SERVER_HELLO_FIXTURE,
         ),
@@ -259,11 +359,299 @@ fn exact_schema_v1_fixtures_are_stable_and_lf_terminated() {
 }
 
 #[test]
+fn schema_v2_negotiates_compilation_and_round_trips_imagination_roles() {
+    let config = config();
+    let compilation_limits = CompilationLimits::default();
+    let hello = v2_client(LocalSessionClientKind::Hello(ClientHello {
+        receive_limits: session_limits(),
+        compilation_receive_limits: Some(compilation_limits),
+    }));
+    let submit = v2_client(LocalSessionClientKind::SubmitImagination(
+        SubmitImagination {
+            imagination: imagination(),
+        },
+    ));
+    for message in [hello, submit] {
+        let encoded = encode_client_message(&message, &config).unwrap();
+        assert_eq!(decode_client_message(&encoded, &config).unwrap(), message);
+    }
+
+    let compiled = completion(compiled_result(), Some(ApplyStatus::Applied));
+    let unresolved = completion(unresolved_result(), None);
+    let replayed = completion(
+        compiled.compilation.clone(),
+        Some(ApplyStatus::IdempotentReplay),
+    );
+    let messages = [
+        v2_server(LocalSessionServerKind::Hello(ServerHello {
+            effective_limits: session_limits(),
+            effective_compilation_limits: Some(compilation_limits),
+        })),
+        v2_server(LocalSessionServerKind::ImaginationAdmission(
+            ImaginationAdmission {
+                imagination_id: ImaginationId::new(1).unwrap(),
+                idempotency_key: IdempotencyKey::new(2).unwrap(),
+                status: ImaginationAdmissionStatus::Queued,
+            },
+        )),
+        v2_server(LocalSessionServerKind::ImaginationAdmission(
+            ImaginationAdmission {
+                imagination_id: ImaginationId::new(1).unwrap(),
+                idempotency_key: IdempotencyKey::new(2).unwrap(),
+                status: ImaginationAdmissionStatus::AlreadyQueued,
+            },
+        )),
+        v2_server(LocalSessionServerKind::ImaginationAdmission(
+            ImaginationAdmission {
+                imagination_id: ImaginationId::new(1).unwrap(),
+                idempotency_key: IdempotencyKey::new(2).unwrap(),
+                status: ImaginationAdmissionStatus::Superseded {
+                    superseded_idempotency_key: IdempotencyKey::new(3).unwrap(),
+                },
+            },
+        )),
+        v2_server(LocalSessionServerKind::ImaginationAdmission(
+            ImaginationAdmission {
+                imagination_id: ImaginationId::new(1).unwrap(),
+                idempotency_key: IdempotencyKey::new(2).unwrap(),
+                status: ImaginationAdmissionStatus::Dropped,
+            },
+        )),
+        v2_server(LocalSessionServerKind::ImaginationAdmission(
+            ImaginationAdmission {
+                imagination_id: ImaginationId::new(1).unwrap(),
+                idempotency_key: IdempotencyKey::new(2).unwrap(),
+                status: ImaginationAdmissionStatus::Replayed {
+                    completion: Box::new(replayed),
+                },
+            },
+        )),
+        v2_server(LocalSessionServerKind::ImaginationCompleted(compiled)),
+        v2_server(LocalSessionServerKind::ImaginationCompleted(unresolved)),
+    ];
+    for message in messages {
+        let encoded =
+            encode_server_message_with_limits(&message, &config, &compilation_limits).unwrap();
+        assert_eq!(
+            decode_server_message_with_limits(&encoded, &config, &compilation_limits).unwrap(),
+            message
+        );
+    }
+}
+
+#[test]
+fn exact_schema_v2_fixtures_are_stable_and_lf_terminated() {
+    let config = config();
+    let limits = CompilationLimits::default();
+    let clients = [
+        (
+            v2_client(LocalSessionClientKind::Hello(ClientHello {
+                receive_limits: session_limits(),
+                compilation_receive_limits: Some(limits),
+            })),
+            CLIENT_HELLO_V2_FIXTURE,
+        ),
+        (
+            v2_client(LocalSessionClientKind::SubmitImagination(
+                SubmitImagination {
+                    imagination: imagination(),
+                },
+            )),
+            CLIENT_IMAGINATION_V2_FIXTURE,
+        ),
+    ];
+    for (message, fixture) in clients {
+        assert_eq!(encode_client_message(&message, &config).unwrap(), fixture);
+        assert_eq!(decode_client_message(fixture, &config).unwrap(), message);
+        assert_eq!(fixture.last(), Some(&b'\n'));
+    }
+
+    let servers = [
+        (
+            v2_server(LocalSessionServerKind::Hello(ServerHello {
+                effective_limits: session_limits(),
+                effective_compilation_limits: Some(limits),
+            })),
+            SERVER_HELLO_V2_FIXTURE,
+        ),
+        (
+            v2_server(LocalSessionServerKind::ImaginationCompleted(completion(
+                compiled_result(),
+                Some(ApplyStatus::Applied),
+            ))),
+            SERVER_IMAGINATION_COMPLETED_V2_FIXTURE,
+        ),
+        (
+            v2_server(LocalSessionServerKind::ImaginationAdmission(
+                ImaginationAdmission {
+                    imagination_id: ImaginationId::new(1).unwrap(),
+                    idempotency_key: IdempotencyKey::new(2).unwrap(),
+                    status: ImaginationAdmissionStatus::Replayed {
+                        completion: Box::new(completion(unresolved_result(), None)),
+                    },
+                },
+            )),
+            SERVER_IMAGINATION_REPLAYED_UNRESOLVED_V2_FIXTURE,
+        ),
+    ];
+    for (message, fixture) in servers {
+        assert_eq!(
+            encode_server_message_with_limits(&message, &config, &limits).unwrap(),
+            fixture
+        );
+        assert_eq!(
+            decode_server_message_with_limits(fixture, &config, &limits).unwrap(),
+            message
+        );
+        assert_eq!(fixture.last(), Some(&b'\n'));
+    }
+}
+
+#[test]
+fn schema_versions_and_imagination_result_roles_fail_closed() {
+    let config = config();
+    let compilation_limits = CompilationLimits::default();
+    let v1_imagination = client(LocalSessionClientKind::SubmitImagination(
+        SubmitImagination {
+            imagination: imagination(),
+        },
+    ));
+    assert!(matches!(
+        encode_client_message(&v1_imagination, &config),
+        Err(LocalSessionError::InvalidMessage(error))
+            if error.kind() == LocalSessionValidationKind::InvalidVersionVariant
+    ));
+    let v2_without_compilation = v2_client(LocalSessionClientKind::Hello(ClientHello {
+        receive_limits: session_limits(),
+        compilation_receive_limits: None,
+    }));
+    assert!(matches!(
+        encode_client_message(&v2_without_compilation, &config),
+        Err(LocalSessionError::InvalidMessage(error))
+            if error.kind() == LocalSessionValidationKind::InvalidVersionVariant
+    ));
+    let v1_with_compilation = client(LocalSessionClientKind::Hello(ClientHello {
+        receive_limits: session_limits(),
+        compilation_receive_limits: Some(compilation_limits),
+    }));
+    assert!(matches!(
+        encode_client_message(&v1_with_compilation, &config),
+        Err(LocalSessionError::InvalidMessage(error))
+            if error.kind() == LocalSessionValidationKind::InvalidVersionVariant
+    ));
+
+    let mut mismatched = completion(compiled_result(), Some(ApplyStatus::Applied));
+    mismatched.idempotency_key = IdempotencyKey::new(99).unwrap();
+    let mismatched = v2_server(LocalSessionServerKind::ImaginationCompleted(mismatched));
+    assert!(matches!(
+        encode_server_message_with_limits(&mismatched, &config, &compilation_limits),
+        Err(LocalSessionError::InvalidMessage(error))
+            if error.kind() == LocalSessionValidationKind::InvalidImaginationCompletion
+    ));
+
+    let wrong_replay_role = v2_server(LocalSessionServerKind::ImaginationAdmission(
+        ImaginationAdmission {
+            imagination_id: ImaginationId::new(1).unwrap(),
+            idempotency_key: IdempotencyKey::new(2).unwrap(),
+            status: ImaginationAdmissionStatus::Replayed {
+                completion: Box::new(completion(compiled_result(), Some(ApplyStatus::Applied))),
+            },
+        },
+    ));
+    assert!(matches!(
+        encode_server_message_with_limits(&wrong_replay_role, &config, &compilation_limits),
+        Err(LocalSessionError::InvalidMessage(error))
+            if error.kind() == LocalSessionValidationKind::InvalidImaginationCompletion
+    ));
+
+    let mut narrow = compilation_limits;
+    let compiled = v2_server(LocalSessionServerKind::ImaginationCompleted(completion(
+        compiled_result(),
+        Some(ApplyStatus::Applied),
+    )));
+    let exact_compilation_bytes =
+        if let LocalSessionServerKind::ImaginationCompleted(value) = &compiled.message {
+            value
+                .compilation
+                .to_canonical_json(&compilation_limits)
+                .unwrap()
+                .len()
+        } else {
+            unreachable!()
+        };
+    narrow.max_encoded_bytes =
+        NonZeroU64::new(u64::try_from(exact_compilation_bytes).unwrap()).unwrap();
+    encode_server_message_with_limits(&compiled, &config, &narrow).unwrap();
+    narrow.max_encoded_bytes = NonZeroU64::new(
+        u64::try_from(exact_compilation_bytes)
+            .unwrap()
+            .checked_sub(1)
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        encode_server_message_with_limits(&compiled, &config, &narrow),
+        Err(LocalSessionError::InvalidMessage(error))
+            if error.kind() == LocalSessionValidationKind::InvalidCompilationResult
+    ));
+}
+
+#[test]
+fn v2_server_codecs_require_explicit_limits_and_enforce_outer_nesting() {
+    let config = config();
+    let compilation_limits = CompilationLimits::default();
+    let completed = v2_server(LocalSessionServerKind::ImaginationCompleted(completion(
+        compiled_result(),
+        Some(ApplyStatus::Applied),
+    )));
+    let replayed = v2_server(LocalSessionServerKind::ImaginationAdmission(
+        ImaginationAdmission {
+            imagination_id: ImaginationId::new(1).unwrap(),
+            idempotency_key: IdempotencyKey::new(2).unwrap(),
+            status: ImaginationAdmissionStatus::Replayed {
+                completion: Box::new(completion(
+                    compiled_result(),
+                    Some(ApplyStatus::IdempotentReplay),
+                )),
+            },
+        },
+    ));
+
+    for message in [completed, replayed] {
+        let encoded =
+            encode_server_message_with_limits(&message, &config, &compilation_limits).unwrap();
+        assert!(matches!(
+            encode_server_message(&message, &config),
+            Err(LocalSessionError::InvalidMessage(error))
+                if error.kind() == LocalSessionValidationKind::InvalidCompilationLimits
+        ));
+        assert!(matches!(
+            decode_server_message(&encoded, &config),
+            Err(LocalSessionError::InvalidMessage(error))
+                if error.kind() == LocalSessionValidationKind::InvalidCompilationLimits
+        ));
+
+        let depth = max_json_nesting(&encoded);
+        let mut exact = config.clone();
+        exact.runtime_limits.max_json_nesting_depth = NonZeroU16::new(depth).unwrap();
+        encode_server_message_with_limits(&message, &exact, &compilation_limits).unwrap();
+        exact.runtime_limits.max_json_nesting_depth =
+            NonZeroU16::new(depth.checked_sub(1).unwrap()).unwrap();
+        assert!(matches!(
+            encode_server_message_with_limits(&message, &exact, &compilation_limits),
+            Err(LocalSessionError::NestingLimitExceeded { actual, limit })
+                if actual == depth && limit == depth - 1
+        ));
+    }
+}
+
+#[test]
 fn every_client_message_round_trips_under_core_limits() {
     let config = config();
     let messages = [
         client(LocalSessionClientKind::Hello(ClientHello {
             receive_limits: session_limits(),
+            compilation_receive_limits: None,
         })),
         client(LocalSessionClientKind::SubmitPatch(SubmitPatch {
             patch: patch(),
@@ -301,6 +689,7 @@ fn every_server_message_round_trips_under_core_limits() {
     let messages = [
         server(LocalSessionServerKind::Hello(ServerHello {
             effective_limits: session_limits(),
+            effective_compilation_limits: None,
         })),
         server(LocalSessionServerKind::PatchAdmission(PatchAdmission {
             idempotency_key: IdempotencyKey::new(2).unwrap(),
@@ -361,7 +750,7 @@ fn direction_version_unknown_and_canonical_substitutions_are_rejected() {
         Err(LocalSessionError::WrongDirection)
     ));
 
-    let unsupported = b"{\"schema_version\":2,\"message\":{\"close\":{}}}\n";
+    let unsupported = b"{\"schema_version\":3,\"message\":{\"close\":{}}}\n";
     assert!(matches!(
         decode_client_message(unsupported, &config),
         Err(LocalSessionError::InvalidMessage(error))
@@ -565,6 +954,7 @@ fn advertised_limits_must_be_self_consistent() {
     limits.max_control_message_bytes = limits.max_frame_bytes;
     let hello = client(LocalSessionClientKind::Hello(ClientHello {
         receive_limits: limits,
+        compilation_receive_limits: None,
     }));
     assert!(matches!(
         encode_client_message(&hello, &config()),
@@ -581,6 +971,7 @@ fn server_effective_limits_cannot_exceed_the_active_receive_configuration() {
         NonZeroU32::new(limits.max_visibility_entries.get().checked_add(1).unwrap()).unwrap();
     let hello = server(LocalSessionServerKind::Hello(ServerHello {
         effective_limits: limits,
+        effective_compilation_limits: None,
     }));
     assert!(matches!(
         encode_server_message(&hello, &config),
@@ -615,4 +1006,33 @@ fn runtime_encoded_limit_is_part_of_the_effective_message_cap() {
         decode_client_message(CLIENT_CLOSE_FIXTURE, &config),
         Err(LocalSessionError::MessageLimitExceeded { limit: 32, .. })
     ));
+}
+
+fn max_json_nesting(encoded: &[u8]) -> u16 {
+    let mut depth = 0_u16;
+    let mut maximum = 0_u16;
+    let mut in_string = false;
+    let mut escaped = false;
+    for byte in encoded {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if *byte == b'\\' {
+                escaped = true;
+            } else if *byte == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match *byte {
+            b'"' => in_string = true,
+            b'{' | b'[' => {
+                depth = depth.saturating_add(1);
+                maximum = maximum.max(depth);
+            }
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    maximum
 }

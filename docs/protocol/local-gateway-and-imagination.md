@@ -4,7 +4,11 @@ Status: implemented by CF006 for offline in-process use; CF016 routes service
 procedure output through the unchanged patch gateway, CF031 adds monotonic
 oldest-pending command age to aggregate status, and CF043 gives compiler
 outcomes a bounded transport-neutral value contract without changing gateway
-execution.
+execution. CF044 maps those existing gateway outcomes into local-session
+schema version two. Before semantic admission, the quiescent service may
+narrow the compiler's result bounds to the negotiated session policy; the
+compiler validates complete canonical bytes and nesting before the gateway can
+apply an optional normalized patch.
 
 The current gateway is a Rust composition API, not a network service. It
 accepts typed `ScenePatch` and `ImaginationEnvelope` values, owns one
@@ -139,4 +143,6 @@ for the package and lifecycle decision and
 for service procedure composition, and
 [ADR 0031](../adr/0031-monotonic-pending-work-age-status.md) for transient age
 semantics, and [ADR 0043](../adr/0043-bounded-transport-neutral-compilation-results.md)
-for the versioned result boundary.
+for the versioned result boundary. The separate
+[ADR 0044](../adr/0044-versioned-local-imagination-session-mapping.md) records
+the bounded local-session mapping.

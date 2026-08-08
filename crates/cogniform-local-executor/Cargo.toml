@@ -12,6 +12,7 @@ publish = false
 workspace = true
 
 [dependencies]
+cogniform-compilation.workspace = true
 cogniform-engine.workspace = true
 cogniform-local-session.workspace = true
 cogniform-local-transport.workspace = true

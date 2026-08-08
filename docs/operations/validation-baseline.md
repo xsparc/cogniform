@@ -71,6 +71,9 @@ child-process exchange were collected on 2026-08-09.
 CF043 bounded transport-neutral compilation-result schema, canonical encoding,
 resource accounting, outcome invariants, and compiler compatibility evidence
 were collected on the CPU profile on 2026-08-09.
+CF044 local-session version-two compilation-limit negotiation, imagination
+admission/completion/replay, typed mixed-command correlation, and unchanged
+version-one byte evidence were collected on the CPU profile on 2026-08-09.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -327,8 +330,8 @@ cargo clippy -p cogniform-protocol -p cogniform-local-session -p cogniform-engin
 cargo test -p cogniform-protocol -p cogniform-local-session -p cogniform-engine --all-features --locked --offline
 ```
 
-The session integration tests pin one exact LF-terminated schema-version-one
-fixture for every client/server variant, every variant's CF039 control-frame
+The session integration tests pin one exact LF-terminated fixture for every
+schema-version-one client/server variant, every version-one variant's CF039 control-frame
 round trip, outer-only correlation,
 control-versus-observation frame separation, and direction, version, unknown,
 noncanonical, nested, substitution, truncation, trailing, effective byte,
@@ -365,8 +368,32 @@ RUSTDOCFLAGS="-D warnings" cargo doc -p cogniform-compilation -p cogniform-compi
 The complete workspace gates remain required because the engine consumes the
 compiler re-export and `ScenePatch` adds read-only resource measurements. No
 test opens a stream or endpoint, invokes a model, mutates a service/world, or
-selects a GPU adapter. Passing this contract does not imply that CF040
-schema-version-one sessions transport imagination or compilation results.
+selects a GPU adapter. CF040 schema-version-one sessions still do not transport
+imagination or compilation results; CF044 adds that mapping only in version two.
+
+## Versioned local imagination-session commands
+
+CF044 extends the same CPU profile across the session, executor, and CLI
+composition without adding an external dependency:
+
+```text
+cargo fmt --all --check
+cargo clippy -p cogniform-compilation -p cogniform-compiler -p cogniform-engine -p cogniform-local-session -p cogniform-local-executor -p cogniform-cli --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-compilation -p cogniform-compiler -p cogniform-engine -p cogniform-local-session -p cogniform-local-executor -p cogniform-cli --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc -p cogniform-compilation -p cogniform-compiler -p cogniform-engine -p cogniform-local-session -p cogniform-local-executor -p cogniform-cli --no-deps --all-features --locked --offline
+cargo test --release -p cogniform-cli --test stdio_session controlled_child_completes_v2_imagination_query_observation_replay_and_close --locked --offline -- --ignored
+```
+
+Exact version-one fixtures remain unchanged. Exact version-two hello,
+imagination submission, compiled completion, and unresolved replay fixtures
+pin canonical bytes. Executor tests cover field-wise compilation limits,
+compiler enforcement before application, version lock, every admission status,
+compiled/unresolved receipt roles, submitted transaction/revision binding,
+both mixed-kind supersession directions, service errors, exact correlation
+release, and replay without a second process call. The CLI black-box suite includes a controlled
+ignored version-two child-process flow for hello, imagination, patch, query,
+observation, replay, and close on an approved adapter. Ordinary CPU validation
+compiles but does not execute that GPU-dependent test.
 
 ## Controlled local-session executor commands
 

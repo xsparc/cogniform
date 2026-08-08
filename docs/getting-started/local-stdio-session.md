@@ -25,12 +25,21 @@ socket, listener, shared memory, or daemon.
 ## Session flow
 
 1. Send one client hello framed under the default local frame configuration.
-2. Read and validate the server hello under its negotiated effective limits.
-   Use those limits for every later client frame and server frame.
-3. Send one patch, exact-revision query, or exact-revision observation request.
+   Use schema version one for the original patch flow, or schema version two
+   and include `compilation_receive_limits` for semantic imagination.
+2. Read and validate a schema-version-two server hello using the compilation
+   limits advertised by the client. The effective limits returned by that
+   hello then govern every later client frame and server frame. Schema version
+   one retains its original default-limit flow.
+3. Send one patch, a version-two `submit_imagination`, exact-revision query, or
+   exact-revision observation request.
 4. Read every immediate response. If the request remains live, continue reading
    until its terminal completion before sending the next request. An
-   `observation_pending` response is not terminal.
+   `observation_pending` response is not terminal. A queued imagination first
+   yields `imagination_admission`, then `imagination_completed`. `queued` and
+   `superseded` retain the new imagination correlation; `already_queued`,
+   `dropped`, and `replayed` are terminal for the new correlation. A replayed
+   admission already carries the cached completion.
 5. When no work is live, send close and wait for the flushed `closed` response.
 6. Close or reap the child process. A successful run has empty stderr and stdout
    that decodes completely as CF039 frames.
@@ -38,7 +47,7 @@ socket, listener, shared memory, or daemon.
 The command always creates one `default-local-64x64` service. Each live
 operation has a fixed 15 second completion-polling deadline and polls no more
 often than every 2 milliseconds after its immediate advance. Neither value is
-configurable in CF042.
+configurable in this fixed profile.
 
 Immediate EOF before the first frame exits successfully without selecting an
 adapter. Once a frame has started, truncation or corruption is fatal. EOF after

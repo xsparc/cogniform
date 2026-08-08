@@ -1,16 +1,19 @@
 use core::num::{NonZeroU32, NonZeroU64};
 
+use cogniform_compilation::{CompilationLimits, CompilationResult};
 use cogniform_local_transport::{LOCAL_FRAME_HEADER_BYTES, LocalFrameConfig, LocalFrameLimits};
 use cogniform_protocol::{
-    ApplyReceipt, ApplyStatus, IdempotencyKey, ObservationId, ObservationRequest, RuntimeLimits,
-    ScenePatch, SceneQuery, SceneQueryResult, SceneRevision,
+    ApplyReceipt, ApplyStatus, IdempotencyKey, ImaginationEnvelope, ImaginationId, ObservationId,
+    ObservationRequest, RuntimeLimits, ScenePatch, SceneQuery, SceneQueryResult, SceneRevision,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{LocalSessionValidationError, LocalSessionValidationKind};
 
-/// The only local-session control-message schema supported by this crate.
+/// Original local-session schema retained byte-for-byte for existing callers.
 pub const LOCAL_SESSION_SCHEMA_VERSION: u16 = 1;
+/// Local-session schema version that adds bounded semantic imagination.
+pub const LOCAL_SESSION_SCHEMA_VERSION_V2: u16 = 2;
 
 /// Bounded receive limits exchanged during the explicit hello handshake.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -206,6 +209,56 @@ fn intersect_runtime_limits(left: RuntimeLimits, right: RuntimeLimits) -> Runtim
     }
 }
 
+/// Selects the internally consistent field-wise intersection of compilation limits.
+pub fn intersect_compilation_limits(
+    left: CompilationLimits,
+    right: CompilationLimits,
+) -> Result<CompilationLimits, LocalSessionValidationError> {
+    validate_compilation_limits(&left)?;
+    validate_compilation_limits(&right)?;
+    let patch_limits = intersect_runtime_limits(left.patch_limits, right.patch_limits);
+    let limits = CompilationLimits {
+        max_encoded_bytes: left.max_encoded_bytes.min(right.max_encoded_bytes),
+        max_decoded_bytes: left.max_decoded_bytes.min(right.max_decoded_bytes),
+        max_json_nesting_depth: left
+            .max_json_nesting_depth
+            .min(right.max_json_nesting_depth),
+        max_text_bytes: left.max_text_bytes.min(right.max_text_bytes),
+        max_decisions: left.max_decisions.min(right.max_decisions),
+        max_unresolved_constraints: left
+            .max_unresolved_constraints
+            .min(right.max_unresolved_constraints),
+        patch_limits,
+    };
+    validate_compilation_limits(&limits)?;
+    Ok(limits)
+}
+
+/// Validates one advertised compilation-limit value.
+pub fn validate_compilation_limits(
+    limits: &CompilationLimits,
+) -> Result<(), LocalSessionValidationError> {
+    if limits.patch_limits.max_components_per_entity > limits.patch_limits.max_components {
+        return Err(LocalSessionValidationError::new(
+            LocalSessionValidationKind::InvalidCompilationLimits,
+            "compilation_limits.patch_limits.max_components_per_entity",
+        ));
+    }
+    Ok(())
+}
+
+/// Reports whether proposed compilation limits fit within available policy.
+#[must_use]
+pub fn compilation_limits_fit(proposed: &CompilationLimits, available: &CompilationLimits) -> bool {
+    proposed.max_encoded_bytes <= available.max_encoded_bytes
+        && proposed.max_decoded_bytes <= available.max_decoded_bytes
+        && proposed.max_json_nesting_depth <= available.max_json_nesting_depth
+        && proposed.max_text_bytes <= available.max_text_bytes
+        && proposed.max_decisions <= available.max_decisions
+        && proposed.max_unresolved_constraints <= available.max_unresolved_constraints
+        && runtime_limits_fit(&proposed.patch_limits, &available.patch_limits)
+}
+
 /// One versioned client-to-service local control message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -216,7 +269,7 @@ pub struct LocalSessionClientMessage {
     pub message: LocalSessionClientKind,
 }
 
-/// Client-to-service message variants admitted by schema version one.
+/// Client-to-service message variants across supported session versions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LocalSessionClientKind {
@@ -224,6 +277,8 @@ pub enum LocalSessionClientKind {
     Hello(ClientHello),
     /// Submits one bounded core scene patch.
     SubmitPatch(SubmitPatch),
+    /// Submits one bounded semantic imagination under schema version two.
+    SubmitImagination(SubmitImagination),
     /// Requests one exact-revision logical query.
     Query(QueryRequest),
     /// Requests one exact-revision machine observation.
@@ -238,6 +293,9 @@ pub enum LocalSessionClientKind {
 pub struct ClientHello {
     /// Bounds the client promises to enforce for server output.
     pub receive_limits: LocalSessionLimits,
+    /// Bounds compilation results the client accepts; required only in version two.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compilation_receive_limits: Option<CompilationLimits>,
 }
 
 /// One scene-patch submission.
@@ -246,6 +304,14 @@ pub struct ClientHello {
 pub struct SubmitPatch {
     /// Core schema-owned patch value.
     pub patch: ScenePatch,
+}
+
+/// One semantic-imagination submission.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubmitImagination {
+    /// Core schema-owned semantic request.
+    pub imagination: ImaginationEnvelope,
 }
 
 /// One exact-revision query request.
@@ -279,7 +345,7 @@ pub struct LocalSessionServerMessage {
     pub message: LocalSessionServerKind,
 }
 
-/// Service-to-client message variants emitted by schema version one.
+/// Service-to-client message variants across supported session versions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LocalSessionServerKind {
@@ -289,6 +355,10 @@ pub enum LocalSessionServerKind {
     PatchAdmission(PatchAdmission),
     /// Reports the committed result of one admitted patch.
     PatchCompleted(PatchCompletion),
+    /// Reports immediate imagination admission without implying compilation.
+    ImaginationAdmission(ImaginationAdmission),
+    /// Reports the deterministic compilation and optional committed patch receipt.
+    ImaginationCompleted(ImaginationCompletion),
     /// Returns one exact-revision logical query result.
     QueryResult(QueryResponse),
     /// Confirms observation work was accepted.
@@ -307,6 +377,9 @@ pub enum LocalSessionServerKind {
 pub struct ServerHello {
     /// Effective limits for this local session.
     pub effective_limits: LocalSessionLimits,
+    /// Effective compilation-result limits; present only in version two.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_compilation_limits: Option<CompilationLimits>,
 }
 
 /// Immediate result of patch admission.
@@ -347,6 +420,54 @@ pub enum PatchAdmissionStatus {
 pub struct PatchCompletion {
     /// Newly applied receipt; replay responses are admission outcomes instead.
     pub receipt: ApplyReceipt,
+}
+
+/// Immediate result of semantic-imagination admission.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImaginationAdmission {
+    /// Identity of the submitted semantic request.
+    pub imagination_id: ImaginationId,
+    /// Idempotency key identifying the submitted request.
+    pub idempotency_key: IdempotencyKey,
+    /// Admission outcome without compilation or world-mutation side effects.
+    pub status: ImaginationAdmissionStatus,
+}
+
+/// Stable semantic-imagination admission outcomes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImaginationAdmissionStatus {
+    /// New semantic work was queued.
+    Queued,
+    /// Identical semantic work was already queued.
+    AlreadyQueued,
+    /// New latest-value work replaced older uncommitted work.
+    Superseded {
+        /// Key of the discarded uncommitted command.
+        superseded_idempotency_key: IdempotencyKey,
+    },
+    /// Best-effort work was dropped without admission.
+    Dropped,
+    /// A retained exact result was returned without recompilation or mutation.
+    Replayed {
+        /// Cached compilation and replay-marked receipt, when compilation produced a patch.
+        completion: Box<ImaginationCompletion>,
+    },
+}
+
+/// Completed semantic compilation and its optional patch-application result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImaginationCompletion {
+    /// Identity of the source semantic request.
+    pub imagination_id: ImaginationId,
+    /// Idempotency key of the source semantic request.
+    pub idempotency_key: IdempotencyKey,
+    /// Exact bounded deterministic compiler result.
+    pub compilation: CompilationResult,
+    /// Apply receipt when and only when compilation produced a patch.
+    pub receipt: Option<ApplyReceipt>,
 }
 
 /// One exact-revision query response.
@@ -410,19 +531,42 @@ pub enum SessionFailureCode {
 pub struct SessionClosed {}
 
 pub(crate) trait SessionValidate {
-    fn validate(&self, config: &LocalFrameConfig) -> Result<(), LocalSessionValidationError>;
+    fn validate(
+        &self,
+        config: &LocalFrameConfig,
+        compilation_limits: Option<&CompilationLimits>,
+    ) -> Result<(), LocalSessionValidationError>;
 }
 
 impl SessionValidate for LocalSessionClientMessage {
-    fn validate(&self, config: &LocalFrameConfig) -> Result<(), LocalSessionValidationError> {
+    fn validate(
+        &self,
+        config: &LocalFrameConfig,
+        _compilation_limits: Option<&CompilationLimits>,
+    ) -> Result<(), LocalSessionValidationError> {
         validate_version(self.schema_version)?;
         let limits = &config.runtime_limits;
         match &self.message {
-            LocalSessionClientKind::Hello(hello) => hello.receive_limits.validate(),
+            LocalSessionClientKind::Hello(hello) => {
+                hello.receive_limits.validate()?;
+                validate_client_hello(self.schema_version, hello)
+            }
             LocalSessionClientKind::SubmitPatch(value) => {
                 value.patch.validate_with_limits(limits).map_err(|error| {
                     LocalSessionValidationError::protocol("message.submit_patch.patch", error)
                 })
+            }
+            LocalSessionClientKind::SubmitImagination(value) => {
+                require_v2(self.schema_version, "message.submit_imagination")?;
+                value
+                    .imagination
+                    .validate_with_limits(limits)
+                    .map_err(|error| {
+                        LocalSessionValidationError::protocol(
+                            "message.submit_imagination.imagination",
+                            error,
+                        )
+                    })
             }
             LocalSessionClientKind::Query(value) => {
                 value.query.validate_with_limits(limits).map_err(|error| {
@@ -443,13 +587,39 @@ impl SessionValidate for LocalSessionClientMessage {
 }
 
 impl SessionValidate for LocalSessionServerMessage {
-    fn validate(&self, config: &LocalFrameConfig) -> Result<(), LocalSessionValidationError> {
+    fn validate(
+        &self,
+        config: &LocalFrameConfig,
+        compilation_limits: Option<&CompilationLimits>,
+    ) -> Result<(), LocalSessionValidationError> {
         validate_version(self.schema_version)?;
+        let requires_explicit_compilation_limits = matches!(
+            &self.message,
+            LocalSessionServerKind::Hello(_)
+                | LocalSessionServerKind::ImaginationCompleted(_)
+                | LocalSessionServerKind::ImaginationAdmission(ImaginationAdmission {
+                    status: ImaginationAdmissionStatus::Replayed { .. },
+                    ..
+                })
+        );
+        if self.schema_version == LOCAL_SESSION_SCHEMA_VERSION_V2
+            && compilation_limits.is_none()
+            && requires_explicit_compilation_limits
+        {
+            return Err(LocalSessionValidationError::new(
+                LocalSessionValidationKind::InvalidCompilationLimits,
+                "message.version_two.explicit_compilation_limits",
+            ));
+        }
         let limits = &config.runtime_limits;
+        let default_compilation_limits = CompilationLimits::for_runtime_limits(*limits);
+        let compilation_limits = compilation_limits.unwrap_or(&default_compilation_limits);
+        validate_compilation_limits(compilation_limits)?;
         match &self.message {
             LocalSessionServerKind::Hello(hello) => {
                 hello.effective_limits.validate()?;
-                hello.effective_limits.fits_within_config(config)
+                hello.effective_limits.fits_within_config(config)?;
+                validate_server_hello(self.schema_version, hello, compilation_limits)
             }
             LocalSessionServerKind::PatchAdmission(value) => value.validate(limits),
             LocalSessionServerKind::PatchCompleted(value) => {
@@ -470,6 +640,14 @@ impl SessionValidate for LocalSessionServerMessage {
                 }
                 Ok(())
             }
+            LocalSessionServerKind::ImaginationAdmission(value) => {
+                require_v2(self.schema_version, "message.imagination_admission")?;
+                value.validate(limits, compilation_limits)
+            }
+            LocalSessionServerKind::ImaginationCompleted(value) => {
+                require_v2(self.schema_version, "message.imagination_completed")?;
+                value.validate(limits, compilation_limits, ApplyStatus::Applied)
+            }
             LocalSessionServerKind::QueryResult(value) => {
                 value.result.validate_with_limits(limits).map_err(|error| {
                     LocalSessionValidationError::protocol("message.query_result.result", error)
@@ -480,6 +658,79 @@ impl SessionValidate for LocalSessionServerMessage {
             | LocalSessionServerKind::Failure(_)
             | LocalSessionServerKind::Closed(_) => Ok(()),
         }
+    }
+}
+
+impl LocalSessionClientMessage {
+    /// Validates one message under explicit frame and compilation-result bounds.
+    pub fn validate_with_limits(
+        &self,
+        config: &LocalFrameConfig,
+        compilation_limits: &CompilationLimits,
+    ) -> Result<(), LocalSessionValidationError> {
+        self.validate(config, Some(compilation_limits))
+    }
+}
+
+impl LocalSessionServerMessage {
+    /// Validates one message under explicit negotiated frame and compilation bounds.
+    pub fn validate_with_limits(
+        &self,
+        config: &LocalFrameConfig,
+        compilation_limits: &CompilationLimits,
+    ) -> Result<(), LocalSessionValidationError> {
+        self.validate(config, Some(compilation_limits))
+    }
+}
+
+fn validate_client_hello(
+    version: u16,
+    hello: &ClientHello,
+) -> Result<(), LocalSessionValidationError> {
+    match (version, hello.compilation_receive_limits.as_ref()) {
+        (LOCAL_SESSION_SCHEMA_VERSION, None) => Ok(()),
+        (LOCAL_SESSION_SCHEMA_VERSION_V2, Some(limits)) => {
+            validate_compilation_limits(limits)?;
+            if runtime_limits_fit(&limits.patch_limits, &hello.receive_limits.runtime_limits) {
+                Ok(())
+            } else {
+                Err(LocalSessionValidationError::new(
+                    LocalSessionValidationKind::InvalidCompilationLimits,
+                    "message.hello.compilation_receive_limits.patch_limits",
+                ))
+            }
+        }
+        _ => Err(LocalSessionValidationError::new(
+            LocalSessionValidationKind::InvalidVersionVariant,
+            "message.hello.compilation_receive_limits",
+        )),
+    }
+}
+
+fn validate_server_hello(
+    version: u16,
+    hello: &ServerHello,
+    available: &CompilationLimits,
+) -> Result<(), LocalSessionValidationError> {
+    match (version, hello.effective_compilation_limits.as_ref()) {
+        (LOCAL_SESSION_SCHEMA_VERSION, None) => Ok(()),
+        (LOCAL_SESSION_SCHEMA_VERSION_V2, Some(limits)) => {
+            validate_compilation_limits(limits)?;
+            if compilation_limits_fit(limits, available)
+                && runtime_limits_fit(&limits.patch_limits, &hello.effective_limits.runtime_limits)
+            {
+                Ok(())
+            } else {
+                Err(LocalSessionValidationError::new(
+                    LocalSessionValidationKind::InvalidCompilationLimits,
+                    "message.hello.effective_compilation_limits",
+                ))
+            }
+        }
+        _ => Err(LocalSessionValidationError::new(
+            LocalSessionValidationKind::InvalidVersionVariant,
+            "message.hello.effective_compilation_limits",
+        )),
     }
 }
 
@@ -515,8 +766,96 @@ impl PatchAdmission {
     }
 }
 
+impl ImaginationAdmission {
+    fn validate(
+        &self,
+        runtime_limits: &RuntimeLimits,
+        compilation_limits: &CompilationLimits,
+    ) -> Result<(), LocalSessionValidationError> {
+        if let ImaginationAdmissionStatus::Superseded {
+            superseded_idempotency_key,
+        } = &self.status
+            && *superseded_idempotency_key == self.idempotency_key
+        {
+            return Err(LocalSessionValidationError::new(
+                LocalSessionValidationKind::InvalidImaginationAdmission,
+                "message.imagination_admission.status.superseded.superseded_idempotency_key",
+            ));
+        }
+        if let ImaginationAdmissionStatus::Replayed { completion } = &self.status {
+            if completion.imagination_id != self.imagination_id
+                || completion.idempotency_key != self.idempotency_key
+            {
+                return Err(LocalSessionValidationError::new(
+                    LocalSessionValidationKind::InvalidImaginationAdmission,
+                    "message.imagination_admission.status.replayed.completion",
+                ));
+            }
+            completion.validate(
+                runtime_limits,
+                compilation_limits,
+                ApplyStatus::IdempotentReplay,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl ImaginationCompletion {
+    fn validate(
+        &self,
+        runtime_limits: &RuntimeLimits,
+        compilation_limits: &CompilationLimits,
+        expected_status: ApplyStatus,
+    ) -> Result<(), LocalSessionValidationError> {
+        self.compilation
+            .to_canonical_json(compilation_limits)
+            .map_err(|_| {
+                LocalSessionValidationError::new(
+                    LocalSessionValidationKind::InvalidCompilationResult,
+                    "message.imagination_completed.compilation",
+                )
+            })?;
+        if self.compilation.imagination_id != self.imagination_id {
+            return Err(invalid_imagination_completion(
+                "message.imagination_completed.imagination_id",
+            ));
+        }
+        match (&self.compilation.patch, &self.receipt) {
+            (Some(patch), Some(receipt)) => {
+                receipt
+                    .validate_with_limits(runtime_limits)
+                    .map_err(|error| {
+                        LocalSessionValidationError::protocol(
+                            "message.imagination_completed.receipt",
+                            error,
+                        )
+                    })?;
+                let operation_count = u32::try_from(patch.operations.len()).unwrap_or(u32::MAX);
+                if receipt.status != expected_status
+                    || self.idempotency_key != patch.idempotency_key
+                    || receipt.idempotency_key != self.idempotency_key
+                    || receipt.transaction_id != patch.transaction_id
+                    || receipt.previous_revision != self.compilation.scene_revision
+                    || patch.base_revision != self.compilation.scene_revision
+                    || receipt.operation_count.get() != operation_count
+                {
+                    return Err(invalid_imagination_completion(
+                        "message.imagination_completed.receipt",
+                    ));
+                }
+                Ok(())
+            }
+            (None, None) => Ok(()),
+            _ => Err(invalid_imagination_completion(
+                "message.imagination_completed.receipt",
+            )),
+        }
+    }
+}
+
 fn validate_version(version: u16) -> Result<(), LocalSessionValidationError> {
-    if version == LOCAL_SESSION_SCHEMA_VERSION {
+    if version == LOCAL_SESSION_SCHEMA_VERSION || version == LOCAL_SESSION_SCHEMA_VERSION_V2 {
         Ok(())
     } else {
         Err(LocalSessionValidationError::new(
@@ -524,6 +863,24 @@ fn validate_version(version: u16) -> Result<(), LocalSessionValidationError> {
             "schema_version",
         ))
     }
+}
+
+fn require_v2(version: u16, field: &'static str) -> Result<(), LocalSessionValidationError> {
+    if version == LOCAL_SESSION_SCHEMA_VERSION_V2 {
+        Ok(())
+    } else {
+        Err(LocalSessionValidationError::new(
+            LocalSessionValidationKind::InvalidVersionVariant,
+            field,
+        ))
+    }
+}
+
+fn invalid_imagination_completion(field: &'static str) -> LocalSessionValidationError {
+    LocalSessionValidationError::new(
+        LocalSessionValidationKind::InvalidImaginationCompletion,
+        field,
+    )
 }
 
 fn invalid_limits(field: &'static str) -> LocalSessionValidationError {

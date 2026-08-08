@@ -124,6 +124,17 @@ telemetry, paid service, model, endpoint, or persistence requirement is added.
 The crate owns bounded typed values and canonical JSON only; compiler execution
 remains in `cogniform-compiler`.
 
+## Existing imagination-session reuse
+
+CF044 adds workspace-local `cogniform-compilation` edges to
+`cogniform-local-session` and `cogniform-local-executor`, plus a test-only edge
+from `cogniform-cli`. It adds no external package, version, checksum, feature,
+build script, unsafe code, native code, runtime download, network, telemetry,
+paid service, model, endpoint, or persistence requirement. The session crate
+owns only the typed version-two mapping and bounded canonical validation; the
+executor delegates execution to the existing local service, and the CLI edge
+constructs controlled test values only.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

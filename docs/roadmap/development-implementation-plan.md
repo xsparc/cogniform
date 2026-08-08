@@ -1001,6 +1001,27 @@ deployment, version, or release action. See
 [compilation result guide](../protocol/compilation-results.md), and the
 [validation baseline](../operations/validation-baseline.md).
 
+### PR 44 - CF044: Versioned local imagination session mapping
+
+Outcome: a local parent can submit one bounded semantic imagination and receive
+its deterministic compilation and optional applied patch receipt through the
+existing caller-driven executor and fixed inherited-stdio endpoint.
+
+Gate: local-session schema version two preserves every schema-version-one byte
+and operation, requires explicit `CompilationLimits` hello negotiation, and
+adds imagination submission, admission, completion, and exact retained replay.
+Nested imagination, compilation, patch, receipt, identity, revision,
+idempotency, and role invariants fail closed. Negotiated compilation bounds are
+installed before semantic work is admitted, so an over-limit result fails
+before patch application. The executor uses one typed patch/imagination FIFO,
+preserves all gateway admission semantics, terminates superseded and failed
+correlations exactly once, compiles/applies only during explicit advancement,
+and never processes a replay twice. The generic stdio driver remains
+half-duplex and unchanged except for pending-imagination accounting. See
+[ADR 0044](../adr/0044-versioned-local-imagination-session-mapping.md), the
+[message guide](../protocol/local-session-messages.md), and the
+[executor guide](../protocol/local-session-executor.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1009,7 +1030,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
-  -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043
+  -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1201,13 +1222,19 @@ Validation expands with capability:
   patch bounds; version/unknown/code-field/order/duplicate/outcome/revision/
   substitution/truncation/trailing rejection; compiler re-export compatibility;
   and unchanged normalized patch behavior without session or I/O work.
+- CF044: unchanged exact version-one fixtures; exact version-two hello,
+  imagination, completion, and replay fixtures; field-wise compilation-limit
+  negotiation; mixed-version and malformed-role rejection; every imagination
+  admission outcome; compiled/unresolved completion; mixed-command
+  supersession; service-error release; exact replay without duplicate
+  processing or mutation; and one controlled ignored version-two child-process
+  exchange.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
 ## 6. Deferred roadmap
 
-After the MVP and only with evidence: versioned imagination/compilation session
-mapping and correlation, configurable stdio profiles, named-pipe or socket
+After the MVP and only with evidence: configurable stdio profiles, named-pipe or socket
 creation, multiple clients, full-duplex scheduling, process supervision,
 shared-memory observation leases,
 authenticated gRPC/QUIC transport, Wasmtime procedures,

@@ -49,5 +49,6 @@ earlier one and links the history.
 | [0041](0041-bounded-caller-driven-local-session-executor.md) | Accepted | Execute one bounded caller-driven local session with exact correlation lifecycle and no endpoint authority |
 | [0042](0042-bounded-fixed-profile-stdio-session.md) | Accepted | Compose one bounded fixed-profile half-duplex session over inherited redirected standard I/O |
 | [0043](0043-bounded-transport-neutral-compilation-results.md) | Accepted | Represent compiler outcomes as bounded canonical transport-neutral values without moving execution |
+| [0044](0044-versioned-local-imagination-session-mapping.md) | Accepted | Map bounded imagination compilation into local-session version two without changing version-one bytes |
 
 New records use four sections: context, decision, consequences, and status.
