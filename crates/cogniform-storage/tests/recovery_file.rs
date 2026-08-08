@@ -76,7 +76,9 @@ fn persisted_recovery_restores_and_continues_exact_causality() {
 
         restored
             .request_observation(ObservationRequest {
+                schema_version: SchemaVersion::V1,
                 observation_id: ObservationId::new(800).unwrap(),
+                scene_revision: SceneRevision::new(2),
                 camera_id: report.camera_id,
                 kind: ObservationKind::EntityId,
                 quality: ObservationQuality::Low,

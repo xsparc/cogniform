@@ -256,7 +256,12 @@ pub fn run_canonical_scenario(
     let queried_entities = verify_query(service, final_revision, table_id)?;
     let color_observation = request_and_wait(
         service,
-        observation_request(COLOR_OBSERVATION_ID, camera_id, ObservationKind::Color),
+        observation_request(
+            COLOR_OBSERVATION_ID,
+            final_revision,
+            camera_id,
+            ObservationKind::Color,
+        ),
         final_revision,
         config.observation_timeout,
     )?;
@@ -273,6 +278,7 @@ pub fn run_canonical_scenario(
         service,
         observation_request(
             ENTITY_ID_OBSERVATION_ID,
+            final_revision,
             camera_id,
             ObservationKind::EntityId,
         ),
@@ -288,6 +294,7 @@ pub fn run_canonical_scenario(
         service,
         observation_request(
             VISIBILITY_OBSERVATION_ID,
+            final_revision,
             camera_id,
             ObservationKind::Visibility,
         ),
@@ -609,12 +616,15 @@ fn patch(
 
 fn observation_request(
     observation_id: u128,
+    scene_revision: SceneRevision,
     camera_id: StableEntityId,
     kind: ObservationKind,
 ) -> ObservationRequest {
     ObservationRequest {
+        schema_version: SchemaVersion::V1,
         observation_id: ObservationId::new(observation_id)
             .expect("canonical observation identity is non-zero"),
+        scene_revision,
         camera_id,
         kind,
         quality: ObservationQuality::Low,

@@ -97,6 +97,15 @@ streams after local delivery, without entering renderer submission or worker
 completion. See the
 [local stream-framing guide](../protocol/local-stream-framing.md).
 
+CF040 moves `ObservationRequest` to the backend-neutral protocol boundary and
+adds mandatory schema version plus exact expected scene revision. The engine
+rejects mismatch before reserving its global observation slot or asking the
+renderer for a frame, then checks the completed source revision again. The
+session schema can carry this request and report accepted/pending state, while
+the renderer output and completed CF039 observation representation stay
+unchanged. See the
+[local-session message guide](../protocol/local-session-messages.md).
+
 The extracted draw path currently supports cuboids, centered XY planes, fixed
 unit-diameter spheres, explicitly resident approved GLB meshes, and perspective
 cameras. An unavailable asset uses its exact explicit primitive fallback;

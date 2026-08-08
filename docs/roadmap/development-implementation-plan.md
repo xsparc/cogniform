@@ -886,6 +886,41 @@ authenticating a writer. See
 [local stream-framing guide](../protocol/local-stream-framing.md), and the
 [validation baseline](../operations/validation-baseline.md).
 
+### PR 40 - CF040: Bounded local-session control messages
+
+Outcome: one local patch/query/observation agent loop has interoperable,
+direction-specific, versioned control semantics before any stdio endpoint or
+service executor owns ambient I/O or scheduling.
+
+Gate: a new `cogniform-local-session` crate defines compact canonical
+LF-terminated schema-version-one client and server messages carried only by
+CF039 control frames. The outer non-zero frame value is the sole correlation
+identity. Hello exchanges self-consistent receive/effective limits; patches
+separate immediate queued/already-queued/superseded/dropped/replayed admission
+from newly applied completion; queries and observations require exact scene
+revisions; observation acceptance/pending remains separate from the eventual
+complete CF039 observation frame; failure codes are stable and payload-redacted;
+and close is explicit.
+
+Decode rejects complete bytes and nesting before deserialization, then rejects
+direction/version/unknown/nested semantic failures before returning a value,
+and finally requires exact canonical re-encoding. Bounded output serialization
+does not first allocate an unbounded intermediate value. The effective control
+ceiling is the minimum of core encoded, frame control, and post-header complete
+frame limits.
+
+Implemented contract: `ObservationRequest` moves to `cogniform-protocol` with
+engine re-export compatibility, mandatory core schema version, exact expected
+revision, and canonical bounded JSON. The engine rejects mismatch before
+capacity reservation or renderer submission and verifies completion source
+revision. No stream, stdin/stdout, pipe, process, file, shared memory, listener,
+socket, service driver, scheduler, automatic queue processing, polling loop,
+timeout/cancellation, authentication, authorization, confidentiality, replay
+protection, tenancy, rate policy, deployment, version, or release action is
+added. See [ADR 0040](../adr/0040-bounded-versioned-local-session-messages.md),
+the [local-session message guide](../protocol/local-session-messages.md), and
+the [validation baseline](../operations/validation-baseline.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -894,7 +929,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
-  -> CF038 -> CF039
+  -> CF038 -> CF039 -> CF040
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1065,13 +1100,21 @@ Validation expands with capability:
   trailing borrowed input; every-byte corruption, metadata substitution,
   noncanonical metadata, invalid nested payload, writer prevalidation, stable
   I/O categories, and debug/error redaction without endpoint or GPU work.
+- CF040: one exact LF-terminated schema-v1 fixture and CF039 control-frame round
+  trip for every client/server variant; outer-only correlation; direction, version, unknown-field,
+  noncanonical, nesting, substitution, truncation, trailing, nested-value,
+  advertised/effective-limit, receipt-role, and observation-frame rejection;
+  exact-revision observation admission ahead of capacity and renderer work;
+  and source-compatible engine re-export without endpoint, executor, or GPU
+  output changes.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
 ## 6. Deferred roadmap
 
-After the MVP and only with evidence: a versioned stdio operation/session
-protocol over the bounded local frame, shared-memory observation leases,
+After the MVP and only with evidence: an executor that maps the versioned local
+messages to the typed service, a bounded stdio composition root over CF039,
+shared-memory observation leases,
 authenticated gRPC/QUIC transport, Wasmtime procedures,
 KTX2/mesh optimization, advanced culling/batching, model bridge, Gaussian
 splat plugin, browser target, fleet orchestration, and high availability. Each

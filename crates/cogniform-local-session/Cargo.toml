@@ -1,0 +1,21 @@
+[package]
+name = "cogniform-local-session"
+description = "Bounded versioned local-session messages for Cogniform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+cogniform-local-transport.workspace = true
+cogniform-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+cogniform-observation.workspace = true
+
+[lints]
+workspace = true

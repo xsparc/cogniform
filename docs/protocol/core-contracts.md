@@ -109,9 +109,17 @@ before accepting `normal` metadata.
 CF039 composes canonical metadata and the payload envelope into an optional
 bounded local stream frame. Its fixed header exposes control and bulk lengths
 so all outer limits reject before declared-body allocation. Generic control
-bytes deliberately remain owned by a future session schema; the framing layer
-does not parse or authorize them. See the
-[local stream-framing guide](local-stream-framing.md).
+bytes remain opaque to the framing layer. CF040's separate session schema now
+defines their canonical local patch/query/observation meaning without making
+the frame codec execute or authorize them. See the
+[local stream-framing guide](local-stream-framing.md) and
+[local-session message guide](local-session-messages.md).
+
+`ObservationRequest` is a backend-neutral core value. It requires schema
+version, observation ID, exact expected scene revision, camera ID, kind, and
+quality. Canonical bounded JSON is available independently of engine use. The
+engine retains a compatibility re-export and rejects schema or revision
+mismatch before observation capacity or renderer work.
 
 ## Imaginations and logical queries
 

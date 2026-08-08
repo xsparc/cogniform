@@ -79,6 +79,17 @@ telemetry, or paid-service requirement. The adapter owns only framing and
 caller-supplied `std::io`; endpoint and session policy remain outside the
 crate.
 
+## Existing local-session reuse
+
+CF040 adds one workspace-local `cogniform-local-session` crate over the
+existing workspace-local protocol and local-transport crates. It reuses the
+exact-pinned vendored `serde` and `serde_json` packages already in the lockfile
+and adds no external package, version, checksum, build script, unsafe code,
+native code, runtime download, network, telemetry, or paid-service
+requirement. Its test-only observation edge constructs an existing frame kind;
+the production crate owns only typed values, canonical bounded JSON, and frame
+adaptation without I/O or execution.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

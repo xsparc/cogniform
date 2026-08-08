@@ -15,8 +15,8 @@ use cogniform_replay::{
 use cogniform_world::{AuthoritativeWorld, LogicalSceneHash, WorldConfig};
 
 use crate::{
-    EngineError, EngineRecoveryPoint, Observation, ObservationQueue, ObservationRequest,
-    RecoveryInspection,
+    EngineError, EngineRecoveryPoint, Observation, ObservationError, ObservationQueue,
+    ObservationRequest, RecoveryInspection,
 };
 
 /// Bounds and domain configuration for one local engine instance.
@@ -301,6 +301,17 @@ impl CogniformEngine {
 
     /// Submits one extracted-scene observation without waiting for readback or consumers.
     pub fn request_observation(&mut self, request: ObservationRequest) -> Result<(), EngineError> {
+        request
+            .validate_with_limits(&self.runtime_limits())
+            .map_err(ObservationError::InvalidRequest)?;
+        let current_revision = self.revision();
+        if request.scene_revision != current_revision {
+            return Err(ObservationError::RequestRevisionMismatch {
+                requested: request.scene_revision,
+                current: current_revision,
+            }
+            .into());
+        }
         let permit = self.observations.try_reserve()?;
         let pending = self.renderer.submit_scene(request.camera_id)?;
         self.observations

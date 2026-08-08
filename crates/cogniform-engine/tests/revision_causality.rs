@@ -114,9 +114,16 @@ fn initial_patch(camera: StableEntityId, cube: StableEntityId) -> ScenePatch {
     )
 }
 
-fn request(nonce: u128, camera_id: StableEntityId, kind: ObservationKind) -> ObservationRequest {
+fn request(
+    nonce: u128,
+    scene_revision: SceneRevision,
+    camera_id: StableEntityId,
+    kind: ObservationKind,
+) -> ObservationRequest {
     ObservationRequest {
+        schema_version: SchemaVersion::V1,
         observation_id: ObservationId::new(nonce).unwrap(),
+        scene_revision,
         camera_id,
         kind,
         quality: ObservationQuality::Low,
@@ -132,6 +139,49 @@ fn wait_for(engine: &CogniformEngine) -> Observation {
         assert!(Instant::now() < deadline, "observation timed out");
         std::thread::yield_now();
     }
+}
+
+fn assert_revision_rejects_before_capacity_and_renderer(engine: &mut CogniformEngine) {
+    assert!(matches!(
+        engine.request_observation(request(
+            12,
+            SceneRevision::INITIAL,
+            id(999),
+            ObservationKind::Depth,
+        )),
+        Err(EngineError::Observation(
+            ObservationError::RequestRevisionMismatch {
+                requested: SceneRevision::INITIAL,
+                current,
+            }
+        )) if current == SceneRevision::new(1)
+    ));
+    assert!(matches!(
+        engine.request_observation(request(
+            13,
+            SceneRevision::new(2),
+            id(999),
+            ObservationKind::Depth,
+        )),
+        Err(EngineError::Observation(
+            ObservationError::RequestRevisionMismatch { requested, current }
+        )) if requested == SceneRevision::new(2) && current == SceneRevision::new(1)
+    ));
+    assert_eq!(engine.outstanding_observations(), 1);
+}
+
+fn assert_capacity_remains_full(engine: &mut CogniformEngine, camera: StableEntityId) {
+    assert!(matches!(
+        engine.request_observation(request(
+            11,
+            SceneRevision::new(1),
+            camera,
+            ObservationKind::Depth,
+        )),
+        Err(EngineError::Observation(
+            ObservationError::CapacityExceeded { capacity: 1 }
+        ))
+    ));
 }
 
 fn assert_observation_metadata(
@@ -189,16 +239,17 @@ fn extracted_frames_and_bounded_observations_preserve_revision_causality() {
     assert_eq!(engine.renderer().extraction_generation(), generation);
 
     engine
-        .request_observation(request(10, camera, ObservationKind::EntityId))
+        .request_observation(request(
+            10,
+            SceneRevision::new(1),
+            camera,
+            ObservationKind::EntityId,
+        ))
         .unwrap();
     assert_eq!(engine.outstanding_observations(), 1);
     assert!(engine.oldest_outstanding_observation_age_micros().is_some());
-    assert!(matches!(
-        engine.request_observation(request(11, camera, ObservationKind::Depth)),
-        Err(EngineError::Observation(
-            ObservationError::CapacityExceeded { capacity: 1 }
-        ))
-    ));
+    assert_revision_rejects_before_capacity_and_renderer(&mut engine);
+    assert_capacity_remains_full(&mut engine, camera);
 
     engine
         .apply_patch(&patch(
@@ -234,7 +285,7 @@ fn extracted_frames_and_bounded_observations_preserve_revision_causality() {
         (23, ObservationKind::Normal),
     ] {
         engine
-            .request_observation(request(nonce, camera, kind))
+            .request_observation(request(nonce, SceneRevision::new(2), camera, kind))
             .unwrap();
         let observation = wait_for(&engine);
         assert_observation_metadata(&observation, nonce, camera, kind);

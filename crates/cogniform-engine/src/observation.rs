@@ -15,25 +15,12 @@ use cogniform_observation::{
     encode_payload,
 };
 use cogniform_protocol::{
-    ImageDimensions, ObservationId, ObservationKind, ObservationMetadata, ObservationQuality,
+    ImageDimensions, ObservationKind, ObservationMetadata, ObservationRequest,
     ObservationStaleness, RuntimeLimits, SceneRevision, SchemaVersion, StableEntityId,
 };
 use cogniform_renderer::{PendingFrame, RenderedFrame};
 
 use crate::ObservationError;
-
-/// One bounded request for a machine-readable frame observation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ObservationRequest {
-    /// Public identity of the requested result.
-    pub observation_id: ObservationId,
-    /// Stable extracted camera identity.
-    pub camera_id: StableEntityId,
-    /// Requested payload kind.
-    pub kind: ObservationKind,
-    /// Requested quality tier.
-    pub quality: ObservationQuality,
-}
 
 /// Completed bounded observation with exact source causality.
 #[derive(Debug, Clone, PartialEq)]
@@ -150,6 +137,22 @@ impl ObservationQueue {
         pending: PendingFrame,
         request: ObservationRequest,
     ) -> Result<(), ObservationError> {
+        request
+            .validate_with_limits(&self.limits)
+            .map_err(ObservationError::InvalidRequest)?;
+        let source = pending.metadata();
+        if request.camera_id != source.camera_id {
+            return Err(ObservationError::CameraMismatch {
+                requested: request.camera_id,
+                rendered: source.camera_id,
+            });
+        }
+        if request.scene_revision != source.scene_revision {
+            return Err(ObservationError::SourceRevisionMismatch {
+                requested: request.scene_revision,
+                rendered: source.scene_revision,
+            });
+        }
         let permit = self.try_reserve()?;
         self.submit_reserved(permit, pending, request)
     }
@@ -205,6 +208,12 @@ impl ObservationQueue {
             return Err(ObservationError::CameraMismatch {
                 requested: request.camera_id,
                 rendered: source.camera_id,
+            });
+        }
+        if request.scene_revision != source.scene_revision {
+            return Err(ObservationError::SourceRevisionMismatch {
+                requested: request.scene_revision,
+                rendered: source.scene_revision,
             });
         }
         if latest_known_revision < source.scene_revision {
@@ -439,6 +448,7 @@ fn duration_micros(duration: Duration) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cogniform_protocol::{ObservationId, ObservationQuality};
 
     #[test]
     fn global_slots_enforce_capacity_until_delivery_is_released() {
@@ -495,7 +505,9 @@ mod tests {
             .send(ObservationCompletion {
                 permit,
                 request: ObservationRequest {
+                    schema_version: SchemaVersion::V1,
                     observation_id: ObservationId::new(1).unwrap(),
+                    scene_revision: SceneRevision::INITIAL,
                     camera_id: StableEntityId::new(1).unwrap(),
                     kind: ObservationKind::Color,
                     quality: ObservationQuality::Low,

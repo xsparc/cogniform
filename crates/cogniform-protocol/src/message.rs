@@ -10,6 +10,8 @@ use crate::{
     codec::{self, Validate},
 };
 
+const OBSERVATION_REQUEST_LOGICAL_BYTES: u64 = 44;
+
 /// Base-revision behavior for a scene patch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -542,6 +544,54 @@ pub enum ObservationQuality {
     Medium,
     /// Highest configured fidelity.
     High,
+}
+
+/// One bounded exact-revision request for a machine-readable observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObservationRequest {
+    /// Public schema version.
+    pub schema_version: SchemaVersion,
+    /// Public identity of the requested result.
+    pub observation_id: ObservationId,
+    /// Exact authoritative scene revision the caller expects to observe.
+    pub scene_revision: SceneRevision,
+    /// Stable extracted camera identity.
+    pub camera_id: StableEntityId,
+    /// Requested payload kind.
+    pub kind: ObservationKind,
+    /// Requested quality tier.
+    pub quality: ObservationQuality,
+}
+
+impl ObservationRequest {
+    /// Validates schema and logical-size invariants.
+    pub fn validate_with_limits(&self, limits: &RuntimeLimits) -> Result<(), ValidationError> {
+        Validate::validate(self, limits)
+    }
+
+    /// Encodes one validated canonical JSON line with a trailing LF.
+    pub fn to_canonical_json(&self, limits: &RuntimeLimits) -> Result<Vec<u8>, CodecError> {
+        codec::encode(self, limits)
+    }
+
+    /// Decodes bounded JSON and validates the resulting request.
+    pub fn from_json(encoded: &[u8], limits: &RuntimeLimits) -> Result<Self, CodecError> {
+        codec::decode(encoded, limits)
+    }
+}
+
+impl Validate for ObservationRequest {
+    fn validate(&self, limits: &RuntimeLimits) -> Result<(), ValidationError> {
+        validate_schema(self.schema_version)?;
+        if OBSERVATION_REQUEST_LOGICAL_BYTES > limits.max_decoded_bytes.get() {
+            return Err(ValidationError::new(
+                DiagnosticCode::DecodedSizeLimitExceeded,
+                "observation_request",
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Non-zero image dimensions.

@@ -7,14 +7,15 @@ use cogniform_protocol::{
     ConflictPolicy, CreateEntity, DeliverySemantic, Diagnostic, DiagnosticCode, DiagnosticSeverity,
     FiniteF32, FrameId, IdempotencyKey, ImageDimensions, LocalTransform, MaterialComponent,
     NameComponent, ObservationId, ObservationKind, ObservationMetadata, ObservationQuality,
-    ObservationStaleness, PatchBudget, PositiveF32, PositiveVec3, Quaternion, QueueConfig,
-    RuntimeLimits, SceneOperation, ScenePatch, SceneRevision, SceneText, SchemaVersion,
-    SetComponent, StableEntityId, TransactionId, UnitF32, ValueErrorKind, Vec3,
+    ObservationRequest, ObservationStaleness, PatchBudget, PositiveF32, PositiveVec3, Quaternion,
+    QueueConfig, RuntimeLimits, SceneOperation, ScenePatch, SceneRevision, SceneText,
+    SchemaVersion, SetComponent, StableEntityId, TransactionId, UnitF32, ValueErrorKind, Vec3,
 };
 
 const PATCH_FIXTURE: &[u8] = include_bytes!("fixtures/scene_patch_v1.json");
 const RECEIPT_FIXTURE: &[u8] = include_bytes!("fixtures/apply_receipt_v1.json");
 const OBSERVATION_FIXTURE: &[u8] = include_bytes!("fixtures/observation_metadata_v1.json");
+const OBSERVATION_REQUEST_FIXTURE: &[u8] = include_bytes!("fixtures/observation_request_v1.json");
 
 fn stable_id(value: u128) -> StableEntityId {
     StableEntityId::new(value).unwrap()
@@ -132,6 +133,17 @@ fn sample_observation() -> ObservationMetadata {
     }
 }
 
+fn sample_observation_request() -> ObservationRequest {
+    ObservationRequest {
+        schema_version: SchemaVersion::V1,
+        observation_id: ObservationId::new(0x30).unwrap(),
+        scene_revision: SceneRevision::new(8),
+        camera_id: stable_id(3),
+        kind: ObservationKind::EntityId,
+        quality: ObservationQuality::Low,
+    }
+}
+
 #[test]
 fn canonical_fixtures_are_byte_stable_and_round_trip() {
     let limits = RuntimeLimits::default();
@@ -157,6 +169,15 @@ fn canonical_fixtures_are_byte_stable_and_round_trip() {
     assert_eq!(
         ObservationMetadata::from_json(OBSERVATION_FIXTURE, &limits).unwrap(),
         observation
+    );
+    let observation_request = sample_observation_request();
+    assert_eq!(
+        observation_request.to_canonical_json(&limits).unwrap(),
+        OBSERVATION_REQUEST_FIXTURE
+    );
+    assert_eq!(
+        ObservationRequest::from_json(OBSERVATION_REQUEST_FIXTURE, &limits).unwrap(),
+        observation_request
     );
 }
 

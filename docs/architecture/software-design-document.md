@@ -65,6 +65,7 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-protocol` | Stable public value types, patches, receipts, observations, limits, errors | No ECS, GPU, network, or generated transport dependency |
 | `cogniform-observation` | Owned observation payload values and bounded transport-neutral binary envelopes | Depends only on protocol and deterministic hashing; owns no renderer, service, I/O, session, or shared-memory resource |
 | `cogniform-local-transport` | Fixed bounded frames over caller-owned synchronous streams | Depends only on protocol, observation values, deterministic hashing, and standard I/O traits; opens no endpoint and owns no session or service state |
+| `cogniform-local-session` | Versioned direction-specific control values and canonical bounded CF039 control bytes | Depends only on protocol and local transport; executes no service work and opens no endpoint |
 | `cogniform-compiler` | Pure seeded primitive imagination normalization and structured explanations | Depends only on protocol and deterministic hashing; owns no world/service state |
 | `cogniform-world` | `hecs` implementation, stable-ID index, validation, atomic commit, hierarchy, transforms, queries | Depends on protocol/math; never renderer or service |
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
@@ -93,7 +94,9 @@ binary bulk values to canonical observation metadata without selecting a
 transport, listener, session, or storage policy. CF039 adds a header-first
 local stream adapter over caller-owned I/O so declared control, bulk, and total
 lengths reject before body allocation while leaving endpoint and session
-ownership unresolved. Spatial
+ownership unresolved. CF040 adds the separate in-memory session-schema boundary
+for one patch/query/observation loop, with outer-only correlation and no
+executor or endpoint ownership. Spatial
 acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -105,7 +108,7 @@ protocol <- world <- replay
     ^
     +---- observation
     ^
-    +---- local transport
+    +---- local transport <- local session
     ^
     +---- compiler
     ^          |
@@ -122,7 +125,8 @@ protocol <- world <- replay
 
 The diagram shows allowed information flow, not permission to create circular Cargo dependencies. Shared render DTOs belong in a dependency-neutral boundary rather than making world depend on renderer.
 
-The compiler, observation codec, and local transport frame each depend only on
+The compiler, observation codec, local transport frame, and local-session
+schema each depend only on
 narrow public values and deterministic hashing. Engine may orchestrate
 compiler, world, renderer, observation coding, and replay through their public
 interfaces; none of those narrow adapters reads mutable world or renderer
@@ -240,6 +244,15 @@ canonical observation metadata plus its payload envelope behind one fixed
 header. A synchronous reader validates the header and every declared outer
 limit before body allocation. This is framing over caller-owned I/O, not a
 session, subscription, service scheduler, or secure remote endpoint.
+
+The separate local-session schema assigns canonical LF-terminated meaning to
+control bytes for hello/limits, patch admission and completion, exact-revision
+query and observation work, stable redacted failures, and closure. Client and
+server roots are direction-specific, and the outer frame value is the only
+correlation identity. `ObservationRequest` names its exact expected revision;
+schema and revision reject before capacity reservation or renderer submission,
+and completion verifies the rendered source again. The schema codec executes
+no operation and owns no lifecycle or I/O.
 
 ## 4. Rendering and assets
 
@@ -414,6 +427,8 @@ request observation, subscribe to bounded feedback, explain compilation,
 explicitly encode or decode one bounded metadata-bound observation payload,
 explicitly frame schema-owned control bytes or complete observations over a
 caller-owned synchronous local stream,
+explicitly encode or decode one bounded direction-specific local-session
+control message without executing it,
 capture complete or exact-revision local recovery state, restore it into a
 fresh service, explicitly persist/load one immutable local recovery file or
 one independent exact-hash asset-source file, inspect one recovery file through
@@ -461,6 +476,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
 | Observation payload envelope | All five payload kinds round-trip fixed version-one layouts; bounds, canonical values, metadata substitution, truncation, extension, and every-byte corruption reject before decoded output is returned |
 | Local stream framing | Fixed version-one control and observation frames round-trip under short/interrupted I/O; header limits reject before body reads, clean EOF differs from truncation, back-to-back boundaries survive, and malformed/corrupted/substituted input returns no frame |
+| Local-session messages | Every schema-version-one client/server variant round-trips exact LF bytes; direction, version, unknown fields, noncanonical bytes, nesting, substitutions, nested values, receipt roles, frame kind, and effective limits fail closed before returning a message |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
 | Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |
@@ -476,7 +492,7 @@ CF009 resolves the initial candidate packaging and validation profile in
 publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
 artifacts, additional texture roles/tangent-space normals and the remaining visual-quality surface, remote
-protocol/authentication, operation/session schemas, tenancy, observation retention, automatic startup,
+protocol/authentication, session execution and endpoint lifecycle, tenancy, observation retention, automatic startup,
 recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
