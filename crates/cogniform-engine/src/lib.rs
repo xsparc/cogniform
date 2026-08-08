@@ -44,7 +44,7 @@ pub use measurement::{
     MeasurementError, MeasurementProfile, TimingDistribution, WorldMeasurement,
     measure_controlled_world_fixture,
 };
-pub use observation::{Observation, ObservationQueue};
+pub use observation::{Observation, ObservationDelivery, ObservationQueue};
 pub use recovery::{EngineRecoveryPoint, RecoveryInspection, RecoveryPointCodecError};
 pub use scenario::{
     CanonicalScenarioConfig, CanonicalScenarioError, CanonicalScenarioReport, ObservationEvidence,

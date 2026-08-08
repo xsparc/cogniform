@@ -118,6 +118,12 @@ release yet; the current workspace version remains `0.0.0`.
   outer-only correlation; bounded pre-decode nesting/bytes and bounded output;
   strict direction/unknown/canonical/nested-value validation; and no endpoint
   or service-execution authority;
+- a separate `cogniform-local-executor` crate that owns one quiescent local
+  service; negotiates peer, local-frame, and service bounds; enforces one hello,
+  active, quiescent-close, and terminal states; maps patch/query/observation
+  work with exact bounded correlation and deterministic one-command advance;
+  returns at most two validated frames per call; and creates no endpoint,
+  thread, timer, process, or automatic polling loop;
 - separate immutable exact-hash asset-source files with pre-I/O size and
   identity checks, shared create-new/sync/cleanup guarantees, bounded
   regular-file loading, and explicit restart rehydration evidence;
@@ -126,6 +132,13 @@ release yet; the current workspace version remains `0.0.0`.
   checklist.
 
 ### Changed
+
+- `cogniform-engine` and `LocalService` add correlated observation-delivery
+  polling that retains `ObservationId` on request-specific asynchronous
+  failure, while the existing observation polling API preserves its prior
+  result shape. `cogniform-local-session` also exposes field-wise limit
+  intersection and exact effective frame-policy construction; these are
+  additive surfaces in the unpublished `0.0.0` workspace;
 
 - `ObservationRequest` moves to `cogniform-protocol` with an engine re-export
   for source compatibility and adds mandatory schema version plus exact scene

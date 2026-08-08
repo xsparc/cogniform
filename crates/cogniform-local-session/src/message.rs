@@ -1,6 +1,6 @@
 use core::num::{NonZeroU32, NonZeroU64};
 
-use cogniform_local_transport::{LOCAL_FRAME_HEADER_BYTES, LocalFrameConfig};
+use cogniform_local_transport::{LOCAL_FRAME_HEADER_BYTES, LocalFrameConfig, LocalFrameLimits};
 use cogniform_protocol::{
     ApplyReceipt, ApplyStatus, IdempotencyKey, ObservationId, ObservationRequest, RuntimeLimits,
     ScenePatch, SceneQuery, SceneQueryResult, SceneRevision,
@@ -63,7 +63,68 @@ impl LocalSessionLimits {
         Ok(limits)
     }
 
-    pub(crate) fn validate(&self) -> Result<(), LocalSessionValidationError> {
+    /// Selects the field-wise intersection of advertised and local receive limits.
+    pub fn negotiate(
+        &self,
+        local_config: &LocalFrameConfig,
+    ) -> Result<Self, LocalSessionValidationError> {
+        self.validate()?;
+        let local = Self::from_config(local_config)?;
+        self.intersect(&local)
+    }
+
+    /// Selects the internally consistent field-wise intersection of two peers.
+    pub fn intersect(&self, other: &Self) -> Result<Self, LocalSessionValidationError> {
+        self.validate()?;
+        other.validate()?;
+        let runtime_limits = intersect_runtime_limits(self.runtime_limits, other.runtime_limits);
+        let max_frame_bytes = self.max_frame_bytes.min(other.max_frame_bytes);
+        let frame_body = max_frame_bytes
+            .get()
+            .checked_sub(u64::try_from(LOCAL_FRAME_HEADER_BYTES).unwrap_or(u64::MAX))
+            .ok_or_else(|| invalid_limits("limits.max_frame_bytes"))?;
+        let max_bulk_bytes = self.max_bulk_bytes.min(other.max_bulk_bytes);
+        let limits = Self {
+            max_frame_bytes,
+            max_control_message_bytes: self
+                .max_control_message_bytes
+                .min(other.max_control_message_bytes)
+                .min(runtime_limits.max_encoded_bytes)
+                .min(
+                    NonZeroU64::new(frame_body)
+                        .ok_or_else(|| invalid_limits("limits.max_control_message_bytes"))?,
+                ),
+            max_bulk_bytes,
+            max_observation_envelope_bytes: self
+                .max_observation_envelope_bytes
+                .min(other.max_observation_envelope_bytes)
+                .min(max_bulk_bytes),
+            max_visibility_entries: self
+                .max_visibility_entries
+                .min(other.max_visibility_entries),
+            runtime_limits,
+        };
+        limits.validate()?;
+        Ok(limits)
+    }
+
+    /// Converts negotiated limits into the exact frame configuration they describe.
+    pub fn to_frame_config(&self) -> Result<LocalFrameConfig, LocalSessionValidationError> {
+        self.validate()?;
+        Ok(LocalFrameConfig::with_payload_bounds(
+            LocalFrameLimits::new(
+                self.max_frame_bytes,
+                self.max_control_message_bytes,
+                self.max_bulk_bytes,
+            ),
+            self.runtime_limits,
+            self.max_observation_envelope_bytes,
+            self.max_visibility_entries,
+        ))
+    }
+
+    /// Validates internal consistency without comparing against local policy.
+    pub fn validate(&self) -> Result<(), LocalSessionValidationError> {
         let header = u64::try_from(LOCAL_FRAME_HEADER_BYTES).unwrap_or(u64::MAX);
         let Some(frame_body) = self.max_frame_bytes.get().checked_sub(header) else {
             return Err(invalid_limits("limits.max_frame_bytes"));
@@ -105,6 +166,43 @@ impl LocalSessionLimits {
             return Err(invalid_limits("message.hello.effective_limits"));
         }
         Ok(())
+    }
+}
+
+fn intersect_runtime_limits(left: RuntimeLimits, right: RuntimeLimits) -> RuntimeLimits {
+    let max_components = left.max_components.min(right.max_components);
+    RuntimeLimits {
+        max_encoded_bytes: left.max_encoded_bytes.min(right.max_encoded_bytes),
+        max_decoded_bytes: left.max_decoded_bytes.min(right.max_decoded_bytes),
+        max_json_nesting_depth: left
+            .max_json_nesting_depth
+            .min(right.max_json_nesting_depth),
+        max_operations: left.max_operations.min(right.max_operations),
+        max_components,
+        max_components_per_entity: left
+            .max_components_per_entity
+            .min(right.max_components_per_entity)
+            .min(max_components),
+        max_text_bytes: left.max_text_bytes.min(right.max_text_bytes),
+        max_diagnostics: left.max_diagnostics.min(right.max_diagnostics),
+        max_queue_capacity: left.max_queue_capacity.min(right.max_queue_capacity),
+        max_imagination_entities: left
+            .max_imagination_entities
+            .min(right.max_imagination_entities),
+        max_imagination_relations: left
+            .max_imagination_relations
+            .min(right.max_imagination_relations),
+        max_imagination_constraints: left
+            .max_imagination_constraints
+            .min(right.max_imagination_constraints),
+        max_query_entities: left.max_query_entities.min(right.max_query_entities),
+        max_observation_width: left.max_observation_width.min(right.max_observation_width),
+        max_observation_height: left
+            .max_observation_height
+            .min(right.max_observation_height),
+        max_observation_pixels: left
+            .max_observation_pixels
+            .min(right.max_observation_pixels),
     }
 }
 

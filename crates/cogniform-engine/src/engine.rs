@@ -15,8 +15,8 @@ use cogniform_replay::{
 use cogniform_world::{AuthoritativeWorld, LogicalSceneHash, WorldConfig};
 
 use crate::{
-    EngineError, EngineRecoveryPoint, Observation, ObservationError, ObservationQueue,
-    ObservationRequest, RecoveryInspection,
+    EngineError, EngineRecoveryPoint, Observation, ObservationDelivery, ObservationError,
+    ObservationQueue, ObservationRequest, RecoveryInspection,
 };
 
 /// Bounds and domain configuration for one local engine instance.
@@ -323,6 +323,15 @@ impl CogniformEngine {
     pub fn try_receive_observation(&self) -> Result<Option<Observation>, EngineError> {
         self.observations
             .try_receive(self.revision())
+            .map_err(EngineError::from)
+    }
+
+    /// Polls one completion while retaining request identity on per-request failure.
+    pub fn try_receive_observation_delivery(
+        &self,
+    ) -> Result<Option<ObservationDelivery>, EngineError> {
+        self.observations
+            .try_receive_delivery(self.revision())
             .map_err(EngineError::from)
     }
 

@@ -90,6 +90,18 @@ requirement. Its test-only observation edge constructs an existing frame kind;
 the production crate owns only typed values, canonical bounded JSON, and frame
 adaptation without I/O or execution.
 
+## Existing local-executor reuse
+
+CF041 adds one workspace-local `cogniform-local-executor` crate over the
+existing engine, protocol, local-session, and local-transport crates. It adds
+no external package, version, checksum, build script, unsafe code, native code,
+runtime download, network, telemetry, or paid-service requirement. The engine
+adds an additive correlated observation-delivery value, and local transport
+adds one constructor for its existing payload-bound configuration so the
+session crate preserves its production dependency boundary. The executor owns
+only bounded in-memory state and one supplied local service; endpoint I/O and
+runtime scheduling remain outside the crate.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

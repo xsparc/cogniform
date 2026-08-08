@@ -145,13 +145,13 @@ It does not own this service, drive its queues, choose request/response
 schemas, open standard streams or pipes, or define a session. See the
 [local stream-framing guide](local-stream-framing.md).
 
-The separate local-session codec defines the direction-specific values that a
-future driver may map to this service. It distinguishes patch admission from
-completion, carries exact-revision query and observation requests, and leaves
-completed observations in their existing CF039 observation frames. It does not
-call `submit_patch`, `process_next`, `query`, `request_observation`, or polling
-methods and owns no service instance or lifecycle. See the
-[local-session message guide](local-session-messages.md).
+The separate local-session codec defines direction-specific values without
+executing them. CF041's separate executor now owns one quiescent service,
+intersects limits, maps patch/query/observation variants to these methods, and
+retains exact correlations through explicit caller-driven advancement. Neither
+layer opens an endpoint or runs an automatic loop. See the
+[local-session message guide](local-session-messages.md) and
+[executor guide](local-session-executor.md).
 
 ## Replay ownership
 

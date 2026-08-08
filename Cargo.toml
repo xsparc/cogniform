@@ -6,6 +6,7 @@ members = [
     "crates/cogniform-compiler",
     "crates/cogniform-engine",
     "crates/cogniform-local-session",
+    "crates/cogniform-local-executor",
     "crates/cogniform-local-transport",
     "crates/cogniform-observation",
     "crates/cogniform-procedural",
@@ -28,6 +29,7 @@ cogniform-assets = { version = "=0.0.0", path = "crates/cogniform-assets" }
 cogniform-compiler = { version = "=0.0.0", path = "crates/cogniform-compiler" }
 cogniform-engine = { version = "=0.0.0", path = "crates/cogniform-engine" }
 cogniform-local-session = { version = "=0.0.0", path = "crates/cogniform-local-session" }
+cogniform-local-executor = { version = "=0.0.0", path = "crates/cogniform-local-executor" }
 cogniform-local-transport = { version = "=0.0.0", path = "crates/cogniform-local-transport" }
 cogniform-observation = { version = "=0.0.0", path = "crates/cogniform-observation" }
 cogniform-procedural = { version = "=0.0.0", path = "crates/cogniform-procedural" }

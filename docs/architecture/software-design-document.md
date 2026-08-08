@@ -66,6 +66,7 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-observation` | Owned observation payload values and bounded transport-neutral binary envelopes | Depends only on protocol and deterministic hashing; owns no renderer, service, I/O, session, or shared-memory resource |
 | `cogniform-local-transport` | Fixed bounded frames over caller-owned synchronous streams | Depends only on protocol, observation values, deterministic hashing, and standard I/O traits; opens no endpoint and owns no session or service state |
 | `cogniform-local-session` | Versioned direction-specific control values and canonical bounded CF039 control bytes | Depends only on protocol and local transport; executes no service work and opens no endpoint |
+| `cogniform-local-executor` | Bounded caller-driven session lifecycle, service mapping, and exact correlation ownership | Depends on engine plus the protocol/session/transport boundaries; owns one supplied local service but no endpoint, I/O, thread, timer, or runtime loop |
 | `cogniform-compiler` | Pure seeded primitive imagination normalization and structured explanations | Depends only on protocol and deterministic hashing; owns no world/service state |
 | `cogniform-world` | `hecs` implementation, stable-ID index, validation, atomic commit, hierarchy, transforms, queries | Depends on protocol/math; never renderer or service |
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
@@ -96,8 +97,11 @@ local stream adapter over caller-owned I/O so declared control, bulk, and total
 lengths reject before body allocation while leaving endpoint and session
 ownership unresolved. CF040 adds the separate in-memory session-schema boundary
 for one patch/query/observation loop, with outer-only correlation and no
-executor or endpoint ownership. Spatial
-acceleration, shared memory, remote transport, Wasm, and model bridge become
+executor or endpoint ownership. CF041 adds a separate caller-driven executor
+that owns one local service, intersects peer/local/service limits, advances one
+command and one observation poll per explicit call, and releases each live
+correlation exactly once without acquiring endpoint or scheduling authority.
+Spatial acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
 
@@ -121,6 +125,8 @@ protocol <- world <- replay
                    |     storage
                    |       ^
                    +--- CLI
+
+local transport <- local session <- local executor -> engine
 ```
 
 The diagram shows allowed information flow, not permission to create circular Cargo dependencies. Shared render DTOs belong in a dependency-neutral boundary rather than making world depend on renderer.
@@ -131,8 +137,10 @@ narrow public values and deterministic hashing. Engine may orchestrate
 compiler, world, renderer, observation coding, and replay through their public
 interfaces; none of those narrow adapters reads mutable world or renderer
 state. Local transport receives only caller-owned standard I/O values and does
-not create an endpoint. Storage depends on the public recovery and asset
-identities it persists. The CLI may compose engine and storage but must not
+not create an endpoint. The local executor composes the schema with engine
+service APIs while leaving both narrower crates unaware of each other; its
+caller explicitly drives every transition. Storage depends on the public
+recovery and asset identities it persists. The CLI may compose engine and storage but must not
 move filesystem authority into the engine.
 
 ## 3. Core contracts and invariants
@@ -253,6 +261,16 @@ correlation identity. `ObservationRequest` names its exact expected revision;
 schema and revision reject before capacity reservation or renderer submission,
 and completion verifies the rendered source again. The schema codec executes
 no operation and owns no lifecycle or I/O.
+
+The separate local-session executor requires exactly one hello and intersects
+peer receive, local frame, and service runtime limits before work. It owns
+bounded ordered patch and observation correlation maps, maps every gateway
+admission to an exact live or terminal outcome, advances at most one command
+and polls at most one observation completion per explicit call, emits pending
+at most once per observation, and returns no more than two validated frames.
+Quiescent close is explicit and post-close input cannot reach the service. The
+executor creates no endpoint, runtime loop, thread, timer, retry, deadline, or
+authorization boundary.
 
 ## 4. Rendering and assets
 
@@ -429,6 +447,8 @@ explicitly frame schema-owned control bytes or complete observations over a
 caller-owned synchronous local stream,
 explicitly encode or decode one bounded direction-specific local-session
 control message without executing it,
+execute one bounded caller-driven local session over an owned service without
+opening an endpoint or starting an automatic loop,
 capture complete or exact-revision local recovery state, restore it into a
 fresh service, explicitly persist/load one immutable local recovery file or
 one independent exact-hash asset-source file, inspect one recovery file through

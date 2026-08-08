@@ -1,7 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF040 bounded local-session messages on 2026-08-08.
+and extended through CF041 bounded local-session execution on 2026-08-08.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -46,7 +46,11 @@ snapshots and canonical replay entries.
 7. **Control bytes to local-session schema.** Direction-specific client/server
    JSON crosses byte/nesting, version, unknown-field, canonical-byte, nested
    protocol-value, and effective-limit checks without execution or I/O.
-8. **Recovery file/envelope and replay bytes to recovery.** Caller-selected
+8. **Session values to one local-service executor.** Validated instructions
+   cross explicit hello/lifecycle, peer/local/service limit, correlation,
+   command-order, observation-delivery, output, and quiescent-close checks
+   without acquiring endpoint or automatic scheduling authority.
+9. **Recovery file/envelope and replay bytes to recovery.** Caller-selected
    paths and portable bytes are untrusted until regular-file/size/growth checks,
    envelope header/version/bounds/length/frame/digest, and replay
    protocol/revision/scene-hash/predecessor/entry-hash chains have been
@@ -61,8 +65,10 @@ world, renderer, or entropy authority. The current local service creates no
 socket, listener, shared-memory segment, automatic persistent file, or model
 call. The local frame adapter touches only caller-supplied `std::io` values and
 does not select a path, address, endpoint, peer, or session. The separate
-local-session codec opens no I/O and executes no decoded request. The storage
-adapter touches only an explicit caller-selected path when directly
+local-session codec opens no I/O and executes no decoded request. The separate
+executor owns one supplied service and advances only when its caller invokes a
+method; it opens no endpoint and starts no thread, timer, or runtime loop. The
+storage adapter touches only an explicit caller-selected path when directly
 invoked.
 The offline inspection command composes that adapter with the exact CPU
 restoration preflight, retains no reconstructed world, and emits only aggregate
@@ -103,6 +109,7 @@ Residual ratings assume the declared local single-user boundary.
 | Observation payload bytes are truncated, extended, corrupted, noncanonical, over-limit, or paired with different causal metadata | High | Independent complete-envelope and visibility bounds; exact kind/count/length and fixed big-endian layouts; canonical finite floats, presence, identity, and ordering; SHA-256 binding over header, canonical metadata, and payload; decode allocation only after framing, metadata, and integrity checks; all-prefix and every-byte mutation tests | Low for in-memory corruption and substitution; writer authenticity and confidentiality remain caller-owned |
 | A local frame declares excessive sections, is truncated, corrupted, noncanonical, or crosses an untrusted stream boundary | High | Fixed version/kind/header; non-zero correlation identity; independent complete/control/bulk limits checked before body allocation; exact short/interrupted I/O; canonical observation metadata and nested envelope integrity; all-prefix, every-byte, substitution, pre-body-limit, and payload-redaction tests | Low inside caller-owned bounded local I/O; endpoint identity, authentication, confidentiality, freshness, replay protection, rate limits, cancellation, and partial-write recovery remain caller-owned |
 | Local control bytes substitute a direction, version, nested value, correlation, or over-limit shape | High | Separate client/server roots; outer-only correlation; pre-decode byte/nesting caps; unknown-field and canonical-byte rejection; nested core validation; self-consistent hello limits; stable redacted failures; exact fixtures and malformed/substitution tests | Low for in-memory local decoding; lifecycle state, execution authorization, endpoint identity, confidentiality, freshness, replay/rate policy, and partial-write handling remain outside the codec |
+| Valid local-session work exhausts correlations, misroutes terminal results, bypasses lifecycle, or emits an over-limit completion | High | One hello and terminal close; peer/local/service limit intersection; fixed live-correlation cap; ordered key/ID maps; exact queued/replayed/dropped/superseded/completed/error release; one command plus one observation poll and at most two outputs per call; completed-frame preflight; stable redacted failure mapping; model tests | Low inside the trusted caller-driven boundary; authorization, endpoint identity, confidentiality, freshness/replay/rate policy, deadlines, cancellation, and partial-write handling remain outside the executor |
 | Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |
 | Recovery replay bytes and frame marker are separated or accidentally changed | High | Single bounded versioned envelope, exact-length parsing, domain-separated SHA-256 digest, every-byte corruption rejection before replay allocation | Low for accidental corruption; authenticity remains caller-owned |
 | A recovery path or file causes overwrite, disclosure, unbounded allocation, or partial-state adoption | High | Separate opt-in crate; encode-before-I/O; create-new only; final symlink/non-file rejection; metadata/platform allocation bound; fixed-buffer read and growth probe; complete digest validation; path-redacted errors; injected write/sync cleanup | Medium because parent-path trust, permissions, confidentiality, authenticity, freshness, and crash durability remain caller-owned |
@@ -140,8 +147,8 @@ transport, or production use.
   cancellation, and partial-write recovery outside the codec before exposing
   it beyond the trusted local single-user boundary.
 - Treat local-session control messages as validated instructions, not authorized
-  actions. A future executor must enforce lifecycle state and map each variant
-  explicitly; a future endpoint must add peer identity, authorization,
+  actions. The local executor enforces lifecycle and maps each supported variant
+  explicitly; a future endpoint must still add peer identity, authorization,
   confidentiality, freshness/replay, rate, timeout/cancellation, and shutdown
   policy before accepting an untrusted stream.
 - Do not pass credentials, private endpoints, or production records as scene
