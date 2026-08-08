@@ -852,6 +852,40 @@ not writer authenticity or confidentiality. See
 [observation-payload envelope guide](../protocol/observation-payload-envelope.md),
 and the [validation baseline](../operations/validation-baseline.md).
 
+### PR 39 - CF039: Bounded local stream framing
+
+Outcome: a future stdio agent session can reject declared local-stream bodies
+before allocation and carry complete CF038 observations without inventing a
+second metadata/payload association or opening a remote security boundary.
+
+Gate: a new dependency-neutral `cogniform-local-transport` crate operates only
+on caller-supplied synchronous `Read` and `Write` values. A byte-pinned
+version-one 68-byte header carries magic, version, control/observation kind,
+reserved zero byte, non-zero correlation ID, control and bulk lengths, and a
+SHA-256 digest over the header prefix and both body sections. Independent
+control, bulk, and complete-frame limits reject from the stack-read header
+before body allocation. Clean pre-frame EOF, partial header/control/bulk,
+short/interrupted reads and writes, back-to-back frames, trailing borrowed
+input, corruption, invalid layouts, and I/O categories are deterministic and
+payload-redacted.
+
+Control bytes remain schema-owned and uninterpreted. Observation frames require
+exact canonical `ObservationMetadata` JSON and the CF038 envelope; outer
+integrity, canonical metadata, and inner semantic binding all validate before
+return. Complete encoding precedes the first write, but arbitrary writer
+failure can leave a physical prefix and is not claimed atomic.
+
+Implemented contract: no external package or vendor source is added. The crate
+opens no standard stream, pipe, process, file, shared memory, listener, or
+socket; starts no thread or async runtime; and defines no operation schema,
+version negotiation, session, scheduling, cancellation, authorization,
+confidentiality, tenancy, rate policy, retention, automatic delivery,
+deployment, version, or release action. SHA-256 detects corruption rather than
+authenticating a writer. See
+[ADR 0039](../adr/0039-bounded-local-stream-framing.md), the
+[local stream-framing guide](../protocol/local-stream-framing.md), and the
+[validation baseline](../operations/validation-baseline.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -860,7 +894,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
-  -> CF038
+  -> CF038 -> CF039
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1024,13 +1058,21 @@ Validation expands with capability:
   every-prefix truncation, trailing input, every-byte corruption, invalid
   canonical float/presence/identity/order/count cases, and independent runtime,
   visibility-entry, and complete-envelope limits without GPU or transport I/O.
+- CF039: byte-stable fixed header and kind tags; exact control and complete
+  observation round trips; header-first independent limit and overflow
+  rejection without body reads; clean EOF versus header/control/bulk
+  truncation; short/interrupted reads and writes; back-to-back framing;
+  trailing borrowed input; every-byte corruption, metadata substitution,
+  noncanonical metadata, invalid nested payload, writer prevalidation, stable
+  I/O categories, and debug/error redaction without endpoint or GPU work.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
 ## 6. Deferred roadmap
 
-After the MVP and only with evidence: shared-memory observation leases,
-authenticated and pre-buffer-bounded gRPC/QUIC transport, Wasmtime procedures,
+After the MVP and only with evidence: a versioned stdio operation/session
+protocol over the bounded local frame, shared-memory observation leases,
+authenticated gRPC/QUIC transport, Wasmtime procedures,
 KTX2/mesh optimization, advanced culling/batching, model bridge, Gaussian
 splat plugin, browser target, fleet orchestration, and high availability. Each
 requires a new design decision and approved task rather than silently entering

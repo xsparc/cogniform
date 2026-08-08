@@ -106,6 +106,13 @@ authentication or encryption. See the
 schema-v1 clients that exhaustively enumerate observation kinds must update
 before accepting `normal` metadata.
 
+CF039 composes canonical metadata and the payload envelope into an optional
+bounded local stream frame. Its fixed header exposes control and bulk lengths
+so all outer limits reject before declared-body allocation. Generic control
+bytes deliberately remain owned by a future session schema; the framing layer
+does not parse or authorize them. See the
+[local stream-framing guide](local-stream-framing.md).
+
 ## Imaginations and logical queries
 
 CF006 adds a bounded `ImaginationEnvelope` for the pure primitive compiler. It

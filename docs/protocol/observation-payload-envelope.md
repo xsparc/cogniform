@@ -65,10 +65,13 @@ canonical metadata, and verifies the digest before allocating the decoded
 output vector. Errors are typed and expose only stable kinds, indexes, and byte
 counts, never payload values or stable IDs.
 
-A stream or datagram adapter must enforce its own authenticated session,
-authorization, rate, timeout, and declared-length cap before buffering an
-entire envelope. Passing an already-buffered slice to this codec does not make
-the surrounding transport bounded or trusted. Shared-memory leases,
+The optional [local stream frame](local-stream-framing.md) supplies one fixed
+header and declared-length cap before buffering this envelope from a
+caller-owned synchronous stream. It still provides no endpoint, session,
+authorization, rate, timeout, or confidentiality policy. Other stream or
+datagram adapters must enforce equivalent pre-buffer bounds and their own
+authenticated session. Passing an already-buffered slice to this codec does
+not make the surrounding transport bounded or trusted. Shared-memory leases,
 authenticated gRPC/QUIC, compression, image formats, observation retention,
 and automatic delivery remain separate decisions.
 

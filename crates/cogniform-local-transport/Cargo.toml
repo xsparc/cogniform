@@ -1,0 +1,17 @@
+[package]
+name = "cogniform-local-transport"
+description = "Bounded versioned framing over caller-owned local byte streams for Cogniform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+cogniform-observation.workspace = true
+cogniform-protocol.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true

@@ -92,6 +92,10 @@ fixed-layout binary envelope. Encoding is never part of renderer submission or
 worker completion, and the crate owns no GPU, service, transport, file, or
 shared-memory resource. See the
 [observation-payload envelope guide](../protocol/observation-payload-envelope.md).
+CF039 can carry that complete value through bounded caller-owned synchronous
+streams after local delivery, without entering renderer submission or worker
+completion. See the
+[local stream-framing guide](../protocol/local-stream-framing.md).
 
 The extracted draw path currently supports cuboids, centered XY planes, fixed
 unit-diameter spheres, explicitly resident approved GLB meshes, and perspective
@@ -147,5 +151,7 @@ See [ADR 0024](../adr/0024-bounded-point-diffuse-lighting.md) for Point
 translation, attenuation, independent capacity, and zero-distance rules.
 See [ADR 0038](../adr/0038-bounded-observation-payload-envelope.md) for the
 separate payload-codec boundary and transport responsibilities.
+See [ADR 0039](../adr/0039-bounded-local-stream-framing.md) for header-first
+local stream bounds and the deferred session boundary.
 See [ADR 0025](../adr/0025-outward-built-in-cuboid-winding.md) for the fixed
 cuboid's outward winding and corrected normal/lighting compatibility behavior.

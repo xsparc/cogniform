@@ -107,6 +107,11 @@ release yet; the current workspace version remains `0.0.0`.
   version-one binary envelope for all five owned observation payload kinds,
   fixed big-endian layouts, strict canonical values and counts, typed failures,
   and SHA-256 binding to canonical causal metadata before decoded allocation;
+- a separate `cogniform-local-transport` crate with fixed version-one control
+  and observation framing over caller-owned synchronous streams, independent
+  control/bulk/total limits enforced from a stack-read header before body
+  allocation, exact metadata/payload validation, deterministic short and
+  interrupted I/O behavior, and payload-redacted failures;
 - separate immutable exact-hash asset-source files with pre-I/O size and
   identity checks, shared create-new/sync/cleanup guarantees, bounded
   regular-file loading, and explicit restart rehydration evidence;
@@ -209,9 +214,11 @@ release yet; the current workspace version remains `0.0.0`.
   freshness, recovery association, or authorization; hash values can still
   correlate private content.
   Observation payload envelopes are in-memory corruption-detection values,
-  not authenticated or encrypted transport frames; the codec does not supply
-  a listener, session, authorization, rate limiting, pre-buffer stream cap,
-  shared memory, compression, retention, or automatic delivery.
+  not authenticated or encrypted values. Local stream framing supplies a
+  pre-buffer bound over caller-owned `Read`/`Write` values, but neither codec
+  creates an endpoint or supplies operation schemas, a session, authorization,
+  confidentiality, rate policy, resynchronization, shared memory, compression,
+  retention, or automatic delivery.
   In-place revert requires drained transient work, clears asset residency, and
   supplies no automatic rollback or freshness policy;
   future frame identity across concurrently live branches is
