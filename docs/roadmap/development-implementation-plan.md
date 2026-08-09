@@ -1048,6 +1048,33 @@ purity; one controlled ignored child test repeats query/application/replay on
 an approved adapter. See [ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md)
 and the [MCP adapter guide](../protocol/mcp-stdio-adapter.md).
 
+### PR 46 - CF046: Bounded MCP apply-patch prerequisite
+
+Outcome: a standard local MCP parent can submit one complete bounded atomic
+scene patch, including camera components outside the current semantic compiler
+subset, without bypassing the local service or changing narrower domain
+contracts.
+
+Gate: append exactly `cogniform.apply_patch` after the two CF045 tools while
+preserving MCP `2025-11-25`, the exact dependency graph, bounded newline
+transport, fixed lazy 64x64 service, and serialized single-user boundary. Parse
+and validate one core `ScenePatch` before service creation; accept it only while
+the command queue is empty; submit only through `LocalService`; process at most
+one newly queued command; and return one bounded schema-version-one admission
+plus receipt. Revalidate transaction, idempotency key, exact base revision,
+operation count, and applied/replayed status. Exact retained retry must not
+process or mutate twice; stale, conflicting, busy, invalid, and inconsistent
+outcomes remain stable and payload-redacted.
+
+No observation tool/resource, compiler change, bootstrap world, procedure,
+asset, recovery, prompt, task, sampling, model, HTTP, socket, OAuth,
+authentication, multiple-client, shared-memory, deployment, version, or
+release surface is added. Ordinary contract tests and controlled official
+client/CLI tests prove camera patch application, exact replay, conflict/stale
+rejection, query/imagination continuation, protocol-pure stdout, and clean EOF.
+See [ADR 0046](../adr/0046-bounded-mcp-apply-patch-tool.md) and the
+[MCP adapter guide](../protocol/mcp-stdio-adapter.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1057,6 +1084,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
+  -> CF046
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1262,13 +1290,21 @@ Validation expands with capability:
   handling; ordinary initialize/list/EOF stdout purity; and controlled ignored
   adapter-backed library and CLI exchanges covering exact query, compiled
   application, and retained replay without a second revision.
+- CF046: exact three-tool discovery and deterministic top-level patch
+  schema/annotations with authoritative typed core validation; malformed,
+  invalid, and over-limit rejection before lazy service creation; complete
+  transaction/key/base/operation/status receipt roles; queued/replayed/busy and
+  invalid-service-output mapping; controlled direct camera patch application,
+  exact replay, conflicting-key and stale-base rejection, compatible query and
+  imagination continuation, stdout purity, and clean EOF.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
 ## 6. Deferred roadmap
 
 After the MVP and only with evidence: configurable stdio profiles, MCP
-resources/prompts/tasks/sampling/models, named-pipe or socket creation,
+resources (including bounded observation resources), prompts, tasks, sampling,
+models, named-pipe or socket creation,
 multiple clients, full-duplex scheduling, process supervision, shared-memory
 observation leases, authenticated MCP HTTP or gRPC/QUIC transport, Wasmtime procedures,
 KTX2/mesh optimization, advanced culling/batching, model bridge, Gaussian

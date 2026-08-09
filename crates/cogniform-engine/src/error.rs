@@ -329,6 +329,22 @@ pub enum LocalServiceError {
     Engine(Box<EngineError>),
 }
 
+impl LocalServiceError {
+    /// Reports a patch-processing rejection that is documented to precede mutation.
+    #[must_use]
+    pub fn is_patch_rejected_without_mutation(&self) -> bool {
+        matches!(
+            self,
+            Self::Gateway(gateway)
+                if matches!(
+                    gateway.as_ref(),
+                    GatewayError::Engine(engine)
+                        if matches!(engine.as_ref(), EngineError::WorldApply(_))
+                )
+        )
+    }
+}
+
 impl fmt::Display for LocalServiceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -526,5 +542,20 @@ mod tests {
             ))
             .is_compilation_limit_exceeded()
         );
+    }
+
+    #[test]
+    fn local_service_patch_rejection_classification_is_exact() {
+        let rejection = LocalServiceError::Gateway(Box::new(GatewayError::Engine(Box::new(
+            EngineError::WorldApply(WorldApplyError::BaseRevisionMismatch {
+                current: SceneRevision::new(2),
+                supplied: SceneRevision::new(1),
+            }),
+        ))));
+        assert!(rejection.is_patch_rejected_without_mutation());
+
+        let service_failure =
+            LocalServiceError::Gateway(Box::new(GatewayError::InvalidConfig { reason: "test" }));
+        assert!(!service_failure.is_patch_rejected_without_mutation());
     }
 }

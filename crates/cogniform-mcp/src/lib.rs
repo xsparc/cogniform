@@ -21,7 +21,7 @@ use rmcp::{
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 
-pub use server::{QUERY_SCENE_TOOL, SUBMIT_IMAGINATION_TOOL};
+pub use server::{APPLY_PATCH_TOOL, QUERY_SCENE_TOOL, SUBMIT_IMAGINATION_TOOL};
 pub use transport::{McpTransportLimits, TransportFailureKind};
 
 /// Stable MCP revision implemented by this adapter.
@@ -236,7 +236,7 @@ mod tests {
                 .iter()
                 .map(|tool| tool.name.as_ref())
                 .collect::<Vec<_>>(),
-            [QUERY_SCENE_TOOL, SUBMIT_IMAGINATION_TOOL]
+            [QUERY_SCENE_TOOL, SUBMIT_IMAGINATION_TOOL, APPLY_PATCH_TOOL]
         );
         let query = tools[0].annotations.as_ref().unwrap();
         assert_eq!(query.read_only_hint, Some(true));
@@ -248,6 +248,63 @@ mod tests {
         assert_eq!(imagination.destructive_hint, Some(true));
         assert_eq!(imagination.idempotent_hint, Some(true));
         assert_eq!(imagination.open_world_hint, Some(false));
+        let patch = tools[2].annotations.as_ref().unwrap();
+        assert_eq!(patch.read_only_hint, Some(false));
+        assert_eq!(patch.destructive_hint, Some(true));
+        assert_eq!(patch.idempotent_hint, Some(true));
+        assert_eq!(patch.open_world_hint, Some(false));
+        assert_eq!(
+            tools[2].input_schema.get("required"),
+            Some(&json!([
+                "schema_version",
+                "transaction_id",
+                "idempotency_key",
+                "base_revision",
+                "conflict_policy",
+                "delivery",
+                "declared_budget",
+                "operations"
+            ]))
+        );
+        assert_eq!(tools[2].input_schema["additionalProperties"], false);
+        assert_eq!(
+            tools[2].input_schema["properties"]["conflict_policy"],
+            json!({"const": "require_exact_base"})
+        );
+        assert_eq!(
+            tools[2].output_schema.as_ref().unwrap()["oneOf"],
+            json!([
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["schema_version", "admission", "receipt"],
+                    "properties": {
+                        "schema_version": {"const": 1},
+                        "admission": {"enum": ["queued", "replayed"]},
+                        "receipt": {"type": "object"}
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["schema_version", "error"],
+                    "properties": {
+                        "schema_version": {"const": 1},
+                        "error": {"enum": [
+                            "invalid_arguments",
+                            "invalid_patch",
+                            "patch_rejected",
+                            "service_busy",
+                            "service_unavailable",
+                            "service_failed",
+                            "invalid_service_output",
+                            "output_unavailable"
+                        ]}
+                    }
+                }
+            ])
+        );
+        assert!(tools[2].execution.is_none());
         close(client, server).await;
     }
 
@@ -278,23 +335,37 @@ mod tests {
     #[tokio::test]
     async fn invalid_arguments_are_stable_without_initializing_the_service() {
         let (client, server) = client_and_server().await;
-        let result = client
-            .peer()
-            .call_tool(CallToolRequestParams::new(QUERY_SCENE_TOOL))
-            .await
-            .unwrap();
-        assert_eq!(result.is_error, Some(true));
-        assert_eq!(
-            result.structured_content,
-            Some(json!({"schema_version": 1, "error": "invalid_arguments"}))
-        );
+        for tool in [QUERY_SCENE_TOOL, SUBMIT_IMAGINATION_TOOL, APPLY_PATCH_TOOL] {
+            let result = client
+                .peer()
+                .call_tool(CallToolRequestParams::new(tool))
+                .await
+                .unwrap();
+            assert_eq!(result.is_error, Some(true));
+            assert_eq!(
+                result.structured_content,
+                Some(json!({"schema_version": 1, "error": "invalid_arguments"}))
+            );
+        }
         close(client, server).await;
     }
 
     #[tokio::test]
     #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
-    async fn query_submission_and_replay_preserve_exact_effects() {
+    async fn query_patch_imagination_and_replay_preserve_exact_effects() {
         let (client, server) = client_and_server().await;
+        assert_initial_query(&client).await;
+        let patch = camera_patch();
+        assert_patch_apply_replay_and_conflict(&client, &patch).await;
+        assert_imagination_apply_and_replay(&client).await;
+        assert_stale_patch_is_rejected(&client, patch).await;
+        assert_final_query(&client).await;
+        close(client, server).await;
+    }
+
+    type TestClient = rmcp::service::RunningService<rmcp::service::RoleClient, ()>;
+
+    async fn assert_initial_query(client: &TestClient) {
         let initial_query = json!({
             "schema_version": 1,
             "scene_revision": 0,
@@ -315,12 +386,90 @@ mod tests {
             query_result.structured_content.unwrap()["entities"],
             json!([])
         );
+    }
 
+    fn camera_patch() -> Value {
+        json!({
+            "schema_version": 1,
+            "transaction_id": "00000000000000000000000000000011",
+            "idempotency_key": "00000000000000000000000000000021",
+            "base_revision": 0,
+            "conflict_policy": "require_exact_base",
+            "delivery": {"mode": "must_apply"},
+            "declared_budget": {
+                "max_operations": 8,
+                "max_components": 16,
+                "max_text_bytes": 128,
+                "max_decoded_bytes": 2048
+            },
+            "operations": [{
+                "operation": "create",
+                "value": {
+                    "entity_id": "00000000000000000000000000000031",
+                    "components": [
+                        {
+                            "component": "local_transform",
+                            "value": {
+                                "translation": {"x": 0.0, "y": 0.0, "z": 3.0},
+                                "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+                                "scale": {"x": 1.0, "y": 1.0, "z": 1.0}
+                            }
+                        },
+                        {
+                            "component": "camera",
+                            "value": {"vertical_fov_radians": 1.0, "near": 0.1, "far": 100.0}
+                        }
+                    ]
+                }
+            }]
+        })
+    }
+
+    async fn assert_patch_apply_replay_and_conflict(client: &TestClient, patch: &Value) {
+        let patch_request =
+            CallToolRequestParams::new(APPLY_PATCH_TOOL).with_arguments(arguments(patch.clone()));
+        let patch_applied = client
+            .peer()
+            .call_tool(patch_request.clone())
+            .await
+            .unwrap();
+        assert_eq!(patch_applied.is_error, Some(false));
+        let patch_applied = patch_applied.structured_content.unwrap();
+        assert_eq!(patch_applied["admission"], "queued");
+        assert_eq!(patch_applied["receipt"]["status"], "applied");
+        assert_eq!(patch_applied["receipt"]["new_revision"], 1);
+
+        let patch_replayed = client.peer().call_tool(patch_request).await.unwrap();
+        assert_eq!(patch_replayed.is_error, Some(false));
+        let patch_replayed = patch_replayed.structured_content.unwrap();
+        assert_eq!(patch_replayed["admission"], "replayed");
+        assert_eq!(patch_replayed["receipt"]["status"], "idempotent_replay");
+        assert_eq!(patch_replayed["receipt"]["new_revision"], 1);
+
+        let mut conflicting_patch = patch.clone();
+        conflicting_patch["transaction_id"] = json!("00000000000000000000000000000012");
+        conflicting_patch["base_revision"] = json!(1);
+        let conflicting = client
+            .peer()
+            .call_tool(
+                CallToolRequestParams::new(APPLY_PATCH_TOOL)
+                    .with_arguments(arguments(conflicting_patch)),
+            )
+            .await
+            .unwrap();
+        assert_eq!(conflicting.is_error, Some(true));
+        assert_eq!(
+            conflicting.structured_content.unwrap()["error"],
+            "patch_rejected"
+        );
+    }
+
+    async fn assert_imagination_apply_and_replay(client: &TestClient) {
         let mut imagination: Value = serde_json::from_str(include_str!(
             "../../cogniform-protocol/tests/fixtures/imagination_v1.json"
         ))
         .unwrap();
-        imagination["base_revision"] = json!(0);
+        imagination["base_revision"] = json!(1);
         let request = CallToolRequestParams::new(SUBMIT_IMAGINATION_TOOL)
             .with_arguments(arguments(imagination));
         let applied = client.peer().call_tool(request.clone()).await.unwrap();
@@ -328,21 +477,37 @@ mod tests {
         let applied = applied.structured_content.unwrap();
         assert_eq!(applied["admission"], "queued");
         assert_eq!(applied["receipt"]["status"], "applied");
-        assert_eq!(applied["receipt"]["new_revision"], 1);
+        assert_eq!(applied["receipt"]["new_revision"], 2);
 
         let replayed = client.peer().call_tool(request).await.unwrap();
         assert_eq!(replayed.is_error, Some(false));
         let replayed = replayed.structured_content.unwrap();
         assert_eq!(replayed["admission"], "replayed");
         assert_eq!(replayed["receipt"]["status"], "idempotent_replay");
-        assert_eq!(replayed["receipt"]["new_revision"], 1);
+        assert_eq!(replayed["receipt"]["new_revision"], 2);
+    }
 
+    async fn assert_stale_patch_is_rejected(client: &TestClient, mut patch: Value) {
+        patch["transaction_id"] = json!("00000000000000000000000000000013");
+        patch["idempotency_key"] = json!("00000000000000000000000000000023");
+        let stale = client
+            .peer()
+            .call_tool(
+                CallToolRequestParams::new(APPLY_PATCH_TOOL).with_arguments(arguments(patch)),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stale.is_error, Some(true));
+        assert_eq!(stale.structured_content.unwrap()["error"], "patch_rejected");
+    }
+
+    async fn assert_final_query(client: &TestClient) {
         let final_query = json!({
             "schema_version": 1,
-            "scene_revision": 1,
-            "entity_ids": [],
-            "component_kinds": [],
-            "limit": 4
+            "scene_revision": 2,
+            "entity_ids": ["00000000000000000000000000000031"],
+            "component_kinds": ["local_transform", "camera"],
+            "limit": 1
         });
         let final_result = client
             .peer()
@@ -353,12 +518,29 @@ mod tests {
             .unwrap();
         assert_eq!(final_result.is_error, Some(false));
         assert_eq!(
-            final_result.structured_content.unwrap()["entities"]
-                .as_array()
-                .unwrap()
-                .len(),
-            1
+            final_result.structured_content.unwrap()["entities"],
+            json!([{
+                "entity_id": "00000000000000000000000000000031",
+                "parent_id": null,
+                "components": [
+                    {
+                        "component": "local_transform",
+                        "value": {
+                            "translation": {"x": 0.0, "y": 0.0, "z": 3.0},
+                            "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+                            "scale": {"x": 1.0, "y": 1.0, "z": 1.0}
+                        }
+                    },
+                    {
+                        "component": "camera",
+                        "value": {
+                            "vertical_fov_radians": 1.0,
+                            "near": 0.100_000_001_490_116_12,
+                            "far": 100.0
+                        }
+                    }
+                ]
+            }])
         );
-        close(client, server).await;
     }
 }

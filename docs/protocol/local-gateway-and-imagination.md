@@ -13,8 +13,9 @@ apply an optional normalized patch.
 The current gateway is a Rust composition API, not a network service. It
 accepts typed `ScenePatch` and `ImaginationEnvelope` values, owns one
 `CogniformEngine`, and exposes caller-driven admission, processing, and logical
-query methods. CF045's separate MCP adapter translates two fixed tools into
-these methods without changing the gateway. Authentication, general sessions,
+query methods. CF045's separate MCP adapter translates query and imagination
+tools into these methods without changing the gateway; CF046 appends the
+existing explicit-patch path with the same boundary. Authentication, general sessions,
 Protobuf/gRPC, shared memory, remote delivery, persistence, and model calls are
 outside this contract.
 
@@ -149,4 +150,6 @@ for the versioned result boundary. The separate
 [ADR 0044](../adr/0044-versioned-local-imagination-session-mapping.md) records
 the bounded local-session mapping, and
 [ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md) records the separate MCP
-stdio adaptation.
+stdio adaptation, and
+[ADR 0046](../adr/0046-bounded-mcp-apply-patch-tool.md) records its direct
+bounded patch translation.
