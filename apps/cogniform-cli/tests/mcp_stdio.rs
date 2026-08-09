@@ -5,6 +5,8 @@ use std::{
     process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Output, Stdio},
 };
 
+use cogniform_observation::{ObservationPayload, ObservationPayloadLimits, decode_payload};
+use cogniform_protocol::{ObservationMetadata, RuntimeLimits};
 use serde_json::{Value, json};
 
 #[test]
@@ -48,7 +50,8 @@ fn initialize_list_and_eof_keep_stdout_protocol_pure() {
         [
             "cogniform.query_scene",
             "cogniform.submit_imagination",
-            "cogniform.apply_patch"
+            "cogniform.apply_patch",
+            "cogniform.observe_scene"
         ]
     );
 }
@@ -97,6 +100,7 @@ fn controlled_child_applies_patch_and_imagination_replays_and_closes_cleanly() {
         initial["result"]["structuredContent"]["entities"],
         json!([])
     );
+    assert_missing_camera_observation_preserves_empty_resources(&mut session);
 
     let patch = camera_patch();
     let patch_applied = session.call(3, "cogniform.apply_patch", &patch);
@@ -160,7 +164,77 @@ fn controlled_child_applies_patch_and_imagination_replays_and_closes_cleanly() {
     );
 
     assert_camera_query(&mut session);
+    assert_observation_resource(&mut session);
     session.finish();
+}
+
+fn assert_missing_camera_observation_preserves_empty_resources(session: &mut Session) {
+    let rejected = session.call(20, "cogniform.observe_scene", &observation_request(0x40, 0));
+    assert_eq!(
+        rejected["result"]["structuredContent"]["error"],
+        "observation_rejected"
+    );
+    let resources = session.send(&json!({
+        "jsonrpc": "2.0",
+        "id": 21,
+        "method": "resources/list",
+        "params": {}
+    }));
+    assert_eq!(resources["result"]["resources"], json!([]));
+}
+
+fn assert_observation_resource(session: &mut Session) {
+    let observed = session.call(10, "cogniform.observe_scene", &observation_request(0x44, 2));
+    assert_eq!(observed["result"]["isError"], false);
+    let output = &observed["result"]["structuredContent"];
+    assert_eq!(output["metadata"]["scene_revision"], 2);
+    assert_eq!(output["metadata"]["kind"], "visibility");
+    let uri = output["resource_uri"].as_str().unwrap();
+    let resources = session.send(&json!({
+        "jsonrpc": "2.0",
+        "id": 11,
+        "method": "resources/list",
+        "params": {}
+    }));
+    assert_eq!(
+        resources["result"]["resources"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(resources["result"]["resources"][0]["uri"], uri);
+    let read = session.send(&json!({
+        "jsonrpc": "2.0",
+        "id": 12,
+        "method": "resources/read",
+        "params": {"uri": uri}
+    }));
+    let blob = read["result"]["contents"][0]["blob"].as_str().unwrap();
+    let envelope = decode_base64(blob).unwrap();
+    assert_eq!(
+        u64::try_from(envelope.len()).unwrap(),
+        resources["result"]["resources"][0]["size"]
+            .as_u64()
+            .unwrap()
+    );
+    let metadata: ObservationMetadata = serde_json::from_value(output["metadata"].clone()).unwrap();
+    let payload = decode_payload(
+        &metadata,
+        &envelope,
+        &RuntimeLimits::default(),
+        ObservationPayloadLimits::default(),
+    )
+    .unwrap();
+    assert!(matches!(payload, ObservationPayload::Visibility(_)));
+}
+
+fn observation_request(observation_id: u128, scene_revision: u64) -> Value {
+    json!({
+        "schema_version": 1,
+        "observation_id": format!("{observation_id:032x}"),
+        "scene_revision": scene_revision,
+        "camera_id": "00000000000000000000000000000031",
+        "kind": "visibility",
+        "quality": "low"
+    })
 }
 
 fn assert_camera_query(session: &mut Session) {
@@ -351,6 +425,50 @@ fn json_lines(encoded: &[u8]) -> Vec<Value> {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
+}
+
+fn decode_base64(encoded: &str) -> Result<Vec<u8>, ()> {
+    if !encoded.len().is_multiple_of(4) {
+        return Err(());
+    }
+    let mut output = Vec::with_capacity(encoded.len() / 4 * 3);
+    for chunk in encoded.as_bytes().chunks_exact(4) {
+        let first = base64_value(chunk[0])?;
+        let second = base64_value(chunk[1])?;
+        let third = if chunk[2] == b'=' {
+            0
+        } else {
+            base64_value(chunk[2])?
+        };
+        let fourth = if chunk[3] == b'=' {
+            0
+        } else {
+            base64_value(chunk[3])?
+        };
+        let bits = (u32::from(first) << 18)
+            | (u32::from(second) << 12)
+            | (u32::from(third) << 6)
+            | u32::from(fourth);
+        output.push(u8::try_from(bits >> 16).unwrap());
+        if chunk[2] != b'=' {
+            output.push(u8::try_from((bits >> 8) & 0xff).unwrap());
+        }
+        if chunk[3] != b'=' {
+            output.push(u8::try_from(bits & 0xff).unwrap());
+        }
+    }
+    Ok(output)
+}
+
+fn base64_value(byte: u8) -> Result<u8, ()> {
+    match byte {
+        b'A'..=b'Z' => Ok(byte - b'A'),
+        b'a'..=b'z' => Ok(byte - b'a' + 26),
+        b'0'..=b'9' => Ok(byte - b'0' + 52),
+        b'+' => Ok(62),
+        b'/' => Ok(63),
+        _ => Err(()),
+    }
 }
 
 fn normalize(encoded: &[u8]) -> String {

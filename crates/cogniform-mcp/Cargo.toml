@@ -14,6 +14,7 @@ workspace = true
 [dependencies]
 cogniform-compilation.workspace = true
 cogniform-engine.workspace = true
+cogniform-observation.workspace = true
 cogniform-protocol.workspace = true
 rmcp.workspace = true
 serde.workspace = true

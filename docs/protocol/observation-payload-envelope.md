@@ -3,8 +3,10 @@
 CF038 adds a transport-neutral binary representation for the owned payload
 that accompanies one validated `ObservationMetadata` value. Metadata remains
 canonical JSON in `cogniform-protocol`; bulk bytes live in the separate
-`cogniform-observation` crate so a future local or remote adapter can frame the
-two values without putting image data into the causal schema.
+`cogniform-observation` crate so a local or remote adapter can frame the two
+values without putting image data into the causal schema. CF047 reuses this
+exact envelope as the one latest-value MCP observation resource; it does not
+change the binary contract.
 
 The codec is an in-memory library boundary. It opens no listener or file,
 allocates no shared memory, and does not compress, upload, retain, encrypt, or
@@ -71,9 +73,12 @@ caller-owned synchronous stream. It still provides no endpoint, session,
 authorization, rate, timeout, or confidentiality policy. Other stream or
 datagram adapters must enforce equivalent pre-buffer bounds and their own
 authenticated session. Passing an already-buffered slice to this codec does
-not make the surrounding transport bounded or trusted. Shared-memory leases,
-authenticated gRPC/QUIC, compression, image formats, observation retention,
-and automatic delivery remain separate decisions.
+not make the surrounding transport bounded or trusted. The bounded
+[MCP stdio adapter](mcp-stdio-adapter.md) can retain one successful envelope in
+memory and return it as an explicitly read base64 resource. That adapter adds
+no history or persistence. Shared-memory leases, authenticated gRPC/QUIC,
+compression, image formats, multi-value observation retention, and automatic
+delivery remain separate decisions.
 
 See [ADR 0038](../adr/0038-bounded-observation-payload-envelope.md), the
 [core contracts](core-contracts.md), and the

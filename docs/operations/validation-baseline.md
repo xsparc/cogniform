@@ -82,6 +82,10 @@ CF046 exact three-tool MCP discovery, bounded direct patch admission, receipt
 causality, retained replay, stable rejection roles, and controlled camera-patch
 continuation evidence were collected on the CPU and validated Windows profile
 on 2026-08-09.
+CF047 exact four-tool MCP discovery, bounded observation polling and causal
+validation, canonical latest-value resource readback, atomic replacement,
+failure preservation, and controlled production-service and CLI child evidence
+were collected on the CPU and validated Windows profile on 2026-08-09.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -407,43 +411,49 @@ compiles but does not execute that GPU-dependent test.
 
 CF045 adds one isolated adapter over the existing compiler, protocol, engine,
 and CLI composition boundaries. CF046 appends the existing atomic `ScenePatch`
-path without changing those boundaries. The ordinary and controlled commands
-were:
+path. CF047 adds the existing observation-codec edge and composes one bounded
+request with one latest-value MCP resource. The ordinary and controlled
+commands were:
 
 ```text
 cargo fmt --all --check
-cargo clippy -p cogniform-compilation -p cogniform-engine -p cogniform-protocol -p cogniform-mcp -p cogniform-cli --all-targets --all-features --locked --offline -- -D warnings
-cargo test -p cogniform-mcp -p cogniform-cli -p cogniform-engine -p cogniform-protocol --all-features --locked --offline
+cargo clippy -p cogniform-compilation -p cogniform-engine -p cogniform-observation -p cogniform-protocol -p cogniform-mcp -p cogniform-cli --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-mcp -p cogniform-cli -p cogniform-engine -p cogniform-observation -p cogniform-protocol --all-features --locked --offline
 cargo test -p cogniform-cli --test mcp_stdio --locked --offline
-cargo test -p cogniform-mcp --all-features --locked --offline tests::query_patch_imagination_and_replay_preserve_exact_effects -- --ignored --exact --nocapture
-cargo test --release -p cogniform-cli --test mcp_stdio controlled_child_applies_patch_and_imagination_replays_and_closes_cleanly --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-mcp --all-features --locked --offline tests::query_patch_imagination_observation_and_replay_preserve_exact_effects -- --ignored --exact --nocapture
+cargo test --release -p cogniform-cli --test mcp_stdio --all-features --locked --offline controlled_child_applies_patch_and_imagination_replays_and_closes_cleanly -- --ignored --exact --nocapture
 cargo deny check advisories bans licenses sources
 ```
 
 The portable adapter tests cover official `rmcp` client initialization at
-exact stable version `2025-11-25`; deterministic three-tool order, fixed
-top-level patch schema metadata, authoritative typed core validation, and
-pessimistic annotations;
+exact stable version `2025-11-25`; deterministic four-tool order, fixed
+top-level patch and observation schema metadata, authoritative typed core validation, and
+pessimistic annotations; resources without subscription/list-change support;
 rejection of a newer known version; invalid arguments before lazy service
 creation; malformed, invalid, and over-limit patch rejection; exact queued,
 replayed, busy, service-failure, response-kind, and receipt-causality roles;
 byte and nesting equality; incremental oversize/deep input rejection
 before JSON-RPC decode; output preflight; stable redacted malformed/truncated
-categories; and a default-envelope capacity guard for maximum core compilation
-and receipt results. One adapter-backed library integration and one CLI child
+categories; one-request-through-flush backpressure under a stalled writer; and
+a default-envelope capacity guard for maximum core compilation
+and receipt results plus an exact worst-case 4 MiB envelope resource-read
+capacity guard. Fake-backend official-client tests prove valid observation,
+resource link/list/read, exact RFC 4648 base64, atomic replacement, old-URI
+rejection, and prior-resource preservation after failure. One adapter-backed
+library integration and one CLI child
 integration remain controlled/ignored because exact-revision query,
 direct camera patch and one-command imagination application, and retained
-replay construct the real GPU-backed local service. The explicit library and
+replay plus camera observation construct the real GPU-backed local service. The explicit library and
 optimized CLI child tests passed query, camera patch application, exact replay,
 conflicting-key and stale-base rejection, compatible imagination continuation,
-final query, protocol-pure stdout, and clean EOF on the validated Windows
-profile.
+final query, exact-revision canonical observation resource listing/readback,
+protocol-pure stdout, and clean EOF on the validated Windows profile.
 
 Production enables only the exact-pinned `rmcp` server and restricted Tokio
 runtime features needed by this adapter; HTTP, client, OAuth, TLS, process, and
 built-in stdio features are absent. The adapter supplies its own bounded
 transport, creates no listener or socket, and makes no authentication,
-confidentiality, deadline, remote, or additional-platform claim. The complete
+confidentiality, general-deadline, remote, or additional-platform claim. The complete
 workspace, rustdoc, dependency-policy, and public-tree gates remain required.
 Those final offline workspace build/test, warning-denied Clippy/rustdoc, format,
 first-party diff, workflow-state, and public-tree gates also passed. Vendored
