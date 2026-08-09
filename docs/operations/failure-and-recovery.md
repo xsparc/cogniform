@@ -56,7 +56,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | `serve-stdio` reaches EOF after a complete pre-hello frame or active hello, receives truncation/corruption, or exceeds a live-operation deadline | Terminate the child session nonzero with one stable redacted category; do not retry or read another frame | CF042 fake-stream scheduling and deadline tests |
 | `serve-stdio` encounters service/executor failure or writes/flushes only part of an output | Flush a complete fatal service frame when available, then terminate; otherwise report output/executor failure, preserve any physical prefix, and never retry or resynchronize | CF042 fatal-service, write-zero, prefix-write, flush, and executor-fault tests |
 | `serve-mcp-stdio` receives extra arguments, an interactive stream, a wrong initialization version, malformed/truncated JSON, or an input over its byte/nesting limits | Reject before lazy service creation when possible; return a bounded JSON-RPC error for an identified request or terminate nonzero with one stable payload-redacted category | CF045 transport equality/adversarial tests and CLI black-box tests |
-| An MCP query or imagination is semantically invalid, stale, busy, or inconsistent with compilation/receipt roles | Return one small structured tool error; validate arguments before lazy service creation, serialize service access, process at most one queued command, and use retained replay without a second compilation or mutation | CF045 portable official-client invalid-argument tests plus controlled adapter-backed query, apply, replay, and exact-revision integrations |
+| An MCP query, imagination, or direct patch is semantically invalid, stale, conflicting, busy, or inconsistent with compilation/receipt roles | Return one small structured tool error; validate arguments before lazy service creation, serialize service access, process at most one queued command, and use retained replay without a second compilation or mutation | CF045-CF046 portable official-client and role tests plus controlled adapter-backed query, apply, replay, conflict, stale-base, and exact-revision integrations |
 | `serve-mcp-stdio` cannot encode, write, or flush a bounded output | Record the first stable transport failure, interrupt a pending read, terminate the session, preserve any physical prefix, and never retry or resynchronize | CF045 bounded writer, output equality/nesting, transport-status, and child-process tests |
 | Public path or credential pattern staged | Fail with rule/path only; never echo the matched value | public-repository safeguard fixtures |
 
@@ -140,10 +140,15 @@ transport category. Invalid typed tool arguments are rejected before the lazy
 Tool calls are serialized against one service. A query binds to one exact
 revision and cannot mutate. An imagination admits at most one command, validates
 the returned compilation and receipt against the submitted identities, and
-returns retained replay without another `process_next` call. Treat
-`invalid_service_output` or `service_failed` as loss of trust in that child:
-discard it and inspect a fresh service or approved recovery point rather than
-retrying the request against the same process.
+returns retained replay without another `process_next` call. A direct patch is
+validated before lazy creation, admitted only through
+`LocalService`, and binds the returned receipt to the submitted transaction,
+key, base, operation count, and apply/replay role. Correct `invalid_patch` or
+`patch_rejected` with a fresh identity/key and the current revision when the
+intended content changes. Treat
+`invalid_service_output`, `service_failed`, or `output_unavailable` as loss of
+trust in that child: discard it and inspect a fresh service or approved
+recovery point rather than retrying the request against the same process.
 
 Each response is fully encoded and checked against the byte and nesting limits
 before its first write. A later inherited-stream failure may still leave a

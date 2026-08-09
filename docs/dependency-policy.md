@@ -180,6 +180,17 @@ ambient network operation in the enabled adapter. They remain behind one local
 single-user inherited-stdio boundary; broader MCP capability or transport
 features require a new ADR and dependency review.
 
+CF046 adds no package, feature, checksum, build script, or Cargo dependency
+edge. It translates the existing core `ScenePatch` through the already-approved
+`cogniform-mcp -> cogniform-engine -> cogniform-protocol` direction. A focused
+scan on 2026-08-09 found that the official Rust SDK has newer releases, while
+the implemented stable tools contract remains MCP `2025-11-25`. This slice
+retains exact-pinned `rmcp` 2.2.0 because upgrading the SDK is independent of
+the patch tool, would expand compatibility risk, and has no required fix for
+this local profile. See the official
+[Rust SDK releases](https://github.com/modelcontextprotocol/rust-sdk/releases)
+and [tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

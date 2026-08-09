@@ -1,6 +1,7 @@
 # MCP stdio adapter
 
-Status: fixed local schema and runtime profile implemented by CF045.
+Status: fixed local schema and runtime profile implemented by CF045 and
+extended with bounded direct patch application by CF046.
 
 `cogniform-cli serve-mcp-stdio` serves stable MCP `2025-11-25` over inherited
 redirected stdin/stdout. It is a local child-process adapter, not a listener or
@@ -29,6 +30,13 @@ The server advertises only the tools capability and these tools in this order:
 |---|---|---|---|
 | `cogniform.query_scene` | One complete core `SceneQuery` object | One complete core `SceneQueryResult` as `structuredContent` | read-only, non-destructive, idempotent, closed world |
 | `cogniform.submit_imagination` | One complete core `ImaginationEnvelope` object | `{schema_version, admission, compilation, receipt}` as `structuredContent` | mutating, destructive, idempotent, closed world |
+| `cogniform.apply_patch` | One complete core `ScenePatch` object | Success `{schema_version, admission, receipt}` or stable error `{schema_version, error}` as `structuredContent` | mutating, destructive, idempotent, closed world |
+
+The advertised JSON Schemas deterministically fix each tool's top-level fields,
+required names, success/error wrapper roles, and selected scalar constraints. They are
+discovery metadata, not a duplicate recursive definition of Cogniform's core
+schema. Deserialization plus the core type's bounded canonical validation is
+authoritative for nested patch, imagination, query, result, and receipt values.
 
 `query_scene` requires the exact current revision and never mutates service
 state. `submit_imagination` accepts a new command only when the adapter-owned
@@ -38,8 +46,26 @@ compilation and an `idempotent_replay` receipt without a second compile or
 world revision. Invalid caller values return a small stable structured tool
 error and no nested diagnostics.
 
+`apply_patch` follows the same empty-queue, one-command, and retained-replay
+rules without invoking the compiler. The adapter validates the complete patch
+before lazy service creation, submits it only through `LocalService`, and
+revalidates the returned receipt against the patch transaction, idempotency
+key, base revision, operation count, and `applied` or `idempotent_replay`
+status. A new accepted patch returns `admission: "queued"`; an exact retained
+retry returns `admission: "replayed"` without another world revision.
+
+Patch-path structured tool error codes are `invalid_arguments`, `invalid_patch`,
+`patch_rejected`, `service_busy`, `service_unavailable`, `service_failed`,
+`invalid_service_output`, and `output_unavailable`. Malformed or semantically
+invalid patches reject before service creation. `patch_rejected` covers
+submission failures and engine world-apply errors documented to leave the
+authoritative world unchanged, including stale base revisions and conflicting
+idempotency use. Treat `service_failed`, `invalid_service_output`, and
+`output_unavailable` as loss of trust in that child; do not infer or retry an
+effect in the same process.
+
 Prompts, resources, observation payloads, task execution, sampling,
-elicitation, logging, custom models, direct patch/procedure/asset/recovery
+elicitation, logging, custom models, procedure/asset/recovery
 tools, HTTP, sockets, OAuth, and server-created processes are not advertised or
 supported.
 
@@ -65,6 +91,7 @@ include the input payload, tool arguments, OS error text, adapter identity, or
 scene content. A partial physical output remains possible after an operating
 system write failure; the adapter never retries or resynchronizes that line.
 
-See [ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md), the
+See [ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md),
+[ADR 0046](../adr/0046-bounded-mcp-apply-patch-tool.md), the
 [quickstart](../getting-started/mcp-stdio-adapter.md), and the
 [threat model](../threat-model/mvp.md).

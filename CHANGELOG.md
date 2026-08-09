@@ -140,8 +140,9 @@ release yet; the current workspace version remains `0.0.0`.
   live-operation deadline, fatal service-frame handling, and stable redacted
   diagnostics;
 - a separate `cogniform-mcp` crate and `cogniform-cli serve-mcp-stdio`
-  composition for stable MCP `2025-11-25`, with exactly two ordered tools for
-  exact-revision scene query and idempotent imagination submission; incremental
+  composition for stable MCP `2025-11-25`, with exactly three ordered tools for
+  exact-revision scene query, idempotent imagination submission, and bounded
+  direct atomic patch application; incremental
   newline byte/nesting preflight; bounded encode-before-write output; one
   serialized lazily created local service; exact compilation, receipt, and
   retained-replay validation; official-client conformance; and no listener,
@@ -154,6 +155,16 @@ release yet; the current workspace version remains `0.0.0`.
   checklist.
 
 ### Changed
+
+- the MCP tool list appends `cogniform.apply_patch` after the existing two
+  tools. It accepts one complete core `ScenePatch` through `LocalService`,
+  validates exact receipt causality and retained replay, and adds the public
+  `APPLY_PATCH_TOOL` constant plus the engine-owned
+  `LocalServiceError::is_patch_rejected_without_mutation` classifier in the
+  unpublished `0.0.0` workspace. Existing
+  query/imagination shapes and behavior, MCP version, external dependencies,
+  `Cargo.lock`, transport, trust boundary, deployment, version, and release
+  state are unchanged;
 
 - the exact-pinned vendored dependency graph adds `rmcp` 2.2.0, `tokio` 1.53.1,
   and their restricted server/runtime support graph for the isolated MCP
@@ -270,7 +281,7 @@ release yet; the current workspace version remains `0.0.0`.
   confidentiality, authorization, freshness, replay policy, cancellation,
   resynchronization, full duplex, multi-client, daemon, or remote guarantee;
 - `serve-mcp-stdio` supports one parent-owned inherited-stream client, stable
-  MCP `2025-11-25`, two fixed tools, serialized calls, and one lazy 64x64 local
+  MCP `2025-11-25`, three fixed tools, serialized calls, and one lazy 64x64 local
   service. It supplies no operation deadline, preemptive cancellation,
   authentication, authorization, confidentiality, freshness/rate/tenancy
   policy, resynchronization, multi-client service, daemon, or remote guarantee;

@@ -45,7 +45,11 @@ fn initialize_list_and_eof_keep_stdout_protocol_pure() {
             .iter()
             .map(|tool| tool["name"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["cogniform.query_scene", "cogniform.submit_imagination"]
+        [
+            "cogniform.query_scene",
+            "cogniform.submit_imagination",
+            "cogniform.apply_patch"
+        ]
     );
 }
 
@@ -75,7 +79,7 @@ fn malformed_input_is_redacted_and_emits_no_stdout() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
-fn controlled_child_queries_applies_replays_and_closes_cleanly() {
+fn controlled_child_applies_patch_and_imagination_replays_and_closes_cleanly() {
     let mut session = Session::start();
     let initial = session.call(
         2,
@@ -94,49 +98,108 @@ fn controlled_child_queries_applies_replays_and_closes_cleanly() {
         json!([])
     );
 
+    let patch = camera_patch();
+    let patch_applied = session.call(3, "cogniform.apply_patch", &patch);
+    assert_eq!(
+        patch_applied["result"]["structuredContent"]["admission"],
+        "queued"
+    );
+    assert_eq!(
+        patch_applied["result"]["structuredContent"]["receipt"]["new_revision"],
+        1
+    );
+    let patch_replayed = session.call(4, "cogniform.apply_patch", &patch);
+    assert_eq!(
+        patch_replayed["result"]["structuredContent"]["admission"],
+        "replayed"
+    );
+    assert_eq!(
+        patch_replayed["result"]["structuredContent"]["receipt"]["status"],
+        "idempotent_replay"
+    );
+    let mut conflicting_patch = patch.clone();
+    conflicting_patch["transaction_id"] = json!("00000000000000000000000000000012");
+    conflicting_patch["base_revision"] = json!(1);
+    let conflicting = session.call(5, "cogniform.apply_patch", &conflicting_patch);
+    assert_eq!(
+        conflicting["result"]["structuredContent"]["error"],
+        "patch_rejected"
+    );
+
     let mut imagination: Value = serde_json::from_str(include_str!(
         "../../../crates/cogniform-protocol/tests/fixtures/imagination_v1.json"
     ))
     .unwrap();
-    imagination["base_revision"] = json!(0);
-    let applied = session.call(3, "cogniform.submit_imagination", &imagination);
+    imagination["base_revision"] = json!(1);
+    let applied = session.call(6, "cogniform.submit_imagination", &imagination);
     assert_eq!(
         applied["result"]["structuredContent"]["admission"],
         "queued"
     );
     assert_eq!(
         applied["result"]["structuredContent"]["receipt"]["new_revision"],
-        1
+        2
     );
-    let replayed = session.call(4, "cogniform.submit_imagination", &imagination);
+    let replayed = session.call(7, "cogniform.submit_imagination", &imagination);
     assert_eq!(
         replayed["result"]["structuredContent"]["admission"],
         "replayed"
     );
     assert_eq!(
         replayed["result"]["structuredContent"]["receipt"]["new_revision"],
-        1
+        2
     );
 
-    let final_query = session.call(
-        5,
+    let mut stale_patch = patch;
+    stale_patch["transaction_id"] = json!("00000000000000000000000000000013");
+    stale_patch["idempotency_key"] = json!("00000000000000000000000000000023");
+    let stale = session.call(8, "cogniform.apply_patch", &stale_patch);
+    assert_eq!(
+        stale["result"]["structuredContent"]["error"],
+        "patch_rejected"
+    );
+
+    assert_camera_query(&mut session);
+    session.finish();
+}
+
+fn assert_camera_query(session: &mut Session) {
+    let query = session.call(
+        9,
         "cogniform.query_scene",
         &json!({
             "schema_version": 1,
-            "scene_revision": 1,
-            "entity_ids": [],
-            "component_kinds": [],
-            "limit": 4
+            "scene_revision": 2,
+            "entity_ids": ["00000000000000000000000000000031"],
+            "component_kinds": ["local_transform", "camera"],
+            "limit": 1
         }),
     );
     assert_eq!(
-        final_query["result"]["structuredContent"]["entities"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
+        query["result"]["structuredContent"]["entities"],
+        json!([{
+            "entity_id": "00000000000000000000000000000031",
+            "parent_id": null,
+            "components": [
+                {
+                    "component": "local_transform",
+                    "value": {
+                        "translation": {"x": 0.0, "y": 0.0, "z": 3.0},
+                        "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+                        "scale": {"x": 1.0, "y": 1.0, "z": 1.0}
+                    }
+                },
+                {
+                    "component": "camera",
+                    "value": {
+                        "vertical_fov_radians": 1.0,
+                        "near": 0.100_000_001_490_116_12,
+                        "far": 100.0
+                    }
+                }
+            ]
+        }])
     );
-    session.finish();
 }
 
 struct Session {
@@ -220,6 +283,47 @@ fn initialize(id: u64) -> Value {
             "capabilities": {},
             "clientInfo": {"name": "cogniform-cli-test", "version": "1"}
         }
+    })
+}
+
+fn camera_patch() -> Value {
+    json!({
+        "schema_version": 1,
+        "transaction_id": "00000000000000000000000000000011",
+        "idempotency_key": "00000000000000000000000000000021",
+        "base_revision": 0,
+        "conflict_policy": "require_exact_base",
+        "delivery": {"mode": "must_apply"},
+        "declared_budget": {
+            "max_operations": 8,
+            "max_components": 16,
+            "max_text_bytes": 128,
+            "max_decoded_bytes": 2048
+        },
+        "operations": [{
+            "operation": "create",
+            "value": {
+                "entity_id": "00000000000000000000000000000031",
+                "components": [
+                    {
+                        "component": "local_transform",
+                        "value": {
+                            "translation": {"x": 0.0, "y": 0.0, "z": 3.0},
+                            "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+                            "scale": {"x": 1.0, "y": 1.0, "z": 1.0}
+                        }
+                    },
+                    {
+                        "component": "camera",
+                        "value": {
+                            "vertical_fov_radians": 1.0,
+                            "near": 0.1,
+                            "far": 100.0
+                        }
+                    }
+                ]
+            }
+        }]
     })
 }
 
