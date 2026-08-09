@@ -292,6 +292,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
     async fn query_submission_and_replay_preserve_exact_effects() {
         let (client, server) = client_and_server().await;
         let initial_query = json!({

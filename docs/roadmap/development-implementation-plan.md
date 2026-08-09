@@ -1259,9 +1259,9 @@ Validation expands with capability:
   deterministic query/imagination tool order, schemas, and annotations;
   incremental input and encode-before-output byte/nesting bounds with equality
   cases; malformed/truncated/redacted failure behavior; lazy invalid-argument
-  handling; exact query, compiled application, retained replay without a
-  second revision; ordinary initialize/list/EOF stdout purity; and one
-  controlled ignored CLI child exchange.
+  handling; ordinary initialize/list/EOF stdout purity; and controlled ignored
+  adapter-backed library and CLI exchanges covering exact query, compiled
+  application, and retained replay without a second revision.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

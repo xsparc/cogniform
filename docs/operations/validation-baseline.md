@@ -413,17 +413,18 @@ cargo test --release -p cogniform-cli --test mcp_stdio controlled_child_queries_
 cargo deny check advisories bans licenses sources
 ```
 
-The 13 adapter tests cover official `rmcp` client initialization at exact stable
-version `2025-11-25`; deterministic tool order and annotations; rejection of a
-newer known version; invalid arguments before lazy service creation; exact-
-revision query; one-command imagination application; retained replay without a
-second compilation or mutation; byte and nesting equality; incremental
-oversize/deep input rejection before JSON-RPC decode; output preflight; stable
-redacted malformed/truncated categories; and a default-envelope capacity guard
-for maximum core compilation and receipt results. The ordinary CLI black-box
-suite passed three tests and kept one adapter-backed child test ignored. The
-explicit optimized child test then passed query, apply, replay, final query,
-protocol-pure stdout, and clean EOF on the validated Windows profile.
+The 12 portable adapter tests cover official `rmcp` client initialization at
+exact stable version `2025-11-25`; deterministic tool order and annotations;
+rejection of a newer known version; invalid arguments before lazy service
+creation; byte and nesting equality; incremental oversize/deep input rejection
+before JSON-RPC decode; output preflight; stable redacted malformed/truncated
+categories; and a default-envelope capacity guard for maximum core compilation
+and receipt results. One adapter-backed library integration and one CLI child
+integration remain controlled/ignored because exact-revision query,
+one-command imagination application, and retained replay construct the real
+GPU-backed local service. The explicit optimized CLI child test passed query,
+apply, replay, final query, protocol-pure stdout, and clean EOF on the validated
+Windows profile.
 
 Production enables only the exact-pinned `rmcp` server and restricted Tokio
 runtime features needed by this adapter; HTTP, client, OAuth, TLS, process, and

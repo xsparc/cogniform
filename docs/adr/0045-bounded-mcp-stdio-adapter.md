@@ -80,9 +80,10 @@ JSON-RPC only; diagnostics use stderr.
 
 Accepted and implemented by CF045. Ordinary tests cover byte-bound equality,
 nesting scanning, malformed and truncated input, exact version locking,
-official-SDK initialization and tool discovery, annotations, lazy validation
-failure, exact query, compilation/application, and retained replay. CLI
-black-box tests cover exact arguments, initialize/list/EOF, stdout purity, and
-redacted malformed input. A controlled ignored child test covers query,
-semantic mutation, replay without a second revision, final query, and clean
-EOF on an approved adapter.
+official-SDK initialization and tool discovery, annotations, and lazy
+validation failure without constructing the real service. CLI black-box tests
+cover exact arguments, initialize/list/EOF, stdout purity, and redacted
+malformed input. Adapter-backed library and CLI integrations are
+controlled/ignored; the explicit CLI child test covers exact query, semantic
+mutation, replay without a second revision, final query, and clean EOF on an
+approved adapter.
