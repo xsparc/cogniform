@@ -55,6 +55,9 @@ or automatic startup/rehydration; operators compose those concerns.
 | `serve-stdio` reaches frame-boundary EOF before any frame | Exit successfully without constructing the local service or writing output | CF042 fake-stream and piped child-process tests |
 | `serve-stdio` reaches EOF after a complete pre-hello frame or active hello, receives truncation/corruption, or exceeds a live-operation deadline | Terminate the child session nonzero with one stable redacted category; do not retry or read another frame | CF042 fake-stream scheduling and deadline tests |
 | `serve-stdio` encounters service/executor failure or writes/flushes only part of an output | Flush a complete fatal service frame when available, then terminate; otherwise report output/executor failure, preserve any physical prefix, and never retry or resynchronize | CF042 fatal-service, write-zero, prefix-write, flush, and executor-fault tests |
+| `serve-mcp-stdio` receives extra arguments, an interactive stream, a wrong initialization version, malformed/truncated JSON, or an input over its byte/nesting limits | Reject before lazy service creation when possible; return a bounded JSON-RPC error for an identified request or terminate nonzero with one stable payload-redacted category | CF045 transport equality/adversarial tests and CLI black-box tests |
+| An MCP query or imagination is semantically invalid, stale, busy, or inconsistent with compilation/receipt roles | Return one small structured tool error; validate arguments before lazy service creation, serialize service access, process at most one queued command, and use retained replay without a second compilation or mutation | CF045 portable official-client invalid-argument tests plus controlled adapter-backed query, apply, replay, and exact-revision integrations |
+| `serve-mcp-stdio` cannot encode, write, or flush a bounded output | Record the first stable transport failure, interrupt a pending read, terminate the session, preserve any physical prefix, and never retry or resynchronize | CF045 bounded writer, output equality/nesting, transport-status, and child-process tests |
 | Public path or credential pattern staged | Fail with rule/path only; never echo the matched value | public-repository safeguard fixtures |
 
 Run the CPU failure matrix through the ordinary offline workspace suite:
@@ -123,6 +126,32 @@ This fixed inherited-stdio profile authenticates no peer, encrypts no data,
 creates no pipe or listener, and performs no automatic restart. Do not expose
 it as a remote or multi-tenant endpoint. See the
 [stdio-session guide](../protocol/local-stdio-session.md) for the exact flow.
+
+### MCP stdio failure
+
+The launching parent owns redirected stdin/stdout, the child lifetime, and all
+JSON-RPC, scene, compilation, and receipt values. Initialization must negotiate
+exactly MCP `2025-11-25`; identified pre-initialization requests receive a small
+JSON-RPC error where possible, while malformed, over-limit, deeply nested,
+truncated, or failed input terminates the session with a stable payload-redacted
+transport category. Invalid typed tool arguments are rejected before the lazy
+`LocalService` is created.
+
+Tool calls are serialized against one service. A query binds to one exact
+revision and cannot mutate. An imagination admits at most one command, validates
+the returned compilation and receipt against the submitted identities, and
+returns retained replay without another `process_next` call. Treat
+`invalid_service_output` or `service_failed` as loss of trust in that child:
+discard it and inspect a fresh service or approved recovery point rather than
+retrying the request against the same process.
+
+Each response is fully encoded and checked against the byte and nesting limits
+before its first write. A later inherited-stream failure may still leave a
+physical prefix; never retry or attempt JSON-line resynchronization. This
+adapter has no operation deadline or preemptive cancellation. The parent must
+enforce any stronger timeout, kill/reap, authorization, confidentiality,
+freshness, rate, tenancy, or restart policy. See the
+[MCP stdio adapter guide](../protocol/mcp-stdio-adapter.md) for the exact flow.
 
 ### Procedure rejection
 

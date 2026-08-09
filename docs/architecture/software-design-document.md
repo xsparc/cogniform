@@ -68,6 +68,7 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-local-transport` | Fixed bounded frames over caller-owned synchronous streams | Depends only on protocol, observation values, deterministic hashing, and standard I/O traits; opens no endpoint and owns no session or service state |
 | `cogniform-local-session` | Versioned direction-specific control values and canonical bounded CF039 control bytes | Depends only on compilation values, protocol, and local transport; executes no service work and opens no endpoint |
 | `cogniform-local-executor` | Bounded caller-driven session lifecycle, service mapping, and exact correlation ownership | Depends on compilation values, engine, and the protocol/session/transport boundaries; owns one supplied local service but no endpoint, I/O, thread, timer, or runtime loop |
+| `cogniform-mcp` | Stable bounded MCP initialization, exact query/imagination tools, and inherited-stream JSON-RPC framing | Depends on compilation, engine, protocol, the exact-pinned official SDK, and minimal async runtime features; owns no domain state, listener, network/auth stack, process launch, or model authority |
 | `cogniform-compiler` | Pure seeded primitive imagination normalization | Depends only on compilation values, protocol, and deterministic hashing; owns no world/service state |
 | `cogniform-world` | `hecs` implementation, stable-ID index, validation, atomic commit, hierarchy, transforms, queries | Depends on protocol/math; never renderer or service |
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
@@ -117,6 +118,13 @@ replay. Effective result bounds are installed in the service compiler before
 semantic admission so over-limit compilation cannot apply a patch. Version-one
 bytes remain fixed; the executor maps both command kinds through the existing gateway and the stdio loop remains generic and
 half-duplex.
+CF045 adds an independent `cogniform-mcp` adapter over the already-proven
+engine query and imagination semantics. It locks stable MCP 2025-11-25,
+preflights newline bytes and outer nesting before decode/write, lazily creates
+one fixed local service, serializes calls, and exposes exactly query plus
+semantic submission. It does not depend on or alter the binary local-session
+crates and adds no HTTP, socket, authentication, model, or multi-client
+authority.
 Spatial acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -146,6 +154,7 @@ protocol <- world <- replay
 
 local transport <- local session <- local executor -> engine
 CLI -> local executor
+CLI -> MCP adapter -> engine
 ```
 
 The diagram shows allowed information flow, not permission to create circular Cargo dependencies. Shared render DTOs belong in a dependency-neutral boundary rather than making world depend on renderer.
@@ -161,7 +170,10 @@ service APIs while leaving both narrower crates unaware of each other; its
 caller explicitly drives every transition. The CLI's fixed-profile stdio
 composition owns the inherited stream, scheduling, flush, and shutdown policy
 while depending on those existing boundaries; it creates no reverse
-dependency. Storage depends on the public
+dependency. The MCP adapter separately owns only bounded newline JSON-RPC,
+stable initialization, typed translation, and one serialized lazy service; the
+engine remains unaware of MCP and the adapter opens no listener or child
+process. Storage depends on the public
 recovery and asset identities it persists. The CLI may compose engine and storage but must not
 move filesystem authority into the engine.
 
@@ -510,6 +522,8 @@ control message without executing it, including version-two imagination and
 compilation-result roles,
 execute one bounded caller-driven local session over an owned service without
 opening an endpoint or starting an automatic loop,
+serve one exact bounded MCP 2025-11-25 inherited-stdio session with only
+exact-revision query and semantic imagination tools,
 capture complete or exact-revision local recovery state, restore it into a
 fresh service, explicitly persist/load one immutable local recovery file or
 one independent exact-hash asset-source file, inspect one recovery file through
@@ -521,10 +535,10 @@ controlled CPU measurement with an
 optional versioned CLI JSON report, run the canonical unattended scenario with
 an optional versioned CLI JSON proof, revert live recorded state,
 resolve assets, and explicitly evict one content hash from CPU/GPU residency.
-Initial
-implementation can use in-process Rust types and
-canonical JSON fixtures. Protobuf/gRPC, MCP, local shared memory, and QUIC are
-adapters introduced after the core semantics are tested.
+Initial implementation can use in-process Rust types and canonical JSON
+fixtures. CF045 now supplies the first narrow MCP stdio adapter after the core
+semantics were tested. Protobuf/gRPC, MCP HTTP/authentication, MCP resources or
+model features, local shared memory, and QUIC remain separate future adapters.
 
 Public schemas always declare version, maximum encoded/decoded size, collection/string/nesting limits, unknown-field behavior, and asset references separate from bulk bytes.
 
@@ -562,6 +576,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Local-session messages | Every schema-version-one client/server variant round-trips exact LF bytes; direction, version, unknown fields, noncanonical bytes, nesting, substitutions, nested values, receipt roles, frame kind, and effective limits fail closed before returning a message |
 | Local-session executor | One caller-driven service session negotiates field-wise limits, preserves exact patch/observation correlations through deterministic bounded advancement, emits stable failures, and closes only when quiescent |
 | Local stdio session | Exact arguments and redirected streams are checked before adapter selection; immediate EOF is a clean no-op, while complete-session EOF, truncation, corruption, service/executor failure, deadline, write, and flush failures terminate with stable redacted diagnostics and no whole-frame retry |
+| MCP stdio adapter | Stable 2025-11-25 initialization, exact deterministic query/imagination tool metadata, incremental input and encode-before-output bounds, lazy serialized service access, exact query/application/replay roles, stdout purity, EOF, and redacted transport failure behavior pass through official-SDK and CLI child tests |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
 | Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |

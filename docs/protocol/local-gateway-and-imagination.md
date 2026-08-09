@@ -13,8 +13,10 @@ apply an optional normalized patch.
 The current gateway is a Rust composition API, not a network service. It
 accepts typed `ScenePatch` and `ImaginationEnvelope` values, owns one
 `CogniformEngine`, and exposes caller-driven admission, processing, and logical
-query methods. Authentication, sessions, Protobuf/gRPC, MCP, shared memory,
-remote delivery, persistence, and model calls are outside this contract.
+query methods. CF045's separate MCP adapter translates two fixed tools into
+these methods without changing the gateway. Authentication, general sessions,
+Protobuf/gRPC, shared memory, remote delivery, persistence, and model calls are
+outside this contract.
 
 ## Admission and idempotency
 
@@ -145,4 +147,6 @@ for service procedure composition, and
 semantics, and [ADR 0043](../adr/0043-bounded-transport-neutral-compilation-results.md)
 for the versioned result boundary. The separate
 [ADR 0044](../adr/0044-versioned-local-imagination-session-mapping.md) records
-the bounded local-session mapping.
+the bounded local-session mapping, and
+[ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md) records the separate MCP
+stdio adaptation.

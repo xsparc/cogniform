@@ -135,6 +135,51 @@ owns only the typed version-two mapping and bounded canonical validation; the
 executor delegates execution to the existing local service, and the CLI edge
 constructs controlled test values only.
 
+## Approved MCP SDK and async runtime
+
+CF045 admits exact-pinned `rmcp` 2.2.0 and Tokio 1.53.1 for the isolated
+`cogniform-mcp` adapter. `rmcp` is the Apache-2.0 official Rust MCP SDK and the
+selected version implements stable MCP 2025-11-25 under the workspace's Rust
+1.97.1 toolchain. Default SDK features are disabled. Production enables only
+`server`, which requires schema support and the async read/write codec; the
+adapter deliberately does not enable macros, built-in stdio, child process,
+HTTP client/server, reqwest, TLS, OAuth/auth, UUID, random, worker, or network
+transport features. The project-owned transport supplies the stronger
+incremental line and nesting bounds. The SDK `client` feature is added only for
+official-client tests. That development edge also names
+`transport-async-rw`, which production already inherits from `server`;
+production does not use the SDK stdio wrapper.
+
+Tokio enables only inherited stdio, I/O utilities, macros, a current-thread
+runtime, and synchronization. No time, signal, filesystem, process, socket,
+network, or multi-thread runtime feature is requested directly. The 30 new
+external lock entries are the SDK/runtime plus their async, schema, tracing,
+proc-macro, and platform-time support: `rmcp`, `tokio`, `tokio-macros`,
+`tokio-util`, `tokio-stream`, `bytes`, the Futures crates, `async-trait`,
+`chrono`, `iana-time-zone`, `iana-time-zone-haiku`, `core-foundation-sys`,
+`schemars`, `schemars_derive`, `serde_derive_internals`, `dyn-clone`,
+`ref-cast`, `ref-cast-impl`, `pastey`, `tracing`, `tracing-core`,
+`tracing-attributes`, `cc`, `find-msvc-tools`, and `shlex`. All are permissive
+under the existing allow-list; exact checksums and sources are committed in
+`Cargo.lock` and `vendor/`.
+
+The graph adds proc macros and reviewed unsafe internals in the established
+Tokio/Chrono/Tracing/Futures ecosystem, but no first-party unsafe code or
+native runtime library. Target-only IANA/Haiku support accounts for the `cc`
+tooling edge; it is not built on the declared Windows/Linux profile. `rmcp`
+and `ref-cast` contain build scripts. `ref-cast` writes one generated private
+module and queries the configured compiler version. The byte-exact vendored
+`rmcp` script conditionally invokes `git config` only when both `.git` and
+`.githooks` exist two directories above its manifest. Cogniform has no
+`.githooks`, and the public-tree policy rejects unapproved hidden root state;
+adding that directory or changing SDK source/features requires renewed supply-
+chain review before build execution.
+
+The SDK and runtime perform no paid call, telemetry, runtime download, or
+ambient network operation in the enabled adapter. They remain behind one local
+single-user inherited-stdio boundary; broader MCP capability or transport
+features require a new ADR and dependency review.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the
