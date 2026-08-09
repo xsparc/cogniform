@@ -139,6 +139,13 @@ release yet; the current workspace version remains `0.0.0`.
   policy, individual frame flush, 2 millisecond capped polling, a 15 second
   live-operation deadline, fatal service-frame handling, and stable redacted
   diagnostics;
+- a separate `cogniform-mcp` crate and `cogniform-cli serve-mcp-stdio`
+  composition for stable MCP `2025-11-25`, with exactly two ordered tools for
+  exact-revision scene query and idempotent imagination submission; incremental
+  newline byte/nesting preflight; bounded encode-before-write output; one
+  serialized lazily created local service; exact compilation, receipt, and
+  retained-replay validation; official-client conformance; and no listener,
+  socket, credential store, model call, or remote authority;
 - separate immutable exact-hash asset-source files with pre-I/O size and
   identity checks, shared create-new/sync/cleanup guarantees, bounded
   regular-file loading, and explicit restart rehydration evidence;
@@ -147,6 +154,17 @@ release yet; the current workspace version remains `0.0.0`.
   checklist.
 
 ### Changed
+
+- the exact-pinned vendored dependency graph adds `rmcp` 2.2.0, `tokio` 1.53.1,
+  and their restricted server/runtime support graph for the isolated MCP
+  adapter. HTTP, client, OAuth, TLS, process, and built-in stdio features are
+  disabled in production; the adapter supplies its own bounded stdio transport.
+  The reviewed `rmcp` build script can change Git hooks only when an unapproved
+  repository-root `.githooks` directory exists, which public-tree policy
+  excludes. `McpServerConfig`, `McpTransportLimits`, `McpServeError`, and
+  `TransportFailureKind` are additive public APIs in the unpublished `0.0.0`
+  workspace; no existing local-session wire value, CLI command behavior,
+  deployment, version, or release action changed;
 
 - compiler decision, unresolved, and result values move to
   `cogniform-compilation`; `cogniform-compiler` re-exports their original names,
@@ -251,6 +269,11 @@ release yet; the current workspace version remains `0.0.0`.
   negotiated close only. It creates no process or endpoint and supplies no
   confidentiality, authorization, freshness, replay policy, cancellation,
   resynchronization, full duplex, multi-client, daemon, or remote guarantee;
+- `serve-mcp-stdio` supports one parent-owned inherited-stream client, stable
+  MCP `2025-11-25`, two fixed tools, serialized calls, and one lazy 64x64 local
+  service. It supplies no operation deadline, preemptive cancellation,
+  authentication, authorization, confidentiality, freshness/rate/tenancy
+  policy, resynchronization, multi-client service, daemon, or remote guarantee;
 - the validated full-runtime profile is currently Windows 11 x86_64 with a
   Vulkan discrete GPU; other runtime platforms/backends remain unverified;
 - renderer materials support base color plus bounded direct metallic-roughness

@@ -29,6 +29,12 @@ scene revision that produced it.
 > `serve-stdio` child-process command over inherited redirected streams, with
 > negotiated limits, per-frame flush, capped polling, and stable redacted
 > failures. It creates no pipe, listener, daemon, or remote security boundary.
+> A separate `serve-mcp-stdio` command now exposes the already-bounded exact
+> query and semantic imagination/replay semantics as exactly two stable MCP
+> 2025-11-25 tools. Its custom newline transport bounds input and output bytes
+> plus outer nesting before decode or first write, creates the fixed local
+> service lazily, serializes calls, and adds no HTTP, socket, OAuth, model,
+> prompt, resource, task, or remote-security surface.
 > A bounded
 > in-process gateway, exact logical queries, and a
 > deterministic primitive imagination compiler are also available. Compiler
@@ -89,6 +95,7 @@ implementations arrive:
 | `cogniform-local-transport` | Fixed bounded framing over caller-owned synchronous streams without endpoint or session authority |
 | `cogniform-local-session` | Canonical direction-specific local patch/imagination/query/observation control messages without service execution or endpoint authority |
 | `cogniform-local-executor` | Bounded caller-driven session lifecycle, service mapping, and exact correlation release without endpoint or runtime-loop authority |
+| `cogniform-mcp` | Bounded stable MCP stdio initialization and exact query/imagination tool translation over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
 | `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/primary-coordinate/material/embedded-PNG decoding, immutable upload jobs, and explicit CPU-state eviction |
@@ -98,7 +105,7 @@ implementations arrive:
 | `cogniform-renderer` | Headless GPU ownership and color/depth/normal/identity outputs |
 | `cogniform-engine` | Bounded orchestration and revision/frame correlation |
 | `cogniform-storage` | Explicit create-new and bounded-load recovery and exact-hash asset-source files |
-| `cogniform-cli` | Local sample, diagnostics, and one fixed-profile inherited-stdio session composition root |
+| `cogniform-cli` | Local sample, diagnostics, fixed binary-session stdio, and bounded MCP stdio composition root |
 
 See the [software design document](docs/architecture/software-design-document.md),
 [implementation plan](docs/roadmap/development-implementation-plan.md), and
@@ -139,6 +146,9 @@ command admission, idempotency, deterministic compilation, and logical queries.
 The [compilation-result guide](docs/protocol/compilation-results.md) specifies
 the transport-neutral schema, limits, canonical encoding, entry roles,
 ordering, and outcome invariants without adding a session or endpoint.
+The [MCP stdio guide](docs/protocol/mcp-stdio-adapter.md) specifies the exact
+version, two-tool surface, byte/nesting bounds, lazy service lifecycle,
+redacted failures, and unsupported remote features.
 The [GLB asset guide](docs/assets/glb-subset.md) documents exact source
 admission, the approved format subset, lifecycle and explicit eviction,
 capacity limits, proxy policy, texture sampling contract, and controlled GPU
@@ -206,6 +216,17 @@ The controlled GPU-backed child proof is opt-in:
 
 ```text
 cargo test --release -p cogniform-cli --test stdio_session --all-features --locked --offline -- --ignored
+```
+
+For an MCP parent, launch `cogniform-cli serve-mcp-stdio` with both standard
+streams piped and request protocol `2025-11-25`. Stdout contains only
+newline-delimited MCP JSON-RPC. The parent owns child supervision, identity,
+authorization, confidentiality, freshness, and rate policy. See the
+[MCP quickstart](docs/getting-started/mcp-stdio-adapter.md). Its controlled
+query/application/replay child proof is:
+
+```text
+cargo test --release -p cogniform-cli --test mcp_stdio --all-features --locked --offline -- --ignored
 ```
 
 To inspect one immutable recovery file without selecting a GPU adapter:

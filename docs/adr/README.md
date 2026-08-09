@@ -50,5 +50,6 @@ earlier one and links the history.
 | [0042](0042-bounded-fixed-profile-stdio-session.md) | Accepted | Compose one bounded fixed-profile half-duplex session over inherited redirected standard I/O |
 | [0043](0043-bounded-transport-neutral-compilation-results.md) | Accepted | Represent compiler outcomes as bounded canonical transport-neutral values without moving execution |
 | [0044](0044-versioned-local-imagination-session-mapping.md) | Accepted | Map bounded imagination compilation into local-session version two without changing version-one bytes |
+| [0045](0045-bounded-mcp-stdio-adapter.md) | Accepted | Expose exact query and imagination tools through one bounded local MCP stdio adapter |
 
 New records use four sections: context, decision, consequences, and status.

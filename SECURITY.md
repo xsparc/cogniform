@@ -61,3 +61,11 @@ roles, but it adds no peer identity, authorization, confidentiality, freshness,
 or remote replay policy. A parent must keep `serve-stdio` on controlled local
 redirected streams and treat scene, compilation, and observation bytes as
 sensitive.
+
+The MCP adapter similarly validates incremental newline bytes, outer JSON
+nesting, exact protocol version, typed query/imagination values, and complete
+bounded output before write. It exposes no listener, HTTP transport, OAuth,
+peer identity, authorization, confidentiality, freshness, remote replay, rate,
+or tenancy policy. Launch `serve-mcp-stdio` only as a controlled local child
+with both standard streams redirected, keep MCP stdout separate from logs, and
+treat tool arguments and structured results as sensitive.

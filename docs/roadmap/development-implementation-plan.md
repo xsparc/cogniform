@@ -1022,6 +1022,32 @@ half-duplex and unchanged except for pending-imagination accounting. See
 [message guide](../protocol/local-session-messages.md), and the
 [executor guide](../protocol/local-session-executor.md).
 
+### PR 45 - CF045: Bounded MCP stdio adapter
+
+Outcome: a standard local MCP parent can discover one exact-revision query
+tool and one bounded semantic imagination tool without importing MCP concerns
+into the engine or changing the existing binary local-session profile.
+
+Gate: a separate `cogniform-mcp` crate pins official `rmcp` 2.2.0 and stable
+MCP `2025-11-25`, exposes exactly `cogniform.query_scene` followed by
+`cogniform.submit_imagination`, and declares deterministic pessimistic tool
+annotations. A custom newline transport enforces independent input/output byte
+bounds and outer JSON nesting before decode or first write, flushes every
+complete line, and reports stable payload-redacted failures. The fixed 64x64
+local service is created lazily only for a valid tool call, all calls are
+serialized, typed core inputs and outputs are revalidated, and retained replay
+cannot compile or mutate twice.
+
+The CLI owns only inherited redirected streams and a current-thread runtime.
+No resource, prompt, task, sampling, model, patch, procedure, asset,
+observation, recovery, HTTP, socket, OAuth, listener, multiple-client,
+full-duplex, deployment, version, or release surface is added. Ordinary SDK
+and black-box tests prove initialize/list, exact tool metadata, malformed and
+bounded framing, lazy failure, query, application, replay, EOF, and stdout
+purity; one controlled ignored child test repeats query/application/replay on
+an approved adapter. See [ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md)
+and the [MCP adapter guide](../protocol/mcp-stdio-adapter.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1030,7 +1056,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF014 -> CF015 -> CF016 -> CF017 -> CF018 -> CF019 -> CF020 -> CF021
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
-  -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044
+  -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1229,15 +1255,22 @@ Validation expands with capability:
   supersession; service-error release; exact replay without duplicate
   processing or mutation; and one controlled ignored version-two child-process
   exchange.
+- CF045: exact MCP `2025-11-25` initialization and newer-version rejection;
+  deterministic query/imagination tool order, schemas, and annotations;
+  incremental input and encode-before-output byte/nesting bounds with equality
+  cases; malformed/truncated/redacted failure behavior; lazy invalid-argument
+  handling; exact query, compiled application, retained replay without a
+  second revision; ordinary initialize/list/EOF stdout purity; and one
+  controlled ignored CLI child exchange.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
 ## 6. Deferred roadmap
 
-After the MVP and only with evidence: configurable stdio profiles, named-pipe or socket
-creation, multiple clients, full-duplex scheduling, process supervision,
-shared-memory observation leases,
-authenticated gRPC/QUIC transport, Wasmtime procedures,
+After the MVP and only with evidence: configurable stdio profiles, MCP
+resources/prompts/tasks/sampling/models, named-pipe or socket creation,
+multiple clients, full-duplex scheduling, process supervision, shared-memory
+observation leases, authenticated MCP HTTP or gRPC/QUIC transport, Wasmtime procedures,
 KTX2/mesh optimization, advanced culling/batching, model bridge, Gaussian
 splat plugin, browser target, fleet orchestration, and high availability. Each
 requires a new design decision and approved task rather than silently entering

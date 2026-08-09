@@ -30,6 +30,7 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Local-session messages | Pass for declared CPU profile | Exact unchanged schema-v1 client/server LF fixtures plus exact schema-v2 hello/imagination/completion/replay fixtures; outer-only correlation; negotiated frame/result bytes and nesting; direction/version/unknown/canonical/substitution/nested identity, revision, receipt, and role validation; no executor or endpoint authority; exhaustive message construction and `LocalSessionValidationKind` matching are source-breaking in the unpublished `0.0.0` API |
 | Local-session executor | Pass for declared CPU profile | One version-locked hello; field-wise peer/local/service frame and compilation limits installed before semantic work; every patch/imagination admission; both cross-kind supersession directions; deterministic one-command advancement; exact terminal command/observation correlation; compiled/unresolved/replay/service-invalid outcomes; one-time pending; two-frame output cap; redacted failures; and quiescent close |
 | Local stdio session | Pass for declared CPU and controlled Windows profile | Exact pre-adapter argument/terminal/first-frame behavior, half-duplex no-read-while-live scheduling, asymmetric version-two result-limit adoption, positive-cadence fixed completion deadline, partial-output/flush/fatal handling, stable diagnostics, and passing controlled child-process v1 patch plus v2 imagination/patch/query/observation/replay/close exchanges |
+| MCP stdio adapter | Pass for declared CPU and controlled Windows profile | Exact stable-version initialization; exactly two ordered tools; incremental input byte/nesting bounds; bounded encode-before-write output; typed validation before lazy service creation; serialized exact-revision query and one-command imagination application; exact retained replay without duplicate compile/mutation; official-client and controlled child-process evidence; no listener or remote authority |
 | Compilation result contract | Pass for declared CPU profile | Exact compiled/unresolved schema-v1 LF fixtures, bounded canonical round trips, malformed/substituted/order/duplicate/outcome/revision rejection, nested patch validation, compiler pre-return encoded/nesting enforcement, source-path compiler re-exports, and unchanged normalization/IDs/patch bytes without session or I/O authority; exhaustive result/config construction and `CompileError` matching are source-breaking in the unpublished `0.0.0` API |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
@@ -91,6 +92,14 @@ This does not make the current `0.0.0` workspace a supported release.
       imagination admission, compiled/unresolved completion, exact replay
       without duplicate processing, query/observation causality, and orderly
       close.
+- [ ] Re-run the ordinary MCP adapter/CLI contracts and the controlled ignored
+      child-process flow on an approved adapter; confirm exact `2025-11-25`
+      negotiation, two-tool order/annotations, byte and nesting equality,
+      validation before lazy service creation, exact-revision query, one-command
+      imagination application, retained replay without duplicate mutation,
+      bounded stdout, stable redacted failures, and clean EOF. Re-review the
+      exact-pinned SDK/runtime features, vendored build scripts, and advisory
+      policy from the candidate tree.
 - [ ] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
       matrix, recovery-envelope, recovery-file, and asset-file
       formats/limitations, offline inspection profile/versioned output, known
@@ -178,6 +187,12 @@ The GitHub release must be marked prerelease and state:
   listener, socket, or process, authenticate or authorize a peer, add
   confidentiality/freshness/replay/rate/tenancy policy, supervise/restart the
   child, or support configurable, multi-client, full-duplex, or remote use;
+- `cogniform-cli serve-mcp-stdio` supplies one fixed inherited redirected-stream
+  owner, stable MCP `2025-11-25`, two fixed tools, and one lazily initialized
+  64x64 local service. It serializes tool calls and bounds newline input plus
+  encoded output, but supplies no deadline, preemptive cancellation, listener,
+  peer identity, authentication, authorization, confidentiality, freshness,
+  rate/tenancy policy, restart supervision, multi-client, or remote use;
 - historical recovery supports caller-coordinated fresh forks and quiescent
   live replacement, but provides no automatic rollback, authorization,
   freshness, branch manager, or global frame namespace across concurrent

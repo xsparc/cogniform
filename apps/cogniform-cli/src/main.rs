@@ -106,13 +106,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let expected_hash = asset::parse_content_hash(&encoded_hash)?;
             asset::run(expected_hash, &path, output)
         }
-        Some(command) if command == OsStr::new("serve-stdio") => {
-            if arguments.next().is_some() {
-                return Err(invalid_input("serve-stdio accepts no arguments"));
-            }
-            serve_stdio::run()?;
-            Ok(())
-        }
+        Some(command) if command == OsStr::new("serve-stdio") => run_binary_stdio(&mut arguments),
+        Some(command) if command == OsStr::new("serve-mcp-stdio") => run_mcp_stdio(&mut arguments),
         Some(command) if command == OsStr::new("help") || command == OsStr::new("--help") => {
             if arguments.next().is_some() {
                 return Err(invalid_input("help accepts no arguments"));
@@ -122,6 +117,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(_) => Err(invalid_input("unknown command; run with --help for usage")),
     }
+}
+
+fn run_binary_stdio(arguments: &mut env::ArgsOs) -> Result<(), Box<dyn std::error::Error>> {
+    if arguments.next().is_some() {
+        return Err(invalid_input("serve-stdio accepts no arguments"));
+    }
+    serve_stdio::run()?;
+    Ok(())
+}
+
+fn run_mcp_stdio(arguments: &mut env::ArgsOs) -> Result<(), Box<dyn std::error::Error>> {
+    if arguments.next().is_some() {
+        return Err(invalid_input("serve-mcp-stdio accepts no arguments"));
+    }
+    cogniform_mcp::run_stdio(cogniform_mcp::McpServerConfig::local_profile(
+        LOCAL_PROFILE_WIDTH,
+        LOCAL_PROFILE_HEIGHT,
+    ))?;
+    Ok(())
 }
 
 fn print_usage() {
@@ -135,6 +149,7 @@ fn print_usage() {
         "  cogniform-cli inspect-asset [--json] <content-hash> <path>  Verify an immutable asset source file"
     );
     println!("  cogniform-cli serve-stdio  Run one bounded binary session over redirected stdio");
+    println!("  cogniform-cli serve-mcp-stdio  Run one bounded MCP session over redirected stdio");
     println!("  cogniform-cli --help    Show this help");
 }
 

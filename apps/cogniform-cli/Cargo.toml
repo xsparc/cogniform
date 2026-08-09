@@ -16,6 +16,7 @@ cogniform-engine.workspace = true
 cogniform-local-executor.workspace = true
 cogniform-local-session.workspace = true
 cogniform-local-transport.workspace = true
+cogniform-mcp.workspace = true
 cogniform-protocol.workspace = true
 cogniform-storage.workspace = true
 pollster = "=0.4.0"

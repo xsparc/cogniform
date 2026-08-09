@@ -74,6 +74,10 @@ were collected on the CPU profile on 2026-08-09.
 CF044 local-session version-two compilation-limit negotiation, imagination
 admission/completion/replay, typed mixed-command correlation, and unchanged
 version-one byte evidence were collected on the CPU profile on 2026-08-09.
+CF045 stable MCP `2025-11-25` initialization, bounded newline transport,
+two-tool exact-revision/idempotent service adaptation, official-client
+conformance, and one controlled child-process exchange were collected on the
+CPU and validated Windows profile on 2026-08-09.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -394,6 +398,45 @@ release, and replay without a second process call. The CLI black-box suite inclu
 ignored version-two child-process flow for hello, imagination, patch, query,
 observation, replay, and close on an approved adapter. Ordinary CPU validation
 compiles but does not execute that GPU-dependent test.
+
+## Bounded MCP stdio commands
+
+CF045 adds one isolated adapter over the existing compiler, protocol, engine,
+and CLI composition boundaries. The ordinary and controlled commands were:
+
+```text
+cargo fmt --all --check
+cargo clippy -p cogniform-compilation -p cogniform-engine -p cogniform-protocol -p cogniform-mcp -p cogniform-cli --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-mcp --all-features --locked --offline
+cargo test -p cogniform-cli --test mcp_stdio --locked --offline
+cargo test --release -p cogniform-cli --test mcp_stdio controlled_child_queries_applies_replays_and_closes_cleanly --locked --offline -- --ignored --exact --nocapture
+cargo deny check advisories bans licenses sources
+```
+
+The 13 adapter tests cover official `rmcp` client initialization at exact stable
+version `2025-11-25`; deterministic tool order and annotations; rejection of a
+newer known version; invalid arguments before lazy service creation; exact-
+revision query; one-command imagination application; retained replay without a
+second compilation or mutation; byte and nesting equality; incremental
+oversize/deep input rejection before JSON-RPC decode; output preflight; stable
+redacted malformed/truncated categories; and a default-envelope capacity guard
+for maximum core compilation and receipt results. The ordinary CLI black-box
+suite passed three tests and kept one adapter-backed child test ignored. The
+explicit optimized child test then passed query, apply, replay, final query,
+protocol-pure stdout, and clean EOF on the validated Windows profile.
+
+Production enables only the exact-pinned `rmcp` server and restricted Tokio
+runtime features needed by this adapter; HTTP, client, OAuth, TLS, process, and
+built-in stdio features are absent. The adapter supplies its own bounded
+transport, creates no listener or socket, and makes no authentication,
+confidentiality, deadline, remote, or additional-platform claim. The complete
+workspace, rustdoc, dependency-policy, and public-tree gates remain required.
+Those final offline workspace build/test, warning-denied Clippy/rustdoc, format,
+first-party diff, workflow-state, and public-tree gates also passed. Vendored
+package bytes remain registry-checksum exact and are excluded from whitespace
+normalization. The dependency audit
+passed advisories, bans, licenses, and sources with only the already accepted
+duplicate-version warnings for `hashbrown` and `syn`.
 
 ## Controlled local-session executor commands
 
