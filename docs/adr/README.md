@@ -52,5 +52,6 @@ earlier one and links the history.
 | [0044](0044-versioned-local-imagination-session-mapping.md) | Accepted | Map bounded imagination compilation into local-session version two without changing version-one bytes |
 | [0045](0045-bounded-mcp-stdio-adapter.md) | Accepted | Expose exact query and imagination tools through one bounded local MCP stdio adapter |
 | [0046](0046-bounded-mcp-apply-patch-tool.md) | Accepted | Append one bounded atomic apply-patch tool to the local MCP stdio adapter |
+| [0047](0047-bounded-mcp-observation-resource.md) | Accepted | Append one exact-revision observation tool and retain its bounded canonical payload as one MCP resource |
 
 New records use four sections: context, decision, consequences, and status.

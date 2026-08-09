@@ -181,6 +181,7 @@ dependencies = [
  "cogniform-local-session",
  "cogniform-local-transport",
  "cogniform-mcp",
+ "cogniform-observation",
  "cogniform-protocol",
  "cogniform-storage",
  "pollster",
@@ -262,6 +263,7 @@ version = "0.0.0"
 dependencies = [
  "cogniform-compilation",
  "cogniform-engine",
+ "cogniform-observation",
  "cogniform-protocol",
  "rmcp",
  "serde",

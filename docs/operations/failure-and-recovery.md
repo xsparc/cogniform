@@ -57,6 +57,8 @@ or automatic startup/rehydration; operators compose those concerns.
 | `serve-stdio` encounters service/executor failure or writes/flushes only part of an output | Flush a complete fatal service frame when available, then terminate; otherwise report output/executor failure, preserve any physical prefix, and never retry or resynchronize | CF042 fatal-service, write-zero, prefix-write, flush, and executor-fault tests |
 | `serve-mcp-stdio` receives extra arguments, an interactive stream, a wrong initialization version, malformed/truncated JSON, or an input over its byte/nesting limits | Reject before lazy service creation when possible; return a bounded JSON-RPC error for an identified request or terminate nonzero with one stable payload-redacted category | CF045 transport equality/adversarial tests and CLI black-box tests |
 | An MCP query, imagination, or direct patch is semantically invalid, stale, conflicting, busy, or inconsistent with compilation/receipt roles | Return one small structured tool error; validate arguments before lazy service creation, serialize service access, process at most one queued command, and use retained replay without a second compilation or mutation | CF045-CF046 portable official-client and role tests plus controlled adapter-backed query, apply, replay, conflict, stale-base, and exact-revision integrations |
+| An MCP observation is rejected, fails delivery, exceeds its payload bound, times out, or returns inconsistent causality | Return one stable structured tool error and preserve the last fully completed resource; request-level rejection/failure remains usable, while timeout, poll failure, or invalid service output poisons further service-backed calls and requires child replacement | CF047 fake-backend replacement/failure tests, causal and deadline unit tests, and controlled canonical resource readback |
+| An MCP peer pipelines resource reads while a prior response is stalled | Backpressure before dispatching the next request; retain at most one handler/response cycle and flush its bounded output before reading another input message | CF047 stalled-writer pipelined-resource-read transport test |
 | `serve-mcp-stdio` cannot encode, write, or flush a bounded output | Record the first stable transport failure, interrupt a pending read, terminate the session, preserve any physical prefix, and never retry or resynchronize | CF045 bounded writer, output equality/nesting, transport-status, and child-process tests |
 | Public path or credential pattern staged | Fail with rule/path only; never echo the matched value | public-repository safeguard fixtures |
 
@@ -150,11 +152,25 @@ intended content changes. Treat
 trust in that child: discard it and inspect a fresh service or approved
 recovery point rather than retrying the request against the same process.
 
+An observation request is validated before lazy service creation, submitted
+only through `LocalService`, and polled every 2 ms under a fixed 15 second
+deadline. A successful canonical `COGOBS01` envelope atomically becomes the
+only listed resource and replaces any prior URI. `observation_rejected`,
+`observation_failed`, `observation_too_large`, and `output_unavailable`
+preserve that prior resource without poisoning the service.
+`observation_timeout`, polling `service_failed`, and
+`invalid_service_output` also preserve and leave the prior resource readable,
+but no further service-backed call is trusted; discard the child after reading
+only if recovery of that already completed payload is required.
+
 Each response is fully encoded and checked against the byte and nesting limits
-before its first write. A later inherited-stream failure may still leave a
+before its first write. Only one request is admitted through complete response
+flush, so pipelined resource reads cannot accumulate payload clones or encoded
+responses. A later inherited-stream failure may still leave a
 physical prefix; never retry or attempt JSON-line resynchronization. This
-adapter has no operation deadline or preemptive cancellation. The parent must
-enforce any stronger timeout, kill/reap, authorization, confidentiality,
+adapter has no general operation deadline or preemptive cancellation; only the
+observation poll has its fixed deadline. The parent must enforce any stronger
+timeout, kill/reap, authorization, confidentiality,
 freshness, rate, tenancy, or restart policy. See the
 [MCP stdio adapter guide](../protocol/mcp-stdio-adapter.md) for the exact flow.
 

@@ -191,6 +191,25 @@ this local profile. See the official
 [Rust SDK releases](https://github.com/modelcontextprotocol/rust-sdk/releases)
 and [tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
 
+CF047 adds only the existing local production edge
+`cogniform-mcp -> cogniform-observation` and the same test-only edge from
+`cogniform-cli`. `Cargo.lock` changes only those two workspace package
+dependency arrays. There is no external package, version, checksum, feature,
+build script, unsafe/native code, runtime download, network, telemetry, paid
+service, model, endpoint, or persistence addition. The adapter uses a small
+first-party RFC 4648 base64 encoder under the existing output bound instead of
+admitting a new codec package. The exact-pinned SDK already supplies the stable
+MCP resource types and handlers needed for one link, list, and read surface;
+its feature set and version remain unchanged.
+
+A focused scan on 2026-08-09 confirmed that stable MCP `2025-11-25` makes the
+resources capability and list/read operations sufficient for this explicit
+latest-value resource, while subscriptions and list-change notifications are
+optional. CF047 does not enable them. See the official
+[resources specification](https://modelcontextprotocol.io/specification/2025-11-25/server/resources),
+[tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools),
+and [Rust SDK releases](https://github.com/modelcontextprotocol/rust-sdk/releases).
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

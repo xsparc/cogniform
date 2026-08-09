@@ -140,9 +140,12 @@ release yet; the current workspace version remains `0.0.0`.
   live-operation deadline, fatal service-frame handling, and stable redacted
   diagnostics;
 - a separate `cogniform-mcp` crate and `cogniform-cli serve-mcp-stdio`
-  composition for stable MCP `2025-11-25`, with exactly three ordered tools for
-  exact-revision scene query, idempotent imagination submission, and bounded
-  direct atomic patch application; incremental
+  composition for stable MCP `2025-11-25`, with exactly four ordered tools for
+  exact-revision scene query, idempotent imagination submission, bounded
+  direct atomic patch application, and exact-revision observation; one
+  latest-value canonical `COGOBS01` resource with exact-URI base64 read,
+  atomic replacement, and failure preservation; one-request-through-flush
+  backpressure for pipelined input; incremental
   newline byte/nesting preflight; bounded encode-before-write output; one
   serialized lazily created local service; exact compilation, receipt, and
   retained-replay validation; official-client conformance; and no listener,
@@ -155,6 +158,18 @@ release yet; the current workspace version remains `0.0.0`.
   checklist.
 
 ### Changed
+
+- the MCP server now advertises resources without subscription or list-change
+  support and appends `cogniform.observe_scene` after the existing three tools.
+  `OBSERVE_SCENE_TOOL` is an additive public constant in the unpublished
+  `0.0.0` workspace. The MCP crate gains one existing local workspace edge to
+  `cogniform-observation`, and CLI tests gain the same development edge;
+  `Cargo.lock` changes only those local package dependency arrays. External
+  packages, versions, checksums, features, MCP version, existing tool shapes,
+  and local-service authority are unchanged. Pipelined MCP requests now
+  backpressure until the prior bounded response is flushed instead of creating
+  concurrent SDK handler/response work. Deployment, version, and release state are
+  unchanged;
 
 - the MCP tool list appends `cogniform.apply_patch` after the existing two
   tools. It accepts one complete core `ScenePatch` through `LocalService`,
@@ -281,8 +296,10 @@ release yet; the current workspace version remains `0.0.0`.
   confidentiality, authorization, freshness, replay policy, cancellation,
   resynchronization, full duplex, multi-client, daemon, or remote guarantee;
 - `serve-mcp-stdio` supports one parent-owned inherited-stream client, stable
-  MCP `2025-11-25`, three fixed tools, serialized calls, and one lazy 64x64 local
-  service. It supplies no operation deadline, preemptive cancellation,
+  MCP `2025-11-25`, four fixed tools, one in-memory latest-value observation
+  resource, serialized calls, and one lazy 64x64 local service. Its observation
+  poll has a fixed 15 second deadline, but it supplies no general operation
+  deadline or preemptive cancellation,
   authentication, authorization, confidentiality, freshness/rate/tenancy
   policy, resynchronization, multi-client service, daemon, or remote guarantee;
 - the validated full-runtime profile is currently Windows 11 x86_64 with a

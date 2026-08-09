@@ -5,12 +5,13 @@ use std::{
 };
 
 use rmcp::{
+    model::{ClientJsonRpcMessage, ServerJsonRpcMessage},
     service::{RoleServer, RxJsonRpcMessage, TxJsonRpcMessage},
     transport::Transport,
 };
 use tokio::{
     io::{AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader},
-    sync::{Mutex, Notify},
+    sync::{Mutex, Notify, OwnedSemaphorePermit, Semaphore},
 };
 
 const DEFAULT_MAX_INPUT_BYTES: u64 = 1_114_112;
@@ -116,6 +117,8 @@ pub(crate) struct BoundedTransport<R, W> {
     input: Vec<u8>,
     limits: McpTransportLimits,
     status: TransportStatus,
+    request_permits: Arc<Semaphore>,
+    active_request: Arc<Mutex<Option<OwnedSemaphorePermit>>>,
 }
 
 impl<R: AsyncRead, W> BoundedTransport<R, W> {
@@ -128,6 +131,8 @@ impl<R: AsyncRead, W> BoundedTransport<R, W> {
                 input: Vec::new(),
                 limits,
                 status: status.clone(),
+                request_permits: Arc::new(Semaphore::new(1)),
+                active_request: Arc::new(Mutex::new(None)),
             },
             status,
         )
@@ -148,7 +153,18 @@ where
         let writer = Arc::clone(&self.writer);
         let limits = self.limits;
         let status = self.status.clone();
+        let active_request = Arc::clone(&self.active_request);
+        let completes_request = match &item {
+            ServerJsonRpcMessage::Response(_) => true,
+            ServerJsonRpcMessage::Error(error) => error.id.is_some(),
+            ServerJsonRpcMessage::Request(_) | ServerJsonRpcMessage::Notification(_) => false,
+        };
         async move {
+            let request_permit = if completes_request {
+                active_request.lock().await.take()
+            } else {
+                None
+            };
             let encoded = encode_bounded(&item, limits).map_err(|kind| {
                 status.record(kind);
                 McpTransportError(kind)
@@ -161,11 +177,18 @@ where
             writer.flush().await.map_err(|_| {
                 status.record(TransportFailureKind::OutputFailed);
                 McpTransportError(TransportFailureKind::OutputFailed)
-            })
+            })?;
+            drop(request_permit);
+            Ok(())
         }
     }
 
     async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleServer>> {
+        let Ok(read_turn) = Arc::clone(&self.request_permits).acquire_owned().await else {
+            self.status.record(TransportFailureKind::InputFailed);
+            return None;
+        };
+        drop(read_turn);
         self.input.clear();
         loop {
             if self.status.failure().is_some() {
@@ -208,13 +231,25 @@ where
             self.status.record(TransportFailureKind::NestingExceeded);
             return None;
         }
-        serde_json::from_slice(&self.input).map_or_else(
+        let message = serde_json::from_slice(&self.input).map_or_else(
             |_| {
                 self.status.record(TransportFailureKind::InvalidMessage);
                 None
             },
             Some,
-        )
+        )?;
+        if matches!(&message, ClientJsonRpcMessage::Request(_)) {
+            let Ok(permit) = Arc::clone(&self.request_permits).acquire_owned().await else {
+                self.status.record(TransportFailureKind::InputFailed);
+                return None;
+            };
+            let replaced = self.active_request.lock().await.replace(permit);
+            debug_assert!(
+                replaced.is_none(),
+                "one request permit is retained at a time"
+            );
+        }
+        Some(message)
     }
 
     async fn close(&mut self) -> Result<(), Self::Error> {
@@ -311,10 +346,15 @@ fn json_nesting_depth(encoded: &[u8]) -> u16 {
 mod tests {
     use super::*;
     use cogniform_compilation::CompilationLimits;
+    use cogniform_observation::ObservationPayloadLimits;
     use cogniform_protocol::RuntimeLimits;
-    use std::io::Write as _;
-    use std::num::{NonZeroU16, NonZeroU64};
-    use tokio::io::{duplex, sink};
+    use std::{
+        future::Future as _,
+        io::Write as _,
+        num::{NonZeroU16, NonZeroU64},
+        task::{Context, Poll, Waker},
+    };
+    use tokio::io::{BufReader, duplex, sink};
 
     #[test]
     fn nesting_ignores_delimiters_inside_strings() {
@@ -393,6 +433,111 @@ mod tests {
             transport.max_json_nesting_depth.get()
                 >= compilation.max_json_nesting_depth.get().saturating_add(3)
         );
+        let envelope_bytes =
+            usize::try_from(ObservationPayloadLimits::default().max_envelope_bytes.get()).unwrap();
+        let blob_bytes = crate::server::base64_encoded_len(envelope_bytes).unwrap();
+        assert!(
+            transport.max_output_bytes.get()
+                >= u64::try_from(blob_bytes)
+                    .unwrap()
+                    .saturating_add(transport.max_input_bytes.get())
+                    .saturating_add(65_536)
+        );
+    }
+
+    #[test]
+    fn maximum_observation_resource_accepts_exact_output_bound() {
+        let raw_bytes = ObservationPayloadLimits::default().max_envelope_bytes.get();
+        let blob_bytes =
+            crate::server::base64_encoded_len(usize::try_from(raw_bytes).unwrap()).unwrap();
+        let request_id_bytes = usize::try_from(DEFAULT_MAX_INPUT_BYTES)
+            .unwrap()
+            .saturating_sub(128);
+        let value = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": "i".repeat(request_id_bytes),
+            "result": {
+                "contents": [{
+                    "uri": "cogniform://observations/00000000000000000000000000000001",
+                    "mimeType": "application/vnd.cogniform.observation-envelope",
+                    "blob": "A".repeat(blob_bytes)
+                }]
+            }
+        });
+        let encoded_len = u64::try_from(serde_json::to_vec(&value).unwrap().len()).unwrap() + 1;
+        assert!(encoded_len <= DEFAULT_MAX_OUTPUT_BYTES);
+        let exact = McpTransportLimits {
+            max_output_bytes: NonZeroU64::new(encoded_len).unwrap(),
+            ..McpTransportLimits::default()
+        };
+        assert_eq!(
+            u64::try_from(encode_bounded(&value, exact).unwrap().len()).unwrap(),
+            encoded_len
+        );
+        let one_less = McpTransportLimits {
+            max_output_bytes: NonZeroU64::new(encoded_len - 1).unwrap(),
+            ..McpTransportLimits::default()
+        };
+        assert_eq!(
+            encode_bounded(&value, one_less),
+            Err(TransportFailureKind::OutputSizeExceeded)
+        );
+    }
+
+    #[tokio::test]
+    async fn pipelined_resource_read_waits_for_the_prior_response_flush() {
+        let uri = "cogniform://observations/00000000000000000000000000000001";
+        let request = |id| {
+            let mut encoded = serde_json::to_vec(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "resources/read",
+                "params": {"uri": uri}
+            }))
+            .unwrap();
+            encoded.push(b'\n');
+            encoded
+        };
+        let (mut input_client, input_server) = duplex(4096);
+        let (output_server, output_client) = duplex(1);
+        let (mut transport, _) =
+            BoundedTransport::new(input_server, output_server, McpTransportLimits::default());
+        input_client.write_all(&request(1)).await.unwrap();
+        input_client.write_all(&request(2)).await.unwrap();
+        assert!(matches!(
+            transport.receive().await,
+            Some(ClientJsonRpcMessage::Request(_))
+        ));
+
+        let response: ServerJsonRpcMessage = serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "contents": [{
+                    "uri": uri,
+                    "mimeType": "application/vnd.cogniform.observation-envelope",
+                    "blob": "AAAA"
+                }]
+            }
+        }))
+        .unwrap();
+        let send = tokio::spawn(transport.send(response));
+        let mut second = std::pin::pin!(transport.receive());
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(matches!(second.as_mut().poll(&mut context), Poll::Pending));
+
+        let drain = tokio::spawn(async move {
+            let mut output = BufReader::new(output_client);
+            let mut line = Vec::new();
+            output.read_until(b'\n', &mut line).await.unwrap();
+            line
+        });
+        assert_eq!(send.await.unwrap(), Ok(()));
+        assert!(matches!(
+            second.await,
+            Some(ClientJsonRpcMessage::Request(_))
+        ));
+        assert!(!drain.await.unwrap().is_empty());
     }
 
     #[tokio::test]

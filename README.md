@@ -15,7 +15,7 @@ scene revision that produced it.
 > quantized world-space normal observations are implemented, including flat
 > winding fallback and bounded imported vertex normals. Owned observation
 > payloads also have an opt-in bounded version-one binary envelope that binds
-> them to canonical causal metadata for future transport adapters. It detects
+> them to canonical causal metadata for transport adapters. It detects
 > corruption but supplies no authentication or encryption. A separate bounded
 > local-frame codec reads a fixed header and enforces control, bulk, and total
 > limits before buffering caller-owned stream bodies; it opens no process,
@@ -30,12 +30,16 @@ scene revision that produced it.
 > negotiated limits, per-frame flush, capped polling, and stable redacted
 > failures. It creates no pipe, listener, daemon, or remote security boundary.
 > A separate `serve-mcp-stdio` command now exposes the already-bounded exact
-> query, semantic imagination/replay, and direct atomic patch semantics as
-> exactly three stable MCP 2025-11-25 tools. Its custom newline transport
+> query, semantic imagination/replay, direct atomic patch, and exact-revision
+> observation semantics as exactly four stable MCP 2025-11-25 tools. One
+> successful canonical observation envelope is retained as the sole explicit
+> binary resource. Its custom newline transport
 > bounds input and output bytes
-> plus outer nesting before decode or first write, creates the fixed local
+> plus outer nesting before decode or first write, admits one request through
+> complete response flush, creates the fixed local
 > service lazily, serializes calls, and adds no HTTP, socket, OAuth, model,
-> prompt, resource, task, or remote-security surface.
+> prompt, resource-template, subscription, history, task, or remote-security
+> surface.
 > A bounded
 > in-process gateway, exact logical queries, and a
 > deterministic primitive imagination compiler are also available. Compiler
@@ -96,7 +100,7 @@ implementations arrive:
 | `cogniform-local-transport` | Fixed bounded framing over caller-owned synchronous streams without endpoint or session authority |
 | `cogniform-local-session` | Canonical direction-specific local patch/imagination/query/observation control messages without service execution or endpoint authority |
 | `cogniform-local-executor` | Bounded caller-driven session lifecycle, service mapping, and exact correlation release without endpoint or runtime-loop authority |
-| `cogniform-mcp` | Bounded stable MCP stdio initialization and exact query/imagination/patch tool translation over one lazy serialized local service |
+| `cogniform-mcp` | Bounded stable MCP stdio query/imagination/patch/observation translation and one retained canonical observation resource over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
 | `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/primary-coordinate/material/embedded-PNG decoding, immutable upload jobs, and explicit CPU-state eviction |
@@ -148,8 +152,8 @@ The [compilation-result guide](docs/protocol/compilation-results.md) specifies
 the transport-neutral schema, limits, canonical encoding, entry roles,
 ordering, and outcome invariants without adding a session or endpoint.
 The [MCP stdio guide](docs/protocol/mcp-stdio-adapter.md) specifies the exact
-version, three-tool surface, byte/nesting bounds, lazy service lifecycle,
-redacted failures, and unsupported remote features.
+version, four-tool and one-resource surface, byte/nesting and in-flight bounds,
+lazy service lifecycle, redacted failures, and unsupported remote features.
 The [GLB asset guide](docs/assets/glb-subset.md) documents exact source
 admission, the approved format subset, lifecycle and explicit eviction,
 capacity limits, proxy policy, texture sampling contract, and controlled GPU
@@ -224,7 +228,7 @@ streams piped and request protocol `2025-11-25`. Stdout contains only
 newline-delimited MCP JSON-RPC. The parent owns child supervision, identity,
 authorization, confidentiality, freshness, and rate policy. See the
 [MCP quickstart](docs/getting-started/mcp-stdio-adapter.md). Its controlled
-query/application/replay child proof is:
+query/application/replay/observation-resource child proof is:
 
 ```text
 cargo test --release -p cogniform-cli --test mcp_stdio --all-features --locked --offline -- --ignored

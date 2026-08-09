@@ -15,7 +15,9 @@ accepts typed `ScenePatch` and `ImaginationEnvelope` values, owns one
 `CogniformEngine`, and exposes caller-driven admission, processing, and logical
 query methods. CF045's separate MCP adapter translates query and imagination
 tools into these methods without changing the gateway; CF046 appends the
-existing explicit-patch path with the same boundary. Authentication, general sessions,
+existing explicit-patch path with the same boundary. CF047 separately invokes
+the existing local-service observation path and payload codec; it adds no
+gateway method. Authentication, general sessions,
 Protobuf/gRPC, shared memory, remote delivery, persistence, and model calls are
 outside this contract.
 

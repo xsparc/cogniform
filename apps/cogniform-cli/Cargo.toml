@@ -25,3 +25,4 @@ serde_json.workspace = true
 
 [dev-dependencies]
 cogniform-compilation.workspace = true
+cogniform-observation.workspace = true

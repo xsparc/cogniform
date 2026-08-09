@@ -1075,6 +1075,36 @@ rejection, query/imagination continuation, protocol-pure stdout, and clean EOF.
 See [ADR 0046](../adr/0046-bounded-mcp-apply-patch-tool.md) and the
 [MCP adapter guide](../protocol/mcp-stdio-adapter.md).
 
+### PR 47 - CF047: Bounded MCP observation resource
+
+Outcome: a standard local MCP parent can request one exact-revision
+observation and explicitly read its canonical CF038 payload as the sole
+latest-value MCP resource.
+
+Gate: append exactly `cogniform.observe_scene` after the three merged tools and
+advertise resources without subscription or list-change support. Validate one
+complete `ObservationRequest` before lazy service creation, submit and poll
+only through `LocalService` at a fixed positive 2 ms cadence and 15 second
+deadline, and require exact request, revision, camera, kind, quality,
+dimensions, metadata, and zero-staleness causality. Encode the existing
+`COGOBS01` envelope under the default 4 MiB bound. Return closed structured
+success/error output plus one resource link; list zero or one deterministic
+resource; read only the exact custom URI as base64 binary content; and replace
+the prior resource atomically only after complete success. Admit only one MCP
+request through complete response flush so pipelined reads cannot accumulate
+handler tasks, payload clones, or encoded buffers.
+
+No resource template, subscription, list-change notification, observation
+history, persistence, compression, shared memory, prompt, task, sampling,
+model, HTTP, socket, OAuth, authentication, multiple-client, SDK upgrade,
+deployment, version, or release surface is added. Ordinary official-client
+tests prove observation, link, list, read, exact base64, replacement, bounded
+output, and failure preservation. Controlled production-service and CLI child
+tests prove camera patching, canonical readback, exact causality, stdout purity,
+and clean EOF. See
+[ADR 0047](../adr/0047-bounded-mcp-observation-resource.md) and the
+[MCP adapter guide](../protocol/mcp-stdio-adapter.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1084,7 +1114,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
-  -> CF046
+  -> CF046 -> CF047
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1297,14 +1327,21 @@ Validation expands with capability:
   invalid-service-output mapping; controlled direct camera patch application,
   exact replay, conflicting-key and stale-base rejection, compatible query and
   imagination continuation, stdout purity, and clean EOF.
+- CF047: exact four-tool discovery and resources capability without optional
+  subscription/list-change support; authoritative request validation before
+  lazy service creation; fixed positive polling and deadline behavior; exact
+  completion metadata, dimension, revision, and staleness roles; canonical
+  `COGOBS01` base64 readback under the 4 MiB payload and 8 MiB output bounds;
+  one-request-through-flush backpressure; zero-or-one listing, exact-URI reads, atomic replacement, failure
+  preservation, and controlled production-service plus CLI child evidence.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
 ## 6. Deferred roadmap
 
-After the MVP and only with evidence: configurable stdio profiles, MCP
-resources (including bounded observation resources), prompts, tasks, sampling,
-models, named-pipe or socket creation,
+After the MVP and only with evidence: configurable stdio profiles, MCP resource
+templates, subscriptions, list-change notifications, resource history and
+persistence, prompts, tasks, sampling, models, named-pipe or socket creation,
 multiple clients, full-duplex scheduling, process supervision, shared-memory
 observation leases, authenticated MCP HTTP or gRPC/QUIC transport, Wasmtime procedures,
 KTX2/mesh optimization, advanced culling/batching, model bridge, Gaussian

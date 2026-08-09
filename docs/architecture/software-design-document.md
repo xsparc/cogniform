@@ -68,7 +68,7 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-local-transport` | Fixed bounded frames over caller-owned synchronous streams | Depends only on protocol, observation values, deterministic hashing, and standard I/O traits; opens no endpoint and owns no session or service state |
 | `cogniform-local-session` | Versioned direction-specific control values and canonical bounded CF039 control bytes | Depends only on compilation values, protocol, and local transport; executes no service work and opens no endpoint |
 | `cogniform-local-executor` | Bounded caller-driven session lifecycle, service mapping, and exact correlation ownership | Depends on compilation values, engine, and the protocol/session/transport boundaries; owns one supplied local service but no endpoint, I/O, thread, timer, or runtime loop |
-| `cogniform-mcp` | Stable bounded MCP initialization, exact query/imagination/patch tools, and inherited-stream JSON-RPC framing | Depends on compilation, engine, protocol, the exact-pinned official SDK, and minimal async runtime features; owns no domain state, listener, network/auth stack, process launch, or model authority |
+| `cogniform-mcp` | Stable bounded MCP initialization, exact query/imagination/patch/observation tools, one retained canonical observation resource, and inherited-stream JSON-RPC framing | Depends on compilation, engine, observation, protocol, the exact-pinned official SDK, and minimal async runtime features; owns no domain state, listener, network/auth stack, process launch, or model authority |
 | `cogniform-compiler` | Pure seeded primitive imagination normalization | Depends only on compilation values, protocol, and deterministic hashing; owns no world/service state |
 | `cogniform-world` | `hecs` implementation, stable-ID index, validation, atomic commit, hierarchy, transforms, queries | Depends on protocol/math; never renderer or service |
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
@@ -130,8 +130,13 @@ CF046 appends one direct bounded patch translation to that adapter. Complete
 through `LocalService`, processed at most once when newly queued, and checked
 against the exact returned receipt. This exposes existing atomic world
 semantics, including camera creation, without changing the compiler, engine,
-transport, dependency graph, or trust boundary; observation remains a separate
-later slice.
+transport, dependency graph, or trust boundary. CF047 appends one
+exact-revision observation request, reuses the existing `COGOBS01` codec, and
+retains only the latest fully completed payload as an explicitly read MCP
+binary resource. Its transport backpressures peer input at one request through
+complete response flush so SDK handler tasks and bulk response buffers remain
+bounded. The adapter adds no resource template, subscription,
+notification, history, persistence, or new authority.
 Spatial acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -529,8 +534,9 @@ control message without executing it, including version-two imagination and
 compilation-result roles,
 execute one bounded caller-driven local session over an owned service without
 opening an endpoint or starting an automatic loop,
-serve one exact bounded MCP 2025-11-25 inherited-stdio session with only
-exact-revision query, semantic imagination, and direct atomic patch tools,
+serve one exact bounded MCP 2025-11-25 inherited-stdio session with
+exact-revision query, semantic imagination, direct atomic patch, and bounded
+observation tools plus one latest-value canonical observation resource,
 capture complete or exact-revision local recovery state, restore it into a
 fresh service, explicitly persist/load one immutable local recovery file or
 one independent exact-hash asset-source file, inspect one recovery file through
@@ -544,9 +550,11 @@ an optional versioned CLI JSON proof, revert live recorded state,
 resolve assets, and explicitly evict one content hash from CPU/GPU residency.
 Initial implementation can use in-process Rust types and canonical JSON
 fixtures. CF045 supplies the first narrow MCP stdio adapter after the core
-semantics were tested, and CF046 adds only the existing bounded patch contract.
-Protobuf/gRPC, MCP HTTP/authentication, MCP resources or
-model features, local shared memory, and QUIC remain separate future adapters.
+semantics were tested, CF046 adds only the existing bounded patch contract, and
+CF047 composes one bounded observation request with one retained resource.
+Protobuf/gRPC, MCP HTTP/authentication, resource templates, subscriptions,
+notifications, history, model features, local shared memory, and QUIC remain
+separate future adapters.
 
 Public schemas always declare version, maximum encoded/decoded size, collection/string/nesting limits, unknown-field behavior, and asset references separate from bulk bytes.
 
@@ -584,7 +592,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Local-session messages | Every schema-version-one client/server variant round-trips exact LF bytes; direction, version, unknown fields, noncanonical bytes, nesting, substitutions, nested values, receipt roles, frame kind, and effective limits fail closed before returning a message |
 | Local-session executor | One caller-driven service session negotiates field-wise limits, preserves exact patch/observation correlations through deterministic bounded advancement, emits stable failures, and closes only when quiescent |
 | Local stdio session | Exact arguments and redirected streams are checked before adapter selection; immediate EOF is a clean no-op, while complete-session EOF, truncation, corruption, service/executor failure, deadline, write, and flush failures terminate with stable redacted diagnostics and no whole-frame retry |
-| MCP stdio adapter | Stable 2025-11-25 initialization, exact deterministic query/imagination/patch tool metadata, incremental input and encode-before-output bounds, lazy serialized service access, exact query/application/replay roles, direct atomic camera-capable patch application, stdout purity, EOF, and redacted transport failure behavior pass through official-SDK and CLI child tests |
+| MCP stdio adapter | Stable 2025-11-25 initialization, exact deterministic query/imagination/patch/observation metadata, incremental input and encode-before-output bounds, one request through complete response flush, lazy serialized service access, exact query/application/replay/observation roles, direct atomic camera-capable patch application, one latest-value canonical binary resource with exact-URI read and atomic replacement, stdout purity, EOF, and redacted transport failure behavior pass through official-SDK and CLI child tests |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
 | Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |
@@ -600,7 +608,7 @@ CF009 resolves the initial candidate packaging and validation profile in
 publication during implementation, and one controlled Windows/Vulkan runtime
 entry with Ubuntu CPU build/test evidence. Wider GPU/driver support, prebuilt
 artifacts, additional texture roles/tangent-space normals and the remaining visual-quality surface, remote
-protocol/authentication, configurable or multi-client endpoint lifecycle, tenancy, observation retention, automatic startup,
+protocol/authentication, configurable or multi-client endpoint lifecycle, tenancy, durable or multi-value observation retention, automatic startup,
 recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
