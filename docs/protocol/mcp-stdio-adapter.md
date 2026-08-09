@@ -2,7 +2,8 @@
 
 Status: fixed local schema and runtime profile implemented by CF045, extended
 with bounded direct patch application by CF046, and extended with one bounded
-observation resource by CF047.
+observation resource by CF047. CF048 refreshes the official Rust SDK while
+preserving this protocol profile byte-for-byte.
 
 `cogniform-cli serve-mcp-stdio` serves stable MCP `2025-11-25` over inherited
 redirected stdin/stdout. It is a local child-process adapter, not a listener or
@@ -26,6 +27,12 @@ Initialization must request exactly protocol version `2025-11-25`. Ping is the
 only request accepted before initialize. Initialization and tool discovery do
 not construct the local service or select a GPU adapter. The fixed service is
 created lazily on the first valid tool call and all tool calls are serialized.
+
+The implementation dependency is exact-pinned `rmcp` 3.1.2, but SDK support is
+not adapter support. The handler advertises only `2025-11-25` and rejects
+`server/discover`, Tasks methods, and per-request selection of `2026-07-28`;
+it advertises no extension capability. Accepted 2025 responses omit the newer `resultType`
+discriminator and per-tool execution metadata.
 
 The server advertises tools plus resources without subscription or list-change
 support. It exposes these tools in this order:
@@ -103,7 +110,8 @@ further service-backed calls; discard the child. A retained resource remains
 readable until the session ends.
 
 Prompts, resource templates, resource subscriptions and notifications,
-observation history, task execution, sampling, elicitation, logging, custom
+observation history, `server/discover`, multi-round-trip results, task
+execution, sampling, elicitation, logging, custom
 models, procedure/asset/recovery
 tools, HTTP, sockets, OAuth, and server-created processes are not advertised or
 supported.
@@ -132,6 +140,7 @@ system write failure; the adapter never retries or resynchronizes that line.
 
 See [ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md),
 [ADR 0046](../adr/0046-bounded-mcp-apply-patch-tool.md),
-[ADR 0047](../adr/0047-bounded-mcp-observation-resource.md), the
+[ADR 0047](../adr/0047-bounded-mcp-observation-resource.md),
+[ADR 0048](../adr/0048-pin-current-rust-mcp-sdk-without-protocol-expansion.md), the
 [quickstart](../getting-started/mcp-stdio-adapter.md), and the
 [threat model](../threat-model/mvp.md).

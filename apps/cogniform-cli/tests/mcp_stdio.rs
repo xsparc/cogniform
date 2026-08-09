@@ -31,17 +31,71 @@ fn initialize_list_and_eof_keep_stdout_protocol_pure() {
     let output = run_batch(&[
         initialize(1),
         json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
-        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "server/discover",
+            "params": {
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": "2025-11-25",
+                    "io.modelcontextprotocol/clientInfo": {
+                        "name": "cogniform-cli-test",
+                        "version": "1"
+                    },
+                    "io.modelcontextprotocol/clientCapabilities": {}
+                }
+            }
+        }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tasks/get",
+            "params": {"taskId": "not-admitted"}
+        }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/list",
+            "params": {
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+                }
+            }
+        }),
+        json!({"jsonrpc": "2.0", "id": 5, "method": "tools/list", "params": {}}),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {"name": "cogniform.query_scene", "arguments": {}}
+        }),
+        json!({"jsonrpc": "2.0", "id": 7, "method": "resources/list", "params": {}}),
     ]);
     assert!(output.status.success(), "{}", normalize(&output.stderr));
     assert!(output.stderr.is_empty());
     let responses = json_lines(&output.stdout);
-    assert_eq!(responses.len(), 2);
+    assert_eq!(responses.len(), 7);
     assert_eq!(responses[0]["id"], 1);
     assert_eq!(responses[0]["result"]["protocolVersion"], "2025-11-25");
+    assert!(responses[0]["result"].get("resultType").is_none());
+    assert!(
+        responses[0]["result"]["capabilities"]
+            .get("extensions")
+            .is_none()
+    );
     assert_eq!(responses[1]["id"], 2);
+    assert_eq!(responses[1]["error"]["code"], -32601);
+    assert_eq!(responses[2]["id"], 3);
+    assert_eq!(responses[2]["error"]["code"], -32601);
+    assert_eq!(responses[3]["id"], 4);
+    assert_eq!(responses[3]["error"]["code"], -32022);
     assert_eq!(
-        responses[1]["result"]["tools"]
+        responses[3]["error"]["data"],
+        json!({"requested": "2026-07-28", "supported": ["2025-11-25"]})
+    );
+    assert_eq!(responses[4]["id"], 5);
+    assert_eq!(
+        responses[4]["result"]["tools"]
             .as_array()
             .unwrap()
             .iter()
@@ -54,6 +108,20 @@ fn initialize_list_and_eof_keep_stdout_protocol_pure() {
             "cogniform.observe_scene"
         ]
     );
+    assert!(responses[4]["result"].get("resultType").is_none());
+    for tool in responses[4]["result"]["tools"].as_array().unwrap() {
+        assert!(tool.get("execution").is_none());
+        assert!(tool.get("taskSupport").is_none());
+    }
+    assert_eq!(responses[5]["id"], 6);
+    assert!(responses[5]["result"].get("resultType").is_none());
+    assert_eq!(
+        responses[5]["result"]["structuredContent"],
+        json!({"schema_version": 1, "error": "invalid_arguments"})
+    );
+    assert_eq!(responses[6]["id"], 7);
+    assert!(responses[6]["result"].get("resultType").is_none());
+    assert_eq!(responses[6]["result"]["resources"], json!([]));
 }
 
 #[test]
@@ -207,6 +275,7 @@ fn assert_observation_resource(session: &mut Session) {
         "method": "resources/read",
         "params": {"uri": uri}
     }));
+    assert!(read["result"].get("resultType").is_none());
     let blob = read["result"]["contents"][0]["blob"].as_str().unwrap();
     let envelope = decode_base64(blob).unwrap();
     assert_eq!(

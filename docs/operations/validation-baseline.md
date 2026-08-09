@@ -412,8 +412,9 @@ compiles but does not execute that GPU-dependent test.
 CF045 adds one isolated adapter over the existing compiler, protocol, engine,
 and CLI composition boundaries. CF046 appends the existing atomic `ScenePatch`
 path. CF047 adds the existing observation-codec edge and composes one bounded
-request with one latest-value MCP resource. The ordinary and controlled
-commands were:
+request with one latest-value MCP resource. CF048 updates only the official SDK
+to exact-pinned 3.1.2 and re-runs the complete compatibility surface. The
+ordinary and controlled commands were:
 
 ```text
 cargo fmt --all --check
@@ -449,7 +450,14 @@ conflicting-key and stale-base rejection, compatible imagination continuation,
 final query, exact-revision canonical observation resource listing/readback,
 protocol-pure stdout, and clean EOF on the validated Windows profile.
 
-Production enables only the exact-pinned `rmcp` server and restricted Tokio
+CF048 adds raw child-process coverage that rejects `server/discover`,
+`tasks/get`, and per-request `2026-07-28`; asserts the singleton supported
+version; and proves that extensions, per-tool execution metadata, and
+`resultType` do not enter 2025 initialize, list, call, or resource results.
+The same tests then continue with ordinary 2025 traffic, proving that a rejected
+newer surface does not poison the accepted session.
+
+Production enables only exact-pinned `rmcp` 3.1.2 `server` and restricted Tokio
 runtime features needed by this adapter; HTTP, client, OAuth, TLS, process, and
 built-in stdio features are absent. The adapter supplies its own bounded
 transport, creates no listener or socket, and makes no authentication,
@@ -461,6 +469,14 @@ package bytes remain registry-checksum exact and are excluded from whitespace
 normalization. The dependency audit
 passed advisories, bans, licenses, and sources with only the already accepted
 duplicate-version warnings for `hashbrown` and `syn`.
+
+The refreshed graph removes `async-trait` and adds `uuid` 1.24.0,
+`getrandom` 0.4.3, and target-only `r-efi` 6.0.0. Production's upstream
+`server` feature requires UUID version four, but Cogniform does not advertise
+or invoke Tasks, the only enabled SDK path that generates one. The reviewed
+`getrandom` build script emits only a sanitizer cfg; the existing reviewed
+`rmcp` Git-hook condition remains fail-closed because the repository has no
+`.githooks` directory.
 
 ## Controlled local-session executor commands
 

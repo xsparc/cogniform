@@ -40,6 +40,9 @@ scene revision that produced it.
 > service lazily, serializes calls, and adds no HTTP, socket, OAuth, model,
 > prompt, resource-template, subscription, history, task, or remote-security
 > surface.
+> Its official SDK is exact-pinned at `rmcp` 3.1.2, while the adapter advertises
+> only `2025-11-25`, advertises no extensions, rejects newer discovery, Tasks,
+> and versions, and omits newer result shapes.
 > A bounded
 > in-process gateway, exact logical queries, and a
 > deterministic primitive imagination compiler are also available. Compiler

@@ -63,9 +63,6 @@ pub enum PrimitiveSchemaDefinition {
     Boolean(BooleanSchema),
 }
 
-#[deprecated(since = "2.0.0", note = "Renamed to PrimitiveSchemaDefinition")]
-pub type PrimitiveSchema = PrimitiveSchemaDefinition;
-
 // =============================================================================
 // STRING SCHEMA
 // =============================================================================
@@ -983,17 +980,15 @@ impl EnumSchemaBuilder<MultiSelect> {
                 return Err("One of the provided default values is not in enum values".to_string());
             }
         }
-        if let Some(min) = self.min_items {
-            if (default_values.len() as u64) < min {
-                return Err("Number of provided default values is less than min_items".to_string());
-            }
+        if let Some(min) = self.min_items
+            && (default_values.len() as u64) < min
+        {
+            return Err("Number of provided default values is less than min_items".to_string());
         }
-        if let Some(max) = self.max_items {
-            if (default_values.len() as u64) > max {
-                return Err(
-                    "Number of provided default values is greater than max_items".to_string(),
-                );
-            }
+        if let Some(max) = self.max_items
+            && (default_values.len() as u64) > max
+        {
+            return Err("Number of provided default values is greater than max_items".to_string());
         }
         self.default = default_values;
         Ok(self)
@@ -1600,44 +1595,6 @@ impl ElicitationSchemaBuilder {
     /// Add an optional enum property using EnumSchema
     pub fn optional_enum_schema(self, name: impl Into<String>, enum_schema: EnumSchema) -> Self {
         self.property(name, PrimitiveSchemaDefinition::Enum(enum_schema))
-    }
-
-    /// Add a required enum property using values. Creates an untitled single-select enum.
-    #[deprecated(
-        since = "0.13.0",
-        note = "Use ElicitationSchemaBuilder::required_enum_schema with EnumSchema::builder instead"
-    )]
-    pub fn required_enum(self, name: impl Into<String>, values: Vec<String>) -> Self {
-        self.required_property(
-            name,
-            PrimitiveSchemaDefinition::Enum(EnumSchema::Legacy(LegacyEnumSchema {
-                type_: StringTypeConst,
-                title: None,
-                description: None,
-                enum_: values,
-                enum_names: None,
-                default: None,
-            })),
-        )
-    }
-
-    /// Add an optional enum property using values. Creates an untitled single-select enum.
-    #[deprecated(
-        since = "0.13.0",
-        note = "Use ElicitationSchemaBuilder::optional_enum_schema with EnumSchema::builder instead"
-    )]
-    pub fn optional_enum(self, name: impl Into<String>, values: Vec<String>) -> Self {
-        self.property(
-            name,
-            PrimitiveSchemaDefinition::Enum(EnumSchema::Legacy(LegacyEnumSchema {
-                type_: StringTypeConst,
-                title: None,
-                description: None,
-                enum_: values,
-                enum_names: None,
-                default: None,
-            })),
-        )
     }
 
     /// Mark an existing property as required
