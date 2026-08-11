@@ -156,7 +156,8 @@ the transport-neutral schema, limits, canonical encoding, entry roles,
 ordering, and outcome invariants without adding a session or endpoint.
 The [MCP stdio guide](docs/protocol/mcp-stdio-adapter.md) specifies the exact
 version, four-tool and one-resource surface, byte/nesting and in-flight bounds,
-lazy service lifecycle, redacted failures, and unsupported remote features.
+closed success/error discovery schemas, bounded workflow instructions, lazy
+service lifecycle, redacted failures, and unsupported remote features.
 The [GLB asset guide](docs/assets/glb-subset.md) documents exact source
 admission, the approved format subset, lifecycle and explicit eviction,
 capacity limits, proxy policy, texture sampling contract, and controlled GPU

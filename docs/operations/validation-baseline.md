@@ -86,6 +86,11 @@ CF047 exact four-tool MCP discovery, bounded observation polling and causal
 validation, canonical latest-value resource readback, atomic replacement,
 failure preservation, and controlled production-service and CLI child evidence
 were collected on the CPU and validated Windows profile on 2026-08-09.
+CF048 exact-pinned SDK compatibility and fixed 2025 lifecycle evidence were
+collected on the CPU and validated Windows profile on 2026-08-09. CF049 closed
+discovery schemas, stable error vocabularies, and exact workflow-instruction
+evidence were collected on the CPU profile on 2026-08-11. No new controlled GPU
+evidence was required because CF049 changes no runtime execution path.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -413,8 +418,10 @@ CF045 adds one isolated adapter over the existing compiler, protocol, engine,
 and CLI composition boundaries. CF046 appends the existing atomic `ScenePatch`
 path. CF047 adds the existing observation-codec edge and composes one bounded
 request with one latest-value MCP resource. CF048 updates only the official SDK
-to exact-pinned 3.1.2 and re-runs the complete compatibility surface. The
-ordinary and controlled commands were:
+to exact-pinned 3.1.2 and re-runs the complete compatibility surface. CF049
+closes query/imagination discovery results and adds one exact bounded workflow
+instruction without changing runtime behavior. The ordinary and controlled
+commands were:
 
 ```text
 cargo fmt --all --check
@@ -428,8 +435,10 @@ cargo deny check advisories bans licenses sources
 
 The portable adapter tests cover official `rmcp` client initialization at
 exact stable version `2025-11-25`; deterministic four-tool order, fixed
-top-level patch and observation schema metadata, authoritative typed core validation, and
-pessimistic annotations; resources without subscription/list-change support;
+closed success/error top-level schema metadata and complete stable error
+vocabularies, authoritative typed core validation, pessimistic annotations,
+and exact 508-byte workflow instructions; resources without
+subscription/list-change support;
 rejection of a newer known version; invalid arguments before lazy service
 creation; malformed, invalid, and over-limit patch rejection; exact queued,
 replayed, busy, service-failure, response-kind, and receipt-causality roles;
@@ -456,6 +465,14 @@ version; and proves that extensions, per-tool execution metadata, and
 `resultType` do not enter 2025 initialize, list, call, or resource results.
 The same tests then continue with ordinary 2025 traffic, proving that a rejected
 newer surface does not poison the accepted session.
+
+CF049 adds official-client assertions for the exact initialization instruction,
+its 508-byte bound, and the complete closed query/imagination success/error
+branches. Existing official-client calls prove representative invalid-argument
+errors for every tool and real success for query/imagination remains covered by
+the controlled production-service test. The raw CLI child fixture independently
+asserts the exact initialization bytes without constructing `LocalService` or
+selecting a GPU adapter.
 
 Production enables only exact-pinned `rmcp` 3.1.2 `server` and restricted Tokio
 runtime features needed by this adapter; HTTP, client, OAuth, TLS, process, and

@@ -159,6 +159,16 @@ release yet; the current workspace version remains `0.0.0`.
 
 ### Changed
 
+- every MCP tool now advertises a closed, mutually exclusive success/error
+  output schema. Query and imagination discovery now includes the complete
+  stable error vocabulary already emitted by their unchanged runtime paths,
+  correcting the prior success-only metadata. Initialization also returns one
+  exact 508-byte instruction covering fresh and exact revisions, semantic versus
+  direct changes, exact retries, camera/resource flow, serialized calls, and
+  loss-of-trust outcomes. Protocol version, tool execution, core types,
+  dependencies, authority, deployment, workspace version, and release state are
+  unchanged;
+
 - the isolated MCP adapter updates its exact-pinned official Rust SDK from
   `rmcp` 2.2.0 to 3.1.2 while keeping stable MCP `2025-11-25` as its only
   advertised and accepted revision. `server/discover`, Tasks, extensions,

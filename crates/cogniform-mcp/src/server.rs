@@ -40,6 +40,8 @@ pub const APPLY_PATCH_TOOL: &str = "cogniform.apply_patch";
 /// Stable MCP name for the exact-revision observation tool.
 pub const OBSERVE_SCENE_TOOL: &str = "cogniform.observe_scene";
 
+pub(crate) const MCP_SERVER_INSTRUCTIONS: &str = "Fresh child: call query_scene with scene_revision 0. Thereafter use exact revisions from receipts or metadata. Use submit_imagination for semantic changes or apply_patch for direct changes; reuse transaction_id and idempotency_key only for an exact retry. Add a Camera before observe_scene, then read its cogniform:// resource. Calls are serialized. Discard the child after service_failed, invalid_service_output, observation_timeout, or mutating output_unavailable; never infer or retry an uncertain effect.";
+
 pub(crate) const OBSERVATION_RESOURCE_MIME_TYPE: &str =
     "application/vnd.cogniform.observation-envelope";
 const OBSERVATION_POLL_CADENCE: Duration = Duration::from_millis(2);
@@ -656,14 +658,12 @@ impl ServerHandler for CogniformMcpServer {
                 .enable_resources()
                 .build(),
         )
-            .with_protocol_version(ProtocolVersion::V_2025_11_25)
-            .with_server_info(
-                Implementation::new("cogniform", env!("CARGO_PKG_VERSION"))
-                    .with_title("Cogniform local scene service"),
-            )
-            .with_instructions(
-                "Query or observe an exact scene revision, submit one bounded idempotent imagination, or apply one bounded idempotent patch.",
-            )
+        .with_protocol_version(ProtocolVersion::V_2025_11_25)
+        .with_server_info(
+            Implementation::new("cogniform", env!("CARGO_PKG_VERSION"))
+                .with_title("Cogniform local scene service"),
+        )
+        .with_instructions(MCP_SERVER_INSTRUCTIONS)
     }
 
     fn list_tools(
@@ -884,8 +884,35 @@ fn query_tool() -> Tool {
         }))),
     )
     .with_raw_output_schema(Arc::new(schema_object(json!({
-        "type": "object",
-        "required": ["schema_version", "scene_revision", "entities"]
+        "oneOf": [
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["schema_version", "scene_revision", "entities"],
+                "properties": {
+                    "schema_version": {"const": 1},
+                    "scene_revision": {"type": "integer", "minimum": 0},
+                    "entities": {"type": "array", "items": {"type": "object"}}
+                }
+            },
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["schema_version", "error"],
+                "properties": {
+                    "schema_version": {"const": 1},
+                    "error": {"enum": [
+                        "invalid_arguments",
+                        "invalid_query",
+                        "service_unavailable",
+                        "service_failed",
+                        "query_rejected",
+                        "invalid_service_output",
+                        "output_unavailable"
+                    ]}
+                }
+            }
+        ]
     }))))
     .with_annotations(
         ToolAnnotations::with_title("Query Cogniform scene")
@@ -920,8 +947,37 @@ fn imagination_tool() -> Tool {
         }))),
     )
     .with_raw_output_schema(Arc::new(schema_object(json!({
-        "type": "object",
-        "required": ["schema_version", "admission", "compilation", "receipt"]
+        "oneOf": [
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["schema_version", "admission", "compilation", "receipt"],
+                "properties": {
+                    "schema_version": {"const": 1},
+                    "admission": {"enum": ["queued", "replayed"]},
+                    "compilation": {"type": "object"},
+                    "receipt": {"type": ["object", "null"]}
+                }
+            },
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["schema_version", "error"],
+                "properties": {
+                    "schema_version": {"const": 1},
+                    "error": {"enum": [
+                        "invalid_arguments",
+                        "invalid_imagination",
+                        "service_busy",
+                        "service_unavailable",
+                        "service_failed",
+                        "imagination_rejected",
+                        "invalid_service_output",
+                        "output_unavailable"
+                    ]}
+                }
+            }
+        ]
     }))))
     .with_annotations(
         ToolAnnotations::with_title("Submit Cogniform imagination")
