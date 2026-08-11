@@ -3,7 +3,8 @@
 Status: fixed local schema and runtime profile implemented by CF045, extended
 with bounded direct patch application by CF046, and extended with one bounded
 observation resource by CF047. CF048 refreshes the official Rust SDK while
-preserving this protocol profile byte-for-byte.
+preserving this protocol profile byte-for-byte. CF049 closes every advertised
+tool result shape and adds bounded workflow instructions for agent clients.
 
 `cogniform-cli serve-mcp-stdio` serves stable MCP `2025-11-25` over inherited
 redirected stdin/stdout. It is a local child-process adapter, not a listener or
@@ -28,6 +29,16 @@ only request accepted before initialize. Initialization and tool discovery do
 not construct the local service or select a GPU adapter. The fixed service is
 created lazily on the first valid tool call and all tool calls are serialized.
 
+Initialization returns this exact 508-byte ASCII/UTF-8 instruction:
+
+```text
+Fresh child: call query_scene with scene_revision 0. Thereafter use exact revisions from receipts or metadata. Use submit_imagination for semantic changes or apply_patch for direct changes; reuse transaction_id and idempotency_key only for an exact retry. Add a Camera before observe_scene, then read its cogniform:// resource. Calls are serialized. Discard the child after service_failed, invalid_service_output, observation_timeout, or mutating output_unavailable; never infer or retry an uncertain effect.
+```
+
+The first 512 bytes are therefore self-contained. The instruction summarizes
+the existing contract; it grants no capability and does not replace the typed
+arguments, structured outcomes, or parent-owned supervision policy below.
+
 The implementation dependency is exact-pinned `rmcp` 3.1.2, but SDK support is
 not adapter support. The handler advertises only `2025-11-25` and rejects
 `server/discover`, Tasks methods, and per-request selection of `2026-07-28`;
@@ -39,8 +50,8 @@ support. It exposes these tools in this order:
 
 | Tool | Input | Output | Annotations |
 |---|---|---|---|
-| `cogniform.query_scene` | One complete core `SceneQuery` object | One complete core `SceneQueryResult` as `structuredContent` | read-only, non-destructive, idempotent, closed world |
-| `cogniform.submit_imagination` | One complete core `ImaginationEnvelope` object | `{schema_version, admission, compilation, receipt}` as `structuredContent` | mutating, destructive, idempotent, closed world |
+| `cogniform.query_scene` | One complete core `SceneQuery` object | Success `SceneQueryResult` or stable error `{schema_version, error}` as `structuredContent` | read-only, non-destructive, idempotent, closed world |
+| `cogniform.submit_imagination` | One complete core `ImaginationEnvelope` object | Success `{schema_version, admission, compilation, receipt}` or stable error `{schema_version, error}` as `structuredContent` | mutating, destructive, idempotent, closed world |
 | `cogniform.apply_patch` | One complete core `ScenePatch` object | Success `{schema_version, admission, receipt}` or stable error `{schema_version, error}` as `structuredContent` | mutating, destructive, idempotent, closed world |
 | `cogniform.observe_scene` | One complete core `ObservationRequest` object | Success `{schema_version, resource_uri, resource_size, metadata}` plus one resource link, or stable error `{schema_version, error}` | local effect, non-destructive, non-idempotent, closed world |
 
@@ -50,6 +61,16 @@ discovery metadata, not a duplicate recursive definition of Cogniform's core
 schema. Deserialization plus the core type's bounded canonical validation is
 authoritative for nested patch, imagination, query, result, receipt, and
 observation values.
+
+Query-path structured tool error codes are `invalid_arguments`, `invalid_query`,
+`service_unavailable`, `service_failed`, `query_rejected`,
+`invalid_service_output`, and `output_unavailable`. Imagination-path codes are
+`invalid_arguments`, `invalid_imagination`, `service_busy`,
+`service_unavailable`, `service_failed`, `imagination_rejected`,
+`invalid_service_output`, and `output_unavailable`. Treat `service_failed` and
+`invalid_service_output` as loss of trust in the child. Imagination
+`output_unavailable` follows an admitted mutating call and is also uncertain;
+discard the child and neither infer nor retry the effect.
 
 `query_scene` requires the exact current revision and never mutates service
 state. `submit_imagination` accepts a new command only when the adapter-owned
@@ -141,6 +162,7 @@ system write failure; the adapter never retries or resynchronizes that line.
 See [ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md),
 [ADR 0046](../adr/0046-bounded-mcp-apply-patch-tool.md),
 [ADR 0047](../adr/0047-bounded-mcp-observation-resource.md),
-[ADR 0048](../adr/0048-pin-current-rust-mcp-sdk-without-protocol-expansion.md), the
+[ADR 0048](../adr/0048-pin-current-rust-mcp-sdk-without-protocol-expansion.md),
+[ADR 0049](../adr/0049-conformant-mcp-discovery-contract.md), the
 [quickstart](../getting-started/mcp-stdio-adapter.md), and the
 [threat model](../threat-model/mvp.md).

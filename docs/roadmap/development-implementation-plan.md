@@ -1130,6 +1130,30 @@ resource readback, and clean-close flow. MCP 2026 lifecycle support remains a
 separately designed and approved successor. See
 [ADR 0048](../adr/0048-pin-current-rust-mcp-sdk-without-protocol-expansion.md).
 
+### PR 49 - CF049: Conformant MCP discovery contract
+
+Outcome: an MCP agent can discover output schemas that accept every actual
+structured tool result and receive enough bounded initialization guidance to
+use the four-tool workflow without inventing revision, retry, camera, resource,
+serialization, or uncertain-effect policy.
+
+Gate: replace the query and imagination success-only output schemas with
+closed, mutually exclusive success/error alternatives. Pin their complete
+stable error vocabularies to the implemented outcomes while retaining typed
+core validation as the recursive authority. Emit one exact 508-byte server
+instruction that starts a fresh child at revision zero, requires exact returned
+revisions, distinguishes semantic from direct changes, limits idempotency reuse
+to exact retries, requires a camera before observation, names resource readback,
+states serialized execution, and identifies the outcomes that require child
+discard without inferred retry.
+
+Official-client and raw CLI tests assert the exact instruction bytes, all four
+closed output-schema branches, error vocabularies, tool order, and representative
+success/error results. Tool execution, protocol version, capabilities, core
+types, dependencies, transport bounds, service authority, deployment, release,
+and workspace version remain unchanged. See
+[ADR 0049](../adr/0049-conformant-mcp-discovery-contract.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1139,7 +1163,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
-  -> CF046 -> CF047 -> CF048
+  -> CF046 -> CF047 -> CF048 -> CF049
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1365,6 +1389,14 @@ Validation expands with capability:
   initialize/list/call/resource results omit extensions, execution metadata,
   and `resultType`; every CF045-CF047 bound, stable outcome, backpressure path,
   and controlled production/CLI flow remains compatible.
+- CF049: exact 508-byte initialization guidance covers the fresh-revision,
+  exact-revision, mutation-choice, retry, camera/resource, serialization, and
+  loss-of-trust workflow; every tool advertises closed mutually exclusive
+  success/error output schemas, with query and imagination now pinning their
+  complete stable error vocabularies; official-client and raw CLI tests assert
+  exact discovery bytes and representative errors without service startup,
+  while existing controlled production-service evidence covers successful
+  query and imagination execution.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

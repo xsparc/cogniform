@@ -9,6 +9,8 @@ use cogniform_observation::{ObservationPayload, ObservationPayloadLimits, decode
 use cogniform_protocol::{ObservationMetadata, RuntimeLimits};
 use serde_json::{Value, json};
 
+const MCP_SERVER_INSTRUCTIONS: &str = "Fresh child: call query_scene with scene_revision 0. Thereafter use exact revisions from receipts or metadata. Use submit_imagination for semantic changes or apply_patch for direct changes; reuse transaction_id and idempotency_key only for an exact retry. Add a Camera before observe_scene, then read its cogniform:// resource. Calls are serialized. Discard the child after service_failed, invalid_service_output, observation_timeout, or mutating output_unavailable; never infer or retry an uncertain effect.";
+
 #[test]
 fn arguments_are_exact_before_protocol_mode() {
     for arguments in [
@@ -77,6 +79,11 @@ fn initialize_list_and_eof_keep_stdout_protocol_pure() {
     assert_eq!(responses.len(), 7);
     assert_eq!(responses[0]["id"], 1);
     assert_eq!(responses[0]["result"]["protocolVersion"], "2025-11-25");
+    assert_eq!(
+        responses[0]["result"]["instructions"],
+        MCP_SERVER_INSTRUCTIONS
+    );
+    assert_eq!(MCP_SERVER_INSTRUCTIONS.len(), 508);
     assert!(responses[0]["result"].get("resultType").is_none());
     assert!(
         responses[0]["result"]["capabilities"]

@@ -19,6 +19,15 @@ arguments are the complete snake-case Cogniform core objects described in the
 idempotency key for retries: replay returns the retained compilation/receipt
 without applying another revision.
 
+Initialization returns one exact workflow instruction. For a fresh child,
+query revision zero; thereafter use only revisions returned by receipts or
+metadata. Choose `submit_imagination` for semantic work and `apply_patch` for a
+complete direct change. Reuse both transaction ID and idempotency key only for
+an exact retry. Add a camera before observation, then read the returned
+`cogniform://` resource. Calls are serialized. Discard the child after
+`service_failed`, `invalid_service_output`, `observation_timeout`, or mutating
+`output_unavailable`; never infer or retry an uncertain effect.
+
 Configure newer MCP parents to use the legacy session revision explicitly.
 This adapter intentionally rejects `server/discover`, Tasks, per-request
 `2026-07-28`, and every other newer lifecycle path, and advertises no extensions,
@@ -44,9 +53,10 @@ The server advertises no resource templates, subscriptions, list-change
 notifications, history, or persistence.
 
 This profile is local and single-user. The parent must protect scene,
-compilation, observation, and resource values as sensitive data and supply identity, authorization,
-confidentiality, freshness, rate limits, and process supervision before any
-broader exposure. See the complete [protocol contract](../protocol/mcp-stdio-adapter.md).
+compilation, observation, and resource values as sensitive data and supply
+identity, authorization, confidentiality, freshness, rate limits, and process
+supervision before any broader exposure. See the complete
+[protocol contract](../protocol/mcp-stdio-adapter.md).
 
 The controlled end-to-end child proof is opt-in on an approved DX12 or Vulkan
 adapter:

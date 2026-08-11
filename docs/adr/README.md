@@ -54,5 +54,6 @@ earlier one and links the history.
 | [0046](0046-bounded-mcp-apply-patch-tool.md) | Accepted | Append one bounded atomic apply-patch tool to the local MCP stdio adapter |
 | [0047](0047-bounded-mcp-observation-resource.md) | Accepted | Append one exact-revision observation tool and retain its bounded canonical payload as one MCP resource |
 | [0048](0048-pin-current-rust-mcp-sdk-without-protocol-expansion.md) | Accepted | Refresh the official Rust MCP SDK while preserving only the accepted 2025-11-25 contract |
+| [0049](0049-conformant-mcp-discovery-contract.md) | Accepted | Close every MCP tool output schema and provide bounded workflow instructions |
 
 New records use four sections: context, decision, consequences, and status.

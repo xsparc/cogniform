@@ -443,11 +443,14 @@ mod tests {
     #[tokio::test]
     async fn official_client_negotiates_and_lists_exact_tools() {
         let (client, server) = client_and_server().await;
+        let peer_info = client.peer().peer_info().unwrap();
+        assert_eq!(peer_info.protocol_version, ProtocolVersion::V_2025_11_25);
         assert_eq!(
-            client.peer().peer_info().unwrap().protocol_version,
-            ProtocolVersion::V_2025_11_25
+            peer_info.instructions.as_deref(),
+            Some(server::MCP_SERVER_INSTRUCTIONS)
         );
-        let capabilities = &client.peer().peer_info().unwrap().capabilities;
+        assert_eq!(server::MCP_SERVER_INSTRUCTIONS.len(), 508);
+        let capabilities = &peer_info.capabilities;
         assert_eq!(capabilities.resources.as_ref().unwrap().subscribe, None);
         assert_eq!(capabilities.resources.as_ref().unwrap().list_changed, None);
         assert!(capabilities.extensions.is_none());
@@ -466,6 +469,8 @@ mod tests {
             ]
         );
         assert_existing_tool_annotations(&tools);
+        assert_query_tool_contract(&tools[0]);
+        assert_imagination_tool_contract(&tools[1]);
         assert_patch_tool_contract(&tools[2]);
         assert_observation_tool_contract(&tools[3]);
         close(client, server).await;
@@ -487,6 +492,78 @@ mod tests {
         assert_eq!(patch.destructive_hint, Some(true));
         assert_eq!(patch.idempotent_hint, Some(true));
         assert_eq!(patch.open_world_hint, Some(false));
+    }
+
+    fn assert_query_tool_contract(tool: &Tool) {
+        assert_eq!(
+            tool.output_schema.as_ref().unwrap()["oneOf"],
+            json!([
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["schema_version", "scene_revision", "entities"],
+                    "properties": {
+                        "schema_version": {"const": 1},
+                        "scene_revision": {"type": "integer", "minimum": 0},
+                        "entities": {"type": "array", "items": {"type": "object"}}
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["schema_version", "error"],
+                    "properties": {
+                        "schema_version": {"const": 1},
+                        "error": {"enum": [
+                            "invalid_arguments",
+                            "invalid_query",
+                            "service_unavailable",
+                            "service_failed",
+                            "query_rejected",
+                            "invalid_service_output",
+                            "output_unavailable"
+                        ]}
+                    }
+                }
+            ])
+        );
+    }
+
+    fn assert_imagination_tool_contract(tool: &Tool) {
+        assert_eq!(
+            tool.output_schema.as_ref().unwrap()["oneOf"],
+            json!([
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["schema_version", "admission", "compilation", "receipt"],
+                    "properties": {
+                        "schema_version": {"const": 1},
+                        "admission": {"enum": ["queued", "replayed"]},
+                        "compilation": {"type": "object"},
+                        "receipt": {"type": ["object", "null"]}
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["schema_version", "error"],
+                    "properties": {
+                        "schema_version": {"const": 1},
+                        "error": {"enum": [
+                            "invalid_arguments",
+                            "invalid_imagination",
+                            "service_busy",
+                            "service_unavailable",
+                            "service_failed",
+                            "imagination_rejected",
+                            "invalid_service_output",
+                            "output_unavailable"
+                        ]}
+                    }
+                }
+            ])
+        );
     }
 
     fn assert_patch_tool_contract(tool: &Tool) {
