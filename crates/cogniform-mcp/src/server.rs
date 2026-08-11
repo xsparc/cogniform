@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     sync::Arc,
     thread,
     time::{Duration, Instant},
@@ -19,10 +20,10 @@ use cogniform_protocol::{
 use rmcp::{
     ErrorData as McpError, ServerHandler,
     model::{
-        CallToolRequestParams, CallToolResult, ContentBlock, Implementation, ListResourcesResult,
-        ListToolsResult, PaginatedRequestParams, ProtocolVersion, ReadResourceRequestParams,
-        ReadResourceResult, Resource, ResourceContents, ServerCapabilities, ServerInfo, Tool,
-        ToolAnnotations,
+        CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, DiscoverResult,
+        Implementation, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
+        ProtocolVersion, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult,
+        Resource, ResourceContents, ServerCapabilities, ServerInfo, Tool, ToolAnnotations,
     },
     service::{RequestContext, RoleServer},
 };
@@ -635,6 +636,19 @@ impl LazyLocalService {
 }
 
 impl ServerHandler for CogniformMcpServer {
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Borrowed(&[ProtocolVersion::V_2025_11_25])
+    }
+
+    fn discover(
+        &self,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<DiscoverResult, McpError>> + Send + '_ {
+        std::future::ready(Err(McpError::method_not_found::<
+            rmcp::model::DiscoverRequestMethod,
+        >()))
+    }
+
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(
             ServerCapabilities::builder()
@@ -679,7 +693,7 @@ impl ServerHandler for CogniformMcpServer {
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, McpError> {
+    ) -> Result<CallToolResponse, McpError> {
         Ok(match request.name.as_ref() {
             QUERY_SCENE_TOOL => self.query_scene(request.arguments).await,
             SUBMIT_IMAGINATION_TOOL => self.submit_imagination(request.arguments).await,
@@ -690,7 +704,8 @@ impl ServerHandler for CogniformMcpServer {
                     rmcp::model::CallToolRequestMethod,
                 >());
             }
-        })
+        }
+        .into())
     }
 
     async fn list_resources(
@@ -712,7 +727,7 @@ impl ServerHandler for CogniformMcpServer {
         &self,
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
+    ) -> Result<ReadResourceResponse, McpError> {
         let state = self.state.lock().await;
         let retained = state
             .retained_observation
@@ -722,7 +737,8 @@ impl ServerHandler for CogniformMcpServer {
         Ok(ReadResourceResult::new(vec![
             ResourceContents::blob(retained.blob.clone(), retained.resource.uri.clone())
                 .with_mime_type(OBSERVATION_RESOURCE_MIME_TYPE),
-        ]))
+        ])
+        .into())
     }
 }
 

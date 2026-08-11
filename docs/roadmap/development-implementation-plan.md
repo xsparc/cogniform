@@ -1105,6 +1105,31 @@ and clean EOF. See
 [ADR 0047](../adr/0047-bounded-mcp-observation-resource.md) and the
 [MCP adapter guide](../protocol/mcp-stdio-adapter.md).
 
+### PR 48 - CF048: Current MCP SDK maintenance with a fixed 2025 contract
+
+Outcome: the isolated MCP adapter builds offline on the current stable official
+Rust SDK without changing its accepted public protocol, authority, or runtime
+behavior.
+
+Gate: replace exact-pinned `rmcp` 2.2.0 with exact-pinned 3.1.2, regenerate the
+locked vendored graph, and keep production on default-features-off `server`
+only. Restrict the handler's supported revisions to exactly `2025-11-25`, reject
+`server/discover`, Tasks and per-request `2026-07-28`, advertise no extensions,
+and emit no 2026 `resultType`. Preserve the exact four-tool order, schemas,
+annotations, structured results, one-resource list/read behavior, newline and
+nesting limits, one-request-through-response-flush backpressure, lazy serialized
+`LocalService`, stable failures, CLI stdout, and inherited-stdio trust boundary.
+
+The dependency delta removes `async-trait` and adds the SDK-required
+`uuid`/`getrandom` plus target-only `r-efi`; their features, checksums, licenses,
+build scripts, and reachable call sites require explicit review. Ordinary
+official-client and raw CLI tests prove fixed 2025 bytes and rejection of SDK-
+added lifecycle/capability surfaces. Controlled production-service and CLI
+child tests repeat the complete query, patch, imagination replay, observation,
+resource readback, and clean-close flow. MCP 2026 lifecycle support remains a
+separately designed and approved successor. See
+[ADR 0048](../adr/0048-pin-current-rust-mcp-sdk-without-protocol-expansion.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1114,7 +1139,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
-  -> CF046 -> CF047
+  -> CF046 -> CF047 -> CF048
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1334,6 +1359,12 @@ Validation expands with capability:
   `COGOBS01` base64 readback under the 4 MiB payload and 8 MiB output bounds;
   one-request-through-flush backpressure; zero-or-one listing, exact-URI reads, atomic replacement, failure
   preservation, and controlled production-service plus CLI child evidence.
+- CF048: exact-pinned official SDK 3.1.2 builds from the regenerated offline
+  vendor graph; the handler advertises only `2025-11-25`; raw requests prove
+  `server/discover`, Tasks, and per-request `2026-07-28` reject; 2025
+  initialize/list/call/resource results omit extensions, execution metadata,
+  and `resultType`; every CF045-CF047 bound, stable outcome, backpressure path,
+  and controlled production/CLI flow remains compatible.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
@@ -1341,7 +1372,8 @@ No performance threshold becomes a merge gate until reference hardware, fixture,
 
 After the MVP and only with evidence: configurable stdio profiles, MCP resource
 templates, subscriptions, list-change notifications, resource history and
-persistence, prompts, tasks, sampling, models, named-pipe or socket creation,
+persistence, MCP `2026-07-28` stateless discovery/per-request metadata and
+multi-round-trip results, prompts, tasks, sampling, models, named-pipe or socket creation,
 multiple clients, full-duplex scheduling, process supervision, shared-memory
 observation leases, authenticated MCP HTTP or gRPC/QUIC transport, Wasmtime procedures,
 KTX2/mesh optimization, advanced culling/batching, model bridge, Gaussian

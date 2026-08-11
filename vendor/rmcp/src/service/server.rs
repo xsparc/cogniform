@@ -1,8 +1,8 @@
 // Sampling/Roots/Logging are SEP-2577-deprecated; internal references are expected.
 #![expect(deprecated)]
-use std::borrow::Cow;
 #[cfg(feature = "elicitation")]
 use std::collections::HashSet;
+use std::{borrow::Cow, sync::Arc};
 
 use thiserror::Error;
 #[cfg(feature = "elicitation")]
@@ -10,10 +10,7 @@ use url::Url;
 
 use super::*;
 #[cfg(feature = "elicitation")]
-use crate::model::{
-    ElicitRequest, ElicitRequestParams, ElicitResult, ElicitationAction,
-    ElicitationCompleteNotification, ElicitationResponseNotificationParam,
-};
+use crate::model::{ElicitRequest, ElicitRequestParams, ElicitResult, ElicitationAction};
 use crate::{
     model::{
         CancelledNotification, CancelledNotificationParam, ClientInfo, ClientJsonRpcMessage,
@@ -23,7 +20,8 @@ use crate::{
         ProgressNotification, ProgressNotificationParam, PromptListChangedNotification,
         ProtocolVersion, ResourceListChangedNotification, ResourceUpdatedNotification,
         ResourceUpdatedNotificationParam, ServerInfo, ServerNotification, ServerRequest,
-        ServerResult, ToolListChangedNotification,
+        ServerResult, SubscriptionFilter, SubscriptionsAcknowledgedNotification,
+        SubscriptionsAcknowledgedNotificationParams, ToolListChangedNotification,
     },
     transport::DynamicTransportError,
 };
@@ -44,6 +42,38 @@ impl ServiceRole for RoleServer {
 
     type InitializeError = ServerInitializeError;
     const IS_CLIENT: bool = false;
+
+    fn peer_cancelled_params(notification: &Self::PeerNot) -> Option<&CancelledNotificationParam> {
+        match notification {
+            ClientNotification::CancelledNotification(notification) => Some(&notification.params),
+            _ => None,
+        }
+    }
+
+    fn enforce_request_association(
+        request: &Self::Req,
+        peer_info: Option<&Self::PeerInfo>,
+        in_request_handler_scope: bool,
+    ) -> Result<(), ServiceError> {
+        let restricted = matches!(
+            request,
+            ServerRequest::CreateMessageRequest(_)
+                | ServerRequest::ListRootsRequest(_)
+                | ServerRequest::ElicitRequest(_)
+        );
+        if !restricted {
+            return Ok(());
+        }
+        let strict =
+            peer_info.is_some_and(|info| info.protocol_version >= ProtocolVersion::V_2026_07_28);
+        if strict && !in_request_handler_scope {
+            return Err(ServiceError::McpError(ErrorData::invalid_request(
+                "SEP-2260: server-to-client requests must be associated with an originating client request",
+                None,
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// It represents the error that may occur when serving the server.
@@ -55,13 +85,6 @@ pub enum ServerInitializeError {
     #[error("expect initialized request, but received: {0:?}")]
     ExpectedInitializeRequest(Option<ClientJsonRpcMessage>),
 
-    #[deprecated(
-        since = "1.4.0",
-        note = "The server no longer gates on the initialized notification. This variant is never constructed and will be removed in a future major release."
-    )]
-    #[error("expect initialized notification, but received: {0:?}")]
-    ExpectedInitializedNotification(Option<ClientJsonRpcMessage>),
-
     #[error("connection closed: {0}")]
     ConnectionClosed(String),
 
@@ -70,13 +93,6 @@ pub enum ServerInitializeError {
 
     #[error("initialize failed: {0}")]
     InitializeFailed(ErrorData),
-
-    #[deprecated(
-        since = "1.8.0",
-        note = "Negotiation now falls back to the server-configured version. This variant is never constructed and will be removed in a future major release."
-    )]
-    #[error("unsupported protocol version: {0}")]
-    UnsupportedProtocolVersion(ProtocolVersion),
 
     #[error("Send message error {error}, when {context}")]
     TransportError {
@@ -100,6 +116,289 @@ impl ServerInitializeError {
     }
 }
 pub type ClientSink = Peer<RoleServer>;
+
+/// Failure to send a notification through a [`SubscriptionSink`].
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum SubscriptionSendError {
+    #[error("subscription is no longer active")]
+    SubscriptionClosed,
+    #[error("notification is not allowed on a subscription stream: {0}")]
+    UnsupportedNotification(&'static str),
+    #[error("notification was not accepted for this subscription: {0}")]
+    NotificationNotAccepted(&'static str),
+    #[error(transparent)]
+    Service(#[from] ServiceError),
+}
+
+/// A server-side notification sink scoped to one `subscriptions/listen` request.
+///
+/// The sink applies the accepted filter and adds the subscription request ID to
+/// every notification it sends.
+#[derive(Debug, Clone)]
+pub struct SubscriptionSink {
+    peer: Peer<RoleServer>,
+    id: RequestId,
+    accepted: Arc<SubscriptionFilter>,
+    active: CancellationToken,
+}
+
+impl SubscriptionSink {
+    fn new(
+        peer: Peer<RoleServer>,
+        id: RequestId,
+        accepted: Arc<SubscriptionFilter>,
+        active: CancellationToken,
+    ) -> Self {
+        Self {
+            peer,
+            id,
+            accepted,
+            active,
+        }
+    }
+
+    /// Return the JSON-RPC ID of the originating listen request.
+    pub fn id(&self) -> &RequestId {
+        &self.id
+    }
+
+    /// Return the filter accepted for this subscription.
+    pub fn accepted(&self) -> &SubscriptionFilter {
+        self.accepted.as_ref()
+    }
+
+    /// Send an allowed change notification with subscription metadata attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SubscriptionSendError::SubscriptionClosed`] after the request
+    /// ends, a filter error for disallowed notifications, or a transport error.
+    pub async fn send(
+        &self,
+        mut notification: ServerNotification,
+    ) -> Result<(), SubscriptionSendError> {
+        if self.active.is_cancelled() {
+            return Err(SubscriptionSendError::SubscriptionClosed);
+        }
+        match &notification {
+            ServerNotification::ToolListChangedNotification(_) => {
+                if self.accepted.tools_list_changed != Some(true) {
+                    return Err(SubscriptionSendError::NotificationNotAccepted(
+                        "notifications/tools/list_changed",
+                    ));
+                }
+            }
+            ServerNotification::PromptListChangedNotification(_) => {
+                if self.accepted.prompts_list_changed != Some(true) {
+                    return Err(SubscriptionSendError::NotificationNotAccepted(
+                        "notifications/prompts/list_changed",
+                    ));
+                }
+            }
+            ServerNotification::ResourceListChangedNotification(_) => {
+                if self.accepted.resources_list_changed != Some(true) {
+                    return Err(SubscriptionSendError::NotificationNotAccepted(
+                        "notifications/resources/list_changed",
+                    ));
+                }
+            }
+            ServerNotification::ResourceUpdatedNotification(update) => {
+                let accepted = self
+                    .accepted
+                    .resource_subscriptions
+                    .as_ref()
+                    .is_some_and(|uris| uris.contains(&update.params.uri));
+                if !accepted {
+                    return Err(SubscriptionSendError::NotificationNotAccepted(
+                        "notifications/resources/updated",
+                    ));
+                }
+            }
+            ServerNotification::SubscriptionsAcknowledgedNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "notifications/subscriptions/acknowledged",
+                ));
+            }
+            ServerNotification::CancelledNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "notifications/cancelled",
+                ));
+            }
+            ServerNotification::ProgressNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "notifications/progress",
+                ));
+            }
+            ServerNotification::LoggingMessageNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "notifications/message",
+                ));
+            }
+            // SEP-2663 task status notifications are not yet routable through
+            // `subscriptions/listen`: `SubscriptionFilter` has no `taskIds`
+            // field yet (the upstream conformance check for this flow is also
+            // still skipped, pending the subscriptions/listen rewrite).
+            // Clients currently observe task state by polling `tasks/get`.
+            ServerNotification::TaskStatusNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "notifications/tasks",
+                ));
+            }
+            ServerNotification::CustomNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "custom notification",
+                ));
+            }
+        }
+
+        notification
+            .get_meta_mut()
+            .set_subscription_id(self.id.clone());
+        self.peer.send_notification(notification).await?;
+        Ok(())
+    }
+
+    /// Send `notifications/tools/list_changed`.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::send`].
+    pub async fn notify_tool_list_changed(&self) -> Result<(), SubscriptionSendError> {
+        self.send(ServerNotification::ToolListChangedNotification(
+            ToolListChangedNotification {
+                method: Default::default(),
+                extensions: Default::default(),
+            },
+        ))
+        .await
+    }
+
+    /// Send `notifications/prompts/list_changed`.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::send`].
+    pub async fn notify_prompt_list_changed(&self) -> Result<(), SubscriptionSendError> {
+        self.send(ServerNotification::PromptListChangedNotification(
+            PromptListChangedNotification {
+                method: Default::default(),
+                extensions: Default::default(),
+            },
+        ))
+        .await
+    }
+
+    /// Send `notifications/resources/list_changed`.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::send`].
+    pub async fn notify_resource_list_changed(&self) -> Result<(), SubscriptionSendError> {
+        self.send(ServerNotification::ResourceListChangedNotification(
+            ResourceListChangedNotification {
+                method: Default::default(),
+                extensions: Default::default(),
+            },
+        ))
+        .await
+    }
+
+    /// Send `notifications/resources/updated` for an accepted URI.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::send`].
+    pub async fn notify_resource_updated(
+        &self,
+        uri: impl Into<String>,
+    ) -> Result<(), SubscriptionSendError> {
+        self.send(ServerNotification::ResourceUpdatedNotification(
+            ResourceUpdatedNotification::new(ResourceUpdatedNotificationParam::new(uri)),
+        ))
+        .await
+    }
+}
+
+/// Context for one established server-side notification subscription.
+///
+/// The acknowledgment has already been sent before this context is handed to
+/// [`ServerHandler::listen`](crate::ServerHandler::listen).
+#[derive(Debug)]
+pub struct SubscriptionContext {
+    request: RequestContext<RoleServer>,
+    requested: SubscriptionFilter,
+    accepted: Arc<SubscriptionFilter>,
+    sink: SubscriptionSink,
+    _active_guard: DropGuard,
+}
+
+impl SubscriptionContext {
+    pub(crate) async fn establish(
+        request: RequestContext<RoleServer>,
+        requested: SubscriptionFilter,
+        accepted: SubscriptionFilter,
+    ) -> Result<Self, ErrorData> {
+        let active = request.ct.child_token();
+        let accepted = Arc::new(accepted);
+        let sink = SubscriptionSink::new(
+            request.peer.clone(),
+            request.id.clone(),
+            accepted.clone(),
+            active.clone(),
+        );
+        let mut acknowledgment = SubscriptionsAcknowledgedNotification::new(
+            SubscriptionsAcknowledgedNotificationParams::new(accepted.as_ref().clone()),
+        );
+        let mut meta = NotificationMetaObject::new();
+        meta.set_subscription_id(request.id.clone());
+        acknowledgment.extensions.insert(meta);
+        request
+            .peer
+            .send_notification(ServerNotification::SubscriptionsAcknowledgedNotification(
+                acknowledgment,
+            ))
+            .await
+            .map_err(|error| {
+                ErrorData::internal_error(
+                    format!("failed to acknowledge subscription: {error}"),
+                    None,
+                )
+            })?;
+        Ok(Self {
+            request,
+            requested,
+            accepted,
+            sink,
+            _active_guard: active.drop_guard(),
+        })
+    }
+
+    /// Return the filter requested by the client.
+    pub fn requested(&self) -> &SubscriptionFilter {
+        &self.requested
+    }
+
+    /// Return the subset accepted by the server.
+    pub fn accepted(&self) -> &SubscriptionFilter {
+        self.accepted.as_ref()
+    }
+
+    /// Return a cloneable, filter-enforcing notification sink.
+    pub fn sink(&self) -> &SubscriptionSink {
+        &self.sink
+    }
+
+    /// Wait until the subscription request is cancelled.
+    pub async fn cancelled(&self) {
+        self.request.ct.cancelled().await;
+    }
+
+    /// Access the underlying request context.
+    pub fn request_context(&self) -> &RequestContext<RoleServer> {
+        &self.request
+    }
+}
 
 impl<S: Service<RoleServer>> ServiceExt<RoleServer> for S {
     fn serve_with_ct<T, E, A>(
@@ -161,12 +460,18 @@ where
     }
 }
 
-/// Echoes the client-requested version if known; otherwise returns `server_fallback`.
+/// Echoes the client-requested version if the server supports it; otherwise
+/// returns `server_fallback`.
+///
+/// `server_supported` comes from [`Service::supported_protocol_versions`], so a
+/// server that narrows that list is never made to answer `initialize` with a
+/// version it cannot serve.
 pub(crate) fn negotiate_protocol_version(
     client_requested: &ProtocolVersion,
     server_fallback: ProtocolVersion,
+    server_supported: &[ProtocolVersion],
 ) -> ProtocolVersion {
-    if ProtocolVersion::KNOWN_VERSIONS.contains(client_requested) {
+    if server_supported.contains(client_requested) {
         client_requested.clone()
     } else {
         tracing::warn!(
@@ -220,12 +525,41 @@ where
         }
     };
 
-    let ClientRequest::InitializeRequest(peer_info) = &request else {
-        return Err(ServerInitializeError::ExpectedInitializeRequest(Some(
-            ClientJsonRpcMessage::request(request, id),
-        )));
+    let initialize_request = match request {
+        ClientRequest::InitializeRequest(request) => request,
+        mut request => {
+            if !request
+                .get_meta()
+                .missing_required_keys(&ProtocolVersion::V_2026_07_28)
+                .is_empty()
+            {
+                return Err(ServerInitializeError::ExpectedInitializeRequest(Some(
+                    ClientJsonRpcMessage::request(request, id),
+                )));
+            }
+            let (peer, peer_rx) = Peer::new(id_provider, None);
+            peer.require_request_metadata();
+            let context = RequestContext {
+                ct: ct.child_token(),
+                id: id.clone(),
+                meta: std::mem::take(request.get_meta_mut()),
+                extensions: std::mem::take(request.extensions_mut()),
+                peer: peer.clone(),
+            };
+            let response = match service.handle_request(request, context).await {
+                Ok(result) => ServerJsonRpcMessage::response(result, id),
+                Err(error) => ServerJsonRpcMessage::error(error, Some(id)),
+            };
+            transport.send(response).await.map_err(|error| {
+                ServerInitializeError::transport::<T>(error, "sending negotiated request response")
+            })?;
+            return Ok(serve_inner(service, transport, peer, peer_rx, ct));
+        }
     };
-    let (peer, peer_rx) = Peer::new(id_provider, Some(peer_info.params.clone()));
+    let requested_protocol_version = initialize_request.params.protocol_version.clone();
+    let mut negotiated_peer_info = initialize_request.params.clone();
+    let (peer, peer_rx) = Peer::new(id_provider, Some(negotiated_peer_info.clone()));
+    let request = ClientRequest::InitializeRequest(initialize_request);
     let context = RequestContext {
         ct: ct.child_token(),
         id: id.clone(),
@@ -234,7 +568,7 @@ where
         peer: peer.clone(),
     };
     // Send initialize response
-    let init_response = service.handle_request(request.clone(), context).await;
+    let init_response = service.handle_request(request, context).await;
     let mut init_response = match init_response {
         Ok(ServerResult::InitializeResult(init_response)) => init_response,
         Ok(result) => {
@@ -251,12 +585,12 @@ where
         }
     };
     init_response.protocol_version = negotiate_protocol_version(
-        &peer_info.params.protocol_version,
+        &requested_protocol_version,
         init_response.protocol_version,
+        &service.supported_protocol_versions(),
     );
     // Update peer_info so context.protocol_version() reflects the negotiated
     // version in all subsequent request handlers.
-    let mut negotiated_peer_info = peer_info.params.clone();
     negotiated_peer_info.protocol_version = init_response.protocol_version.clone();
     peer.set_peer_info(negotiated_peer_info);
     transport
@@ -430,6 +764,10 @@ impl Peer<RoleServer> {
         }
     }
 
+    /// # SEP-2260: request association
+    ///
+    /// From protocol version `2026-07-28` this must be issued while handling a
+    /// client request; see [`OriginatingRequestId`].
     #[deprecated(
         since = "1.8.0",
         note = "Sampling is deprecated by SEP-2577 and will be removed in a future release. See https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2577"
@@ -464,6 +802,10 @@ impl Peer<RoleServer> {
         }
     }
     method!(
+        /// # SEP-2260: request association
+        ///
+        /// From protocol version `2026-07-28` this must be issued while handling a
+        /// client request; see [`OriginatingRequestId`].
         #[deprecated(
             since = "1.8.0",
             note = "Roots is deprecated by SEP-2577 and will be removed in a future release. See https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2577"
@@ -471,11 +813,21 @@ impl Peer<RoleServer> {
         peer_req list_roots ListRootsRequest() => ListRootsResult
     );
     #[cfg(feature = "elicitation")]
-    method!(peer_req create_elicitation ElicitRequest(ElicitRequestParams) => ElicitResult);
+    method!(
+        /// # SEP-2260: request association
+        ///
+        /// From protocol version `2026-07-28` this must be issued while handling a
+        /// client request; see [`OriginatingRequestId`].
+        peer_req create_elicitation ElicitRequest(ElicitRequestParams) => ElicitResult
+    );
     #[cfg(feature = "elicitation")]
-    method!(peer_req_with_timeout create_elicitation_with_timeout ElicitRequest(ElicitRequestParams) => ElicitResult);
-    #[cfg(feature = "elicitation")]
-    method!(peer_not notify_url_elicitation_completed ElicitationCompleteNotification(ElicitationResponseNotificationParam));
+    method!(
+        /// # SEP-2260: request association
+        ///
+        /// From protocol version `2026-07-28` this must be issued while handling a
+        /// client request; see [`OriginatingRequestId`].
+        peer_req_with_timeout create_elicitation_with_timeout ElicitRequest(ElicitRequestParams) => ElicitResult
+    );
 
     method!(peer_not notify_cancelled CancelledNotification(CancelledNotificationParam));
     method!(peer_not notify_progress ProgressNotification(ProgressNotificationParam));
@@ -702,6 +1054,11 @@ impl Peer<RoleServer> {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # SEP-2260: request association
+    ///
+    /// From protocol version `2026-07-28` this must be issued while handling a
+    /// client request; see [`OriginatingRequestId`].
     #[cfg(all(feature = "schemars", feature = "elicitation"))]
     pub async fn elicit<T>(&self, message: impl Into<String>) -> Result<Option<T>, ElicitationError>
     where
@@ -763,6 +1120,11 @@ impl Peer<RoleServer> {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # SEP-2260: request association
+    ///
+    /// From protocol version `2026-07-28` this must be issued while handling a
+    /// client request; see [`OriginatingRequestId`].
     #[cfg(all(feature = "schemars", feature = "elicitation"))]
     pub async fn elicit_with_timeout<T>(
         &self,
@@ -858,6 +1220,11 @@ impl Peer<RoleServer> {
     ///  Ok(())
     /// }
     /// ```
+    ///
+    /// # SEP-2260: request association
+    ///
+    /// From protocol version `2026-07-28` this must be issued while handling a
+    /// client request; see [`OriginatingRequestId`].
     #[cfg(feature = "elicitation")]
     pub async fn elicit_url(
         &self,
@@ -909,6 +1276,11 @@ impl Peer<RoleServer> {
     ///  Ok(())
     /// }
     /// ```
+    ///
+    /// # SEP-2260: request association
+    ///
+    /// From protocol version `2026-07-28` this must be issued while handling a
+    /// client request; see [`OriginatingRequestId`].
     #[cfg(feature = "elicitation")]
     pub async fn elicit_url_with_timeout(
         &self,

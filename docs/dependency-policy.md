@@ -137,23 +137,25 @@ constructs controlled test values only.
 
 ## Approved MCP SDK and async runtime
 
-CF045 admits exact-pinned `rmcp` 2.2.0 and Tokio 1.53.1 for the isolated
-`cogniform-mcp` adapter. `rmcp` is the Apache-2.0 official Rust MCP SDK and the
-selected version implements stable MCP 2025-11-25 under the workspace's Rust
-1.97.1 toolchain. Default SDK features are disabled. Production enables only
-`server`, which requires schema support and the async read/write codec; the
-adapter deliberately does not enable macros, built-in stdio, child process,
-HTTP client/server, reqwest, TLS, OAuth/auth, UUID, random, worker, or network
-transport features. The project-owned transport supplies the stronger
-incremental line and nesting bounds. The SDK `client` feature is added only for
-official-client tests. That development edge also names
-`transport-async-rw`, which production already inherits from `server`;
-production does not use the SDK stdio wrapper.
+CF045 initially admitted exact-pinned `rmcp` 2.2.0 and Tokio 1.53.1 for the
+isolated `cogniform-mcp` adapter. CF048 supersedes only the SDK pin with exact
+stable `rmcp` 3.1.2. `rmcp` is the Apache-2.0 official Rust MCP SDK; Cogniform
+continues to implement only MCP 2025-11-25 under the workspace's Rust 1.97.1
+toolchain. Default SDK features are disabled. Production enables only `server`,
+which requires schema support, the async read/write codec, and—in 3.1.2—UUID
+version-four support. The adapter deliberately does not enable macros,
+built-in stdio, child process, HTTP client/server, reqwest, TLS, OAuth/auth,
+worker, request-state, or network transport features. The project-owned
+transport supplies the stronger incremental line and nesting bounds. The SDK
+`client` feature is added only for official-client tests. That development edge
+also names `transport-async-rw`, which production already inherits from
+`server`; production does not use the SDK stdio wrapper.
 
 Tokio enables only inherited stdio, I/O utilities, macros, a current-thread
-runtime, and synchronization. No time, signal, filesystem, process, socket,
-network, or multi-thread runtime feature is requested directly. The 30 new
-external lock entries are the SDK/runtime plus their async, schema, tracing,
+runtime, synchronization, and the SDK's unchanged `time` requirement. No
+signal, filesystem, process, socket, network, or multi-thread runtime feature
+is enabled. The 30 new
+external lock entries introduced by CF045 were the SDK/runtime plus their async, schema, tracing,
 proc-macro, and platform-time support: `rmcp`, `tokio`, `tokio-macros`,
 `tokio-util`, `tokio-stream`, `bytes`, the Futures crates, `async-trait`,
 `chrono`, `iana-time-zone`, `iana-time-zone-haiku`, `core-foundation-sys`,
@@ -161,7 +163,9 @@ proc-macro, and platform-time support: `rmcp`, `tokio`, `tokio-macros`,
 `ref-cast`, `ref-cast-impl`, `pastey`, `tracing`, `tracing-core`,
 `tracing-attributes`, `cc`, `find-msvc-tools`, and `shlex`. All are permissive
 under the existing allow-list; exact checksums and sources are committed in
-`Cargo.lock` and `vendor/`.
+`Cargo.lock` and `vendor/`. CF048 removes `async-trait`, updates no other
+existing external version, and adds `uuid` 1.24.0, `getrandom` 0.4.3, and
+target-only `r-efi` 6.0.0.
 
 The graph adds proc macros and reviewed unsafe internals in the established
 Tokio/Chrono/Tracing/Futures ecosystem, but no first-party unsafe code or
@@ -173,7 +177,17 @@ module and queries the configured compiler version. The byte-exact vendored
 `.githooks` exist two directories above its manifest. Cogniform has no
 `.githooks`, and the public-tree policy rejects unapproved hidden root state;
 adding that directory or changing SDK source/features requires renewed supply-
-chain review before build execution.
+chain review before build execution. CF048 also adds the reviewed `getrandom`
+build script, which reads Cargo's sanitizer cfg and emits only a memory-
+sanitizer compilation cfg. `uuid` and `r-efi` have no build script.
+
+The 3.1.2 `server` feature compiles UUID version-four support and therefore the
+operating-system randomness backend. Within the enabled SDK source, the only
+UUID generation call is task creation. Cogniform advertises no extension or
+Tasks capability, rejects `tasks/*`, and never constructs or calls that path;
+the adapter therefore makes no ambient randomness request in its accepted
+profile. HTTP/auth UUID call sites are behind disabled features. Any future
+Tasks or remote-transport work must renew this reachability review.
 
 The SDK and runtime perform no paid call, telemetry, runtime download, or
 ambient network operation in the enabled adapter. They remain behind one local
@@ -183,11 +197,11 @@ features require a new ADR and dependency review.
 CF046 adds no package, feature, checksum, build script, or Cargo dependency
 edge. It translates the existing core `ScenePatch` through the already-approved
 `cogniform-mcp -> cogniform-engine -> cogniform-protocol` direction. A focused
-scan on 2026-08-09 found that the official Rust SDK has newer releases, while
+scan on 2026-08-09 found that the official Rust SDK had newer releases, while
 the implemented stable tools contract remains MCP `2025-11-25`. This slice
-retains exact-pinned `rmcp` 2.2.0 because upgrading the SDK is independent of
+retained exact-pinned `rmcp` 2.2.0 because upgrading the SDK was independent of
 the patch tool, would expand compatibility risk, and has no required fix for
-this local profile. See the official
+that local profile. CF048 later performs that isolated maintenance. See the official
 [Rust SDK releases](https://github.com/modelcontextprotocol/rust-sdk/releases)
 and [tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
 
@@ -209,6 +223,17 @@ optional. CF047 does not enable them. See the official
 [resources specification](https://modelcontextprotocol.io/specification/2025-11-25/server/resources),
 [tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools),
 and [Rust SDK releases](https://github.com/modelcontextprotocol/rust-sdk/releases).
+
+CF048 refreshes the official SDK without adopting MCP `2026-07-28`. The server
+handler advertises only `2025-11-25`; rejects `server/discover`, Tasks, and
+per-request selection of the newer revision; advertises no extension; and
+emits no newer `resultType` discriminator to a 2025 peer. Raw compatibility
+tests protect those negative capabilities as well as the exact four-tool and
+one-resource surface. This prevents the larger compiled SDK model from
+silently becoming adapter authority. The official
+[Rust SDK releases](https://github.com/modelcontextprotocol/rust-sdk/releases)
+and [MCP 2025-11-25 specification](https://modelcontextprotocol.io/specification/2025-11-25)
+remain the external references; MCP 2026 support requires a new approved ADR.
 
 ## Review and verification
 

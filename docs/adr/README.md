@@ -53,5 +53,6 @@ earlier one and links the history.
 | [0045](0045-bounded-mcp-stdio-adapter.md) | Accepted | Expose exact query and imagination tools through one bounded local MCP stdio adapter |
 | [0046](0046-bounded-mcp-apply-patch-tool.md) | Accepted | Append one bounded atomic apply-patch tool to the local MCP stdio adapter |
 | [0047](0047-bounded-mcp-observation-resource.md) | Accepted | Append one exact-revision observation tool and retain its bounded canonical payload as one MCP resource |
+| [0048](0048-pin-current-rust-mcp-sdk-without-protocol-expansion.md) | Accepted | Refresh the official Rust MCP SDK while preserving only the accepted 2025-11-25 contract |
 
 New records use four sections: context, decision, consequences, and status.

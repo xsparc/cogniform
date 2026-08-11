@@ -450,6 +450,8 @@ mod tests {
         let capabilities = &client.peer().peer_info().unwrap().capabilities;
         assert_eq!(capabilities.resources.as_ref().unwrap().subscribe, None);
         assert_eq!(capabilities.resources.as_ref().unwrap().list_changed, None);
+        assert!(capabilities.extensions.is_none());
+        assert!(!capabilities.supports_tasks());
         let tools = client.peer().list_all_tools().await.unwrap();
         assert_eq!(
             tools
@@ -539,7 +541,12 @@ mod tests {
                 }
             ])
         );
-        assert!(tool.execution.is_none());
+        assert!(
+            serde_json::to_value(tool)
+                .unwrap()
+                .get("execution")
+                .is_none()
+        );
     }
 
     fn assert_observation_tool_contract(tool: &Tool) {
@@ -600,7 +607,26 @@ mod tests {
                 }
             ])
         );
-        assert!(tool.execution.is_none());
+        assert!(
+            serde_json::to_value(tool)
+                .unwrap()
+                .get("execution")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn handler_supports_only_the_accepted_protocol_version() {
+        let handler = server::CogniformMcpServer::new(LocalServiceConfig::new(64, 64));
+        assert_eq!(
+            handler.supported_protocol_versions().as_ref(),
+            [ProtocolVersion::V_2025_11_25]
+        );
+        assert_eq!(
+            handler.get_info().protocol_version,
+            ProtocolVersion::V_2025_11_25
+        );
+        assert!(!handler.get_info().capabilities.supports_tasks());
     }
 
     #[tokio::test]

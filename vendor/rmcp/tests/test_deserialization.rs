@@ -17,10 +17,8 @@ fn test_tool_list_result() {
 /// Regression tests for `#[serde(untagged)]` deserialization of `ServerResult`.
 ///
 /// `ServerResult` is an untagged enum, so serde tries each variant in declaration
-/// order. `GetTaskPayloadResult` has a custom `Deserialize` impl that always fails
-/// so it is skipped, and `CustomResult(Value)` acts as the catch-all. If variant
-/// ordering changes or the custom impl is removed, these tests will catch the
-/// regression.
+/// order, with `CustomResult(Value)` acting as the catch-all. If variant ordering
+/// changes, these tests will catch the regression.
 mod untagged_server_result {
     use rmcp::model::{CallToolResult, JsonRpcResponse, ServerJsonRpcMessage, ServerResult};
     use serde_json::json;
@@ -73,6 +71,81 @@ mod untagged_server_result {
     }
 
     #[test]
+    fn input_required_result_with_meta_deserializes_to_correct_variant() {
+        let result = parse_result(wrap_response(json!({
+            "resultType": "input_required",
+            "inputRequests": {
+                "username": {
+                    "method": "elicitation/create",
+                    "params": {
+                        "message": "Please provide your username",
+                        "requestedSchema": {
+                            "type": "object",
+                            "properties": {
+                                "username": { "type": "string" }
+                            },
+                            "required": ["username"]
+                        }
+                    }
+                }
+            },
+            "requestState": "opaque-state",
+            "_meta": {
+                "io.modelcontextprotocol/serverInfo": {
+                    "name": "test-server",
+                    "version": "1.0.0"
+                }
+            }
+        })));
+
+        let ServerResult::InputRequiredResult(result) = result else {
+            panic!("expected InputRequiredResult, got {result:?}");
+        };
+        assert!(
+            result.input_requests.is_some_and(|requests| {
+                requests.len() == 1 && requests.contains_key("username")
+            })
+        );
+        assert_eq!(result.request_state.as_deref(), Some("opaque-state"));
+        assert_eq!(
+            result
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.get("io.modelcontextprotocol/serverInfo")),
+            Some(&json!({
+                "name": "test-server",
+                "version": "1.0.0"
+            }))
+        );
+    }
+
+    #[test]
+    fn call_tool_result_rejects_input_required_discriminator() {
+        assert!(
+            serde_json::from_value::<CallToolResult>(json!({
+                "resultType": "input_required",
+                "requestState": "opaque-state",
+                "_meta": {}
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn invalid_input_required_result_falls_through_to_custom_result() {
+        let payload = json!({
+            "resultType": "input_required",
+            "_meta": {}
+        });
+        let result = parse_result(wrap_response(payload.clone()));
+
+        let ServerResult::CustomResult(result) = result else {
+            panic!("expected CustomResult, got {result:?}");
+        };
+        assert_eq!(result.0, payload);
+    }
+
+    #[test]
     fn empty_object_deserializes_to_empty_result() {
         let result = parse_result(wrap_response(json!({})));
         assert!(
@@ -84,7 +157,7 @@ mod untagged_server_result {
     #[test]
     fn unknown_shape_falls_through_to_custom_result() {
         // A value that doesn't match any known result type should land in
-        // CustomResult, NOT GetTaskPayloadResult.
+        // CustomResult.
         let result = parse_result(wrap_response(json!({
             "some_unknown_field": "some_value",
             "number": 42
@@ -96,10 +169,40 @@ mod untagged_server_result {
     }
 
     #[test]
-    fn arbitrary_json_value_does_not_deserialize_as_get_task_payload_result() {
-        // GetTaskPayloadResult wraps a bare Value, but its custom Deserialize
-        // always fails so serde skips it during untagged resolution.
-        // Any JSON value must fall through to CustomResult instead.
+    fn result_type_bearing_objects_do_not_match_task_ack() {
+        // TaskAckResult carries only `resultType` (+ optional `_meta`), so it
+        // must not greedily swallow arbitrary results that happen to include
+        // a `resultType` key inside the untagged ServerResult union.
+        let result = parse_result(wrap_response(json!({
+            "resultType": "weird-custom",
+            "payload": { "a": 1 }
+        })));
+        assert!(
+            matches!(result, ServerResult::CustomResult(_)),
+            "expected CustomResult, got {result:?}"
+        );
+
+        let result = parse_result(wrap_response(json!({
+            "resultType": "complete",
+            "customField": 42
+        })));
+        assert!(
+            matches!(result, ServerResult::CustomResult(_)),
+            "expected CustomResult, got {result:?}"
+        );
+
+        // A bare complete ack (the actual tasks/update / tasks/cancel ack
+        // shape) still parses as TaskAckResult.
+        let result = parse_result(wrap_response(json!({ "resultType": "complete" })));
+        assert!(
+            matches!(result, ServerResult::TaskAckResult(_)),
+            "expected TaskAckResult, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn arbitrary_json_value_falls_through_to_custom_result() {
+        // Any bare JSON value must fall through to CustomResult.
         for value in [json!(42), json!("hello"), json!(null), json!([1, 2, 3])] {
             let result = parse_result(wrap_response(value.clone()));
             assert!(

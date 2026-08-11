@@ -137,6 +137,11 @@ binary resource. Its transport backpressures peer input at one request through
 complete response flush so SDK handler tasks and bulk response buffers remain
 bounded. The adapter adds no resource template, subscription,
 notification, history, persistence, or new authority.
+CF048 refreshes only the isolated implementation dependency to exact-pinned
+official `rmcp` 3.1.2. The adapter still supports only MCP 2025-11-25: its
+handler advertises that singleton version and no extensions, rejects
+`server/discover`, Tasks, and per-request 2026 selection, and emits no 2026 `resultType`
+field. The SDK change adds no endpoint, model, mutation, or lifecycle authority.
 Spatial acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -550,8 +555,10 @@ an optional versioned CLI JSON proof, revert live recorded state,
 resolve assets, and explicitly evict one content hash from CPU/GPU residency.
 Initial implementation can use in-process Rust types and canonical JSON
 fixtures. CF045 supplies the first narrow MCP stdio adapter after the core
-semantics were tested, CF046 adds only the existing bounded patch contract, and
-CF047 composes one bounded observation request with one retained resource.
+semantics were tested, CF046 adds only the existing bounded patch contract,
+CF047 composes one bounded observation request with one retained resource, and
+CF048 refreshes its SDK while keeping the accepted 2025 wire and lifecycle
+fixed.
 Protobuf/gRPC, MCP HTTP/authentication, resource templates, subscriptions,
 notifications, history, model features, local shared memory, and QUIC remain
 separate future adapters.
@@ -592,7 +599,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Local-session messages | Every schema-version-one client/server variant round-trips exact LF bytes; direction, version, unknown fields, noncanonical bytes, nesting, substitutions, nested values, receipt roles, frame kind, and effective limits fail closed before returning a message |
 | Local-session executor | One caller-driven service session negotiates field-wise limits, preserves exact patch/observation correlations through deterministic bounded advancement, emits stable failures, and closes only when quiescent |
 | Local stdio session | Exact arguments and redirected streams are checked before adapter selection; immediate EOF is a clean no-op, while complete-session EOF, truncation, corruption, service/executor failure, deadline, write, and flush failures terminate with stable redacted diagnostics and no whole-frame retry |
-| MCP stdio adapter | Stable 2025-11-25 initialization, exact deterministic query/imagination/patch/observation metadata, incremental input and encode-before-output bounds, one request through complete response flush, lazy serialized service access, exact query/application/replay/observation roles, direct atomic camera-capable patch application, one latest-value canonical binary resource with exact-URI read and atomic replacement, stdout purity, EOF, and redacted transport failure behavior pass through official-SDK and CLI child tests |
+| MCP stdio adapter | Stable 2025-11-25 initialization, exact singleton version advertisement, no advertised extensions, explicit 2026 discovery/task/per-request-version rejection, omission of newer result shapes, exact deterministic query/imagination/patch/observation metadata, incremental input and encode-before-output bounds, one request through complete response flush, lazy serialized service access, exact query/application/replay/observation roles, direct atomic camera-capable patch application, one latest-value canonical binary resource with exact-URI read and atomic replacement, stdout purity, EOF, and redacted transport failure behavior pass through official-SDK and raw CLI child tests |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
 | Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |

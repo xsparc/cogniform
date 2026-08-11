@@ -159,6 +159,16 @@ release yet; the current workspace version remains `0.0.0`.
 
 ### Changed
 
+- the isolated MCP adapter updates its exact-pinned official Rust SDK from
+  `rmcp` 2.2.0 to 3.1.2 while keeping stable MCP `2025-11-25` as its only
+  advertised and accepted revision. `server/discover`, Tasks, extensions,
+  per-request `2026-07-28`, and newer `resultType` output remain excluded. The
+  regenerated graph removes `async-trait` and adds SDK-required `uuid` 1.24.0,
+  `getrandom` 0.4.3, and target-only `r-efi` 6.0.0; other external versions and
+  Tokio features are unchanged. Exact tool/resource shapes, transport bounds,
+  local-service authority, CLI behavior, public Cogniform Rust types,
+  deployment, workspace version, and release state are unchanged;
+
 - the MCP server now advertises resources without subscription or list-change
   support and appends `cogniform.observe_scene` after the existing three tools.
   `OBSERVE_SCENE_TOOL` is an additive public constant in the unpublished

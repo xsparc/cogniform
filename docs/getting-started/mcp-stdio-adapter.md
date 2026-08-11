@@ -19,6 +19,11 @@ arguments are the complete snake-case Cogniform core objects described in the
 idempotency key for retries: replay returns the retained compilation/receipt
 without applying another revision.
 
+Configure newer MCP parents to use the legacy session revision explicitly.
+This adapter intentionally rejects `server/discover`, Tasks, per-request
+`2026-07-28`, and every other newer lifecycle path, and advertises no extensions,
+even though its official Rust SDK dependency can model them.
+
 Use `cogniform.apply_patch` when the caller already has one complete validated
 atomic scene change, including components outside the current semantic
 compiler subset such as `camera`. Supply the exact current `base_revision`,
