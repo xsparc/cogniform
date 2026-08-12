@@ -244,6 +244,17 @@ additional workflow permission. A future archive library, signing utility,
 attestation action, SBOM generator, or release uploader would be a separate
 dependency and authority decision.
 
+CF051 changes only first-party package identity: the shared version, fifteen
+exact local workspace requirements, and sixteen source-less first-party lock
+entries move together to `0.1.0-rc.1`. External package versions, checksums,
+features, vendored bytes, build scripts, and runtime reachability do not
+change. Every member still has `publish = false`, so the version does not make
+any crate publishable. The standard-library-only package-policy checker reads
+bounded manifests and lock data, validates the explicit member/package/path
+inventory and inherited dependency declarations, and runs in the existing
+quality job without a new dependency, network call, artifact, permission, or
+runner.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

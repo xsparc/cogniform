@@ -151,7 +151,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-assets"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-protocol",
  "png",
@@ -162,7 +162,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-cli"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-compilation",
  "cogniform-engine",
@@ -180,7 +180,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-compilation"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-protocol",
  "serde",
@@ -189,7 +189,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-compiler"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-compilation",
  "cogniform-protocol",
@@ -198,7 +198,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-engine"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-assets",
  "cogniform-compiler",
@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-local-executor"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-compilation",
  "cogniform-engine",
@@ -227,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-local-session"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-compilation",
  "cogniform-local-transport",
@@ -239,7 +239,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-local-transport"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-observation",
  "cogniform-protocol",
@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-mcp"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-compilation",
  "cogniform-engine",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-observation"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-protocol",
  "sha2",
@@ -270,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-procedural"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-protocol",
  "sha2",
@@ -278,7 +278,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-protocol"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-renderer"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-assets",
  "cogniform-protocol",
@@ -298,7 +298,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-replay"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-protocol",
  "cogniform-world",
@@ -307,7 +307,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-storage"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-assets",
  "cogniform-engine",
@@ -318,7 +318,7 @@ dependencies = [
 
 [[package]]
 name = "cogniform-world"
-version = "0.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "cogniform-protocol",
  "hecs",

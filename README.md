@@ -298,9 +298,12 @@ Consumers must require `schema_version` 1 and `unit` `nanoseconds`. The report
 declares `informational_only: true`; it is not a release or merge threshold and
 its timing values can reveal characteristics of the local host or process.
 
-See [CHANGELOG.md](CHANGELOG.md) for the unreleased capability and limitation
-summary. The workspace remains `0.0.0`, source packages remain unpublished, and
-creating a tag or release requires a separate explicit maintainer action.
+See [CHANGELOG.md](CHANGELOG.md) and the
+[`0.1.0-rc.1` candidate notes](docs/release/0.1.0-rc.1.md) for the unreleased
+capability and limitation summary. The workspace identifies the unpublished
+source candidate as `0.1.0-rc.1`; all packages retain `publish = false`, and
+creating a tag, archive, or release requires separate explicit maintainer
+action.
 
 ## Contributing and security
 

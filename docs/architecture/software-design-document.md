@@ -155,6 +155,12 @@ and reopens the asset to prove its sole commit PAX value, canonical tar
 structure, exact Git inventory/blob identities, fixed metadata, mandatory
 offline source content, and public-safe actual bytes. It creates no tag, changes
 no version, opens no network connection, and publishes nothing.
+CF051 gives that unpublished source candidate one coherent package identity.
+All sixteen workspace members inherit `0.1.0-rc.1`, remain non-publishable,
+and expose fifteen shared exact path-bound crate requirements inherited by
+member-local edges. A bounded standard-library-only policy check makes manifest and
+lock drift a normal quality failure. This changes no runtime authority and
+creates no tag, archive, upload, supported API line, or publication.
 Spatial acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -615,6 +621,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Local stdio session | Exact arguments and redirected streams are checked before adapter selection; immediate EOF is a clean no-op, while complete-session EOF, truncation, corruption, service/executor failure, deadline, write, and flush failures terminate with stable redacted diagnostics and no whole-frame retry |
 | MCP stdio adapter | Stable 2025-11-25 initialization with exact 508-byte workflow instructions, exact singleton version advertisement, no advertised extensions, explicit 2026 discovery/task/per-request-version rejection, omission of newer result shapes, exact deterministic query/imagination/patch/observation metadata with closed mutually exclusive success/error schemas and complete stable error vocabularies, incremental input and encode-before-output bounds, one request through complete response flush, lazy serialized service access, exact query/application/replay/observation roles, direct atomic camera-capable patch application, one latest-value canonical binary resource with exact-URI read and atomic replacement, stdout purity, EOF, and redacted transport failure behavior pass through official-SDK and raw CLI child tests |
 | Source candidate | One clean direct annotated-tag commit repeatedly produces the same bounded uncompressed tar under the recorded Git implementation and one exact SHA-256 sidecar; independent raw verification proves stable tag/HEAD identities, the sole commit PAX value, canonical termination, exact portable inventory/blob/mode/owner/time roles, mandatory offline source content, public-safe actual bytes, and fail-closed cleanup without extraction or publication |
+| Package candidate identity | Every explicit workspace member inherits `0.1.0-rc.1` and remains non-publishable; every local crate edge has one exact path-bound shared requirement; every first-party lock entry is source-less at that version; disposable drift cases and the live inventory pass without network access |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
 | Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |
@@ -628,9 +635,13 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 CF009 resolves the initial candidate packaging and validation profile in
 [ADR 0010](../adr/0010-source-first-release-profile.md): source-first, no
 publication during implementation, and one controlled Windows/Vulkan runtime
-entry with Ubuntu CPU build/test evidence. CF050 implements only the bounded
-local archive preparation and verification prerequisite in
-[ADR 0050](../adr/0050-deterministic-source-candidate-archive.md). Wider
+entry with Ubuntu CPU build/test evidence. CF050 implements the bounded local
+archive preparation and verification prerequisite in
+[ADR 0050](../adr/0050-deterministic-source-candidate-archive.md), and CF051
+sets the still-unpublished non-publishable workspace candidate identity under
+[ADR 0051](../adr/0051-version-source-candidate-without-publication.md).
+Annotated tagging, real archive generation, immutable release configuration,
+upload, and publication remain separately approved. Wider
 GPU/driver support, prebuilt
 artifacts, additional texture roles/tangent-space normals and the remaining visual-quality surface, remote
 protocol/authentication, configurable or multi-client endpoint lifecycle, tenancy, durable or multi-value observation retention, automatic startup,
