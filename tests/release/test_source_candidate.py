@@ -59,6 +59,9 @@ def write(test_root: Path, relative_path: str, content: bytes | str) -> None:
 def commit(
     test_root: Path, message: str, *, executable_paths: tuple[str, ...] = ()
 ) -> None:
+    for path in executable_paths:
+        executable = test_root / path
+        executable.chmod(executable.stat().st_mode | 0o111)
     git(test_root, "add", "--all")
     for path in executable_paths:
         git(test_root, "update-index", "--chmod=+x", path)
