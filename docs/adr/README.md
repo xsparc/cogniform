@@ -56,5 +56,6 @@ earlier one and links the history.
 | [0048](0048-pin-current-rust-mcp-sdk-without-protocol-expansion.md) | Accepted | Refresh the official Rust MCP SDK while preserving only the accepted 2025-11-25 contract |
 | [0049](0049-conformant-mcp-discovery-contract.md) | Accepted | Close every MCP tool output schema and provide bounded workflow instructions |
 | [0050](0050-deterministic-source-candidate-archive.md) | Accepted | Prepare and verify one deterministic annotated-tag source archive without publication authority |
+| [0051](0051-version-source-candidate-without-publication.md) | Accepted | Give the unpublished source candidate one exact non-publishable workspace identity without tagging or publication |
 
 New records use four sections: context, decision, consequences, and status.

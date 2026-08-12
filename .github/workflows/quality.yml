@@ -26,10 +26,12 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
-      - name: Check public repository hygiene
+      - name: Check release policy and public repository hygiene
         run: |
           python3 tests/security/test_public_repo_check.py
+          python3 tests/release/test_package_policy.py
           python3 tests/release/test_source_candidate.py
+          python3 scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
           python3 scripts/check_public_repo.py --all
 
       - name: Classify changed paths

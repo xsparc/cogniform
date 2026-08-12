@@ -20,28 +20,28 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0-rc.1"
 edition = "2024"
 rust-version = "1.97.1"
 license = "Apache-2.0"
 repository = "https://github.com/xsparc/cogniform"
 
 [workspace.dependencies]
-cogniform-assets = { version = "=0.0.0", path = "crates/cogniform-assets" }
-cogniform-compilation = { version = "=0.0.0", path = "crates/cogniform-compilation" }
-cogniform-compiler = { version = "=0.0.0", path = "crates/cogniform-compiler" }
-cogniform-engine = { version = "=0.0.0", path = "crates/cogniform-engine" }
-cogniform-local-session = { version = "=0.0.0", path = "crates/cogniform-local-session" }
-cogniform-local-executor = { version = "=0.0.0", path = "crates/cogniform-local-executor" }
-cogniform-local-transport = { version = "=0.0.0", path = "crates/cogniform-local-transport" }
-cogniform-mcp = { version = "=0.0.0", path = "crates/cogniform-mcp" }
-cogniform-observation = { version = "=0.0.0", path = "crates/cogniform-observation" }
-cogniform-procedural = { version = "=0.0.0", path = "crates/cogniform-procedural" }
-cogniform-protocol = { version = "=0.0.0", path = "crates/cogniform-protocol" }
-cogniform-renderer = { version = "=0.0.0", path = "crates/cogniform-renderer" }
-cogniform-replay = { version = "=0.0.0", path = "crates/cogniform-replay" }
-cogniform-storage = { version = "=0.0.0", path = "crates/cogniform-storage" }
-cogniform-world = { version = "=0.0.0", path = "crates/cogniform-world" }
+cogniform-assets = { version = "=0.1.0-rc.1", path = "crates/cogniform-assets" }
+cogniform-compilation = { version = "=0.1.0-rc.1", path = "crates/cogniform-compilation" }
+cogniform-compiler = { version = "=0.1.0-rc.1", path = "crates/cogniform-compiler" }
+cogniform-engine = { version = "=0.1.0-rc.1", path = "crates/cogniform-engine" }
+cogniform-local-session = { version = "=0.1.0-rc.1", path = "crates/cogniform-local-session" }
+cogniform-local-executor = { version = "=0.1.0-rc.1", path = "crates/cogniform-local-executor" }
+cogniform-local-transport = { version = "=0.1.0-rc.1", path = "crates/cogniform-local-transport" }
+cogniform-mcp = { version = "=0.1.0-rc.1", path = "crates/cogniform-mcp" }
+cogniform-observation = { version = "=0.1.0-rc.1", path = "crates/cogniform-observation" }
+cogniform-procedural = { version = "=0.1.0-rc.1", path = "crates/cogniform-procedural" }
+cogniform-protocol = { version = "=0.1.0-rc.1", path = "crates/cogniform-protocol" }
+cogniform-renderer = { version = "=0.1.0-rc.1", path = "crates/cogniform-renderer" }
+cogniform-replay = { version = "=0.1.0-rc.1", path = "crates/cogniform-replay" }
+cogniform-storage = { version = "=0.1.0-rc.1", path = "crates/cogniform-storage" }
+cogniform-world = { version = "=0.1.0-rc.1", path = "crates/cogniform-world" }
 hecs = { version = "=0.11.1", default-features = false, features = ["std"] }
 png = { version = "=0.18.1", default-features = false }
 rmcp = { version = "=3.1.2", default-features = false, features = ["server"] }

@@ -62,6 +62,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | `serve-mcp-stdio` cannot encode, write, or flush a bounded output | Record the first stable transport failure, interrupt a pending read, terminate the session, preserve any physical prefix, and never retry or resynchronize | CF045 bounded writer, output equality/nesting, transport-status, and child-process tests |
 | Public path or credential pattern staged | Fail with rule/path only; never echo the matched value | public-repository safeguard fixtures |
 | Source-candidate tag, repository, archive, checksum, metadata, inventory, content, or bound is invalid | Fail with one path/payload-redacted `source-candidate` category; never overwrite an output or claim a partial candidate; remove files created by the failed preparation and report `cleanup_uncertain` if removal cannot be proved | CF050 disposable identity, attribute, limit, corruption, sidecar, and cleanup matrix |
+| Workspace candidate members, versions, publish policy, local dependency declarations, or lock entries drift | Fail the package-policy check with one stable category and repository-relative path; correct the reviewed source together and rerun the complete candidate evidence before tagging | CF051 disposable drift matrix and live sixteen-package inventory |
 
 Run the CPU failure matrix through the ordinary offline workspace suite:
 
@@ -76,6 +77,15 @@ future parser fuzz campaign must have a fixed time budget and separately
 approved corpus-retention policy; it does not belong in every pull request.
 
 ## Source-candidate preparation failure
+
+Before a tag exists, a package-policy failure means the source tree is not a
+candidate. Do not edit only the reported manifest or lock entry in isolation.
+Reconcile the shared version, explicit member inventory, non-publishable
+package declarations, exact local requirements and paths, member inheritance,
+lockfile, expected quality invocation, and candidate notes, then rerun the
+ordinary and controlled checklist. The checker reports only a stable category
+and repository-relative path; it never repairs files or grants tag/publication
+authority.
 
 `scripts/source_candidate.py prepare` is a local release-preparation boundary,
 not a repair tool. Correct the stable reported category and start again with

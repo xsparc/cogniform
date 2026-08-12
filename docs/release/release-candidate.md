@@ -1,9 +1,11 @@
 # Source release-candidate checklist
 
 Cogniform has no published or supported release. CF009 defines the evidence
-for a future source-first `0.1.0-rc.1`, and CF050 supplies the local archive
-preparation/verification prerequisite. Neither authorizes a version change,
-tag, GitHub release, crates.io publication, or deployment.
+for source-first `0.1.0-rc.1`, CF050 supplies the local archive
+preparation/verification prerequisite, and CF051 gives the unpublished
+workspace that candidate identity while every package remains non-publishable.
+No slice authorizes a tag, real archive, GitHub release, crates.io publication,
+or deployment.
 
 ## MVP acceptance evidence
 
@@ -28,11 +30,11 @@ tag, GitHub release, crates.io publication, or deployment.
 | Machine outputs | Pass on validated profile | Exact unlit and tolerant scene/imported/overridden direct-material color and depth, exact stable entity ID, structured visibility, and quantized world-space normals from outward built-ins, source-wound assets, sphere radial directions, or approved imported directions |
 | Observation payload envelope | Pass for declared CPU profile | Fixed version-one all-kind layouts and exact fixture, canonical values and limits, metadata binding, truncation/trailing/corruption rejection, and engine source-compatible re-export without I/O or transport construction |
 | Local stream frame | Pass for declared CPU profile | Fixed version-one header and exact fixture, independent header-first complete/control/bulk limits, canonical observation-envelope composition, short/interrupted I/O, back-to-back framing, and corruption/truncation rejection over caller-owned streams without an endpoint or session |
-| Local-session messages | Pass for declared CPU profile | Exact unchanged schema-v1 client/server LF fixtures plus exact schema-v2 hello/imagination/completion/replay fixtures; outer-only correlation; negotiated frame/result bytes and nesting; direction/version/unknown/canonical/substitution/nested identity, revision, receipt, and role validation; no executor or endpoint authority; exhaustive message construction and `LocalSessionValidationKind` matching are source-breaking in the unpublished `0.0.0` API |
+| Local-session messages | Pass for declared CPU profile | Exact unchanged schema-v1 client/server LF fixtures plus exact schema-v2 hello/imagination/completion/replay fixtures; outer-only correlation; negotiated frame/result bytes and nesting; direction/version/unknown/canonical/substitution/nested identity, revision, receipt, and role validation; no executor or endpoint authority; exhaustive message construction and `LocalSessionValidationKind` matching remain pre-stable in the unpublished source-candidate API |
 | Local-session executor | Pass for declared CPU profile | One version-locked hello; field-wise peer/local/service frame and compilation limits installed before semantic work; every patch/imagination admission; both cross-kind supersession directions; deterministic one-command advancement; exact terminal command/observation correlation; compiled/unresolved/replay/service-invalid outcomes; one-time pending; two-frame output cap; redacted failures; and quiescent close |
 | Local stdio session | Pass for declared CPU and controlled Windows profile | Exact pre-adapter argument/terminal/first-frame behavior, half-duplex no-read-while-live scheduling, asymmetric version-two result-limit adoption, positive-cadence fixed completion deadline, partial-output/flush/fatal handling, stable diagnostics, and passing controlled child-process v1 patch plus v2 imagination/patch/query/observation/replay/close exchanges |
 | MCP stdio adapter | Pass for declared CPU and controlled Windows profile | Exact stable-version initialization with a 508-byte workflow instruction and singleton handler advertisement on exact-pinned official SDK 3.1.2; no advertised extensions; explicit 2026 discovery/Tasks/per-request-version rejection and omission of newer result shapes; exactly four ordered tools with closed mutually exclusive success/error schemas and stable vocabularies, plus resources without subscriptions/list-change; incremental input byte/nesting bounds; one request through complete response flush; bounded encode-before-write output; typed validation before lazy service creation; serialized exact-revision query, one-command imagination, direct atomic patch application, and bounded observation; exact retained replay without duplicate compile/mutation; one exact-URI latest-value canonical resource with atomic replacement and failure preservation; stable invalid/stale/conflict/busy/output roles; official-client, raw-wire, and controlled child-process evidence; no listener or remote authority |
-| Compilation result contract | Pass for declared CPU profile | Exact compiled/unresolved schema-v1 LF fixtures, bounded canonical round trips, malformed/substituted/order/duplicate/outcome/revision rejection, nested patch validation, compiler pre-return encoded/nesting enforcement, source-path compiler re-exports, and unchanged normalization/IDs/patch bytes without session or I/O authority; exhaustive result/config construction and `CompileError` matching are source-breaking in the unpublished `0.0.0` API |
+| Compilation result contract | Pass for declared CPU profile | Exact compiled/unresolved schema-v1 LF fixtures, bounded canonical round trips, malformed/substituted/order/duplicate/outcome/revision rejection, nested patch validation, compiler pre-return encoded/nesting enforcement, source-path compiler re-exports, and unchanged normalization/IDs/patch bytes without session or I/O authority; exhaustive result/config construction and `CompileError` matching remain pre-stable in the unpublished source-candidate API |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Pending-work age | Pass on validated profile | Empty and retained command/observation/import/upload status, duplicate retention, supersession reset, rejection/drop neutrality, processing/eviction/delivery cleanup, saturation, and restoration/revert compatibility |
@@ -43,58 +45,65 @@ tag, GitHub release, crates.io publication, or deployment.
 | End to end | Pass on validated profile | Room/table/light/camera create and atomic restyle, exact query, three observations, same replay hash |
 | Repository and dependency hygiene | Pass | Redacted Git-object scan, secret scanning/push protection, pinned vendor/lock/action, cargo-deny |
 | Source-candidate archive | Pass for the local tooling profile | Direct annotated-tag and clean-HEAD binding, repeated exact Git tar bytes, fixed metadata and bounds, raw inventory/blob/PAX/termination verification, exact SHA-256 sidecar, actual public-content scanning, negative corruption/attribute/path/type/cleanup matrix, and no extraction or publication |
+| Package candidate identity | Pass for the declared source profile | All sixteen members inherit `0.1.0-rc.1` and remain non-publishable; all fifteen local crate requirements are exact and path-bound; source-less lock entries match; bounded disposable drift and live-inventory checks run in ordinary quality |
 
 Inside the local single-user source profile, the correctness matrix passes and
 the threat model has no unresolved Critical or High residual. Medium residuals,
 unsupported platforms, and operational gaps are named in the linked records.
-This does not make the current `0.0.0` workspace a supported release.
+This does not make the `0.1.0-rc.1` source-candidate workspace a supported or
+published release.
 
 ## Required evidence and preparation before publication
+
+Checked items below were reproduced on the CF051 candidate branch and are
+recorded in the validation baseline. Pull-request quality must reproduce its
+portable subset, and the exact clean merged/tagged commit must remain unchanged
+through the still-open identity, archive, and publication gates.
 
 - [ ] Start from a clean, protected `main` commit whose pull-request checks and
       reviewed tree are recorded.
 - [ ] Confirm no open private security advisory is a Critical or High blocker
       for the declared profile.
-- [ ] Reproduce the ordinary offline format, Clippy, workspace-test, rustdoc,
+- [x] Reproduce the ordinary offline format, Clippy, workspace-test, rustdoc,
       public-tree, and dependency-policy checks.
-- [ ] Reproduce all ignored engine/renderer conformance tests on at least one
+- [x] Reproduce all ignored engine/renderer conformance tests on at least one
       matrix entry named in the compatibility baseline.
-- [ ] Re-run the canonical scenario's human and schema-version-one JSON modes
+- [x] Re-run the canonical scenario's human and schema-version-one JSON modes
       on that matrix entry and confirm they prove the same successful run
       contract without publishing the adapter or run evidence.
-- [ ] Re-run `measure-world` human and schema-version-one JSON output in release
+- [x] Re-run `measure-world` human and schema-version-one JSON output in release
       mode and append rather than overwrite
       the dated baseline if hardware, fixture, or result materially changes.
-- [ ] Re-run the CPU-only asset-source inspection black-box contract and
+- [x] Re-run the CPU-only asset-source inspection black-box contract and
       confirm exact human and schema-version-one hash/byte output, file
       immutability, bounded failure, empty failure stdout, and path/payload
       redaction.
-- [ ] Re-run the CPU-only observation-envelope contract and confirm all-kind
+- [x] Re-run the CPU-only observation-envelope contract and confirm all-kind
       fixtures, canonical validation, metadata binding, corruption rejection,
       and configured limits without constructing a listener or GPU adapter.
-- [ ] Re-run the CPU-only local-frame contract and confirm the exact header,
+- [x] Re-run the CPU-only local-frame contract and confirm the exact header,
       header-first independent limits, short/interrupted I/O, back-to-back
       framing, nested observation integrity, and payload-redacted failures
       without constructing an endpoint, session, service, or GPU adapter.
-- [ ] Re-run the CPU stdio fake-stream/CLI contract and the controlled ignored
+- [x] Re-run the CPU stdio fake-stream/CLI contract and the controlled ignored
       child-process session on an approved adapter; confirm exact arguments,
       immediate clean EOF, hello limit adoption, half-duplex terminal delivery,
       deadline/fault behavior, applied/query/observation causality, orderly
       close, and no trailing output.
-- [ ] Re-run the CPU-only compilation-result and compiler contracts; confirm
+- [x] Re-run the CPU-only compilation-result and compiler contracts; confirm
       exact compiled/unresolved fixtures, byte/nesting/logical/text/count/patch
       bounds, canonical equality, code-field roles, order/uniqueness,
       outcome/revision binding, source-path compiler re-exports, unchanged
-      normalization/IDs/patch bytes, and the unpublished `0.0.0` exhaustive
+      normalization/IDs/patch bytes, and the unpublished pre-stable exhaustive
       result/config construction and `CompileError` matching breaks without
       constructing a session, service, endpoint, or GPU adapter.
-- [ ] Re-run the CPU-only local-session/executor version-two contracts and the
+- [x] Re-run the CPU-only local-session/executor version-two contracts and the
       controlled ignored child-process flow on an approved adapter; confirm
       unchanged version-one fixtures, explicit compilation-limit negotiation,
       imagination admission, compiled/unresolved completion, exact replay
       without duplicate processing, query/observation causality, and orderly
       close.
-- [ ] Re-run the ordinary MCP adapter/CLI contracts and the controlled ignored
+- [x] Re-run the ordinary MCP adapter/CLI contracts and the controlled ignored
       child-process flow on an approved adapter; confirm exact `2025-11-25`
       negotiation, exact 508-byte workflow instructions, four-tool order,
       deterministic closed success/error schema metadata and stable vocabularies,
@@ -109,14 +118,15 @@ This does not make the current `0.0.0` workspace a supported release.
       exact-pinned SDK/runtime features, the rejected 2026 lifecycle and Tasks
       surface, `uuid`/`getrandom` reachability, vendored build scripts, and
       advisory policy from the candidate tree.
-- [ ] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
+- [x] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
       matrix, recovery-envelope, recovery-file, and asset-file
       formats/limitations, offline inspection profile/versioned output, known
       limitations, and license from the exact candidate tree.
-- [ ] Under separate explicit authorization, change the shared workspace
-      version from `0.0.0` to the candidate version without changing
-      `publish = false`, review that exact commit, and create its annotated
-      maintainer tag.
+- [x] Confirm the exact reviewed tree passes the package-policy gate: shared
+      `0.1.0-rc.1`, sixteen inherited non-publishable members, fifteen exact
+      path-bound local requirements, and matching source-less lock entries.
+- [ ] After squash merge and under separate explicit authorization, create the
+      annotated maintainer tag on the exact clean protected `main` commit.
 - [ ] From that exact clean tagged commit, prepare the candidate into one
       existing caller-owned directory outside the worktree and Git directory:
 
@@ -147,9 +157,10 @@ This does not make the current `0.0.0` workspace a supported release.
 ## Publication procedure
 
 Publication is deliberately manual and requires a new explicit authorization.
-After the separately authorized version commit/tag and every preparation item
-above pass, the maintainer may publish a prerelease entry and attach exactly the
-verified project-owned tar and checksum. Do not substitute GitHub's generated
+After the CF051 versioned tree is squash-merged, its separately authorized
+annotated tag exists, and every preparation item above passes, the maintainer
+may publish a prerelease entry and attach exactly the verified project-owned
+tar and checksum. Do not substitute GitHub's generated
 compressed source download for the named asset, and do not upload binaries,
 containers, symbols, runtime logs, benchmark artifacts, observations, replay
 streams, or private test data.
@@ -263,13 +274,16 @@ published tag or replace an archive under the same version.
 
 ## Current disposition
 
-The deterministic local preparation/verification prerequisite is implemented.
-An actual candidate still requires separately reviewed version and annotated-
-tag authority, complete checklist reproduction, exact asset/hash approval, and
-publication authorization. CF009 and CF050 create no tag or release.
+The deterministic local preparation/verification prerequisite and unpublished
+`0.1.0-rc.1` workspace identity are implemented. A taggable candidate still
+requires complete checklist reproduction and exact reviewed-tree approval;
+the annotated tag, real archive/hash, release-host policy confirmation, and
+publication each retain separate authority. CF009-CF051 create no tag or
+release.
 
 See [ADR 0010](../adr/0010-source-first-release-profile.md),
-[ADR 0050](../adr/0050-deterministic-source-candidate-archive.md), the
+[ADR 0050](../adr/0050-deterministic-source-candidate-archive.md),
+[ADR 0051](../adr/0051-version-source-candidate-without-publication.md), the
 [validation baseline](../operations/validation-baseline.md), the
 [failure guide](../operations/failure-and-recovery.md), the
 [recovery-file guide](../persistence/recovery-files.md), the

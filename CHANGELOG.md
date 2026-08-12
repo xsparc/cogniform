@@ -1,7 +1,8 @@
 # Changelog
 
 All notable project changes will be recorded here. Cogniform has no published
-release yet; the current workspace version remains `0.0.0`.
+or supported release yet. The workspace now identifies the unpublished
+source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 
 ## Unreleased
 
@@ -162,9 +163,23 @@ release yet; the current workspace version remains `0.0.0`.
   then proves raw PAX/termination, portable inventory, Git blob identities,
   fixed metadata, mandatory offline source content, reusable public-content
   rules, and fail-closed cleanup without creating a tag, changing a version,
-  opening a network connection, uploading, or publishing.
+  opening a network connection, uploading, or publishing;
+- a standard-library-only package-policy check with disposable negative
+  fixtures for the complete workspace member inventory, inherited shared
+  version, non-publishable packages, exact path-bound first-party
+  dependencies, and source-less lockfile entries; and
+- tracked `0.1.0-rc.1` source-candidate notes that name the intended local
+  audience, validated profile, limitations, and the still-separate tag,
+  archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- the shared workspace version, all fifteen exact first-party workspace
+  dependency requirements, and all sixteen first-party lockfile package
+  entries now use `0.1.0-rc.1`. Every member still inherits the shared version
+  and retains `publish = false`; this is source-candidate identity only and
+  creates no tag, archive, crates.io package, supported API line, deployment,
+  or release;
 
 - every MCP tool now advertises a closed, mutually exclusive success/error
   output schema. Query and imagination discovery now includes the complete

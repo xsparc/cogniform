@@ -95,7 +95,12 @@ CF050 annotated-tag admission, deterministic raw tar/sidecar generation,
 independent archive verification, public-content reuse, corruption rejection,
 and cleanup evidence were collected in disposable repositories on the local
 Windows CPU profile on 2026-08-12. The exact pull-request head must repeat the
-same matrix on the standard Linux quality runner before merge.
+same matrix on the standard Linux quality runner before merge. CF051 exact
+`0.1.0-rc.1` package identity, manifest/lock drift rejection, the complete
+ordinary workspace matrix, and all controlled release-mode ignored tests were
+collected on the CPU and validated Windows/Vulkan profile on 2026-08-12. The
+exact pull-request head must repeat the ordinary matrix and package gate on the
+standard Linux quality runner before merge.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -525,6 +530,60 @@ or invoke Tasks, the only enabled SDK path that generates one. The reviewed
 `getrandom` build script emits only a sanitizer cfg; the existing reviewed
 `rmcp` Git-hook condition remains fail-closed because the repository has no
 `.githooks` directory.
+
+## Exact package candidate and pre-tag release matrix
+
+CF051 changes only first-party package identity. The bounded package-policy
+matrix and live check report sixteen inherited non-publishable packages at
+`0.1.0-rc.1`, fifteen exact path-bound workspace dependencies, and matching
+source-less lock entries. Cargo metadata and the offline build resolve that
+same identity. External packages, checksums, features, and vendored bytes are
+unchanged.
+
+The following commands passed on the approved Windows/Vulkan profile on
+2026-08-12:
+
+```text
+python tests/release/test_package_policy.py
+python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+python tests/release/test_source_candidate.py
+python tests/security/test_public_repo_check.py
+python scripts/check_public_repo.py --all
+cargo metadata --locked --offline --no-deps --format-version 1
+cargo check --workspace --locked --offline
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo deny check advisories bans licenses sources
+cargo test --release --workspace --all-features --locked --offline -- --ignored --nocapture
+cargo run --release -p cogniform-cli --locked --offline -- scenario
+cargo run --release -p cogniform-cli --locked --offline -- scenario --json
+cargo run --release -p cogniform-cli --locked --offline -- measure-world
+cargo run --release -p cogniform-cli --locked --offline -- measure-world --json
+git diff --check
+```
+
+The controlled workspace command ran all 32 ignored tests successfully. That
+includes the renderer and engine conformance matrix, immutable recovery and
+asset continuation, production local-executor, both stdio session versions,
+MCP production-service and CLI child flows, and the CLI human/JSON scenario
+comparison. The two direct scenario commands selected the existing NVIDIA
+GeForce RTX 5070 Vulkan discrete-GPU entry, reported WebGPU compliance, and
+proved the same revision, identities, observations, visibility, logical hash,
+replayed hash, and replay bounds. No adapter or run payload is published.
+
+Both release-mode `measure-world` views completed with the unchanged
+`world-create-empty-v1` fixture and informational-only contract. No timing
+table is appended: CF051 changes no runtime or fixture, uses the already
+recorded hardware/profile, and the observations remain non-gating. Cargo-deny
+passed advisories, bans, licenses, and sources with only the already accepted
+duplicate-version warnings for `hashbrown` and `syn`.
+
+This is pre-tag branch evidence, not a release. Maintainer-authenticated private
+advisory confirmation, the exact protected squash-merged `main` identity,
+standard Linux pull-request evidence, annotated tag, real archive/hash,
+release-host immutability policy, upload, and publication remain open gates.
 
 ## Controlled local-session executor commands
 

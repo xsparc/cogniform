@@ -163,6 +163,7 @@ Residual ratings assume the declared local single-user boundary.
 | Dependency or workflow supply chain introduces unreviewed code | High | Exact lockfile, checked-in vendor sources, pinned action digest, read-only workflow permissions, cargo-deny policy | Medium |
 | Credential or private path enters the public repository | High | Local and CI Git-object scan, redacted findings, GitHub secret scanning/push protection, staged scan procedure | Low |
 | A release archive is built from the wrong or moving source, altered by ambient attributes or replacement refs, populated through an implicit fetch, contains substituted/private/unsafe content, exceeds reviewed bounds, or is replaced after hashing | High | Exact direct annotated-tag object and clean-HEAD binding; pre/post ref, HEAD, cleanliness, and Git-version checks; inherited/system/global configuration neutralization; no replacement objects or lazy fetch; fixed prefix/umask; create-new external outputs; bounded Git metadata plus 256 MiB/20,000-member limits; raw sole-PAX/type/path/metadata/termination checks; exact Git inventory/blob identities; actual non-vendor public-content scan; exact SHA-256 sidecar; fail-closed cleanup | Low for accidental substitution inside the declared local preparation boundary; maintainer authentication, tag-host protection, signing, provenance, output-directory access, confidentiality, and publication policy remain separate |
+| A partial candidate-version edit leaves members, local requirements, publish policy, or lock resolution inconsistent | High | One shared candidate version; inherited member versions; `publish = false`; exact path-bound local requirements; source-less first-party lock entries; bounded deterministic policy check with disposable drift cases in the ordinary quality job | Low for reviewed repository drift; tag identity, producer authentication, release-host settings, archive approval, and publication remain separate gates |
 | Local API or inherited-stdio session is deployed as a remote or multi-tenant security boundary | Critical | Explicitly unsupported; no listener, peer identity, authentication, authorization, confidentiality, freshness/replay, rate, or tenancy surface exists | Not applicable inside scope; Critical if assumption is violated |
 
 No Critical or High residual risk remains inside the declared profile. Medium
@@ -189,6 +190,10 @@ transport, or production use.
   outputs in the caller-owned directory named for the reviewed run, publish
   neither after any failure or `cleanup_uncertain` result, and require a
   separately authorized immutable-tag/release policy before external use.
+- Treat `0.1.0-rc.1` as an unpublished source-tree identity, not proof of
+  origin, support, API stability, tag immutability, archive approval, or
+  publication. Keep every package non-publishable and require the package
+  policy check before any separately authorized tag step.
 - Treat local-session control messages as validated instructions, not authorized
   actions. The local executor enforces lifecycle and maps each supported variant
   explicitly. The fixed stdio command adds only inherited-stream ownership,

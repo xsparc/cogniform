@@ -2,9 +2,10 @@
 
 ## Supported versions
 
-Cogniform has no supported release yet. The current repository is an early
-foundation and must not be used as a production security boundary. This file
-will name supported release lines before the first public release.
+Cogniform has no supported release yet. The repository carries an unpublished
+`0.1.0-rc.1` source-candidate identity, but that candidate is not a supported
+security line and must not be used as a production security boundary. This
+file will name supported release lines before the first public release.
 
 ## Reporting a vulnerability
 

@@ -1183,6 +1183,28 @@ creation, network/API access, release assets, upload, signing, attestations,
 SBOMs, deployment, and publication remain separately approved work. See
 [ADR 0050](../adr/0050-deterministic-source-candidate-archive.md).
 
+### PR 51 - CF051: Exact unpublished source-candidate identity
+
+Outcome: the complete workspace identifies the prospective source-first
+candidate consistently while every package remains non-publishable and all
+tag, archive, upload, and publication authority stays closed.
+
+Gate: set the shared workspace version, all exact first-party workspace
+requirements, and every source-less first-party lock entry to `0.1.0-rc.1`.
+Require all sixteen explicit members to inherit the shared version and retain
+`publish = false`; require the fifteen crate dependencies to use their exact
+reviewed local paths and forbid member-level first-party version/path/package
+overrides. Run a bounded standard-library-only checker and disposable drift
+matrix in the existing cost-conscious quality job.
+
+Publish candidate notes and synchronize architecture, dependency, security,
+failure, support, contributor, and release records. Reproduce the complete
+ordinary and approved Windows/Vulkan controlled checklist before review. Do
+not create a tag or real archive, mutate repository release settings, upload,
+sign, attest, generate an SBOM, publish crates/binaries/containers, deploy,
+merge, or publish a release. See
+[ADR 0051](../adr/0051-version-source-candidate-without-publication.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1192,7 +1214,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
-  -> CF046 -> CF047 -> CF048 -> CF049 -> CF050
+  -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
