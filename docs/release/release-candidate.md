@@ -1,8 +1,9 @@
 # Source release-candidate checklist
 
-Cogniform has no published or supported release. CF009 prepares the evidence
-for a future source-first `0.1.0-rc.1`; it does not authorize a version change,
-tag, archive, GitHub release, crates.io publication, or deployment.
+Cogniform has no published or supported release. CF009 defines the evidence
+for a future source-first `0.1.0-rc.1`, and CF050 supplies the local archive
+preparation/verification prerequisite. Neither authorizes a version change,
+tag, GitHub release, crates.io publication, or deployment.
 
 ## MVP acceptance evidence
 
@@ -41,13 +42,14 @@ tag, archive, GitHub release, crates.io publication, or deployment.
 | Service procedure composition | Pass on validated profile | A bounded 2x3 built-in procedure follows ordinary queue, idempotency, query, replay/hash, and restored world-idempotency behavior |
 | End to end | Pass on validated profile | Room/table/light/camera create and atomic restyle, exact query, three observations, same replay hash |
 | Repository and dependency hygiene | Pass | Redacted Git-object scan, secret scanning/push protection, pinned vendor/lock/action, cargo-deny |
+| Source-candidate archive | Pass for the local tooling profile | Direct annotated-tag and clean-HEAD binding, repeated exact Git tar bytes, fixed metadata and bounds, raw inventory/blob/PAX/termination verification, exact SHA-256 sidecar, actual public-content scanning, negative corruption/attribute/path/type/cleanup matrix, and no extraction or publication |
 
 Inside the local single-user source profile, the correctness matrix passes and
 the threat model has no unresolved Critical or High residual. Medium residuals,
 unsupported platforms, and operational gaps are named in the linked records.
 This does not make the current `0.0.0` workspace a supported release.
 
-## Required evidence before proposing a candidate tag
+## Required evidence and preparation before publication
 
 - [ ] Start from a clean, protected `main` commit whose pull-request checks and
       reviewed tree are recorded.
@@ -111,23 +113,46 @@ This does not make the current `0.0.0` workspace a supported release.
       matrix, recovery-envelope, recovery-file, and asset-file
       formats/limitations, offline inspection profile/versioned output, known
       limitations, and license from the exact candidate tree.
-- [ ] Change the shared workspace version from `0.0.0` to the explicitly
-      approved candidate version without changing `publish = false`.
-- [ ] Build the source archive from the annotated candidate tag, not a dirty
-      working tree, and verify it includes `Cargo.lock`, `vendor/`, docs, tests,
-      `LICENSE`, and no ignored local orchestration state.
-- [ ] Run the public-repository scan against the archive file list and content,
-      then compute and independently verify its SHA-256 checksum.
+- [ ] Under separate explicit authorization, change the shared workspace
+      version from `0.0.0` to the candidate version without changing
+      `publish = false`, review that exact commit, and create its annotated
+      maintainer tag.
+- [ ] From that exact clean tagged commit, prepare the candidate into one
+      existing caller-owned directory outside the worktree and Git directory:
+
+      ```text
+      python scripts/source_candidate.py prepare --repository . --tag refs/tags/v0.1.0-rc.1 --archive <outside-repository-dir>/cogniform-0.1.0-rc.1.tar --checksum <outside-repository-dir>/cogniform-0.1.0-rc.1.tar.sha256
+      ```
+
+      Confirm the schema-version-one report names the reviewed tag object,
+      peeled commit, Git implementation/object format, archive byte/member
+      counts, and SHA-256. Use a complete local object store: the command
+      refuses lazy object fetching rather than opening a network connection.
+      The command itself never creates or moves a tag.
+- [ ] Independently reopen the unchanged files under the same exact clean tag
+      and repository state:
+
+      ```text
+      python scripts/source_candidate.py verify --repository . --tag refs/tags/v0.1.0-rc.1 --archive <outside-repository-dir>/cogniform-0.1.0-rc.1.tar --checksum <outside-repository-dir>/cogniform-0.1.0-rc.1.tar.sha256
+      ```
+
+      Require an identical report. This proves the fixed prefix, sole commit
+      PAX value, canonical termination, exact directory/file inventory and Git
+      blob identities, fixed metadata, mandatory offline-build content,
+      reusable public path/content rules, sidecar bytes, and hard bounds
+      without extraction.
 - [ ] Obtain maintainer approval for the exact tag, archive hash, release notes,
       support statement, and residual risks.
 
 ## Publication procedure
 
 Publication is deliberately manual and requires a new explicit authorization.
-After every checklist item passes, the maintainer may create an annotated tag,
-produce the source archive and checksum, and publish a prerelease entry that
-links this evidence. Do not upload binaries, containers, symbols, runtime logs,
-benchmark artifacts, observations, replay streams, or private test data.
+After the separately authorized version commit/tag and every preparation item
+above pass, the maintainer may publish a prerelease entry and attach exactly the
+verified project-owned tar and checksum. Do not substitute GitHub's generated
+compressed source download for the named asset, and do not upload binaries,
+containers, symbols, runtime logs, benchmark artifacts, observations, replay
+streams, or private test data.
 
 The GitHub release must be marked prerelease and state:
 
@@ -238,10 +263,13 @@ published tag or replace an archive under the same version.
 
 ## Current disposition
 
-The implementation and evidence are suitable for a separately reviewed source
-release-candidate preparation task. No tag or release is created by CF009.
+The deterministic local preparation/verification prerequisite is implemented.
+An actual candidate still requires separately reviewed version and annotated-
+tag authority, complete checklist reproduction, exact asset/hash approval, and
+publication authorization. CF009 and CF050 create no tag or release.
 
-See [ADR 0010](../adr/0010-source-first-release-profile.md), the
+See [ADR 0010](../adr/0010-source-first-release-profile.md),
+[ADR 0050](../adr/0050-deterministic-source-candidate-archive.md), the
 [validation baseline](../operations/validation-baseline.md), the
 [failure guide](../operations/failure-and-recovery.md), the
 [recovery-file guide](../persistence/recovery-files.md), the

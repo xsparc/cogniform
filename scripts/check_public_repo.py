@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Iterable
+from typing import Protocol
 
 
 APPROVED_HIDDEN_ROOTS = {".cargo", ".github"}
@@ -49,6 +50,12 @@ CONTENT_RULES = (
 COMPILED_CONTENT_RULES = tuple(
     (rule_id, re.compile(pattern)) for rule_id, pattern in CONTENT_RULES
 )
+
+
+class SearchableBytes(Protocol):
+    """Structural type accepted by compiled bytes regular expressions."""
+
+    def __getitem__(self, key: object) -> object: ...
 
 
 def run_git(*arguments: str) -> bytes:
@@ -106,6 +113,27 @@ def path_violations(path: str) -> Iterable[str]:
         yield "private-data-file"
 
 
+def content_violations(
+    content: bytes | SearchableBytes,
+    start: int = 0,
+    end: int | None = None,
+) -> Iterable[str]:
+    """Yield public-tree content rule IDs without exposing matched values.
+
+    ``start`` and ``end`` let archive verification scan an exact member range
+    in a memory-mapped, bounded archive. That preserves the same rule semantics
+    across I/O boundaries without extracting or copying member bytes.
+    """
+
+    for rule_id, pattern in COMPILED_CONTENT_RULES:
+        if end is None:
+            match = pattern.search(content, start)
+        else:
+            match = pattern.search(content, start, end)
+        if match is not None:
+            yield rule_id
+
+
 def read_blob(source: str, path: str) -> bytes:
     object_spec = f":{path}" if source == ":index:" else f"{source}:{path}"
     return run_git("show", object_spec)
@@ -122,10 +150,9 @@ def scan(source: str, paths: Iterable[str]) -> int:
             continue
 
         content = read_blob(source, path)
-        for rule_id, pattern in COMPILED_CONTENT_RULES:
-            if pattern.search(content):
-                report(rule_id, path)
-                violations += 1
+        for rule_id in content_violations(content):
+            report(rule_id, path)
+            violations += 1
 
     if violations:
         print(

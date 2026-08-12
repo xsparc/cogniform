@@ -61,6 +61,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | An MCP peer pipelines resource reads while a prior response is stalled | Backpressure before dispatching the next request; retain at most one handler/response cycle and flush its bounded output before reading another input message | CF047 stalled-writer pipelined-resource-read transport test |
 | `serve-mcp-stdio` cannot encode, write, or flush a bounded output | Record the first stable transport failure, interrupt a pending read, terminate the session, preserve any physical prefix, and never retry or resynchronize | CF045 bounded writer, output equality/nesting, transport-status, and child-process tests |
 | Public path or credential pattern staged | Fail with rule/path only; never echo the matched value | public-repository safeguard fixtures |
+| Source-candidate tag, repository, archive, checksum, metadata, inventory, content, or bound is invalid | Fail with one path/payload-redacted `source-candidate` category; never overwrite an output or claim a partial candidate; remove files created by the failed preparation and report `cleanup_uncertain` if removal cannot be proved | CF050 disposable identity, attribute, limit, corruption, sidecar, and cleanup matrix |
 
 Run the CPU failure matrix through the ordinary offline workspace suite:
 
@@ -73,6 +74,27 @@ python scripts/check_public_repo.py --all
 The every-byte replay case is deterministic fault injection, not fuzzing. A
 future parser fuzz campaign must have a fixed time budget and separately
 approved corpus-retention policy; it does not belong in every pull request.
+
+## Source-candidate preparation failure
+
+`scripts/source_candidate.py prepare` is a local release-preparation boundary,
+not a repair tool. Correct the stable reported category and start again with
+two absent targets. Never overwrite, append to, or manually bless a failed
+archive. `tag_moved`, `head_moved`, `repository_changed`, or
+`git_version_changed` means the captured release basis is no longer stable;
+return to the reviewed commit and repeat the complete preparation. Inventory,
+blob, PAX, metadata, public-content, checksum, corruption, or trailing-data
+failure means neither file is a candidate even if an external tar program can
+list or extract it. A missing local object or oversized Git metadata response
+fails closed; obtain a complete reviewed clone through a separately authorized
+workflow rather than weakening the tool or allowing an implicit fetch.
+
+On ordinary failure the tool removes only files it created during that
+invocation. `cleanup_uncertain` means it could not prove that cleanup. Inspect
+the caller-owned output directory without publishing either target, remove the
+partial files through the operator's normal safe procedure, and retry with new
+absent paths. The tool does not create or repair a tag, change a version,
+upload an asset, authenticate a producer, or authorize a release.
 
 ## Runtime response
 

@@ -91,6 +91,11 @@ collected on the CPU and validated Windows profile on 2026-08-09. CF049 closed
 discovery schemas, stable error vocabularies, and exact workflow-instruction
 evidence were collected on the CPU profile on 2026-08-11. No new controlled GPU
 evidence was required because CF049 changes no runtime execution path.
+CF050 annotated-tag admission, deterministic raw tar/sidecar generation,
+independent archive verification, public-content reuse, corruption rejection,
+and cleanup evidence were collected in disposable repositories on the local
+Windows CPU profile on 2026-08-12. The exact pull-request head must repeat the
+same matrix on the standard Linux quality runner before merge.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -473,6 +478,32 @@ errors for every tool and real success for query/imagination remains covered by
 the controlled production-service test. The raw CLI child fixture independently
 asserts the exact initialization bytes without constructing `LocalService` or
 selecting a GPU adapter.
+
+## Deterministic source-candidate commands
+
+CF050 adds no tag, version, dependency, runtime, network, upload, or publication
+action. Its default fixed limits and complete disposable matrix were exercised
+with:
+
+```text
+python tests/release/test_source_candidate.py
+python tests/security/test_public_repo_check.py
+python -m py_compile scripts/check_public_repo.py scripts/source_candidate.py tests/release/test_source_candidate.py
+python scripts/check_public_repo.py --all
+git diff --check
+```
+
+The source-candidate matrix creates only temporary repositories and
+caller-owned temporary output directories. It proves direct annotated versus
+lightweight/nested tag roles, clean exact `HEAD`, final ref/HEAD movement
+detection, final-recheck cleanup, inherited/local/committed attribute handling,
+replacement-ref and lazy-fetch isolation, SHA-1/SHA-256 object identity,
+deterministic repeated bytes and digest, exact archive/member bound equality,
+fixed prefix/PAX/executable-mode/owner/time/inventory/blob/termination roles,
+exact sidecar bytes, mandatory offline content, reusable public path and
+boundary-spanning content rejection, existing-output preservation,
+structural/payload/checksum/trailing corruption, ordinary cleanup, and explicit
+cleanup uncertainty. It extracts no member and makes no network or GitHub call.
 
 Production enables only exact-pinned `rmcp` 3.1.2 `server` and restricted Tokio
 runtime features needed by this adapter; HTTP, client, OAuth, TLS, process, and
