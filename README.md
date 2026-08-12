@@ -88,8 +88,10 @@ scene revision that produced it.
 > The current
 > hardening baseline adds a
 > threat model, fault/recovery matrix, controlled compatibility and performance
-> evidence, and a source-first release-candidate checklist. No release has been
-> published.
+> evidence, and a source-first release-candidate checklist. A bounded local
+> source-candidate tool can now prepare and independently verify one exact
+> annotated-tag tar plus SHA-256 sidecar without extraction, tag creation,
+> network access, upload, or publication. No release has been published.
 
 ## Architecture
 
@@ -118,6 +120,9 @@ implementations arrive:
 See the [software design document](docs/architecture/software-design-document.md),
 [implementation plan](docs/roadmap/development-implementation-plan.md), and
 [architecture decisions](docs/adr/README.md) for the authoritative direction.
+The [source release-candidate checklist](docs/release/release-candidate.md)
+documents the separately gated tag, local archive preparation/verification,
+and publication sequence.
 The [core contract guide](docs/protocol/core-contracts.md) documents the current
 schema and validation boundary. The
 [determinism and replay guide](docs/architecture/determinism-and-replay.md)

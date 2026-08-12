@@ -1154,6 +1154,35 @@ types, dependencies, transport bounds, service authority, deployment, release,
 and workspace version remain unchanged. See
 [ADR 0049](../adr/0049-conformant-mcp-discovery-contract.md).
 
+### PR 50 - CF050: Deterministic source-candidate archive
+
+Outcome: a maintainer can prepare and independently verify the exact bounded
+source asset required by ADR 0010 without trusting a dirty worktree, ambient
+Git attributes, GitHub's regenerated compression bytes, or a tar extractor.
+
+Gate: accept only an exact `refs/tags/...` direct annotated tag whose peeled
+commit equals clean `HEAD`; retain and recheck the tag object, commit, `HEAD`,
+cleanliness, and Git implementation identity. Create one uncompressed built-in
+Git tar and one exact sha256sum-style sidecar with create-new semantics in one
+existing caller-owned directory outside the worktree and Git directories.
+Neutralize inherited/system/global Git configuration and archive attributes,
+disable replacement objects, lazy object fetching, filesystem-monitor commands,
+and submodule traversal, reject repository-info overrides, force
+`tar.umask=0022`, use one fixed safe root, and enforce bounded Git metadata,
+268,435,456 archive bytes, and 20,000 filesystem members while streaming.
+
+Raw re-verification permits only the one Git commit PAX comment; canonical zero
+padding/termination; exact stable portable directory/file inventory and Git
+blob identities; fixed commit time, owner, group, and modes; and mandatory
+offline source, vendor, license, docs, and tests. The actual non-vendor member
+bytes pass the reusable public-repository rules without extraction. Disposable
+Windows/Linux tests cover exact equality and limit edges plus identity,
+attribute, path, type, metadata, PAX, substitution, corruption, sidecar,
+trailing-data, existing-output, and cleanup failures. Version changes, tag
+creation, network/API access, release assets, upload, signing, attestations,
+SBOMs, deployment, and publication remain separately approved work. See
+[ADR 0050](../adr/0050-deterministic-source-candidate-archive.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1163,7 +1192,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
-  -> CF046 -> CF047 -> CF048 -> CF049
+  -> CF046 -> CF047 -> CF048 -> CF049 -> CF050
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1179,7 +1208,9 @@ project history.
 
 ### 4.1 Default pull-request check
 
-One `ubuntu-latest` job always checks out the repository and classifies the changed paths using Git metadata. For Rust-affecting changes it then runs:
+One `ubuntu-latest` job always checks out the repository, runs the disposable
+public-tree and source-candidate safeguards, and classifies changed paths using
+Git metadata. For Rust-affecting changes it then runs:
 
 1. install the pinned Rust toolchain;
 2. `cargo fmt --all --check`;

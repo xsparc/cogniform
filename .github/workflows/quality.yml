@@ -29,6 +29,7 @@ jobs:
       - name: Check public repository hygiene
         run: |
           python3 tests/security/test_public_repo_check.py
+          python3 tests/release/test_source_candidate.py
           python3 scripts/check_public_repo.py --all
 
       - name: Classify changed paths

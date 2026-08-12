@@ -235,6 +235,15 @@ silently becoming adapter authority. The official
 and [MCP 2025-11-25 specification](https://modelcontextprotocol.io/specification/2025-11-25)
 remain the external references; MCP 2026 support requires a new approved ADR.
 
+CF050 changes no Cargo manifest, lock entry, vendored source, action, or Python
+package graph. Its source-candidate tool uses only the Python standard library
+and the caller's recorded Git implementation. The default quality job invokes
+the disposable test directly with the runner's existing `python3`; it installs
+nothing, opens no network connection, uploads no artifact, and receives no
+additional workflow permission. A future archive library, signing utility,
+attestation action, SBOM generator, or release uploader would be a separate
+dependency and authority decision.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

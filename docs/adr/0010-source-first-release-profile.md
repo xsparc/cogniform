@@ -77,3 +77,10 @@ archive, publish a GitHub release, or upload any artifact.
 - Binary signing, provenance attestations, SBOM publication, installers,
   containers, remote authentication, and production deployment remain future
   decisions rather than implicit MVP features.
+
+CF050 implements the local archive-preparation prerequisite in
+[ADR 0050](0050-deterministic-source-candidate-archive.md). It binds a clean
+annotated-tag commit to one deterministic uncompressed tar and exact SHA-256
+sidecar, then verifies the actual archive inventory, metadata, blob identities,
+public content, and checksum without extraction. It does not exercise this
+record's separately gated version, tag, upload, or publication authority.

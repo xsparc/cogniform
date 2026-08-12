@@ -63,6 +63,15 @@ tree. The check reports a rule identifier and path, never the matched value.
 GitHub secret scanning and push protection provide provider-aware detection at
 the repository boundary; do not bypass a block merely to make a push succeed.
 
+When a release-candidate preparation task is separately approved and an exact
+annotated maintainer tag already exists at clean `HEAD`, prepare and recheck the
+actual source asset with `scripts/source_candidate.py` as documented in the
+[release checklist](docs/release/release-candidate.md). Use two absent targets
+in one existing caller-owned directory outside both the worktree and Git
+directory. Do not weaken its fixed prefix, 256 MiB/20,000-member limits,
+create-new behavior, raw archive checks, or exact sidecar. The tool does not
+create a tag, change a version, upload an asset, or authorize publication.
+
 If a real credential is found, revoke or rotate it first, remove it from every
 pending commit and working copy, and report the incident privately. Deleting a
 file in a later commit does not remove a secret from public history.

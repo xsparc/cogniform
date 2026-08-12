@@ -155,7 +155,14 @@ release yet; the current workspace version remains `0.0.0`.
   regular-file loading, and explicit restart rehydration evidence;
 - public-repository safeguards, threat model, failure/recovery matrix,
   controlled compatibility/performance baseline, and source-first candidate
-  checklist.
+  checklist;
+- a standard-library-only source-candidate preparation and verification tool
+  that binds a clean direct annotated tag to one bounded deterministic
+  uncompressed Git tar and exact SHA-256 sidecar outside repository state,
+  then proves raw PAX/termination, portable inventory, Git blob identities,
+  fixed metadata, mandatory offline source content, reusable public-content
+  rules, and fail-closed cleanup without creating a tag, changing a version,
+  opening a network connection, uploading, or publishing.
 
 ### Changed
 
