@@ -161,6 +161,14 @@ and expose fifteen shared exact path-bound crate requirements inherited by
 member-local edges. A bounded standard-library-only policy check makes manifest and
 lock drift a normal quality failure. This changes no runtime authority and
 creates no tag, archive, upload, supported API line, or publication.
+CF052 closes the remaining design-policy gap without performing a release. A
+future source candidate must use GitHub release immutability, draft-first
+assembly, exactly the project-owned tar and SHA-256 sidecar, and distinct
+repository-setting, tag, archive, draft, upload, and publication approvals.
+Consumers verify the release attestation, each asset, and the sidecar-to-tar
+digest before use. Only the latest published candidate is eligible for security
+fixes, with support ending on replacement or withdrawal and fixes delivered by
+a new immutable candidate rather than mutation.
 Spatial acceleration, shared memory, remote transport, Wasm, and model bridge become
 separate crates only when their milestone establishes an independent contract
 or dependency footprint.
@@ -622,6 +630,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | MCP stdio adapter | Stable 2025-11-25 initialization with exact 508-byte workflow instructions, exact singleton version advertisement, no advertised extensions, explicit 2026 discovery/task/per-request-version rejection, omission of newer result shapes, exact deterministic query/imagination/patch/observation metadata with closed mutually exclusive success/error schemas and complete stable error vocabularies, incremental input and encode-before-output bounds, one request through complete response flush, lazy serialized service access, exact query/application/replay/observation roles, direct atomic camera-capable patch application, one latest-value canonical binary resource with exact-URI read and atomic replacement, stdout purity, EOF, and redacted transport failure behavior pass through official-SDK and raw CLI child tests |
 | Source candidate | One clean direct annotated-tag commit repeatedly produces the same bounded uncompressed tar under the recorded Git implementation and one exact SHA-256 sidecar; independent raw verification proves stable tag/HEAD identities, the sole commit PAX value, canonical termination, exact portable inventory/blob/mode/owner/time roles, mandatory offline source content, public-safe actual bytes, and fail-closed cleanup without extraction or publication |
 | Package candidate identity | Every explicit workspace member inherits `0.1.0-rc.1` and remains non-publishable; every local crate edge has one exact path-bound shared requirement; every first-party lock entry is source-less at that version; disposable drift cases and the live inventory pass without network access |
+| Release integrity and support | The future prerelease contract requires release immutability, draft-first exact two-asset assembly, six separately authorized live gates, release and per-asset attestation checks, independent SHA-256 verification, and a latest-candidate-only support lifetime without claiming that a release exists |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
 | Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |
@@ -639,9 +648,12 @@ entry with Ubuntu CPU build/test evidence. CF050 implements the bounded local
 archive preparation and verification prerequisite in
 [ADR 0050](../adr/0050-deterministic-source-candidate-archive.md), and CF051
 sets the still-unpublished non-publishable workspace candidate identity under
-[ADR 0051](../adr/0051-version-source-candidate-without-publication.md).
-Annotated tagging, real archive generation, immutable release configuration,
-upload, and publication remain separately approved. Wider
+[ADR 0051](../adr/0051-version-source-candidate-without-publication.md). CF052
+defines immutable draft-first publication, consumer verification, and the
+latest-candidate support lifetime in
+[ADR 0052](../adr/0052-immutable-source-release-and-support-contract.md).
+Repository-setting mutation, annotated tagging, real archive generation,
+draft creation, upload, and publication remain separately approved. Wider
 GPU/driver support, prebuilt
 artifacts, additional texture roles/tangent-space normals and the remaining visual-quality surface, remote
 protocol/authentication, configurable or multi-client endpoint lifecycle, tenancy, durable or multi-value observation retention, automatic startup,
@@ -663,3 +675,9 @@ planning assumptions, not production commitments.
 - `glam` 0.33.2: <https://docs.rs/crate/glam/latest>
 - Rust 2024 edition: <https://doc.rust-lang.org/edition-guide/rust-2024/index.html>
 - GitHub Actions billing and standard-runner policy: <https://docs.github.com/en/billing/concepts/product-billing/github-actions>
+- GitHub immutable-release and consumer-verification contracts:
+  <https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases>
+  and
+  <https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/verify-release-integrity>
+- OpenSSF OSPS Baseline 2026.02.19 release-integrity and support controls:
+  <https://baseline.openssf.org/versions/2026-02-19>

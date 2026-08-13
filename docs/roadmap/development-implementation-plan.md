@@ -1205,6 +1205,29 @@ sign, attest, generate an SBOM, publish crates/binaries/containers, deploy,
 merge, or publish a release. See
 [ADR 0051](../adr/0051-version-source-candidate-without-publication.md).
 
+### PR 52 - CF052: Immutable source-release and support contract
+
+Outcome: maintainers and consumers have one exact publication, verification,
+and support contract before any source candidate becomes public, while every
+live release authority remains closed.
+
+Gate: accept ADR 0052; require GitHub release immutability before draft
+creation; pin the official `v0.1.0-rc.1` assets to
+`cogniform-0.1.0-rc.1.tar` and
+`cogniform-0.1.0-rc.1.tar.sha256`; document draft-first assembly and distinct
+repository-setting, tag, archive, draft, upload, and publication approvals.
+Give consumers exact repository-scoped release and per-asset attestation checks
+plus an independent `sha256sum --check` step. Define support as latest-
+published-candidate only, beginning at publication and ending on replacement
+or withdrawal, with fixes issued only as a new incremented candidate.
+
+Synchronize the SDD, release checklist/notes, security policy, README,
+changelog, ADR index, and validation evidence. Do not change runtime or MCP
+behavior, dependencies, manifests, lockfiles, workflows, permissions, package
+version, repository settings, tags, archives, assets, drafts, uploads,
+publication, deployment, or merge state. See
+[ADR 0052](../adr/0052-immutable-source-release-and-support-contract.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1214,7 +1237,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
-  -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051
+  -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.

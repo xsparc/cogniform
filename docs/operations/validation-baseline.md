@@ -585,6 +585,38 @@ advisory confirmation, the exact protected squash-merged `main` identity,
 standard Linux pull-request evidence, annotated tag, real archive/hash,
 release-host immutability policy, upload, and publication remain open gates.
 
+## Immutable publication and support contract
+
+CF052 changes documentation only. It defines the future immutable draft-first
+publication order, exact two-asset identity, consumer release/asset/checksum
+verification, latest-candidate-only support lifetime, and separate authority
+for repository-setting, tag, archive, draft, upload, and publication actions.
+It does not perform any of those actions and does not change runtime, MCP,
+dependencies, manifests, the lockfile, workflows, permissions, packages, or
+CI behavior.
+
+The following checks passed on the Windows CPU profile on 2026-08-13:
+
+```text
+gh --version
+gh release verify --help
+gh release verify-asset --help
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --check
+```
+
+GitHub CLI 2.95.0 exposes the two documented verification commands. All local
+links across the eleven changed Markdown files resolve. The official GitHub
+immutable-release, release-integrity, and CLI documentation and the OpenSSF
+OSPS Baseline 2026.02.19 were checked on the same date. No live release exists,
+so attestation, asset download, `sha256sum --check`, repository-setting, tag,
+draft, upload, or publication commands were run. Rust, GPU, and controlled
+adapter suites were not rerun because this slice changes no executable,
+manifest, workflow, or runtime contract; CF051's exact candidate evidence
+remains the applicable code baseline.
+
 ## Controlled local-session executor commands
 
 CF041 ran the caller-driven state machine, engine compatibility edge, and

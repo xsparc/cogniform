@@ -5,7 +5,16 @@
 Cogniform has no supported release yet. The repository carries an unpublished
 `0.1.0-rc.1` source-candidate identity, but that candidate is not a supported
 security line and must not be used as a production security boundary. This
-file will name supported release lines before the first public release.
+file will name the exact supported candidate after the first public release.
+
+When candidates are published, only the latest published candidate is eligible
+for security fixes. Support begins at publication and ends immediately when a
+newer candidate is published or the candidate is declared withdrawn, whichever
+comes first. There is no minimum support lifetime, response or remediation SLA,
+bug bounty, or backport promise. Fixes are delivered only through a new
+incremented reviewed candidate; a published tag or asset is never moved or
+replaced. See the [release integrity and support policy](docs/release/support.md)
+for the exact scope, consumer verification procedure, and end-of-support rule.
 
 ## Reporting a vulnerability
 

@@ -57,5 +57,6 @@ earlier one and links the history.
 | [0049](0049-conformant-mcp-discovery-contract.md) | Accepted | Close every MCP tool output schema and provide bounded workflow instructions |
 | [0050](0050-deterministic-source-candidate-archive.md) | Accepted | Prepare and verify one deterministic annotated-tag source archive without publication authority |
 | [0051](0051-version-source-candidate-without-publication.md) | Accepted | Give the unpublished source candidate one exact non-publishable workspace identity without tagging or publication |
+| [0052](0052-immutable-source-release-and-support-contract.md) | Accepted | Require immutable draft-first source releases, exact consumer verification, and an explicit latest-candidate support lifetime |
 
 New records use four sections: context, decision, consequences, and status.
