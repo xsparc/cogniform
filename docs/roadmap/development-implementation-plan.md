@@ -1228,6 +1228,30 @@ version, repository settings, tags, archives, assets, drafts, uploads,
 publication, deployment, or merge state. See
 [ADR 0052](../adr/0052-immutable-source-release-and-support-contract.md).
 
+### PR 53 - CF053: Bounded terminal MCP cancellation
+
+Outcome: a parent can cancel one active inherited-stdio MCP request without
+reopening concurrent tool dispatch or reusing a causally ambiguous child.
+
+Gate: preserve exact MCP `2025-11-25`, four tools, one retained resource, and
+all uncancelled bytes. Retain one semantically dispatched request and at most
+one decoded bounded pending message. Deliver only an exact matching numeric or
+string `notifications/cancelled` before response writing; suppress that
+request's response, prevent pending/later dispatch, and terminate the child
+successfully after bounded RMCP cleanup. Keep missing, mismatched, pending-
+blocked, and post-write cancellation on the prior response-through-flush path.
+Convert observation polling to cooperative Tokio waits, poison/drop the service
+when an admitted observation is cancelled, and preserve the prior completed
+resource until teardown.
+
+Prove exact matching and wrong/missing/late IDs, numeric/string roles, one
+pending-message bound, stalled output, cancelled response/error suppression,
+cooperative poll wakeup, official-client terminal behavior, prior-resource
+preservation, and unchanged ordinary/controlled compatibility. Do not add MCP
+`2026-07-28`, concurrent tools, rollback, reusable cancellation, a general
+deadline, new dependencies, remote authority, deployment, or release action.
+See [ADR 0053](../adr/0053-bounded-terminal-mcp-cancellation.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1237,7 +1261,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF022 -> CF023 -> CF024 -> CF025 -> CF026 -> CF027 -> CF028 -> CF029
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
-  -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052
+  -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.

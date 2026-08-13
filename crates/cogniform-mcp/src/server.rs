@@ -1,9 +1,4 @@
-use std::{
-    borrow::Cow,
-    sync::Arc,
-    thread,
-    time::{Duration, Instant},
-};
+use std::{borrow::Cow, future::Future, sync::Arc, time::Duration};
 
 use cogniform_compilation::{CompilationLimits, CompilationResult};
 use cogniform_engine::{
@@ -29,7 +24,7 @@ use rmcp::{
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::Instant};
 
 /// Stable MCP name for the exact-revision read-only query tool.
 pub const QUERY_SCENE_TOOL: &str = "cogniform.query_scene";
@@ -204,6 +199,18 @@ impl CogniformMcpServer {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) async fn observation_test_state(&self) -> (Option<(String, String)>, bool) {
+        let state = self.state.lock().await;
+        (
+            state
+                .retained_observation
+                .as_ref()
+                .map(|retained| (retained.resource.uri.clone(), retained.blob.clone())),
+            state.service_failed,
+        )
+    }
+
     async fn query_scene(&self, arguments: Option<Map<String, Value>>) -> CallToolResult {
         let query = match parse_arguments::<SceneQuery>(arguments) {
             Ok(query) => query,
@@ -310,7 +317,16 @@ impl CogniformMcpServer {
         })
     }
 
-    async fn observe_scene(&self, arguments: Option<Map<String, Value>>) -> CallToolResult {
+    async fn observe_scene<C, F>(
+        &self,
+        arguments: Option<Map<String, Value>>,
+        is_cancelled: C,
+        cancelled: F,
+    ) -> CallToolResult
+    where
+        C: Fn() -> bool,
+        F: Future<Output = ()>,
+    {
         let request = match parse_arguments::<ObservationRequest>(arguments) {
             Ok(request) => request,
             Err(result) => return result,
@@ -334,7 +350,10 @@ impl CogniformMcpServer {
                 &runtime_limits,
                 payload_limits,
                 poll_policy,
+                is_cancelled,
+                cancelled,
             )
+            .await
         } else {
             let service = match state.service().await {
                 Ok(service) => service,
@@ -346,7 +365,10 @@ impl CogniformMcpServer {
                 &runtime_limits,
                 payload_limits,
                 poll_policy,
+                is_cancelled,
+                cancelled,
             )
+            .await
         };
 
         #[cfg(not(test))]
@@ -361,7 +383,10 @@ impl CogniformMcpServer {
                 &runtime_limits,
                 payload_limits,
                 poll_policy,
+                is_cancelled,
+                cancelled,
             )
+            .await
         };
 
         match outcome {
@@ -382,18 +407,31 @@ impl CogniformMcpServer {
     }
 }
 
-fn drive_observation(
+async fn drive_observation<C, F>(
     request: &ObservationRequest,
     backend: &mut dyn ObservationBackend,
     runtime_limits: &RuntimeLimits,
     payload_limits: ObservationPayloadLimits,
     policy: ObservationPollPolicy,
-) -> Result<RetainedObservation, ObservationToolFailure> {
+    is_cancelled: C,
+    cancelled: F,
+) -> Result<RetainedObservation, ObservationToolFailure>
+where
+    C: Fn() -> bool,
+    F: Future<Output = ()>,
+{
+    let mut cancelled = std::pin::pin!(cancelled);
+    if is_cancelled() {
+        return Err(ObservationToolFailure::poison("service_failed"));
+    }
     backend
         .request_observation(*request)
         .map_err(|()| ObservationToolFailure::stable("observation_rejected"))?;
     let started = Instant::now();
     loop {
+        if is_cancelled() {
+            return Err(ObservationToolFailure::poison("service_failed"));
+        }
         if started.elapsed() >= policy.deadline {
             return Err(ObservationToolFailure::poison("observation_timeout"));
         }
@@ -422,7 +460,13 @@ fn drive_observation(
             }
             Ok(None) => {
                 let remaining = policy.deadline.checked_sub(elapsed).unwrap_or_default();
-                thread::sleep(policy.cadence.min(remaining));
+                tokio::select! {
+                    biased;
+                    () = cancelled.as_mut() => {
+                        return Err(ObservationToolFailure::poison("service_failed"));
+                    }
+                    () = tokio::time::sleep(policy.cadence.min(remaining)) => {}
+                }
             }
             Err(()) => return Err(ObservationToolFailure::poison("service_failed")),
         }
@@ -692,13 +736,22 @@ impl ServerHandler for CogniformMcpServer {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
         Ok(match request.name.as_ref() {
             QUERY_SCENE_TOOL => self.query_scene(request.arguments).await,
             SUBMIT_IMAGINATION_TOOL => self.submit_imagination(request.arguments).await,
             APPLY_PATCH_TOOL => self.apply_patch(request.arguments).await,
-            OBSERVE_SCENE_TOOL => self.observe_scene(request.arguments).await,
+            OBSERVE_SCENE_TOOL => {
+                let cancellation = context.ct.clone();
+                let cancellation_check = cancellation.clone();
+                self.observe_scene(
+                    request.arguments,
+                    move || cancellation_check.is_cancelled(),
+                    cancellation.cancelled_owned(),
+                )
+                .await
+            }
             _ => {
                 return Err(McpError::method_not_found::<
                     rmcp::model::CallToolRequestMethod,
@@ -1125,6 +1178,8 @@ mod tests {
         FrameId, ImageDimensions, ObservationQuality, ObservationStaleness, SceneRevision,
         SchemaVersion, StableEntityId,
     };
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use tokio::sync::Notify;
 
     fn error_code(result: &CallToolResult) -> Option<&str> {
         result.structured_content.as_ref()?.get("error")?.as_str()
@@ -1210,7 +1265,9 @@ mod tests {
         }) else {
             unreachable!("test arguments are an object");
         };
-        let result = server.observe_scene(Some(arguments)).await;
+        let result = server
+            .observe_scene(Some(arguments), || false, std::future::pending())
+            .await;
         assert_eq!(error_code(&result), Some("invalid_observation"));
         assert!(server.state.lock().await.service.is_none());
     }
@@ -1359,8 +1416,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn polling_timeout_is_terminal_and_poisoning() {
+    #[tokio::test]
+    async fn polling_timeout_is_terminal_and_poisoning() {
         struct NeverReady;
 
         impl ObservationBackend for NeverReady {
@@ -1388,14 +1445,83 @@ mod tests {
                 cadence: Duration::from_millis(1),
                 deadline: Duration::ZERO,
             },
+            || false,
+            std::future::pending(),
         )
+        .await
         .unwrap_err();
         assert_eq!(failure.code, "observation_timeout");
         assert!(failure.poison_service);
     }
 
-    #[test]
-    fn completion_available_only_after_the_deadline_is_not_polled() {
+    #[tokio::test]
+    async fn polling_notices_cancellation_after_one_pending_delivery() {
+        struct SignallingPending {
+            polled: Arc<Notify>,
+            polls: Arc<AtomicUsize>,
+        }
+
+        impl ObservationBackend for SignallingPending {
+            fn dimensions(&self) -> (u32, u32) {
+                (64, 64)
+            }
+
+            fn request_observation(&mut self, _request: ObservationRequest) -> Result<(), ()> {
+                Ok(())
+            }
+
+            fn try_receive_observation(
+                &mut self,
+            ) -> Result<Option<AdapterObservationDelivery>, ()> {
+                self.polls.fetch_add(1, Ordering::SeqCst);
+                self.polled.notify_one();
+                Ok(None)
+            }
+        }
+
+        let polled = Arc::new(Notify::new());
+        let cancelled = Arc::new(Notify::new());
+        let is_cancelled = Arc::new(AtomicBool::new(false));
+        let polls = Arc::new(AtomicUsize::new(0));
+        let trigger = {
+            let polled = Arc::clone(&polled);
+            let cancelled = Arc::clone(&cancelled);
+            let is_cancelled = Arc::clone(&is_cancelled);
+            tokio::spawn(async move {
+                polled.notified().await;
+                is_cancelled.store(true, Ordering::SeqCst);
+                cancelled.notify_one();
+            })
+        };
+        let mut backend = SignallingPending {
+            polled,
+            polls: Arc::clone(&polls),
+        };
+        let check = Arc::clone(&is_cancelled);
+        let wait = Arc::clone(&cancelled);
+        let failure = tokio::time::timeout(
+            Duration::from_secs(1),
+            drive_observation(
+                &observation_request(0x41),
+                &mut backend,
+                &RuntimeLimits::default(),
+                ObservationPayloadLimits::default(),
+                ObservationPollPolicy::default(),
+                move || check.load(Ordering::SeqCst),
+                async move { wait.notified().await },
+            ),
+        )
+        .await
+        .expect("cooperative cancellation is prompt")
+        .unwrap_err();
+        trigger.await.unwrap();
+        assert_eq!(failure.code, "service_failed");
+        assert!(failure.poison_service);
+        assert_eq!(polls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn completion_available_only_after_the_deadline_is_not_polled() {
         struct ReadyOnSecondPoll {
             request: Option<ObservationRequest>,
             polls: u8,
@@ -1438,7 +1564,10 @@ mod tests {
                 cadence: Duration::from_millis(10),
                 deadline: Duration::from_millis(10),
             },
+            || false,
+            std::future::pending(),
         )
+        .await
         .unwrap_err();
         assert_eq!(failure.code, "observation_timeout");
         assert!(failure.poison_service);
@@ -1446,8 +1575,8 @@ mod tests {
         assert!(backend.request.is_some());
     }
 
-    #[test]
-    fn polling_policy_and_service_failures_are_exact() {
+    #[tokio::test]
+    async fn polling_policy_and_service_failures_are_exact() {
         struct OnePoll(Result<Option<AdapterObservationDelivery>, ()>);
         impl ObservationBackend for OnePoll {
             fn dimensions(&self) -> (u32, u32) {
@@ -1482,7 +1611,10 @@ mod tests {
             &RuntimeLimits::default(),
             ObservationPayloadLimits::default(),
             policy,
+            || false,
+            std::future::pending(),
         )
+        .await
         .unwrap_err();
         assert_eq!(poll_failure.code, "service_failed");
         assert!(poll_failure.poison_service);
@@ -1495,7 +1627,10 @@ mod tests {
             &RuntimeLimits::default(),
             ObservationPayloadLimits::default(),
             policy,
+            || false,
+            std::future::pending(),
         )
+        .await
         .unwrap_err();
         assert_eq!(wrong_id.code, "invalid_service_output");
         assert!(wrong_id.poison_service);

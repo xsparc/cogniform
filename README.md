@@ -35,8 +35,12 @@ scene revision that produced it.
 > successful canonical observation envelope is retained as the sole explicit
 > binary resource. Its custom newline transport
 > bounds input and output bytes
-> plus outer nesting before decode or first write, admits one request through
-> complete response flush, creates the fixed local
+> plus outer nesting before decode or first write, admits one active request
+> plus at most one decoded pending message, and lets only an exact matching
+> pre-response cancellation bypass response-flush backpressure. Cancellation
+> suppresses that response and terminates the child without later dispatch;
+> observation polling cooperates while preserving the prior completed
+> resource. The adapter creates the fixed local
 > service lazily, serializes calls, and adds no HTTP, socket, OAuth, model,
 > prompt, resource-template, subscription, history, task, or remote-security
 > surface.

@@ -28,6 +28,17 @@ an exact retry. Add a camera before observation, then read the returned
 `service_failed`, `invalid_service_output`, `observation_timeout`, or mutating
 `output_unavailable`; never infer or retry an uncertain effect.
 
+To stop an active request, send `notifications/cancelled` with that exact MCP
+request ID as the next message. A matching cancellation produces no response,
+terminates the child successfully after bounded cleanup, and leaves later
+input undispatched. Reap and replace the child; cancellation is not a receipt
+and does not prove whether synchronous work completed. Missing, different, or
+post-response-write IDs are late/nonmatching and do not interrupt the active
+call. Optional cancellation reason text is ignored and not logged. Observation
+polling notices matching cancellation cooperatively, keeps
+the prior completed resource until teardown, and never rolls back admitted
+work.
+
 Configure newer MCP parents to use the legacy session revision explicitly.
 This adapter intentionally rejects `server/discover`, Tasks, per-request
 `2026-07-28`, and every other newer lifecycle path, and advertises no extensions,
@@ -55,7 +66,9 @@ notifications, history, or persistence.
 This profile is local and single-user. The parent must protect scene,
 compilation, observation, and resource values as sensitive data and supply
 identity, authorization, confidentiality, freshness, rate limits, and process
-supervision before any broader exposure. See the complete
+supervision before any broader exposure. The adapter supplies no general
+deadline or restart policy; the parent still owns timeout, kill, and reap
+fallbacks for blocked synchronous work. See the complete
 [protocol contract](../protocol/mcp-stdio-adapter.md).
 
 The controlled end-to-end child proof is opt-in on an approved DX12 or Vulkan

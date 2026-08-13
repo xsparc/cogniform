@@ -5,6 +5,8 @@ with bounded direct patch application by CF046, and extended with one bounded
 observation resource by CF047. CF048 refreshes the official Rust SDK while
 preserving this protocol profile byte-for-byte. CF049 closes every advertised
 tool result shape and adds bounded workflow instructions for agent clients.
+CF053 makes one exact matching active-request cancellation observable while
+keeping the child process terminal and the request pipeline bounded.
 
 `cogniform-cli serve-mcp-stdio` serves stable MCP `2025-11-25` over inherited
 redirected stdin/stdout. It is a local child-process adapter, not a listener or
@@ -20,9 +22,13 @@ output bytes per line, including LF. Object/array nesting is limited to 40,
 including the JSON-RPC and tool-result wrapper around bounded core values.
 Input bounds are enforced incrementally before the complete line is allocated;
 output is completely encoded and checked before its first byte is written.
-Every output line is flushed. The transport admits one request at a time and
-does not read the next input message until that request's response has been
-completely encoded, written, and flushed. CR remains ordinary JSON whitespace.
+Every output line is flushed. The transport semantically dispatches one request
+at a time. While its handler is active, it may decode one additional bounded
+message: an exact matching `notifications/cancelled` is delivered immediately;
+any other message occupies the sole pending slot until the active response is
+completely encoded, written, and flushed. No further line is read while that
+slot is occupied, so the fixed reader buffer and inherited pipe provide
+backpressure. CR remains ordinary JSON whitespace.
 
 Initialization must request exactly protocol version `2025-11-25`. Ping is the
 only request accepted before initialize. Initialization and tool discovery do
@@ -90,7 +96,8 @@ retry returns `admission: "replayed"` without another world revision.
 
 `observe_scene` validates the complete request before lazy service creation,
 submits only through `LocalService`, and polls only the correlated delivery at
-a fixed 2 ms cadence until a fixed 15 second deadline. A completion must match
+a fixed 2 ms cadence until a fixed 15 second deadline. Poll waits are
+cooperative and observe the active RMCP request token. A completion must match
 the observation ID, exact revision, camera, kind, quality, dimensions, metadata,
 and zero-staleness roles. Its owned payload is encoded with the existing
 version-one `COGOBS01` codec under the default 4 MiB complete-envelope bound.
@@ -130,6 +137,26 @@ causally invalid service output also preserve the prior resource but poison
 further service-backed calls; discard the child. A retained resource remains
 readable until the session ends.
 
+## Cancellation
+
+For an active post-initialization request, the parent may send MCP
+`notifications/cancelled` with the exact numeric or string request ID. It must
+be the next message if the parent needs prompt cancellation; a previously
+decoded nonmatching message occupies the sole pending slot and keeps later
+bytes unread until response flush. Missing or different IDs are ordinary
+nonmatching notifications. Once response writing has begun, cancellation is
+late and is read only after that response flushes.
+
+A matching active cancellation reaches RMCP's request token, suppresses every
+response for that ID, prevents pending or later dispatch, and makes the child
+session terminal. The CLI exits successfully after bounded cleanup. The parent
+must reap and replace the child and must not infer an effect result or retry
+uncertain mutation in that process. Observation cancellation leaves the prior
+fully completed resource unchanged until teardown and poisons/drops the local
+service. Cancellation supplies no rollback, response, structured tool error,
+general operation deadline, or reusable-session guarantee. The optional reason
+text is ignored before SDK handling and never appears in diagnostics.
+
 Prompts, resource templates, resource subscriptions and notifications,
 observation history, `server/discover`, multi-round-trip results, task
 execution, sampling, elicitation, logging, custom
@@ -163,6 +190,7 @@ See [ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md),
 [ADR 0046](../adr/0046-bounded-mcp-apply-patch-tool.md),
 [ADR 0047](../adr/0047-bounded-mcp-observation-resource.md),
 [ADR 0048](../adr/0048-pin-current-rust-mcp-sdk-without-protocol-expansion.md),
-[ADR 0049](../adr/0049-conformant-mcp-discovery-contract.md), the
+[ADR 0049](../adr/0049-conformant-mcp-discovery-contract.md),
+[ADR 0053](../adr/0053-bounded-terminal-mcp-cancellation.md), the
 [quickstart](../getting-started/mcp-stdio-adapter.md), and the
 [threat model](../threat-model/mvp.md).

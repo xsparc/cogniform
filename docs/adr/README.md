@@ -58,5 +58,6 @@ earlier one and links the history.
 | [0050](0050-deterministic-source-candidate-archive.md) | Accepted | Prepare and verify one deterministic annotated-tag source archive without publication authority |
 | [0051](0051-version-source-candidate-without-publication.md) | Accepted | Give the unpublished source candidate one exact non-publishable workspace identity without tagging or publication |
 | [0052](0052-immutable-source-release-and-support-contract.md) | Accepted | Require immutable draft-first source releases, exact consumer verification, and an explicit latest-candidate support lifetime |
+| [0053](0053-bounded-terminal-mcp-cancellation.md) | Accepted | Deliver one matching active MCP cancellation through bounded terminal process semantics |
 
 New records use four sections: context, decision, consequences, and status.
