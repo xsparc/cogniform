@@ -167,7 +167,12 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 - a standard-library-only package-policy check with disposable negative
   fixtures for the complete workspace member inventory, inherited shared
   version, non-publishable packages, exact path-bound first-party
-  dependencies, and source-less lockfile entries; and
+  dependencies, and source-less lockfile entries;
+- an immutable source-release and support contract that pins the future
+  project-owned tar/checksum names, draft-first release order, six separate
+  live authority gates, exact release/asset/SHA-256 consumer verification, and
+  a latest-published-candidate-only security-update lifetime without enabling
+  a repository setting or publishing anything; and
 - tracked `0.1.0-rc.1` source-candidate notes that name the intended local
   audience, validated profile, limitations, and the still-separate tag,
   archive, immutable-release, upload, and publication gates.

@@ -122,7 +122,10 @@ See the [software design document](docs/architecture/software-design-document.md
 [architecture decisions](docs/adr/README.md) for the authoritative direction.
 The [source release-candidate checklist](docs/release/release-candidate.md)
 documents the separately gated tag, local archive preparation/verification,
-and publication sequence.
+and publication sequence. The
+[release integrity and support policy](docs/release/support.md) defines the
+future immutable two-asset release, exact consumer checks, and latest-
+candidate-only security-update lifetime without claiming a release exists.
 The [core contract guide](docs/protocol/core-contracts.md) documents the current
 schema and validation boundary. The
 [determinism and replay guide](docs/architecture/determinism-and-replay.md)
@@ -302,8 +305,9 @@ See [CHANGELOG.md](CHANGELOG.md) and the
 [`0.1.0-rc.1` candidate notes](docs/release/0.1.0-rc.1.md) for the unreleased
 capability and limitation summary. The workspace identifies the unpublished
 source candidate as `0.1.0-rc.1`; all packages retain `publish = false`, and
-creating a tag, archive, or release requires separate explicit maintainer
-action.
+enabling release immutability, creating a tag, preparing an archive, creating a
+draft, uploading assets, and publishing each require separate explicit
+maintainer action.
 
 ## Contributing and security
 

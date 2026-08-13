@@ -4,8 +4,10 @@ Cogniform has no published or supported release. CF009 defines the evidence
 for source-first `0.1.0-rc.1`, CF050 supplies the local archive
 preparation/verification prerequisite, and CF051 gives the unpublished
 workspace that candidate identity while every package remains non-publishable.
-No slice authorizes a tag, real archive, GitHub release, crates.io publication,
-or deployment.
+CF052 defines the future immutable publication, consumer-verification, and
+latest-candidate support contract. No slice authorizes a repository-setting
+change, tag, real archive, release draft, asset upload, crates.io publication,
+release publication, or deployment.
 
 ## MVP acceptance evidence
 
@@ -156,18 +158,36 @@ through the still-open identity, archive, and publication gates.
 
 ## Publication procedure
 
-Publication is deliberately manual and requires a new explicit authorization.
-After the CF051 versioned tree is squash-merged, its separately authorized
-annotated tag exists, and every preparation item above passes, the maintainer
-may publish a prerelease entry and attach exactly the verified project-owned
-tar and checksum. Do not substitute GitHub's generated
-compressed source download for the named asset, and do not upload binaries,
-containers, symbols, runtime logs, benchmark artifacts, observations, replay
-streams, or private test data.
+Publication is deliberately manual. The following six gates require distinct
+explicit maintainer authorizations and recorded completion; authority for one
+gate never authorizes a later gate:
+
+1. enable GitHub release immutability for the repository and verify that it
+   applies to future releases;
+2. create the annotated `v0.1.0-rc.1` tag on the exact reviewed protected
+   `main` commit;
+3. prepare and independently verify the source archive and checksum under that
+   unchanged tag;
+4. create a prerelease draft against the pre-existing tag;
+5. upload exactly `cogniform-0.1.0-rc.1.tar` and
+   `cogniform-0.1.0-rc.1.tar.sha256` to the draft without `--clobber` or any
+   replacement operation; and
+6. review the complete draft, then publish it under a final separate
+   authorization while release immutability remains enabled.
+
+GitHub documents that release immutability applies only to future releases, so
+the setting must be enabled before the draft is created. A mismatched or
+incomplete draft is discarded rather than repaired through asset replacement.
+Do not substitute GitHub's generated compressed source download for either
+named asset, and do not upload binaries, containers, symbols, runtime logs,
+benchmark artifacts, observations, replay streams, or private test data.
 
 The GitHub release must be marked prerelease and state:
 
 - source-only, early local evaluation;
+- only the latest published candidate is eligible for security fixes, support
+  ends immediately on replacement or withdrawal, and there is no minimum
+  lifetime, SLA, bounty, or backport promise;
 - validated Windows/Vulkan profile and build-only Ubuntu evidence;
 - no remote service, authentication, automatic checkpoint/startup, mutable
   snapshot catalog, background telemetry exporter, production SLA, or
@@ -269,21 +289,27 @@ The GitHub release must be marked prerelease and state:
 - performance figures are one-machine informational measurements.
 
 If a candidate is defective, close or supersede its release entry as
-appropriate and issue a new incremented candidate after review. Do not move a
-published tag or replace an archive under the same version.
+appropriate and issue a new incremented candidate after review. Published tags
+and assets remain immutable; do not move, reuse, delete, or replace them to
+deliver a fix. After publication, reproduce every command in the
+[consumer verification procedure](support.md#consumer-verification) against a
+fresh empty directory and record the exact tag, commit, two asset names, and
+SHA-256 in the release evidence.
 
 ## Current disposition
 
 The deterministic local preparation/verification prerequisite and unpublished
-`0.1.0-rc.1` workspace identity are implemented. A taggable candidate still
-requires complete checklist reproduction and exact reviewed-tree approval;
-the annotated tag, real archive/hash, release-host policy confirmation, and
-publication each retain separate authority. CF009-CF051 create no tag or
-release.
+`0.1.0-rc.1` workspace identity are implemented, and the future immutable
+publication and support contract is documented. A taggable candidate still
+requires complete checklist reproduction and exact reviewed-tree approval.
+Repository-setting, annotated-tag, archive, draft, upload, and publication
+actions each retain separate authority. CF009-CF052 create no tag or release.
 
 See [ADR 0010](../adr/0010-source-first-release-profile.md),
 [ADR 0050](../adr/0050-deterministic-source-candidate-archive.md),
-[ADR 0051](../adr/0051-version-source-candidate-without-publication.md), the
+[ADR 0051](../adr/0051-version-source-candidate-without-publication.md),
+[ADR 0052](../adr/0052-immutable-source-release-and-support-contract.md), the
+[release integrity and support policy](support.md), the
 [validation baseline](../operations/validation-baseline.md), the
 [failure guide](../operations/failure-and-recovery.md), the
 [recovery-file guide](../persistence/recovery-files.md), the
