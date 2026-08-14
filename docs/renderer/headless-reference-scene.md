@@ -22,6 +22,8 @@ sample, the configured target and readback limits, and render/copy usages for
 linear `Rgba8Unorm` color, `R32Uint` identity, `Rgba8Unorm` normal, and
 `Depth32Float` depth. It must also support copy-destination, sampled binding,
 and filterable sampling for `Rgba8UnormSrgb` asset textures.
+Linear `Rgba8Unorm` asset normal textures require the same sampled,
+copy-destination, and filterable usages.
 
 No optional or experimental GPU feature is enabled. The adapter summary records
 the adapter name, backend, device class, and WebGPU-compliance flag for
@@ -34,8 +36,8 @@ RGBA color `[51, 153, 230, 255]`, and a fixed orthographic camera with a small
 view shear. The background entity ID is `0`, cleared depth is `1.0`, and
 normal alpha `0` marks background. The centered cube contains 12
 non-degenerate outward counter-clockwise triangles, 36 expanded vertices, and
-exact axis-aligned source normals plus zero primary coordinates in one fixed
-1,152-byte payload. The reference
+exact axis-aligned source normals, zero primary coordinates, and disabled
+fallback tangents in one fixed 1,728-byte payload. The reference
 projection selects its near negative-Z face at the center, so that probe must
 report an outward negative-Z normal.
 
@@ -43,7 +45,7 @@ Extracted built-in geometry supports cuboids, planes, and spheres. A plane is a
 centered unit square at local Z = 0, expanded as two counter-clockwise XY
 triangles with a positive-Z unit normal. Its positive XYZ dimensions scale the
 full model: X and Y control visible size and Z participates in normal
-transformation without creating thickness. One fixed 192-byte plane vertex
+transformation without creating thickness. One fixed 288-byte plane vertex
 payload is allocated at renderer initialization; frames do not tessellate or
 upload it. The baseline pipeline does not cull the back side and does not flip
 its source normal.
@@ -51,27 +53,30 @@ its source normal.
 A sphere is centered, unit diameter, and uses a positive-Z polar axis. Its
 fixed 16 longitude sectors and 8 latitude bands form 224 non-degenerate
 outward counter-clockwise triangles, expanded to 672 vertices with unit radial
-normals and zero primary coordinates in the same 32-byte layout. The exact
-21,504-byte payload is generated
+normals, zero primary coordinates, and disabled fallback tangents in the same
+48-byte layout. The exact 32,256-byte payload is generated
 once at renderer initialization. XYZ dimensions are bounding diameters, so
 non-uniform values produce an ellipsoid and the existing inverse-transpose
 normal path preserves the smooth direction. Sphere topology supplies exact
 zero primary coordinates, and frames perform no built-in tessellation or
 upload.
 
-Imported vertices use the same 32-byte position, normal, and primary-coordinate
-layout. An optional non-normalized finite f32 `TEXCOORD_0` reaches shader
-location 2; missing asset coordinates, built-ins, and proxy vertices use exact
-zero. A mesh may sample the single approved embedded PNG base-color texture;
-the renderer decodes sRGB RGB automatically, multiplies sampled RGBA by the
-numeric base-color factor, and preserves the glTF top-to-bottom row order. One
-renderer-owned repeat/linear one-mip sampler applies the omitted-sampler policy.
-Untextured draws use a renderer-owned white fallback. External images, custom
-samplers, transforms, additional coordinate sets, mipmaps, and other texture
-roles remain unsupported.
+Imported vertices use one 48-byte position, normal, primary-coordinate, and
+source-tangent layout. Its prior 32-byte prefix remains unchanged. Optional
+non-normalized finite f32 `TEXCOORD_0` reaches shader location 2 and optional
+finite normalized `TANGENT` plus exact handedness reaches location 3; missing
+asset values, built-ins, and proxy vertices use exact zero coordinates and a
+disabled `[1, 0, 0, 1]` tangent. A mesh may sample one approved embedded PNG
+for each base-color and normal role. The renderer decodes base RGB as sRGB,
+normal RGB as linear data, ignores normal alpha, and preserves glTF top-to-
+bottom rows. One renderer-owned repeat/linear one-mip sampler applies the
+omitted-sampler policy. White and neutral-normal fallbacks bind on every draw.
+External images, generated tangents, custom samplers, transforms, additional
+coordinate sets, mipmaps, and other material texture roles remain unsupported.
 
 `HeadlessRenderer::evict_asset` removes every pending upload and resident mesh
-for one content hash, plus its unique pending or resident texture at most once.
+for one content hash, plus each unique pending or resident role texture at most
+once.
 The returned outcome reports exact removed counts and released bytes; unrelated
 uploads retain FIFO order and repeated absent eviction is a no-op. Submitted
 frames remain readable because a backend may defer physical resource
@@ -100,6 +105,11 @@ resident GLB mesh supplies its imported base color, metallic, and roughness
 when the entity has no scene material. An explicit `MaterialComponent`
 overrides all three together. Built-in and material-free asset fallbacks retain
 the existing color with neutral dielectric `metallic = 0`, `roughness = 0.8`.
+An imported normal texture constructs a source-tangent basis after the model
+transform, applies finite normal scale to sampled XY, and perturbs only this
+direct-light response. Unlit output and the normal observation retain the
+geometric transformed direction. A scene material override disables both
+imported texture roles.
 
 The selected camera's extracted world translation supplies the view direction.
 A zero or derived-overflow view vector suppresses specular without creating a
@@ -111,10 +121,11 @@ The existing bind group carries one fixed 480-byte per-draw uniform. The prior
 448-byte prefix remains model, view-projection, color, compact ID, directional
 count and four directional slots, then point count and four point slots. Two
 appended zero-padded `vec4` slots contain camera position and
-metallic/roughness. Bindings 1 and 2 select the sampled base-color view and
-fixed sampler. This adds no light buffer, alternate pipeline, runtime
+metallic/roughness plus normal scale/enabled state. Bindings 1 and 3 select the
+sampled base-color and normal views; binding 2 is the fixed sampler. This adds
+no light buffer, alternate pipeline, runtime
 configuration, or observation payload. Point range/cutoff/radius, spot lights,
-ambient/emissive or image-based lighting, shadows, additional texture roles,
+ambient/emissive or image-based lighting, shadows, additional material texture roles,
 HDR, tone mapping, and configurable gamma conversion are unsupported.
 
 - entity IDs must match exactly;

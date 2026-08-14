@@ -30,11 +30,15 @@ var base_color_texture: texture_2d<f32>;
 @group(0) @binding(2)
 var base_color_sampler: sampler;
 
+@group(0) @binding(3)
+var normal_texture: texture_2d<f32>;
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) world_normal: vec3<f32>,
     @location(1) world_position: vec3<f32>,
     @location(2) texcoord_0: vec2<f32>,
+    @location(3) world_tangent: vec4<f32>,
 };
 
 struct FragmentOutput {
@@ -113,6 +117,7 @@ fn vs_main(
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) texcoord_0: vec2<f32>,
+    @location(3) tangent: vec4<f32>,
 ) -> VertexOutput {
     var output: VertexOutput;
     let world_position = draw.model * vec4(position, 1.0);
@@ -139,13 +144,65 @@ fn vs_main(
     output.world_normal = normal_matrix * normal;
     output.world_position = world_position.xyz;
     output.texcoord_0 = texcoord_0;
+    let tangent_model_scale = max(scale_x, max(scale_y, scale_z));
+    let tangent_matrix = mat3x3<f32>(
+        model_linear[0] / tangent_model_scale,
+        model_linear[1] / tangent_model_scale,
+        model_linear[2] / tangent_model_scale,
+    );
+    let determinant_sign = select(
+        -1.0,
+        1.0,
+        dot(tangent_matrix[0], cross(tangent_matrix[1], tangent_matrix[2])) >= 0.0,
+    );
+    output.world_tangent = vec4(
+        tangent_matrix * tangent.xyz,
+        tangent.w * determinant_sign,
+    );
     return output;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> FragmentOutput {
     var output: FragmentOutput;
-    let world_normal = normalize(input.world_normal);
+    let geometric_world_normal = normalize(input.world_normal);
+    var shaded_world_normal = geometric_world_normal;
+    if draw.material.w > 0.5 {
+        let tangent_rejected = input.world_tangent.xyz
+            - geometric_world_normal * dot(geometric_world_normal, input.world_tangent.xyz);
+        let tangent_length_squared = dot(tangent_rejected, tangent_rejected);
+        if tangent_length_squared > 1e-12 {
+            let world_tangent = tangent_rejected * inverseSqrt(tangent_length_squared);
+            let handedness = select(-1.0, 1.0, input.world_tangent.w >= 0.0);
+            let world_bitangent = cross(geometric_world_normal, world_tangent) * handedness;
+            let sampled = textureSample(normal_texture, base_color_sampler, input.texcoord_0).rgb;
+            let tangent_normal = vec3(
+                (sampled.r * 2.0 - 1.0) * draw.material.z,
+                (sampled.g * 2.0 - 1.0) * draw.material.z,
+                sampled.b * 2.0 - 1.0,
+            );
+            let tangent_normal_scale = max(
+                abs(tangent_normal.x),
+                max(abs(tangent_normal.y), abs(tangent_normal.z)),
+            );
+            if tangent_normal_scale > 0.0 {
+                let scaled_tangent_normal = tangent_normal / tangent_normal_scale;
+                let tangent_normal_length_squared = dot(
+                    scaled_tangent_normal,
+                    scaled_tangent_normal,
+                );
+                let unit_tangent_normal = scaled_tangent_normal
+                    * inverseSqrt(tangent_normal_length_squared);
+                let candidate = world_tangent * unit_tangent_normal.x
+                    + world_bitangent * unit_tangent_normal.y
+                    + geometric_world_normal * unit_tangent_normal.z;
+                let candidate_length_squared = dot(candidate, candidate);
+                if candidate_length_squared > 1e-12 {
+                    shaded_world_normal = candidate * inverseSqrt(candidate_length_squared);
+                }
+            }
+        }
+    }
     let base_color = textureSample(base_color_texture, base_color_sampler, input.texcoord_0)
         * draw.color;
     var shaded_color = base_color.rgb;
@@ -165,7 +222,7 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
         for (var index = 0u; index < draw.directional_light_count.x; index = index + 1u) {
             let light = draw.directional_lights[index];
             let response = direct_material_response(
-                world_normal,
+                shaded_world_normal,
                 light.surface_to_light.xyz,
                 surface_to_view,
                 has_view,
@@ -193,7 +250,7 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
                         1.0,
                     );
                     let response = direct_material_response(
-                        world_normal,
+                        shaded_world_normal,
                         surface_to_light,
                         surface_to_view,
                         has_view,
@@ -210,6 +267,6 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
     }
     output.color = vec4(shaded_color, base_color.a);
     output.entity_id = draw.entity_id.x;
-    output.normal = vec4(world_normal * 0.5 + vec3(0.5), 1.0);
+    output.normal = vec4(geometric_world_normal * 0.5 + vec3(0.5), 1.0);
     return output;
 }

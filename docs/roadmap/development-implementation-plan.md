@@ -1280,6 +1280,32 @@ models, transports, clients, auth, persistence, dependencies, deployment, or a
 release action. See
 [ADR 0054](../adr/0054-bounded-dual-era-mcp-stdio-lifecycle.md).
 
+### PR 55 - CF055: Bounded source-tangent glTF normal textures
+
+Outcome: the approved GLB path can use one bounded source-tangent normal map
+for direct lighting without changing geometric-normal observations or making
+asset processing implicit.
+
+Gate: accept finite non-zero same-count f32 `TANGENT` `VEC4` accessors with
+exact `-1`/`1` handedness and complete-source validation. Accept one shared
+`normalTexture` index using `TEXCOORD_0`, finite scale, embedded static PNG
+pixels, and explicit source `NORMAL` plus `TANGENT`; retain at most two texture
+and image records across base-color and normal roles. Count a source image
+shared by both roles once on CPU, but atomically reserve and upload separate
+sRGB base-color and linear normal GPU resources.
+
+Expand the interleaved vertex ABI to an exact 48-byte
+position/normal/primary-coordinate/tangent layout while preserving the prior
+32-byte prefix. Build a transform-safe tangent basis, apply the perturbed
+normal only to direct-light response, preserve unlit/depth/identity/geometric-
+normal output, and disable both imported texture roles under a scene material
+override. Prove malformed tangents/roles, exact shared/distinct accounting,
+atomic reservation, eviction/rehydration semantics, and controlled GPU color
+change with unchanged geometric outputs. Do not generate tangents, add other
+UV sets/samplers/image formats/material textures, alter transport or recovery,
+or take release action. See
+[ADR 0055](../adr/0055-bounded-source-tangent-normal-textures.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1290,7 +1316,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
-  -> CF054
+  -> CF054 -> CF055
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1534,6 +1560,13 @@ Validation expands with capability:
   before semantic dispatch; extension-declaration neutrality; unchanged
   four-tool/resource/cancellation/bounds authority; and official-client,
   raw-wire, ordinary CLI, plus controlled legacy/modern production evidence.
+- CF055: strict complete-source tangent shape/count/value/handedness and
+  normal-texture role validation; exact 48-byte prefix-compatible vertex ABI;
+  shared/distinct image CPU accounting; atomic content-hash-and-role GPU
+  reservation, upload, eviction, and rehydration semantics; linear normal
+  sampling with finite scale and transform-safe TBN; unchanged unlit, depth,
+  identity, background, and geometric-normal observations; and controlled
+  direct-light perturbation evidence.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

@@ -26,9 +26,9 @@ pub struct AssetLimits {
     pub max_accessors: NonZeroU32,
     /// Maximum material records parsed from one GLB.
     pub max_materials: NonZeroU32,
-    /// Maximum width or height accepted for one embedded base-color texture.
+    /// Maximum width or height accepted for one embedded texture image.
     pub max_texture_dimension_2d: NonZeroU32,
-    /// Maximum pixel count accepted for one embedded base-color texture.
+    /// Maximum pixel count accepted for one embedded texture image.
     pub max_texture_pixels: NonZeroU64,
     /// Maximum decoded RGBA8 bytes retained for one embedded texture.
     pub max_texture_decoded_bytes: NonZeroU64,
@@ -133,6 +133,8 @@ pub enum AssetDiagnosticCode {
     NonFiniteVertex,
     /// A decoded normal is non-finite, zero-length, or inconsistent with its positions.
     InvalidNormal,
+    /// A decoded source tangent is non-finite, zero-length, has invalid handedness, or is inconsistent.
+    InvalidTangent,
     /// A decoded primary texture coordinate is non-finite or inconsistent with its positions.
     InvalidTexcoord,
     /// Embedded image bytes are malformed, truncated, or inconsistent with their PNG header.
@@ -183,15 +185,17 @@ impl AssetDiagnostic {
 }
 
 /// Exact decoded and GPU bytes in one interleaved asset vertex.
-pub const ASSET_VERTEX_BYTES: u64 = 32;
+pub const ASSET_VERTEX_BYTES: u64 = 48;
 
-/// One finite decoded position, unit normal, and primary texture coordinate.
+/// One finite decoded position, unit normal, source tangent, and primary texture coordinate.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssetVertex {
     /// XYZ position in mesh-local units.
     pub position: [FiniteF32; 3],
     /// Normalized XYZ normal in mesh-local units.
     pub normal: [FiniteF32; 3],
+    /// Normalized source tangent XYZ and exact handedness in `w`.
+    pub tangent: [FiniteF32; 4],
     /// Primary glTF texture coordinates retained without unit clamping.
     pub texcoord_0: [FiniteF32; 2],
 }
@@ -212,6 +216,8 @@ pub struct AssetMaterial {
     metallic: UnitF32,
     roughness: UnitF32,
     has_base_color_texture: bool,
+    has_normal_texture: bool,
+    normal_scale: f32,
 }
 
 impl AssetMaterial {
@@ -223,11 +229,19 @@ impl AssetMaterial {
             metallic,
             roughness,
             has_base_color_texture: false,
+            has_normal_texture: false,
+            normal_scale: 1.0,
         }
     }
 
     pub(crate) const fn with_base_color_texture(mut self) -> Self {
         self.has_base_color_texture = true;
+        self
+    }
+
+    pub(crate) fn with_normal_texture(mut self, scale: FiniteF32) -> Self {
+        self.has_normal_texture = true;
+        self.normal_scale = scale.get();
         self
     }
 
@@ -254,9 +268,21 @@ impl AssetMaterial {
     pub const fn has_base_color_texture(self) -> bool {
         self.has_base_color_texture
     }
+
+    /// Returns whether this material samples the asset's shared tangent-space normal texture.
+    #[must_use]
+    pub const fn has_normal_texture(self) -> bool {
+        self.has_normal_texture
+    }
+
+    /// Returns the finite glTF normal-texture XY scale.
+    #[must_use]
+    pub const fn normal_scale(self) -> f32 {
+        self.normal_scale
+    }
 }
 
-/// One immutable decoded sRGB base-color image in tightly packed RGBA8 rows.
+/// One immutable decoded image in tightly packed RGBA8 rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssetTexture {
     width: NonZeroU32,
@@ -304,7 +330,8 @@ pub struct AssetUploadJob {
     key: AssetMeshKey,
     vertices: Arc<[AssetVertex]>,
     material: AssetMaterial,
-    texture: Option<AssetTexture>,
+    base_color_texture: Option<AssetTexture>,
+    normal_texture: Option<AssetTexture>,
 }
 
 impl AssetUploadJob {
@@ -312,13 +339,15 @@ impl AssetUploadJob {
         key: AssetMeshKey,
         vertices: Arc<[AssetVertex]>,
         material: AssetMaterial,
-        texture: Option<AssetTexture>,
+        base_color_texture: Option<AssetTexture>,
+        normal_texture: Option<AssetTexture>,
     ) -> Self {
         Self {
             key,
             vertices,
             material,
-            texture,
+            base_color_texture,
+            normal_texture,
         }
     }
 
@@ -349,7 +378,13 @@ impl AssetUploadJob {
     /// Returns the immutable shared texture when this mesh's material references it.
     #[must_use]
     pub const fn base_color_texture(&self) -> Option<&AssetTexture> {
-        self.texture.as_ref()
+        self.base_color_texture.as_ref()
+    }
+
+    /// Returns the immutable shared normal texture when this mesh's material references it.
+    #[must_use]
+    pub const fn normal_texture(&self) -> Option<&AssetTexture> {
+        self.normal_texture.as_ref()
     }
 
     /// Returns exact GPU vertex bytes required by this interleaved mesh.
@@ -370,8 +405,15 @@ pub(crate) struct DecodedMesh {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DecodedAsset {
     pub(crate) meshes: Vec<DecodedMesh>,
-    pub(crate) texture: Option<AssetTexture>,
+    pub(crate) base_color_texture: Option<AssetTexture>,
+    pub(crate) normal_texture: Option<AssetTexture>,
     pub(crate) byte_len: u64,
+}
+
+impl DecodedAsset {
+    pub(crate) fn texture_count(&self) -> u32 {
+        u32::from(self.base_color_texture.is_some()) + u32::from(self.normal_texture.is_some())
+    }
 }
 
 /// Immediate result of verified source admission.
@@ -449,7 +491,7 @@ pub struct AssetStoreEviction {
     pub released_resident_cpu_bytes: u64,
     /// Decoded mesh records released.
     pub removed_meshes: u32,
-    /// Shared decoded textures released; currently zero or one.
+    /// Role-separated decoded textures released; currently zero to two.
     pub removed_textures: u32,
 }
 

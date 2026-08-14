@@ -242,7 +242,11 @@ impl AssetStore {
             mesh.material,
             mesh.material
                 .has_base_color_texture()
-                .then(|| decoded.texture.clone())
+                .then(|| decoded.base_color_texture.clone())
+                .flatten(),
+            mesh.material
+                .has_normal_texture()
+                .then(|| decoded.normal_texture.clone())
                 .flatten(),
         ))
     }
@@ -300,12 +304,10 @@ impl AssetStore {
             .checked_sub(stored.record.decoded_bytes)
             .expect("decoded CPU bytes remain exactly accounted");
 
-        let removed_textures = u32::from(
-            stored
-                .decoded
-                .as_ref()
-                .is_some_and(|decoded| decoded.texture.is_some()),
-        );
+        let removed_textures = stored
+            .decoded
+            .as_ref()
+            .map_or(0, crate::types::DecodedAsset::texture_count);
         crate::AssetStoreEviction {
             content_hash,
             previous_state: Some(stored.record.state),

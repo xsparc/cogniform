@@ -370,6 +370,73 @@ fn embedded_base_color_texture_preserves_orientation_factor_override_and_residen
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn normal_texture_changes_direct_lighting_not_geometric_normal_observation() {
+    let neutral = lit_normal_textured_frame(normal_texture_fixture([128, 128, 255, 0], 1.0), false);
+    let tilted =
+        lit_normal_textured_frame(normal_texture_fixture([255, 128, 128, 255], 1.0), false);
+    let tilted_zero_alpha =
+        lit_normal_textured_frame(normal_texture_fixture([255, 128, 128, 0], 1.0), false);
+    let scaled_out =
+        lit_normal_textured_frame(normal_texture_fixture([255, 128, 128, 7], 0.0), false);
+    let maximum_scale =
+        lit_normal_textured_frame(normal_texture_fixture([255, 128, 128, 11], f32::MAX), false);
+    let overridden =
+        lit_normal_textured_frame(normal_texture_fixture([255, 128, 128, 31], 1.0), true);
+    let center = (WIDTH / 2, HEIGHT / 2);
+
+    assert_ne!(
+        neutral.color_at(center.0, center.1),
+        tilted.color_at(center.0, center.1),
+        "a source-tangent normal map must perturb direct-light response"
+    );
+    assert_eq!(
+        neutral.color_at(center.0, center.1),
+        scaled_out.color_at(center.0, center.1),
+        "zero normal scale must suppress encoded XY perturbation"
+    );
+    assert_eq!(
+        neutral.depth_at(center.0, center.1),
+        tilted.depth_at(center.0, center.1)
+    );
+    assert_eq!(
+        tilted.color_at(center.0, center.1),
+        tilted_zero_alpha.color_at(center.0, center.1),
+        "normal-texture alpha must be ignored"
+    );
+    assert_eq!(
+        neutral.normal_at(center.0, center.1),
+        tilted.normal_at(center.0, center.1),
+        "normal observation remains the geometric transformed normal"
+    );
+    assert_eq!(
+        neutral.normal_at(center.0, center.1),
+        scaled_out.normal_at(center.0, center.1)
+    );
+    assert!(maximum_scale.color_at(center.0, center.1).is_some());
+    assert_eq!(
+        maximum_scale.stable_entity_id_at(center.0, center.1),
+        Some(StableEntityId::new(2).unwrap()),
+        "finite maximum scale must preserve a renderable normalized basis"
+    );
+    assert_eq!(
+        neutral.normal_at(center.0, center.1),
+        maximum_scale.normal_at(center.0, center.1)
+    );
+    assert_eq!(
+        overridden.color_at(center.0, center.1),
+        scaled_out.color_at(center.0, center.1),
+        "a scene material override must disable the imported normal role"
+    );
+    assert_eq!(
+        overridden.normal_at(center.0, center.1),
+        neutral.normal_at(center.0, center.1)
+    );
+    assert_eq!(neutral.stable_entity_id_at(0, 0), None);
+    assert_eq!(tilted.normal_at(0, 0), None);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work() {
     let bytes = textured_two_mesh_fixture();
     let content_hash = content_hash(&bytes);
@@ -414,9 +481,9 @@ fn content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work() 
 
     let eviction = renderer.evict_asset(content_hash);
     assert_eq!(eviction.removed_pending_uploads, 1);
-    assert_eq!(eviction.released_pending_bytes, 96);
+    assert_eq!(eviction.released_pending_bytes, 144);
     assert_eq!(eviction.removed_resident_meshes, 1);
-    assert_eq!(eviction.released_resident_bytes, 96);
+    assert_eq!(eviction.released_resident_bytes, 144);
     assert_eq!(eviction.removed_pending_textures, 0);
     assert_eq!(eviction.released_pending_texture_bytes, 0);
     assert_eq!(eviction.removed_resident_textures, 1);
@@ -580,6 +647,77 @@ fn imported_frame(bytes: Vec<u8>) -> RenderedFrame {
     renderer
         .apply_extraction(&world.take_render_extraction().unwrap())
         .unwrap();
+    renderer.submit_scene(camera).unwrap().read().unwrap()
+}
+
+fn lit_normal_textured_frame(bytes: Vec<u8>, override_material: bool) -> RenderedFrame {
+    let content_hash = content_hash(&bytes);
+    let key = AssetMeshKey {
+        content_hash,
+        mesh_index: 0,
+    };
+    let mut assets = AssetStore::default();
+    assets.enqueue(content_hash, bytes).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    let upload = assets.upload_job(key).unwrap();
+    assert!(upload.material().has_base_color_texture());
+    assert_eq!(upload.base_color_texture().unwrap().byte_len(), 4);
+    assert!(upload.material().has_normal_texture());
+    assert_eq!(upload.normal_texture().unwrap().byte_len(), 4);
+    let rehydration_upload = upload.clone();
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer.enqueue_asset_upload(upload).unwrap();
+    assert_eq!(renderer.asset_stats().pending_textures, 2);
+    let uploaded = renderer.process_next_asset_upload().unwrap();
+    assert!(uploaded.texture_uploaded);
+    assert_eq!(uploaded.texture_byte_len, 8);
+    assert_eq!(renderer.asset_stats().resident_textures, 2);
+    let eviction = renderer.evict_asset(content_hash);
+    assert_eq!(eviction.removed_resident_meshes, 1);
+    assert_eq!(eviction.removed_resident_textures, 2);
+    assert_eq!(eviction.released_resident_texture_bytes, 8);
+    renderer.enqueue_asset_upload(rehydration_upload).unwrap();
+    let rehydrated = renderer.process_next_asset_upload().unwrap();
+    assert!(rehydrated.texture_uploaded);
+    assert_eq!(rehydrated.texture_byte_len, 8);
+    assert_eq!(renderer.asset_stats().resident_textures, 2);
+
+    let camera = StableEntityId::new(1).unwrap();
+    let triangle = StableEntityId::new(2).unwrap();
+    let light = StableEntityId::new(3).unwrap();
+    let mut world = AuthoritativeWorld::default();
+    world
+        .apply_patch(
+            &scene_patch(camera, triangle, content_hash, [2.0, 1.0, 1.0]),
+            FrameId::new(1).unwrap(),
+        )
+        .unwrap();
+    renderer
+        .apply_extraction(&world.take_render_extraction().unwrap())
+        .unwrap();
+    world
+        .apply_patch(
+            &add_directional_light_patch(SceneRevision::new(1), light),
+            FrameId::new(2).unwrap(),
+        )
+        .unwrap();
+    renderer
+        .apply_extraction(&world.take_render_extraction().unwrap())
+        .unwrap();
+    if override_material {
+        world
+            .apply_patch(
+                &override_material_patch(SceneRevision::new(2), triangle),
+                FrameId::new(3).unwrap(),
+            )
+            .unwrap();
+        renderer
+            .apply_extraction(&world.take_render_extraction().unwrap())
+            .unwrap();
+    }
     renderer.submit_scene(camera).unwrap().read().unwrap()
 }
 
@@ -866,6 +1004,48 @@ fn textured_two_mesh_fixture() -> Vec<u8> {
         r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}},{{"buffer":0,"byteOffset":60,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC2"}},{{"bufferView":2,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.5,0.25,1.0,0.5],"metallicFactor":0.0,"roughnessFactor":0.8,"baseColorTexture":{{"index":0}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":3,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}},{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":2}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         image_length = png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
+    let positions = [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ];
+    let mut binary = Vec::new();
+    for position in positions {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.5_f32, 0.5]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let base_png = encode_png(1, 1, &[255, 255, 255, 255]);
+    let normal_png = encode_png(1, 1, &texel);
+    let base_image_offset = binary.len();
+    binary.extend_from_slice(&base_png);
+    let normal_image_offset = binary.len();
+    binary.extend_from_slice(&normal_png);
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_image_offset},"byteLength":{base_image_length}}},{{"buffer":0,"byteOffset":{normal_image_offset},"byteLength":{normal_image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5,"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"scale":{scale}}}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        base_image_length = base_png.len(),
+        normal_image_length = normal_png.len(),
     );
     glb_with_json(&json, &binary)
 }

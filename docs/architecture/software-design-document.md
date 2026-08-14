@@ -405,19 +405,20 @@ resynchronization.
 Use `wgpu` with built-in WGSL and negotiated adapter features/limits. The baseline is a small forward renderer with primitive meshes, camera, depth, color, entity-ID, and quantized world-space normal output. Position-only triangles remain flat; approved imported vertex normals are inverse-transformed and interpolated. Headless mode renders to textures without constructing a visible window. Optional `winit` integration is isolated from the headless core.
 
 Built-in cuboids, centered unit XY planes, and centered unit-diameter spheres
-use immutable expanded position-plus-normal-plus-primary-coordinate buffers.
+use immutable expanded position-plus-normal-plus-primary-coordinate-plus-
+fallback-tangent buffers.
 A cuboid is a centered unit box with 12 outward counter-clockwise triangles,
 36 expanded vertices, exact axis-aligned exterior normals, and zero
-coordinates in one fixed 1,152-byte payload. Plane triangles wind
+coordinates in one fixed 1,728-byte payload. Plane triangles wind
 counter-clockwise toward positive Z, remain at local Z = 0, and apply all
 positive XYZ dimensions through the model transform; X/Y set visible extents
 while Z participates in normal transformation without creating thickness.
 The sphere has a positive-Z polar axis, fixed 16-sector by 8-band topology,
 outward counter-clockwise triangles, and unit radial normals. Its XYZ
 dimensions are bounding diameters. The fixed 672-vertex sphere payload is
-21,504 bytes and is generated once at renderer initialization; no frame
-performs tessellation. The plane payload is 192 bytes. All built-ins use exact
-zero primary coordinates.
+32,256 bytes and is generated once at renderer initialization; no frame
+performs tessellation. The plane payload is 288 bytes. All built-ins use exact
+zero primary coordinates and a disabled `[1, 0, 0, 1]` tangent.
 A missing asset uses its exact explicit built-in fallback, and a resident
 asset retains precedence.
 
@@ -437,19 +438,22 @@ are clamped in linear color space, and alpha remains unchanged.
 Zero-intensity definitions count toward their kind's capacity but are inactive.
 Only a scene with no active definition of either kind bypasses lighting and
 preserves exact base RGBA. A resident GLB mesh supplies its imported base
-color, optional base-color texture, metallic, and roughness when the entity has
-no explicit material. The shader samples the single `Rgba8UnormSrgb` image
-through a fixed repeat/linear one-mip sampler and multiplies sampled linear
-RGBA by the numeric base-color factor before either shading path. Untextured
-draws use a neutral white fallback. A scene `MaterialComponent` overrides the
-whole imported material and disables its texture. A built-in or material-free
+color, optional base-color and tangent-space normal textures, metallic,
+roughness, and normal scale when the entity has no explicit material. The
+shader samples base color as `Rgba8UnormSrgb`, samples the normal role as linear
+`Rgba8Unorm`, and uses one fixed repeat/linear one-mip sampler. Sampled linear
+RGBA multiplies the numeric base-color factor before either shading path; a
+source-tangent TBN perturbs only direct-light response. Untextured draws use
+white and neutral-normal fallbacks. A scene `MaterialComponent` overrides the
+whole imported material and disables both imported texture roles. A built-in or material-free
 asset without a scene material uses its existing fallback color with neutral
 dielectric parameters `metallic = 0`, `roughness = 0.8`. Ambient, emissive,
 image-based lighting, shadows, spot lights, configurable point range/radius,
-other texture roles, HDR, and tone mapping are outside this baseline. A
+other material texture roles, generated tangents, HDR, and tone mapping are outside this baseline. A
 fixed 480-byte per-draw uniform preserves the prior 448-byte model, view-projection,
 material-color, identity, directional, and point-light prefix and appends
-zero-padded camera-position and metallic/roughness slots. A fifth definition
+zero-padded camera-position and metallic/roughness/normal-scale/normal-enabled
+slots. A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU
 submission.
@@ -468,19 +472,21 @@ GPU layouts are explicit and asserted. `bytemuck::Pod` is used only for types wi
 Runtime assets are immutable and addressed by cryptographic content hash. The
 MVP accepts primitives first, then a bounded glTF/GLB subset with finite
 positions, optional same-count finite vertex normals, optional same-count
-finite f32 `TEXCOORD_0`, one bounded numeric metallic-roughness material per
-mesh, and at most one shared embedded PNG base-color texture. The image subset
+finite f32 `TEXCOORD_0`, optional same-count finite non-zero f32 `TANGENT`
+`VEC4` with exact handedness, one bounded numeric metallic-roughness material
+per mesh, and one shared embedded PNG per base-color or normal role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
 retained-byte, decoder-working-byte, per-asset, and aggregate CPU limits into
-one immutable RGBA8 value. Decoders verify declared and decoded sizes before
-allocation; expanded upload vertices always reserve exactly 32 bytes for
-position, unit normal, and primary coordinate, synthesizing a winding-derived
-direction or exact zero coordinate when the source omits one. The local service
+at most two immutable RGBA8 values; a source shared by both roles counts once
+on CPU. Decoders verify declared and decoded sizes before allocation; expanded
+upload vertices always reserve exactly 48 bytes for position, unit normal,
+primary coordinate, and unit tangent plus handedness. Missing non-normal-map
+tangents use a fixed disabled fallback. The local service
 owns bounded CPU asset state and explicitly forwards immutable upload jobs into
-renderer-owned mesh and unique texture residency; neither patches nor frames
+renderer-owned mesh and unique content-hash-and-role texture residency; neither patches nor frames
 perform implicit asset work. A caller may explicitly evict every CPU record,
 queued source, decoded mesh/texture, pending upload, resident mesh, and shared
-GPU texture for one content hash while leaving logical world references,
+GPU role texture for one content hash while leaving logical world references,
 revision, replay, hash, and frame identity unchanged. Unrelated queues retain
 their order; GPU destruction may complete after already-submitted work.
 Recovery preserves logical content references but starts CPU and GPU asset
@@ -489,7 +495,7 @@ rendering resumes. An opt-in storage adapter can retain
 one exact source in a separate immutable bounded file, but it neither maps that
 file to recovery state nor decodes, imports, uploads, or schedules the source.
 Unsupported extensions and valid out-of-subset image features produce
-structured diagnostics or approved proxies; malformed normal,
+structured diagnostics or approved proxies; malformed normal, tangent,
 primary-coordinate, material, image, or over-limit data cannot proxy.
 Aggregate asset status includes optional monotonic oldest-import and
 oldest-upload ages without exposing source bytes, mesh keys, texture content,
@@ -653,8 +659,8 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Release integrity and support | The future prerelease contract requires release immutability, draft-first exact two-asset assembly, six separately authorized live gates, release and per-asset attestation checks, independent SHA-256 verification, and a latest-candidate-only support lifetime without claiming that a release exists |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
-| Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, and unsupported features fail with structured diagnostics |
-| Asset resolution | The local service explicitly imports and uploads bounded content-addressed meshes and shared textures; recovered logical references remain unavailable until exact-hash rehydration without another world mutation |
+| Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, malformed source tangent or texture role, and unsupported features fail with structured diagnostics |
+| Asset resolution | The local service explicitly imports and uploads bounded content-addressed meshes and role-separated textures; recovered logical references remain unavailable until exact-hash rehydration without another world mutation |
 | Asset eviction | One explicit content-hash operation releases exact queued/CPU/upload/GPU mesh and shared-texture capacity while preserving unrelated order, logical references, revision, replay, hash, frame frontier, and later exact-hash rehydration |
 | Procedure composition | The local service produces deterministic stable IDs, queues an ordinary generated patch without immediate mutation, and preserves query/replay/hash/idempotency behavior across restoration |
 | End to end | Canonical room/table/light/camera scenario passes unattended and its human and schema-v1 JSON modes prove the same causal result |
@@ -675,7 +681,7 @@ latest-candidate support lifetime in
 Repository-setting mutation, annotated tagging, real archive generation,
 draft creation, upload, and publication remain separately approved. Wider
 GPU/driver support, prebuilt
-artifacts, additional texture roles/tangent-space normals and the remaining visual-quality surface, remote
+artifacts, generated tangents and additional material texture roles or the remaining visual-quality surface, remote
 protocol/authentication, configurable or multi-client endpoint lifecycle, tenancy, durable or multi-value observation retention, automatic startup,
 recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic

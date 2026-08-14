@@ -34,12 +34,16 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   interleaved GPU upload, and inverse-transpose rendering under non-uniform
   scale;
 - optional finite same-count f32 `TEXCOORD_0`, including exact out-of-unit and
-  indexed retention, exact 32-byte position/normal/primary-coordinate
-  accounting, zero defaults, and shader input location 2;
-- one bounded shared embedded PNG GLB base-color texture, with strict static
+  indexed retention, a preserved 32-byte position/normal/primary-coordinate
+  vertex prefix, zero defaults, and shader input location 2;
+- bounded shared embedded PNG GLB base-color and normal texture roles, with strict static
   8-bit RGB/RGBA decode, independent CPU/GPU accounting, explicit unique
-  upload, fixed repeat/linear sRGB sampling, white fallback, factor/override
-  semantics, and controlled orientation plus rehydration evidence;
+  role upload, fixed repeat/linear sRGB/linear sampling, white/neutral fallbacks,
+  factor/override semantics, and controlled orientation plus rehydration evidence;
+- optional finite non-zero same-count f32 `TANGENT` `VEC4`, exact handedness,
+  finite normal scale, exact 48-byte expanded vertex accounting, atomic dual-
+  role GPU reservation, transform-safe TBN direct-light shading, and unchanged
+  geometric-normal observations;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
@@ -181,6 +185,16 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF055 expands `AssetVertex` and `ASSET_VERTEX_BYTES` from the prior 32-byte
+  position/normal/primary-coordinate layout to a prefix-compatible 48-byte
+  layout with required tangent storage. It adds normal-texture material/upload
+  accessors, `AssetDiagnosticCode::InvalidTangent`, and
+  `RenderTargetKind::AssetNormal`; texture outcome/statistics now count unique
+  content-hash-and-role GPU resources. The vertex field and exhaustive renderer
+  enum variant are source-breaking in the still-unpublished `0.1.0-rc.1`
+  candidate workspace. No package version, dependency, tag, asset, or release
+  action changed;
 
 - the bounded MCP stdio adapter now serves exact MCP `2026-07-28`
   `server/discover` and self-contained requests beside its byte-compatible MCP
@@ -333,7 +347,7 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   `0.0.0` workspace; no version or release action was taken;
 - the fixed built-in cuboid now uses 12 outward counter-clockwise triangles and
   exact axis-aligned exterior normals while preserving its 36 vertices,
-  32-byte interleaved layout, 1,152-byte initialization payload, extents, and
+  now-prefix-compatible interleaved layout, extents, and
   no-culling pipeline. Cuboid normal observations and diffuse color
   intentionally replace the prior inward-facing result; the canonical
   Point-lit table center is now positive. The unpublished `0.0.0` workspace
@@ -376,10 +390,12 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   emissive, HDR/tone mapping, gamma conversion, and lighting configuration are
   not implemented.
   Normal output is quantized and the imported subset supports numeric base
-  color, metallic, and roughness but has no normal maps, emissive/alpha modes,
-  or tangent space; the GLB subset samples one shared embedded PNG base-color
-  texture but excludes external/data images, JPEG, explicit samplers, additional
-  texture roles, compression, scene traversal, and most vertex attributes.
+  color, metallic, roughness, and one source-tangent normal map, but no
+  generated tangents, emissive/alpha modes, or other material texture roles;
+  the GLB subset samples at most one shared embedded PNG per base-color/normal
+  role but excludes external/data images, JPEG, explicit samplers, compression,
+  scene traversal, and most vertex attributes. Normal mapping affects direct
+  light only and never replaces the geometric-normal observation.
   Built-in geometry supports
   cuboids, fixed centered XY planes, and fixed centered unit-diameter spheres;
   configurable subdivisions, plane thickness, generated coordinate mappings,

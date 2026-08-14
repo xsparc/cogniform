@@ -15,6 +15,8 @@ pub enum RenderTargetKind {
     EntityId,
     /// Sampled sRGB asset base-color texture.
     AssetBaseColor,
+    /// Sampled linear asset normal texture.
+    AssetNormal,
 }
 
 impl std::fmt::Display for RenderTargetKind {
@@ -25,6 +27,7 @@ impl std::fmt::Display for RenderTargetKind {
             Self::Normal => formatter.write_str("normal"),
             Self::EntityId => formatter.write_str("entity-id"),
             Self::AssetBaseColor => formatter.write_str("asset-base-color"),
+            Self::AssetNormal => formatter.write_str("asset-normal"),
         }
     }
 }

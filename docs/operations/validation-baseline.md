@@ -110,8 +110,12 @@ CF054 exact dual-era MCP lifecycle selection, independently validated modern
 request metadata, complete result/server/cache roles, unchanged legacy bytes,
 invalid-direction rejection, and both legacy and modern controlled production
 flows were collected on the CPU and validated Windows/Vulkan profile on
-2026-08-14. No dependency, feature, lockfile, vendor, workflow, permission,
-package, version, or release action changed.
+2026-08-14. CF055 bounded source-tangent decode, dual-role texture accounting,
+linear normal-texture upload, tangent-basis direct-light shading, material
+override precedence, geometric-normal observation preservation, and exact
+eviction/rehydration evidence were collected on the CPU and validated
+Windows/Vulkan profile on 2026-08-14. No dependency, feature, lockfile, vendor,
+workflow, permission, package, version, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -121,7 +125,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded sRGB base-color texture orientation/factor/override and shared-residency response, content-hash eviction with submitted-readback safety and exact reupload, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and normal-causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded sRGB base-color and linear normal-texture orientation/factor/scale/override response, dual-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -132,8 +136,9 @@ The renderer is capability based. An adapter must satisfy the configured target
 dimensions, buffer bounds, attachment count, and render/copy usage for RGBA8
 color, Depth32Float depth, R32Uint identity, and RGBA8 signed normal targets
 before device creation, plus copy-destination, sampled binding, and filterable
-sampling for sRGB RGBA8 asset textures. The normal path requires three color
-attachments and twelve color-attachment bytes per sample.
+sampling for sRGB RGBA8 base-color textures and linear RGBA8 normal textures.
+The normal path requires three color attachments and twelve color-attachment
+bytes per sample.
 The validated GPU above is evidence that one adapter meets the contract; it does
 not impose a specific GPU model or driver version on future entries.
 
@@ -559,6 +564,49 @@ GPU-dependent ignored suites remain outside this slice. The public-tree,
 package-policy, workflow-state, first-party diff, and changed-Markdown local-
 link checks pass. The dependency audit passes with only the already accepted
 duplicate-version warnings for `hashbrown` and `syn`.
+
+### CF055 source-tangent normal textures
+
+CF055 extends the bounded GLB subset with one explicit source-tangent basis and
+one optional normal-texture role. It preserves base-color sRGB sampling, uploads
+normal textures through a separate linear role, applies the imported
+`normalTexture.scale` only to tangent-space X/Y, and retains geometric normals
+for normal observations. Source validation rejects malformed or incomplete
+tangents before store mutation; dual-role upload reservation and eviction are
+atomic and use aggregate limits. The following commands passed on 2026-08-14:
+
+```text
+cargo check -p cogniform-assets --all-targets --locked --offline
+cargo check -p cogniform-renderer --all-targets --locked --offline
+cargo check --workspace --all-targets --all-features --locked --offline
+cargo fmt --all --check
+cargo clippy -p cogniform-assets -p cogniform-renderer --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-assets -p cogniform-renderer --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test --release -p cogniform-renderer --test asset_fixture normal_texture_changes_direct_lighting_not_geometric_normal_observation --locked --offline -- --ignored --exact --nocapture
+cargo deny check advisories bans licenses sources
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --check
+```
+
+The focused CPU matrix proves exact 48-byte vertex encoding, complete tangent
+accessor validation including unused indexed entries, deterministic tangent
+normalization and handedness rejection, zero-to-two texture-role accounting,
+shared-image decode reuse, exact aggregate CPU limits, and no partial GPU
+reservation on dual-role pressure. The controlled optimized GPU test uploads
+both roles, proves normal-map direct-light influence under non-uniform model
+scale, finite maximum normal scale, alpha neutrality, zero-scale suppression,
+and explicit scene-material override, then evicts and exactly rehydrates both
+roles. Depth, identity, background, and geometric-normal observations remain
+unchanged. The complete workspace ordinary suite passes; other controlled GPU
+suites remain ignored outside their approved adapter runs. The dependency audit
+passes with only the already accepted duplicate-version warnings for
+`hashbrown` and `syn`.
 
 ## Deterministic source-candidate commands
 

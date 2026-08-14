@@ -74,13 +74,13 @@ pub struct RendererConfig {
     pub max_resident_asset_meshes: NonZeroU32,
     /// Maximum aggregate immutable asset vertex bytes resident on the GPU.
     pub max_resident_asset_bytes: NonZeroU64,
-    /// Maximum width or height of one uploaded asset base-color texture.
+    /// Maximum width or height of one uploaded asset texture role.
     pub max_asset_texture_dimension_2d: NonZeroU32,
-    /// Maximum bytes in one uploaded asset base-color texture.
+    /// Maximum bytes in one uploaded asset texture role.
     pub max_asset_texture_bytes: NonZeroU64,
     /// Maximum aggregate bytes reserved by pending unique texture uploads.
     pub max_pending_asset_texture_bytes: NonZeroU64,
-    /// Maximum immutable asset base-color textures resident on the GPU.
+    /// Maximum immutable asset source-and-role textures resident on the GPU.
     pub max_resident_asset_textures: NonZeroU32,
     /// Maximum aggregate immutable asset texture bytes resident on the GPU.
     pub max_resident_asset_texture_bytes: NonZeroU64,

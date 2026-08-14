@@ -11,7 +11,7 @@ use crate::{
     FrameMetadata, MAX_READBACK_CAPACITY, MAX_READBACK_TIMEOUT, MAX_TARGET_DIMENSION,
     MAX_TARGET_PIXELS, PendingFrame, REFERENCE_COLOR, REFERENCE_ENTITY_ID, RenderTargetKind,
     RendererAssetStats, RendererConfig, RendererError, SceneUpdateError, SceneUpdateSummary,
-    asset::RendererAssets,
+    asset::{AssetTextureRole, RendererAssets},
     scene::{
         MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, PreparedDirectionalLight, PreparedDraw,
         PreparedGeometry, PreparedPointLight, PreparedScene, RenderScene,
@@ -23,9 +23,10 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const ENTITY_ID_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 const NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const ASSET_BASE_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+const ASSET_NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const BYTES_PER_PIXEL: u32 = 4;
 const COPY_ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-// The shared ABI constant is fixed at 32 and fits every supported pointer width.
+// The shared ABI constant is fixed at 48 and fits every supported pointer width.
 #[allow(clippy::cast_possible_truncation)]
 const VERTEX_BYTES: usize = cogniform_assets::ASSET_VERTEX_BYTES as usize;
 const CUBE_VERTEX_COUNT: u32 = 36;
@@ -34,8 +35,8 @@ const SPHERE_LONGITUDE_SECTORS: u16 = 16;
 const SPHERE_LATITUDE_BANDS: u16 = 8;
 const SPHERE_VERTEX_COUNT: u32 = 672;
 const SPHERE_RADIUS: f32 = 0.5;
-const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
+const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4];
 const CUBE_POSITIONS: [[f32; 3]; 36] = [
     [-0.5, -0.5, -0.5],
     [0.5, 0.5, -0.5],
@@ -145,7 +146,9 @@ pub struct HeadlessRenderer {
     draw_layout: wgpu::BindGroupLayout,
     _white_base_color_texture: wgpu::Texture,
     white_base_color_view: wgpu::TextureView,
-    base_color_sampler: wgpu::Sampler,
+    _neutral_normal_texture: wgpu::Texture,
+    neutral_normal_view: wgpu::TextureView,
+    asset_texture_sampler: wgpu::Sampler,
     cube_vertices: wgpu::Buffer,
     plane_vertices: wgpu::Buffer,
     sphere_vertices: wgpu::Buffer,
@@ -195,8 +198,13 @@ impl HeadlessRenderer {
             request_device(&adapter, &adapter_summary, &config, readback_layout).await?;
         let gpu_retirement = GpuRetirementGuard::start(device.clone(), queue.clone())?;
         let (pipeline, draw_layout) = create_reference_pipeline(&device).await?;
-        let (white_base_color_texture, white_base_color_view, base_color_sampler) =
-            create_base_color_resources(&device, &queue);
+        let (
+            white_base_color_texture,
+            white_base_color_view,
+            neutral_normal_texture,
+            neutral_normal_view,
+            asset_texture_sampler,
+        ) = create_asset_texture_resources(&device, &queue);
         let cube_vertices =
             create_builtin_vertex_buffer(&device, "cogniform-cube-vertices", &CUBE_POSITIONS);
         let plane_vertices =
@@ -218,7 +226,9 @@ impl HeadlessRenderer {
             draw_layout,
             _white_base_color_texture: white_base_color_texture,
             white_base_color_view,
-            base_color_sampler,
+            _neutral_normal_texture: neutral_normal_texture,
+            neutral_normal_view,
+            asset_texture_sampler,
             cube_vertices,
             plane_vertices,
             sphere_vertices,
@@ -330,7 +340,9 @@ impl HeadlessRenderer {
                 camera_position: [0.0, 0.0, 3.0],
                 metallic: 0.0,
                 roughness: 0.8,
-                use_imported_texture: false,
+                normal_scale: 1.0,
+                use_imported_base_color_texture: false,
+                use_imported_normal_texture: false,
                 compact_id: REFERENCE_ENTITY_ID,
             }],
             directional_lights: Vec::new(),
@@ -394,7 +406,8 @@ impl HeadlessRenderer {
                 pipeline: &self.pipeline,
                 draw_layout: &self.draw_layout,
                 white_base_color_view: &self.white_base_color_view,
-                base_color_sampler: &self.base_color_sampler,
+                neutral_normal_view: &self.neutral_normal_view,
+                asset_texture_sampler: &self.asset_texture_sampler,
                 cube_vertices: &self.cube_vertices,
                 plane_vertices: &self.plane_vertices,
                 sphere_vertices: &self.sphere_vertices,
@@ -559,6 +572,16 @@ async fn create_reference_pipeline(
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
                 },
                 count: None,
             },
@@ -754,17 +777,22 @@ fn capability_issues(
 }
 
 fn check_sampled_texture_usage(adapter: &wgpu::Adapter, issues: &mut Vec<CapabilityIssue>) {
-    let features = adapter.get_texture_format_features(ASSET_BASE_COLOR_FORMAT);
     let required = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
-    if !features.allowed_usages.contains(required)
-        || !features
-            .flags
-            .contains(wgpu::TextureFormatFeatureFlags::FILTERABLE)
-    {
-        issues.push(CapabilityIssue::TextureUsage {
-            target: RenderTargetKind::AssetBaseColor,
-            required: "TEXTURE_BINDING | COPY_DST with linear filtering",
-        });
+    for (format, target) in [
+        (ASSET_BASE_COLOR_FORMAT, RenderTargetKind::AssetBaseColor),
+        (ASSET_NORMAL_FORMAT, RenderTargetKind::AssetNormal),
+    ] {
+        let features = adapter.get_texture_format_features(format);
+        if !features.allowed_usages.contains(required)
+            || !features
+                .flags
+                .contains(wgpu::TextureFormatFeatureFlags::FILTERABLE)
+        {
+            issues.push(CapabilityIssue::TextureUsage {
+                target,
+                required: "TEXTURE_BINDING | COPY_DST with linear filtering",
+            });
+        }
     }
 }
 
@@ -958,7 +986,8 @@ struct ScenePassResources<'a> {
     pipeline: &'a wgpu::RenderPipeline,
     draw_layout: &'a wgpu::BindGroupLayout,
     white_base_color_view: &'a wgpu::TextureView,
-    base_color_sampler: &'a wgpu::Sampler,
+    neutral_normal_view: &'a wgpu::TextureView,
+    asset_texture_sampler: &'a wgpu::Sampler,
     cube_vertices: &'a wgpu::Buffer,
     plane_vertices: &'a wgpu::Buffer,
     sphere_vertices: &'a wgpu::Buffer,
@@ -1024,7 +1053,8 @@ fn encode_scene_pass(
     });
     render_pass.set_pipeline(resources.pipeline);
     for draw in draws {
-        let (vertices, vertex_count, base_color_view) = draw_resources(draw, resources);
+        let (vertices, vertex_count, base_color_view, normal_view) =
+            draw_resources(draw, resources);
         let bytes = encode_draw_uniform(draw, directional_lights, point_lights);
         let buffer = resources.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cogniform-draw-uniform"),
@@ -1049,7 +1079,11 @@ fn encode_scene_pass(
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::Sampler(resources.base_color_sampler),
+                        resource: wgpu::BindingResource::Sampler(resources.asset_texture_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(normal_view),
                     },
                 ],
             });
@@ -1062,46 +1096,73 @@ fn encode_scene_pass(
 fn draw_resources<'a>(
     draw: &PreparedDraw,
     resources: &'a ScenePassResources<'_>,
-) -> (&'a wgpu::Buffer, u32, &'a wgpu::TextureView) {
+) -> (
+    &'a wgpu::Buffer,
+    u32,
+    &'a wgpu::TextureView,
+    &'a wgpu::TextureView,
+) {
     match draw.geometry {
         PreparedGeometry::Cuboid => (
             resources.cube_vertices,
             CUBE_VERTEX_COUNT,
             resources.white_base_color_view,
+            resources.neutral_normal_view,
         ),
         PreparedGeometry::Plane => (
             resources.plane_vertices,
             PLANE_VERTEX_COUNT,
             resources.white_base_color_view,
+            resources.neutral_normal_view,
         ),
         PreparedGeometry::Sphere => (
             resources.sphere_vertices,
             SPHERE_VERTEX_COUNT,
             resources.white_base_color_view,
+            resources.neutral_normal_view,
         ),
         PreparedGeometry::Asset(key) => {
             let mesh = resources
                 .assets
                 .mesh(key)
                 .expect("prepared asset geometry remains resident until renderer drop");
-            let view = if draw.use_imported_texture {
+            let base_color_view = if draw.use_imported_base_color_texture {
                 resources
                     .assets
-                    .texture_view(key.content_hash)
+                    .texture_view(key.content_hash, AssetTextureRole::BaseColor)
                     .expect("textured resident mesh retains its shared GPU texture")
             } else {
                 resources.white_base_color_view
             };
-            (mesh.buffer(), mesh.vertex_count(), view)
+            let normal_view = if draw.use_imported_normal_texture {
+                resources
+                    .assets
+                    .texture_view(key.content_hash, AssetTextureRole::Normal)
+                    .expect("normal-textured resident mesh retains its shared GPU texture")
+            } else {
+                resources.neutral_normal_view
+            };
+            (
+                mesh.buffer(),
+                mesh.vertex_count(),
+                base_color_view,
+                normal_view,
+            )
         }
     }
 }
 
-fn create_base_color_resources(
+fn create_asset_texture_resources(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
+) -> (
+    wgpu::Texture,
+    wgpu::TextureView,
+    wgpu::Texture,
+    wgpu::TextureView,
+    wgpu::Sampler,
+) {
+    let base_color_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("cogniform-white-base-color"),
         size: wgpu::Extent3d {
             width: 1,
@@ -1117,7 +1178,7 @@ fn create_base_color_resources(
     });
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
-            texture: &texture,
+            texture: &base_color_texture,
             mip_level: 0,
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
@@ -1134,9 +1195,43 @@ fn create_base_color_resources(
             depth_or_array_layers: 1,
         },
     );
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let base_color_view = base_color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let normal_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("cogniform-neutral-normal"),
+        size: wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: ASSET_NORMAL_FORMAT,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &normal_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &[128, 128, 255, 255],
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4),
+            rows_per_image: Some(1),
+        },
+        wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let normal_view = normal_texture.create_view(&wgpu::TextureViewDescriptor::default());
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("cogniform-base-color-repeat-linear"),
+        label: Some("cogniform-asset-repeat-linear"),
         address_mode_u: wgpu::AddressMode::Repeat,
         address_mode_v: wgpu::AddressMode::Repeat,
         address_mode_w: wgpu::AddressMode::Repeat,
@@ -1145,7 +1240,13 @@ fn create_base_color_resources(
         mipmap_filter: wgpu::MipmapFilterMode::Nearest,
         ..wgpu::SamplerDescriptor::default()
     });
-    (texture, view, sampler)
+    (
+        base_color_texture,
+        base_color_view,
+        normal_texture,
+        normal_view,
+        sampler,
+    )
 }
 
 fn create_builtin_vertex_buffer(
@@ -1261,7 +1362,12 @@ fn encode_sphere_triangle(encoded: &mut Vec<u8>, normals: [[f32; 3]; 3]) {
 }
 
 fn encode_vertex(encoded: &mut Vec<u8>, position: [f32; 3], normal: [f32; 3]) {
-    for value in position.iter().chain(&normal).chain(&[0.0, 0.0]) {
+    for value in position
+        .iter()
+        .chain(&normal)
+        .chain(&[0.0, 0.0])
+        .chain(&[1.0, 0.0, 0.0, 1.0])
+    {
         encoded.extend_from_slice(&value.to_le_bytes());
     }
 }
@@ -1370,8 +1476,15 @@ fn encode_draw_uniform(
     bytes.extend_from_slice(&0.0_f32.to_le_bytes());
     bytes.extend_from_slice(&draw.metallic.to_le_bytes());
     bytes.extend_from_slice(&draw.roughness.to_le_bytes());
-    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
-    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+    bytes.extend_from_slice(&draw.normal_scale.to_le_bytes());
+    bytes.extend_from_slice(
+        &(if draw.use_imported_normal_texture {
+            1.0_f32
+        } else {
+            0.0_f32
+        })
+        .to_le_bytes(),
+    );
     debug_assert_eq!(bytes.len(), UNIFORM_BYTES);
     bytes
 }
@@ -1513,15 +1626,15 @@ mod tests {
             CUBE_POSITIONS.len()
         );
         assert_eq!(CUBE_POSITIONS.len() / 3, 12);
-        assert_eq!(encoded.len(), 1_152);
+        assert_eq!(encoded.len(), 1_728);
         assert_eq!(encoded.len(), CUBE_POSITIONS.len() * VERTEX_BYTES);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
         let vertices = values
-            .chunks_exact(8)
-            .map(|vertex| <[f32; 8]>::try_from(vertex).unwrap())
+            .chunks_exact(12)
+            .map(|vertex| <[f32; 12]>::try_from(vertex).unwrap())
             .collect::<Vec<_>>();
         let mut face_triangle_counts = [0_u8; 6];
 
@@ -1531,7 +1644,7 @@ mod tests {
                     .iter()
                     .all(|value| value.to_bits() & 0x7fff_ffff == 0.5_f32.to_bits())
             );
-            assert_eq!(&vertex[6..], &[0.0, 0.0]);
+            assert_eq!(&vertex[6..], &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
         }
 
         for triangle in vertices.chunks_exact(3) {
@@ -1613,16 +1726,16 @@ mod tests {
             usize::try_from(PLANE_VERTEX_COUNT).unwrap(),
             PLANE_POSITIONS.len()
         );
-        assert_eq!(encoded.len(), 192);
+        assert_eq!(encoded.len(), 288);
         assert_eq!(encoded.len(), PLANE_POSITIONS.len() * VERTEX_BYTES);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
-        for (vertex, position) in values.chunks_exact(8).zip(PLANE_POSITIONS) {
+        for (vertex, position) in values.chunks_exact(12).zip(PLANE_POSITIONS) {
             assert_eq!(&vertex[..3], &position);
             assert_eq!(&vertex[3..6], &[0.0, 0.0, 1.0]);
-            assert_eq!(&vertex[6..], &[0.0, 0.0]);
+            assert_eq!(&vertex[6..], &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
         }
     }
 
@@ -1636,7 +1749,9 @@ mod tests {
             camera_position: [6.0, 7.0, 8.0],
             metallic: 0.9,
             roughness: 0.2,
-            use_imported_texture: false,
+            normal_scale: 1.0,
+            use_imported_base_color_texture: false,
+            use_imported_normal_texture: false,
             compact_id: 42,
         };
         let lights = [
@@ -1698,7 +1813,7 @@ mod tests {
         );
         assert_eq!(
             (116..120).map(float).collect::<Vec<_>>(),
-            vec![0.9, 0.2, 0.0, 0.0]
+            vec![0.9, 0.2, 1.0, 0.0]
         );
     }
 
@@ -1713,15 +1828,15 @@ mod tests {
         let expected_triangles =
             2 * usize::from(SPHERE_LONGITUDE_SECTORS) * usize::from(SPHERE_LATITUDE_BANDS - 1);
         assert_eq!(expected_triangles, 224);
-        assert_eq!(encoded.len(), 21_504);
+        assert_eq!(encoded.len(), 32_256);
         assert_eq!(encoded.len(), expected_vertices * VERTEX_BYTES);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
         let vertices = values
-            .chunks_exact(8)
-            .map(|vertex| <[f32; 8]>::try_from(vertex).unwrap())
+            .chunks_exact(12)
+            .map(|vertex| <[f32; 12]>::try_from(vertex).unwrap())
             .collect::<Vec<_>>();
         assert_eq!(vertices.len(), expected_vertices);
         assert_eq!(vertices.len() / 3, expected_triangles);
@@ -1753,7 +1868,7 @@ mod tests {
                 .zip(normal)
                 .map(|(position, normal)| position * normal)
                 .sum::<f32>();
-            assert_eq!(&vertex[6..], &[0.0, 0.0]);
+            assert_eq!(&vertex[6..], &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
             assert!((position_length - SPHERE_RADIUS).abs() <= 1.0e-5);
             assert!((normal_length - 1.0).abs() <= 1.0e-5);
             assert!((radial_alignment - SPHERE_RADIUS).abs() <= 1.0e-5);

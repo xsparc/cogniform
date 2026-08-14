@@ -60,5 +60,6 @@ earlier one and links the history.
 | [0052](0052-immutable-source-release-and-support-contract.md) | Accepted | Require immutable draft-first source releases, exact consumer verification, and an explicit latest-candidate support lifetime |
 | [0053](0053-bounded-terminal-mcp-cancellation.md) | Accepted | Deliver one matching active MCP cancellation through bounded terminal process semantics |
 | [0054](0054-bounded-dual-era-mcp-stdio-lifecycle.md) | Accepted | Serve exact legacy and stateless MCP eras through one bounded authority-neutral stdio adapter |
+| [0055](0055-bounded-source-tangent-normal-textures.md) | Accepted | Render one bounded embedded normal texture through an exact source-tangent basis |
 
 New records use four sections: context, decision, consequences, and status.
