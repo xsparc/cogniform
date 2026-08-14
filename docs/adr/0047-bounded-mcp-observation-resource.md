@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-08-09
 - Task: CF047
+- Superseded in part by: [ADR 0053](0053-bounded-terminal-mcp-cancellation.md)
+  for live request admission and cancellation only
 
 ## Context
 
@@ -118,3 +120,6 @@ Controlled production-service and CLI child tests on an approved adapter cover
 camera patching, canonical observation encoding, linked resource listing and
 readback, exact metadata/revision causality, protocol-pure stdout, and clean
 EOF.
+ADR 0053 later narrows the strict no-read-until-flush rule to one bounded
+pending message plus an exact matching terminal cancellation path; the
+observation/resource decision remains in force.

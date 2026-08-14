@@ -100,7 +100,12 @@ same matrix on the standard Linux quality runner before merge. CF051 exact
 ordinary workspace matrix, and all controlled release-mode ignored tests were
 collected on the CPU and validated Windows/Vulkan profile on 2026-08-12. The
 exact pull-request head must repeat the ordinary matrix and package gate on the
-standard Linux quality runner before merge.
+standard Linux quality runner before merge. CF053 exact-ID terminal MCP
+cancellation, one-pending-request backpressure, response/error suppression,
+cooperative observation cancellation, retained-resource preservation, and
+terminal service-poison evidence were collected on the CPU profile on
+2026-08-13. The existing controlled production-service and optimized CLI child
+flows were also revalidated on the Windows/Vulkan profile.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -431,12 +436,16 @@ request with one latest-value MCP resource. CF048 updates only the official SDK
 to exact-pinned 3.1.2 and re-runs the complete compatibility surface. CF049
 closes query/imagination discovery results and adds one exact bounded workflow
 instruction without changing runtime behavior. The ordinary and controlled
-commands were:
+commands were. CF053 additionally re-runs the complete workspace tests, Clippy,
+and warning-as-error rustdoc because it changes transport scheduling:
 
 ```text
 cargo fmt --all --check
 cargo clippy -p cogniform-compilation -p cogniform-engine -p cogniform-observation -p cogniform-protocol -p cogniform-mcp -p cogniform-cli --all-targets --all-features --locked --offline -- -D warnings
 cargo test -p cogniform-mcp -p cogniform-cli -p cogniform-engine -p cogniform-observation -p cogniform-protocol --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
 cargo test -p cogniform-cli --test mcp_stdio --locked --offline
 cargo test --release -p cogniform-mcp --all-features --locked --offline tests::query_patch_imagination_observation_and_replay_preserve_exact_effects -- --ignored --exact --nocapture
 cargo test --release -p cogniform-cli --test mcp_stdio --all-features --locked --offline controlled_child_applies_patch_and_imagination_replays_and_closes_cleanly -- --ignored --exact --nocapture
@@ -483,6 +492,19 @@ errors for every tool and real success for query/imagination remains covered by
 the controlled production-service test. The raw CLI child fixture independently
 asserts the exact initialization bytes without constructing `LocalService` or
 selecting a GPU adapter.
+
+CF053 adds exact numeric- and string-ID cancellation coverage for both response
+and error suppression, optional-reason redaction, terminal closure, one retained
+undispatched request, wrong/missing-ID continuation, late cancellation after
+response-write admission, and cancellation-safe partial-line and pending-message
+reads. An official `rmcp` client proves prompt cancellation of a pending
+observation, unchanged byte-exact latest-resource readback, and terminal service
+poison. A raw `2025-11-25` duplex fixture independently proves that a matching
+cancellation notification produces no call result and never dispatches a later
+request through the same public `serve_io` composition. The public CLI has no
+deterministic pending-observation injection seam, so no successful cancellation
+claim is made for a fresh child process; its existing raw batch/EOF fixture and
+controlled GPU-backed child instead re-prove compatibility and clean close.
 
 ## Deterministic source-candidate commands
 

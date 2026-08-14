@@ -83,6 +83,10 @@ impl std::fmt::Display for McpServeError {
 impl std::error::Error for McpServeError {}
 
 /// Runs one MCP session over inherited redirected standard input and output.
+///
+/// An exact matching active-request cancellation is a clean terminal outcome:
+/// the cancelled response and all later input are suppressed, then this
+/// function returns after bounded cleanup.
 pub fn run_stdio(config: McpServerConfig) -> Result<(), McpServeError> {
     if std::io::stdin().is_terminal() || std::io::stdout().is_terminal() {
         return Err(McpServeError::StdioNotRedirected);
@@ -99,6 +103,8 @@ pub fn run_stdio(config: McpServerConfig) -> Result<(), McpServeError> {
 /// This entry point exists for controlled conformance tests and local
 /// composition. Callers remain responsible for ensuring that the streams do
 /// not introduce network or multi-tenant authority.
+/// A matching active-request cancellation ends this session successfully; the
+/// caller must not reuse the streams or infer an effect result.
 pub async fn serve_io<R, W>(
     reader: R,
     writer: W,
@@ -195,7 +201,7 @@ fn transport_failure(status: &transport::TransportStatus) -> McpServeError {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::VecDeque, num::NonZeroU32, time::Duration};
+    use std::{collections::VecDeque, num::NonZeroU32, sync::Arc, time::Duration};
 
     use cogniform_observation::{
         EntityVisibility, ObservationPayload, ObservationPayloadLimits, decode_payload,
@@ -207,12 +213,18 @@ mod tests {
     use rmcp::{
         ServiceError, ServiceExt as _,
         model::{
-            CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ProtocolVersion,
-            ReadResourceRequestParams, ResourceContents, Tool,
+            CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, ContentBlock,
+            ErrorCode, ProtocolVersion, ReadResourceRequestParams, ResourceContents, Tool,
         },
+        service::PeerRequestOptions,
     };
     use serde_json::{Map, Value, json};
-    use tokio::io::{duplex, split};
+    use tokio::{
+        io::{
+            AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader, duplex, split,
+        },
+        sync::Notify,
+    };
 
     use super::*;
 
@@ -261,6 +273,30 @@ mod tests {
         (client, server)
     }
 
+    async fn cancellable_client_and_server(
+        backend: Box<dyn server::ObservationBackend>,
+    ) -> (
+        rmcp::service::RunningService<rmcp::service::RoleClient, ()>,
+        tokio::task::JoinHandle<Result<(), McpServeError>>,
+        server::CogniformMcpServer,
+    ) {
+        let (client_stream, server_stream) = duplex(16 * 1024 * 1024);
+        let (client_read, client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let config = McpServerConfig::local_profile(64, 64);
+        let handler =
+            server::CogniformMcpServer::new_with_observation_backend(config.service, backend);
+        let inspector = handler.clone();
+        let server = tokio::spawn(serve_io_with_handler(
+            server_read,
+            server_write,
+            config.transport,
+            handler,
+        ));
+        let client = ().serve((client_read, client_write)).await.unwrap();
+        (client, server, inspector)
+    }
+
     async fn client_and_server_with_observation_backend_and_policy(
         backend: Box<dyn server::ObservationBackend>,
         width: u32,
@@ -306,6 +342,7 @@ mod tests {
         active: Option<ObservationRequest>,
         next_frame: u64,
         dimensions: (u32, u32),
+        pending_signal: Option<Arc<Notify>>,
     }
 
     impl FakeObservationBackend {
@@ -315,6 +352,7 @@ mod tests {
                 active: None,
                 next_frame: 1,
                 dimensions: (64, 64),
+                pending_signal: None,
             }
         }
 
@@ -327,6 +365,20 @@ mod tests {
                 active: None,
                 next_frame: 1,
                 dimensions,
+                pending_signal: None,
+            }
+        }
+
+        fn with_pending_signal(
+            outcomes: impl IntoIterator<Item = FakeObservationOutcome>,
+            pending_signal: Arc<Notify>,
+        ) -> Self {
+            Self {
+                outcomes: outcomes.into_iter().collect(),
+                active: None,
+                next_frame: 1,
+                dimensions: (64, 64),
+                pending_signal: Some(pending_signal),
             }
         }
     }
@@ -355,6 +407,9 @@ mod tests {
             &mut self,
         ) -> Result<Option<server::AdapterObservationDelivery>, ()> {
             if matches!(self.outcomes.front(), Some(FakeObservationOutcome::Pending)) {
+                if let Some(signal) = &self.pending_signal {
+                    signal.notify_one();
+                }
                 return Ok(None);
             }
             let request = self.active.take().ok_or(())?;
@@ -847,6 +902,178 @@ mod tests {
             )
             .await;
         }
+    }
+
+    #[tokio::test]
+    async fn official_client_cancellation_is_prompt_terminal_and_preserves_resource() {
+        let pending = Arc::new(Notify::new());
+        let backend = FakeObservationBackend::with_pending_signal(
+            [
+                FakeObservationOutcome::Completed(ObservationPayload::Visibility(Vec::new())),
+                FakeObservationOutcome::Pending,
+            ],
+            Arc::clone(&pending),
+        );
+        let (client, server, inspector) = cancellable_client_and_server(Box::new(backend)).await;
+
+        let seeded = call_observation(&client, 0x41, ObservationKind::Visibility).await;
+        assert_eq!(seeded.is_error, Some(false));
+        let (retained_before, poisoned_before) = inspector.observation_test_state().await;
+        assert!(retained_before.is_some());
+        assert!(!poisoned_before);
+
+        let params =
+            CallToolRequestParams::new(OBSERVE_SCENE_TOOL).with_arguments(arguments(json!({
+                "schema_version": 1,
+                "observation_id": ObservationId::new(0x42).unwrap().to_string(),
+                "scene_revision": 0,
+                "camera_id": StableEntityId::new(0x31).unwrap().to_string(),
+                "kind": "visibility",
+                "quality": "low"
+            })));
+        let handle = client
+            .peer()
+            .send_cancellable_request(
+                ClientRequest::CallToolRequest(CallToolRequest::new(params)),
+                PeerRequestOptions::no_options(),
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), pending.notified())
+            .await
+            .expect("observation reaches its first pending poll");
+        handle
+            .cancel(Some("caller stopped".to_owned()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), server)
+                .await
+                .expect("cancelled server terminates promptly")
+                .unwrap(),
+            Ok(())
+        );
+        let (retained_after, poisoned_after) = inspector.observation_test_state().await;
+        assert_eq!(retained_after, retained_before);
+        assert!(poisoned_after);
+        tokio::time::timeout(Duration::from_secs(1), client.waiting())
+            .await
+            .expect("client observes terminal server close")
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn raw_wire_cancellation_writes_no_response_and_dispatches_no_later_request() {
+        let pending = Arc::new(Notify::new());
+        let backend = FakeObservationBackend::with_pending_signal(
+            [FakeObservationOutcome::Pending],
+            Arc::clone(&pending),
+        );
+        let (client_stream, server_stream) = duplex(64 * 1024);
+        let (client_read, mut client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let config = McpServerConfig::local_profile(64, 64);
+        let handler = server::CogniformMcpServer::new_with_observation_backend(
+            config.service,
+            Box::new(backend),
+        );
+        let inspector = handler.clone();
+        let server = tokio::spawn(serve_io_with_handler(
+            server_read,
+            server_write,
+            config.transport,
+            handler,
+        ));
+        let mut client_read = BufReader::new(client_read);
+
+        write_json_line(
+            &mut client_write,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "raw-cancellation-test", "version": "1"}
+                }
+            }),
+        )
+        .await;
+        let mut initialize_response = String::new();
+        client_read
+            .read_line(&mut initialize_response)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&initialize_response).unwrap()["id"],
+            1
+        );
+        write_json_line(
+            &mut client_write,
+            &json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+        )
+        .await;
+        write_json_line(
+            &mut client_write,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": "observe-1",
+                "method": "tools/call",
+                "params": {
+                    "name": OBSERVE_SCENE_TOOL,
+                    "arguments": {
+                        "schema_version": 1,
+                        "observation_id": ObservationId::new(0x42).unwrap().to_string(),
+                        "scene_revision": 0,
+                        "camera_id": StableEntityId::new(0x31).unwrap().to_string(),
+                        "kind": "visibility",
+                        "quality": "low"
+                    }
+                }
+            }),
+        )
+        .await;
+        tokio::time::timeout(Duration::from_secs(1), pending.notified())
+            .await
+            .expect("raw request reaches cooperative polling");
+        write_json_line(
+            &mut client_write,
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/cancelled",
+                "params": {"requestId": "observe-1", "reason": "caller stopped"}
+            }),
+        )
+        .await;
+        write_json_line(
+            &mut client_write,
+            &json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+        )
+        .await;
+        client_write.shutdown().await.unwrap();
+
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), server)
+                .await
+                .expect("raw cancelled server terminates promptly")
+                .unwrap(),
+            Ok(())
+        );
+        let mut output_tail = Vec::new();
+        client_read.read_to_end(&mut output_tail).await.unwrap();
+        assert!(output_tail.is_empty());
+        assert_eq!(inspector.observation_test_state().await, (None, true));
+    }
+
+    async fn write_json_line<W: tokio::io::AsyncWrite + Unpin>(writer: &mut W, value: &Value) {
+        writer
+            .write_all(&serde_json::to_vec(value).unwrap())
+            .await
+            .unwrap();
+        writer.write_all(b"\n").await.unwrap();
+        writer.flush().await.unwrap();
     }
 
     async fn assert_scripted_failure_preserves_resource(

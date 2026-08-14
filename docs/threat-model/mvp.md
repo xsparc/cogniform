@@ -1,8 +1,7 @@
 # MVP threat model
 
 Status: reviewed for the local source-first candidate profile on 2026-08-02
-and extended through CF047 bounded MCP observation-resource adaptation on
-2026-08-09.
+and extended through CF053 bounded terminal MCP cancellation on 2026-08-13.
 
 This model covers the in-process, single-user Cogniform MVP. It does not claim
 that the engine is an authentication, authorization, multi-tenant, remote, or
@@ -21,7 +20,7 @@ separate transport and identity design violates the assumptions below.
 | Host resources | CPU, memory, queues, GPU allocations, and waits stay within declared bounds and explicit release is exactly accounted |
 | Process and GPU | Backend failures return controlled errors and do not grant access to world mutation |
 | Local session streams | Inherited binary input/output remains bounded, direction-correct, causally correlated, explicitly flushed, and fail-closed without payload-bearing diagnostics or whole-frame retry |
-| MCP stdio stream and retained resource | Newline JSON-RPC remains byte- and nesting-bounded before decode, output is bounded before each write, tool effects retain exact revision and idempotency roles, the sole observation resource remains causal and canonical, and diagnostics disclose no request or result payload |
+| MCP stdio stream and retained resource | Newline JSON-RPC remains byte- and nesting-bounded before decode, output is bounded before each write, one active plus one decoded pending message bound the pipeline, exact matching cancellation terminates without a response or later dispatch, tool effects retain exact revision and idempotency roles, the sole observation resource remains causal and canonical, and diagnostics disclose no request or result payload |
 | Repository and release | No credentials, private workflow state, paid calls, or unreviewed artifacts enter public history |
 
 Availability is bounded rather than guaranteed. Confidentiality applies to
@@ -67,10 +66,11 @@ snapshots and canonical replay entries.
    endpoint policy, not peer authentication or remote transport security.
 11. **Inherited standard streams to the MCP adapter.** Parent-owned redirected
    newline JSON-RPC crosses exact protocol-version initialization, incremental
-   byte and nesting preflight, one-request-through-flush admission, fixed tool
-   dispatch, serialized lazy-service access, bounded encode-before-write output, exact-URI latest-value resource
-   retention, and fail-closed shutdown. Tool annotations are interoperability
-   hints, not authorization policy.
+   byte and nesting preflight, one-active/one-pending admission with a matching
+   cancellation-only control bypass, fixed tool dispatch, serialized lazy-
+   service access, bounded encode-before-write output, exact-URI latest-value
+   resource retention, and fail-closed shutdown. Tool annotations are
+   interoperability hints, not authorization policy.
 12. **Recovery file/envelope and replay bytes to recovery.** Caller-selected
    paths and portable bytes are untrusted until regular-file/size/growth checks,
    envelope header/version/bounds/length/frame/digest, and replay
@@ -146,7 +146,7 @@ Residual ratings assume the declared local single-user boundary.
 | Local control bytes substitute a direction, version, nested value, correlation, or over-limit shape | High | Separate client/server roots; outer-only correlation; pre-decode byte/nesting caps; unknown-field and canonical-byte rejection; nested core validation; self-consistent hello limits; stable redacted failures; exact fixtures and malformed/substitution tests | Low for in-memory local decoding; lifecycle state, execution authorization, endpoint identity, confidentiality, freshness, replay/rate policy, and partial-write handling remain outside the codec |
 | Valid local-session work exhausts correlations, misroutes terminal results, bypasses lifecycle, or emits an over-limit completion | High | One hello and terminal close; peer/local/service limit intersection; fixed live-correlation cap; ordered key/ID maps; exact queued/replayed/dropped/superseded/completed/error release; one command plus one observation poll and at most two outputs per call; completed-frame preflight; stable redacted failure mapping; model tests | Low inside the trusted caller-driven boundary; authorization, endpoint identity, confidentiality, freshness/replay/rate policy, deadlines, cancellation, and partial-write handling remain outside the executor |
 | A stdio peer sends malformed or incomplete frames, abandons a live session, stalls completion, or causes partial output | High | Exact args and terminal checks before adapter selection; clean EOF only before the first frame; negotiated bounds; half-duplex no-read-while-live driver; positive-cadence 15-second completion deadline; encode-before-write and per-frame flush; stable redacted fatal categories; no whole-frame retry or resynchronization; fake-stream and controlled child-process tests | Low inside a parent-owned local single-user process boundary; physical output prefixes, blocking synchronous calls, peer authorization, confidentiality, freshness/replay/rate policy, process supervision, and remote exposure remain caller-owned |
-| An MCP peer sends malformed, oversized, deeply nested, version-substituted, stale, conflicting, or replayed tool traffic, pipelines bulk resource reads, requests an unknown resource, substitutes observation causality, or abandons a call after a partial output | High | Exact stable-version initialization and singleton handler advertisement; no advertised extensions; explicit 2026 discovery, Tasks, per-request-version, and result-shape exclusion despite the newer SDK; incremental newline bounds before decode; outer JSON nesting preflight; exactly four fixed tools; one request admitted through complete response flush; typed core validation before lazy service creation; serialized access; direct patches and observations admitted only through `LocalService`; exact revision, transaction, idempotency, operation, compilation, receipt, observation metadata, dimension, and staleness roles; pre-mutation patch rejection; retained replay without a second process call; one exact-URI 4 MiB canonical envelope resource with bounded base64 output, atomic replacement, and failure preservation; bounded encode-before-write and flush; stable payload-redacted categories; official-client, raw-wire, stalled-writer, and controlled child-process tests | Low inside a parent-owned local single-user process boundary; the trusted parent can intentionally submit any core-valid patch, and physical output prefixes, peer authorization, confidentiality, freshness/rate policy, general deadlines, cancellation, process supervision, and remote exposure remain caller-owned |
+| An MCP peer sends malformed, oversized, deeply nested, version-substituted, stale, conflicting, or replayed tool traffic, pipelines bulk resource reads, requests an unknown resource, substitutes observation causality, cancels or abandons a call, or causes partial output | High | Exact stable-version initialization and singleton handler advertisement; no advertised extensions; explicit 2026 discovery, Tasks, per-request-version, and result-shape exclusion despite the newer SDK; incremental newline bounds before decode; outer JSON nesting preflight; exactly four fixed tools; one active request plus at most one decoded pending message; exact-ID cancellation delivered only before response writing, response suppression and terminal no-later-dispatch semantics; wrong/missing/late cancellation remains post-flush; cooperative observation polling with prior-resource preservation and service poison; typed core validation before lazy service creation; serialized access; direct patches and observations admitted only through `LocalService`; exact revision, transaction, idempotency, operation, compilation, receipt, observation metadata, dimension, and staleness roles; pre-mutation patch rejection; retained replay without a second process call; one exact-URI 4 MiB canonical envelope resource with bounded base64 output, atomic replacement, and failure preservation; bounded encode-before-write and flush; stable payload-redacted categories; official-client, raw-wire, cancellation, stalled-writer, and controlled child-process tests | Low inside a parent-owned local single-user process boundary; the trusted parent can intentionally submit any core-valid patch, cancellation provides no rollback/effect receipt/general deadline, and physical output prefixes, peer authorization, confidentiality, freshness/rate policy, kill/reap supervision, and remote exposure remain caller-owned |
 | Replay bytes are truncated, reordered, or modified | High | Append-only SHA-256 chain, verified-prefix inspection, complete-service fail-closed restoration, exact replay checks, every-byte corruption injection | Low |
 | Recovery replay bytes and frame marker are separated or accidentally changed | High | Single bounded versioned envelope, exact-length parsing, domain-separated SHA-256 digest, every-byte corruption rejection before replay allocation | Low for accidental corruption; authenticity remains caller-owned |
 | A recovery path or file causes overwrite, disclosure, unbounded allocation, or partial-state adoption | High | Separate opt-in crate; encode-before-I/O; create-new only; final symlink/non-file rejection; metadata/platform allocation bound; fixed-buffer read and growth probe; complete digest validation; path-redacted errors; injected write/sync cleanup | Medium because parent-path trust, permissions, confidentiality, authenticity, freshness, and crash durability remain caller-owned |
@@ -211,14 +211,18 @@ transport, or production use.
   resource values as sensitive,
   and discard the child/stream after any transport or service failure. The
   adapter supplies no authentication, authorization, confidentiality,
-  freshness, rate/tenancy policy, general operation deadline, preemptive cancellation,
-  or remote safety; its encode-before-write policy cannot retract a physical
+  freshness, rate/tenancy policy, general operation deadline, arbitrary
+  preemption, or remote safety. Matching active-request cancellation is
+  process-terminal rather than reusable and provides no rollback or effect
+  receipt; its encode-before-write policy cannot retract a physical
   prefix after an inherited-stream write failure.
   Only the observation poll has a fixed 15 second deadline. Resource URIs are
   references inside the same child session, not bearer authorization or
   freshness tokens; read only the currently listed URI and validate the
   canonical envelope after base64 decoding.
-  The parent must impose any stronger process timeout and kill/reap policy.
+  Send a matching cancellation as the next message, then reap and replace the
+  child. The parent must impose any stronger process timeout and kill/reap
+  fallback for blocked synchronous work.
 - Do not pass credentials, private endpoints, or production records as scene
   text. Cogniform validates structure and bounds; it is not a secret sanitizer.
 - Stop admitting commands when capacity errors repeat. Retrying without a

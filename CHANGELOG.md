@@ -145,8 +145,11 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   exact-revision scene query, idempotent imagination submission, bounded
   direct atomic patch application, and exact-revision observation; one
   latest-value canonical `COGOBS01` resource with exact-URI base64 read,
-  atomic replacement, and failure preservation; one-request-through-flush
-  backpressure for pipelined input; incremental
+  atomic replacement, and failure preservation; one active request plus one
+  decoded pending message, exact matching pre-response cancellation with
+  response suppression and terminal no-later-dispatch semantics, cooperative
+  observation polling with prior-resource preservation, and response-through-
+  flush handling for wrong/missing/late cancellation; incremental
   newline byte/nesting preflight; bounded encode-before-write output; one
   serialized lazily created local service; exact compilation, receipt, and
   retained-replay validation; official-client conformance; and no listener,
@@ -345,8 +348,9 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 - `serve-mcp-stdio` supports one parent-owned inherited-stream client, stable
   MCP `2025-11-25`, four fixed tools, one in-memory latest-value observation
   resource, serialized calls, and one lazy 64x64 local service. Its observation
-  poll has a fixed 15 second deadline, but it supplies no general operation
-  deadline or preemptive cancellation,
+  poll has a fixed 15 second deadline and exact matching active cancellation is
+  process-terminal before response writing, but it supplies no general
+  operation deadline, rollback, effect receipt, reusable cancellation,
   authentication, authorization, confidentiality, freshness/rate/tenancy
   policy, resynchronization, multi-client service, daemon, or remote guarantee;
 - the validated full-runtime profile is currently Windows 11 x86_64 with a
