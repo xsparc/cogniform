@@ -22,8 +22,8 @@ sample, the configured target and readback limits, and render/copy usages for
 linear `Rgba8Unorm` color, `R32Uint` identity, `Rgba8Unorm` normal, and
 `Depth32Float` depth. It must also support copy-destination, sampled binding,
 and filterable sampling for `Rgba8UnormSrgb` asset textures.
-Linear `Rgba8Unorm` asset normal textures require the same sampled,
-copy-destination, and filterable usages.
+Linear `Rgba8Unorm` asset normal and metallic-roughness textures require the
+same sampled, copy-destination, and filterable usages.
 
 No optional or experimental GPU feature is enabled. The adapter summary records
 the adapter name, backend, device class, and WebGPU-compliance flag for
@@ -67,10 +67,12 @@ non-normalized finite f32 `TEXCOORD_0` reaches shader location 2 and optional
 finite normalized `TANGENT` plus exact handedness reaches location 3; missing
 asset values, built-ins, and proxy vertices use exact zero coordinates and a
 disabled `[1, 0, 0, 1]` tangent. A mesh may sample one approved embedded PNG
-for each base-color and normal role. The renderer decodes base RGB as sRGB,
-normal RGB as linear data, ignores normal alpha, and preserves glTF top-to-
-bottom rows. One renderer-owned repeat/linear one-mip sampler applies the
-omitted-sampler policy. White and neutral-normal fallbacks bind on every draw.
+for each base-color, metallic-roughness, and normal role. The renderer decodes
+base RGB as sRGB and the other roles as linear data, ignores normal alpha and
+metallic-roughness red/alpha, and preserves glTF top-to-bottom rows. One
+renderer-owned repeat/linear one-mip sampler applies the omitted-sampler
+policy. White, factor-one metallic-roughness, and neutral-normal fallbacks bind
+on every draw.
 External images, generated tangents, custom samplers, transforms, additional
 coordinate sets, mipmaps, and other material texture roles remain unsupported.
 
@@ -108,8 +110,10 @@ the existing color with neutral dielectric `metallic = 0`, `roughness = 0.8`.
 An imported normal texture constructs a source-tangent basis after the model
 transform, applies finite normal scale to sampled XY, and perturbs only this
 direct-light response. Unlit output and the normal observation retain the
-geometric transformed direction. A scene material override disables both
-imported texture roles.
+geometric transformed direction. An imported metallic-roughness texture
+multiplies perceptual roughness by green and metallic by blue before both
+directional and point response; red and alpha are ignored. A scene material
+override disables all three imported texture roles.
 
 The selected camera's extracted world translation supplies the view direction.
 A zero or derived-overflow view vector suppresses specular without creating a
@@ -121,8 +125,9 @@ The existing bind group carries one fixed 480-byte per-draw uniform. The prior
 448-byte prefix remains model, view-projection, color, compact ID, directional
 count and four directional slots, then point count and four point slots. Two
 appended zero-padded `vec4` slots contain camera position and
-metallic/roughness plus normal scale/enabled state. Bindings 1 and 3 select the
-sampled base-color and normal views; binding 2 is the fixed sampler. This adds
+metallic/roughness plus normal scale/enabled state. Bindings 1, 3, and 4 select
+the sampled base-color, normal, and metallic-roughness views; binding 2 is the
+fixed sampler. This adds
 no light buffer, alternate pipeline, runtime
 configuration, or observation payload. Point range/cutoff/radius, spot lights,
 ambient/emissive or image-based lighting, shadows, additional material texture roles,
@@ -190,6 +195,8 @@ cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ig
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_material_factors_drive_direct_light_and_scene_override
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact primary_texcoords_are_retained_without_changing_rendered_observations
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact embedded_base_color_texture_preserves_orientation_factor_override_and_residency
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact metallic_roughness_texture_multiplies_factors_for_direct_lights_only
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact three_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work
 ```
 
@@ -240,5 +247,9 @@ See [ADR 0029](../adr/0029-bounded-embedded-png-base-color-textures.md) for the
 decode, residency, sampling, fallback, and material-override rules.
 See [ADR 0030](../adr/0030-explicit-content-hash-asset-eviction.md) for the
 content-hash eviction boundary, accounting, and submitted-work rule.
+See [ADR 0055](../adr/0055-bounded-source-tangent-normal-textures.md) for the
+normal-texture tangent-space, scale, role-residency, and geometric-normal rules.
+See [ADR 0056](../adr/0056-bounded-metallic-roughness-textures.md) for the
+packed-channel, linear-sampling, factor, role-residency, and override rules.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

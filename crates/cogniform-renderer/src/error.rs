@@ -15,7 +15,7 @@ pub enum RenderTargetKind {
     EntityId,
     /// Sampled sRGB asset base-color texture.
     AssetBaseColor,
-    /// Sampled linear asset normal texture.
+    /// Sampled linear asset normal and metallic-roughness textures.
     AssetNormal,
 }
 

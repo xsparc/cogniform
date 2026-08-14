@@ -437,6 +437,102 @@ fn normal_texture_changes_direct_lighting_not_geometric_normal_observation() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn metallic_roughness_texture_multiplies_factors_for_direct_lights_only() {
+    let texture = metallic_roughness_fixture(Some([11, 128, 64, 17]), 1.0, 0.5);
+    let ignored_channels = metallic_roughness_fixture(Some([233, 128, 64, 251]), 1.0, 0.5);
+    let neutral = metallic_roughness_fixture(Some([0, 255, 255, 0]), 1.0, 0.5);
+    let multiplied_factors = metallic_roughness_fixture(
+        None,
+        f32::from(64_u8) / 255.0,
+        0.5 * f32::from(128_u8) / 255.0,
+    );
+
+    let unlit_textured = material_frame(texture.clone(), None, false);
+    let unlit_neutral = material_frame(neutral.clone(), None, false);
+    assert_eq!(
+        unlit_textured.color_at(WIDTH / 2, HEIGHT / 2),
+        unlit_neutral.color_at(WIDTH / 2, HEIGHT / 2),
+        "metallic-roughness values must not alter an unlit base color"
+    );
+
+    for light_kind in [LightKind::Directional, LightKind::Point] {
+        let textured = material_frame(texture.clone(), Some(light_kind), false);
+        let ignored = material_frame(ignored_channels.clone(), Some(light_kind), false);
+        let scalar = material_frame(multiplied_factors.clone(), Some(light_kind), false);
+        let neutral = material_frame(neutral.clone(), Some(light_kind), false);
+        let center = (WIDTH / 2, HEIGHT / 2);
+        assert_eq!(
+            textured.color_at(center.0, center.1),
+            ignored.color_at(center.0, center.1),
+            "metallic-roughness red and alpha channels must be ignored"
+        );
+        assert_color_near(
+            &textured,
+            center,
+            scalar.color_at(center.0, center.1).unwrap(),
+        );
+        assert_ne!(
+            textured.color_at(center.0, center.1),
+            neutral.color_at(center.0, center.1),
+            "green roughness and blue metallic channels must alter direct response"
+        );
+        assert_non_color_observations_equal(&textured, &neutral);
+    }
+
+    let overridden = material_frame(texture, Some(LightKind::Directional), true);
+    let overridden_neutral = material_frame(neutral, Some(LightKind::Directional), true);
+    assert_eq!(
+        overridden.color_at(WIDTH / 2, HEIGHT / 2),
+        overridden_neutral.color_at(WIDTH / 2, HEIGHT / 2),
+        "an explicit scene material must disable the imported metallic-roughness role"
+    );
+    assert_non_color_observations_equal(&overridden, &overridden_neutral);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn three_texture_roles_upload_evict_and_rehydrate_exactly() {
+    let bytes = three_role_texture_fixture();
+    let content_hash = content_hash(&bytes);
+    let key = AssetMeshKey {
+        content_hash,
+        mesh_index: 0,
+    };
+    let mut assets = AssetStore::default();
+    assets.enqueue(content_hash, bytes).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(assets.record(content_hash).unwrap().decoded_bytes, 156);
+    let upload = assets.upload_job(key).unwrap();
+    assert!(upload.base_color_texture().is_some());
+    assert!(upload.metallic_roughness_texture().is_some());
+    assert!(upload.normal_texture().is_some());
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer.enqueue_asset_upload(upload.clone()).unwrap();
+    assert_eq!(renderer.asset_stats().pending_textures, 3);
+    assert_eq!(renderer.asset_stats().pending_texture_bytes, 12);
+    let uploaded = renderer.process_next_asset_upload().unwrap();
+    assert_eq!(uploaded.texture_byte_len, 12);
+    assert_eq!(renderer.asset_stats().resident_textures, 3);
+    assert_eq!(renderer.asset_stats().resident_texture_bytes, 12);
+    let eviction = renderer.evict_asset(content_hash);
+    assert_eq!(eviction.removed_resident_textures, 3);
+    assert_eq!(eviction.released_resident_texture_bytes, 12);
+    renderer.enqueue_asset_upload(upload).unwrap();
+    assert_eq!(
+        renderer
+            .process_next_asset_upload()
+            .unwrap()
+            .texture_byte_len,
+        12
+    );
+    assert_eq!(renderer.asset_stats().resident_textures, 3);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work() {
     let bytes = textured_two_mesh_fixture();
     let content_hash = content_hash(&bytes);
@@ -721,6 +817,92 @@ fn lit_normal_textured_frame(bytes: Vec<u8>, override_material: bool) -> Rendere
     renderer.submit_scene(camera).unwrap().read().unwrap()
 }
 
+fn material_frame(
+    bytes: Vec<u8>,
+    light_kind: Option<LightKind>,
+    override_material: bool,
+) -> RenderedFrame {
+    let content_hash = content_hash(&bytes);
+    let key = AssetMeshKey {
+        content_hash,
+        mesh_index: 0,
+    };
+    let mut assets = AssetStore::default();
+    assets.enqueue(content_hash, bytes).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    let upload = assets.upload_job(key).unwrap();
+    let has_texture = upload.material().has_metallic_roughness_texture();
+    assert_eq!(upload.metallic_roughness_texture().is_some(), has_texture);
+    let rehydration_upload = upload.clone();
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer.enqueue_asset_upload(upload).unwrap();
+    assert_eq!(
+        renderer.asset_stats().pending_textures,
+        u32::from(has_texture)
+    );
+    assert_eq!(
+        renderer.asset_stats().pending_texture_bytes,
+        u64::from(has_texture) * 4
+    );
+    let uploaded = renderer.process_next_asset_upload().unwrap();
+    assert_eq!(uploaded.texture_byte_len, u64::from(has_texture) * 4);
+    if has_texture {
+        let eviction = renderer.evict_asset(content_hash);
+        assert_eq!(eviction.removed_resident_textures, 1);
+        assert_eq!(eviction.released_resident_texture_bytes, 4);
+        renderer.enqueue_asset_upload(rehydration_upload).unwrap();
+        assert_eq!(
+            renderer
+                .process_next_asset_upload()
+                .unwrap()
+                .texture_byte_len,
+            4
+        );
+    }
+
+    let camera = StableEntityId::new(1).unwrap();
+    let triangle = StableEntityId::new(2).unwrap();
+    let light = StableEntityId::new(3).unwrap();
+    let mut world = AuthoritativeWorld::default();
+    world
+        .apply_patch(
+            &scene_patch(camera, triangle, content_hash, [1.0; 3]),
+            FrameId::new(1).unwrap(),
+        )
+        .unwrap();
+    renderer
+        .apply_extraction(&world.take_render_extraction().unwrap())
+        .unwrap();
+    let mut revision = SceneRevision::new(1);
+    if let Some(light_kind) = light_kind {
+        world
+            .apply_patch(
+                &add_light_patch(revision, light, light_kind),
+                FrameId::new(2).unwrap(),
+            )
+            .unwrap();
+        renderer
+            .apply_extraction(&world.take_render_extraction().unwrap())
+            .unwrap();
+        revision = SceneRevision::new(2);
+    }
+    if override_material {
+        world
+            .apply_patch(
+                &override_material_patch(revision, triangle),
+                FrameId::new(3).unwrap(),
+            )
+            .unwrap();
+        renderer
+            .apply_extraction(&world.take_render_extraction().unwrap())
+            .unwrap();
+    }
+    renderer.submit_scene(camera).unwrap().read().unwrap()
+}
+
 fn upload_textured_meshes(
     renderer: &mut HeadlessRenderer,
     assets: &AssetStore,
@@ -761,7 +943,31 @@ fn assert_color_near(frame: &RenderedFrame, at: (u32, u32), expected_color: [u8;
     }
 }
 
+fn assert_non_color_observations_equal(actual: &RenderedFrame, expected: &RenderedFrame) {
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            assert_eq!(actual.depth_at(x, y), expected.depth_at(x, y));
+            assert_eq!(
+                actual.stable_entity_id_at(x, y),
+                expected.stable_entity_id_at(x, y)
+            );
+            assert_eq!(actual.normal_at(x, y), expected.normal_at(x, y));
+            if actual.stable_entity_id_at(x, y).is_none() {
+                assert_eq!(actual.color_at(x, y), expected.color_at(x, y));
+            }
+        }
+    }
+}
+
 fn add_directional_light_patch(base_revision: SceneRevision, light: StableEntityId) -> ScenePatch {
+    add_light_patch(base_revision, light, LightKind::Directional)
+}
+
+fn add_light_patch(
+    base_revision: SceneRevision,
+    light: StableEntityId,
+    kind: LightKind,
+) -> ScenePatch {
     ScenePatch {
         schema_version: SchemaVersion::V1,
         transaction_id: TransactionId::new(4).unwrap(),
@@ -773,15 +979,23 @@ fn add_directional_light_patch(base_revision: SceneRevision, light: StableEntity
         operations: vec![SceneOperation::Create(CreateEntity {
             entity_id: light,
             components: vec![
-                ComponentValue::LocalTransform(transform(0.0, [1.0; 3])),
+                ComponentValue::LocalTransform(transform(
+                    if kind == LightKind::Point { 2.0 } else { 0.0 },
+                    [1.0; 3],
+                )),
                 ComponentValue::Light(LightComponent {
-                    kind: LightKind::Directional,
+                    kind,
                     color: ColorRgb {
                         r: unit(1.0),
                         g: unit(1.0),
                         b: unit(1.0),
                     },
-                    intensity: NonNegativeF32::new(0.5).unwrap(),
+                    intensity: NonNegativeF32::new(if kind == LightKind::Point {
+                        2.0
+                    } else {
+                        0.5
+                    })
+                    .unwrap(),
                 }),
             ],
         })],
@@ -938,19 +1152,53 @@ fn smooth_fixture() -> Vec<u8> {
 }
 
 fn metallic_fixture() -> Vec<u8> {
+    metallic_roughness_fixture(None, 1.0, 0.5)
+}
+
+fn metallic_roughness_fixture(
+    texel: Option<[u8; 4]>,
+    metallic_factor: f32,
+    roughness_factor: f32,
+) -> Vec<u8> {
     let positions = [
         [-0.75_f32, -0.75, 0.0],
         [0.75, -0.75, 0.0],
         [0.0, 0.75, 0.0],
     ];
-    let mut binary = Vec::with_capacity(36);
+    let mut binary = Vec::new();
     for vertex in positions {
         for value in vertex {
             binary.extend_from_slice(&value.to_le_bytes());
         }
     }
-    let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}],"materials":[{"pbrMetallicRoughness":{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":1.0,"roughnessFactor":0.5}}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0,"mode":4}]}]}"#;
-    glb_with_json(json, &binary)
+    for texcoord in [[0.5_f32, 0.5]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let (image_view, texture_fields, role) = if let Some(texel) = texel {
+        let png = encode_png(1, 1, &texel);
+        let image_offset = binary.len();
+        binary.extend_from_slice(&png);
+        (
+            format!(
+                r#",{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}"#,
+                png.len()
+            ),
+            r#","textures":[{"source":0}],"images":[{"bufferView":2,"mimeType":"image/png"}]"#,
+            r#","metallicRoughnessTexture":{"index":0}"#,
+        )
+    } else {
+        (String::new(), "", "")
+    };
+    let pbr_fields = format!(
+        r#""baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":{metallic_factor},"roughnessFactor":{roughness_factor}{role}"#
+    );
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}}{image_view}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{{pbr_fields}}}}}]{texture_fields},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+    );
+    glb_with_json(&json, &binary)
 }
 
 fn primary_uv_fixture() -> Vec<u8> {
@@ -1046,6 +1294,55 @@ fn normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
         binary_length = binary.len(),
         base_image_length = base_png.len(),
         normal_image_length = normal_png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn three_role_texture_fixture() -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.5_f32, 0.5]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let images = [
+        encode_png(1, 1, &[255, 255, 255, 255]),
+        encode_png(1, 1, &[7, 128, 64, 9]),
+        encode_png(1, 1, &[128, 128, 255, 255]),
+    ];
+    let offsets = images.each_ref().map(|image| {
+        let offset = binary.len();
+        binary.extend_from_slice(image);
+        offset
+    });
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{base_length}}},{{"buffer":0,"byteOffset":{material_offset},"byteLength":{material_length}}},{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{normal_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1}}}},"normalTexture":{{"index":2}}}}],"textures":[{{"source":0}},{{"source":1}},{{"source":2}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}},{{"bufferView":6,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        base_offset = offsets[0],
+        base_length = images[0].len(),
+        material_offset = offsets[1],
+        material_length = images[1].len(),
+        normal_offset = offsets[2],
+        normal_length = images[2].len(),
     );
     glb_with_json(&json, &binary)
 }

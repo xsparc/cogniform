@@ -33,6 +33,9 @@ var base_color_sampler: sampler;
 @group(0) @binding(3)
 var normal_texture: texture_2d<f32>;
 
+@group(0) @binding(4)
+var metallic_roughness_texture: texture_2d<f32>;
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) world_normal: vec3<f32>,
@@ -75,14 +78,14 @@ fn direct_material_response(
     surface_to_view: vec3<f32>,
     has_view: bool,
     base_color: vec3<f32>,
+    metallic: f32,
+    roughness: f32,
 ) -> vec3<f32> {
     let normal_light = clamp(dot(world_normal, surface_to_light), 0.0, 1.0);
     if normal_light <= 0.0 {
         return vec3(0.0);
     }
 
-    let metallic = draw.material.x;
-    let roughness = draw.material.y;
     let normal_reflectance = mix(vec3(0.04), base_color, vec3(metallic));
     var fresnel = normal_reflectance;
     var specular = vec3(0.0);
@@ -205,6 +208,13 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
     }
     let base_color = textureSample(base_color_texture, base_color_sampler, input.texcoord_0)
         * draw.color;
+    let sampled_material = textureSample(
+        metallic_roughness_texture,
+        base_color_sampler,
+        input.texcoord_0,
+    ).gb;
+    let roughness = clamp(draw.material.y * sampled_material.x, 0.0, 1.0);
+    let metallic = clamp(draw.material.x * sampled_material.y, 0.0, 1.0);
     var shaded_color = base_color.rgb;
     if draw.directional_light_count.x > 0u || draw.point_light_count.x > 0u {
         shaded_color = vec3(0.0);
@@ -227,6 +237,8 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
                 surface_to_view,
                 has_view,
                 base_color.rgb,
+                metallic,
+                roughness,
             );
             let contribution = min(
                 response * min(
@@ -255,6 +267,8 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
                         surface_to_view,
                         has_view,
                         base_color.rgb,
+                        metallic,
+                        roughness,
                     );
                     let contribution = min(
                         response * light.color_intensity.rgb * attenuated_intensity,

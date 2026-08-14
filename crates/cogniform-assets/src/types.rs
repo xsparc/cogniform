@@ -216,6 +216,7 @@ pub struct AssetMaterial {
     metallic: UnitF32,
     roughness: UnitF32,
     has_base_color_texture: bool,
+    has_metallic_roughness_texture: bool,
     has_normal_texture: bool,
     normal_scale: f32,
 }
@@ -229,6 +230,7 @@ impl AssetMaterial {
             metallic,
             roughness,
             has_base_color_texture: false,
+            has_metallic_roughness_texture: false,
             has_normal_texture: false,
             normal_scale: 1.0,
         }
@@ -236,6 +238,11 @@ impl AssetMaterial {
 
     pub(crate) const fn with_base_color_texture(mut self) -> Self {
         self.has_base_color_texture = true;
+        self
+    }
+
+    pub(crate) const fn with_metallic_roughness_texture(mut self) -> Self {
+        self.has_metallic_roughness_texture = true;
         self
     }
 
@@ -267,6 +274,13 @@ impl AssetMaterial {
     #[must_use]
     pub const fn has_base_color_texture(self) -> bool {
         self.has_base_color_texture
+    }
+
+    /// Returns whether this material samples the asset's shared linear
+    /// metallic-roughness texture.
+    #[must_use]
+    pub const fn has_metallic_roughness_texture(self) -> bool {
+        self.has_metallic_roughness_texture
     }
 
     /// Returns whether this material samples the asset's shared tangent-space normal texture.
@@ -331,6 +345,7 @@ pub struct AssetUploadJob {
     vertices: Arc<[AssetVertex]>,
     material: AssetMaterial,
     base_color_texture: Option<AssetTexture>,
+    metallic_roughness_texture: Option<AssetTexture>,
     normal_texture: Option<AssetTexture>,
 }
 
@@ -340,6 +355,7 @@ impl AssetUploadJob {
         vertices: Arc<[AssetVertex]>,
         material: AssetMaterial,
         base_color_texture: Option<AssetTexture>,
+        metallic_roughness_texture: Option<AssetTexture>,
         normal_texture: Option<AssetTexture>,
     ) -> Self {
         Self {
@@ -347,6 +363,7 @@ impl AssetUploadJob {
             vertices,
             material,
             base_color_texture,
+            metallic_roughness_texture,
             normal_texture,
         }
     }
@@ -381,6 +398,13 @@ impl AssetUploadJob {
         self.base_color_texture.as_ref()
     }
 
+    /// Returns the immutable shared linear metallic-roughness texture when
+    /// this mesh's material references it.
+    #[must_use]
+    pub const fn metallic_roughness_texture(&self) -> Option<&AssetTexture> {
+        self.metallic_roughness_texture.as_ref()
+    }
+
     /// Returns the immutable shared normal texture when this mesh's material references it.
     #[must_use]
     pub const fn normal_texture(&self) -> Option<&AssetTexture> {
@@ -406,13 +430,16 @@ pub(crate) struct DecodedMesh {
 pub(crate) struct DecodedAsset {
     pub(crate) meshes: Vec<DecodedMesh>,
     pub(crate) base_color_texture: Option<AssetTexture>,
+    pub(crate) metallic_roughness_texture: Option<AssetTexture>,
     pub(crate) normal_texture: Option<AssetTexture>,
     pub(crate) byte_len: u64,
 }
 
 impl DecodedAsset {
     pub(crate) fn texture_count(&self) -> u32 {
-        u32::from(self.base_color_texture.is_some()) + u32::from(self.normal_texture.is_some())
+        u32::from(self.base_color_texture.is_some())
+            + u32::from(self.metallic_roughness_texture.is_some())
+            + u32::from(self.normal_texture.is_some())
     }
 }
 
@@ -491,7 +518,7 @@ pub struct AssetStoreEviction {
     pub released_resident_cpu_bytes: u64,
     /// Decoded mesh records released.
     pub removed_meshes: u32,
-    /// Role-separated decoded textures released; currently zero to two.
+    /// Role-separated decoded textures released; currently zero to three.
     pub removed_textures: u32,
 }
 

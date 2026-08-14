@@ -438,14 +438,17 @@ are clamped in linear color space, and alpha remains unchanged.
 Zero-intensity definitions count toward their kind's capacity but are inactive.
 Only a scene with no active definition of either kind bypasses lighting and
 preserves exact base RGBA. A resident GLB mesh supplies its imported base
-color, optional base-color and tangent-space normal textures, metallic,
-roughness, and normal scale when the entity has no explicit material. The
-shader samples base color as `Rgba8UnormSrgb`, samples the normal role as linear
-`Rgba8Unorm`, and uses one fixed repeat/linear one-mip sampler. Sampled linear
-RGBA multiplies the numeric base-color factor before either shading path; a
-source-tangent TBN perturbs only direct-light response. Untextured draws use
-white and neutral-normal fallbacks. A scene `MaterialComponent` overrides the
-whole imported material and disables both imported texture roles. A built-in or material-free
+color, optional base-color, metallic-roughness, and tangent-space normal
+textures, metallic, roughness, and normal scale when the entity has no explicit
+material. The shader samples base color as `Rgba8UnormSrgb`, samples the other
+roles as linear `Rgba8Unorm`, and uses one fixed repeat/linear one-mip sampler.
+Sampled base RGBA multiplies the numeric base-color factor before either
+shading path. The metallic-roughness green and blue channels multiply numeric
+roughness and metallic only inside direct lighting; red and alpha are ignored.
+A source-tangent TBN perturbs only direct-light response. Untextured draws use
+white, factor-one metallic-roughness, and neutral-normal fallbacks. A scene
+`MaterialComponent` overrides the whole imported material and disables all
+three imported texture roles. A built-in or material-free
 asset without a scene material uses its existing fallback color with neutral
 dielectric parameters `metallic = 0`, `roughness = 0.8`. Ambient, emissive,
 image-based lighting, shadows, spot lights, configurable point range/radius,
@@ -474,10 +477,11 @@ MVP accepts primitives first, then a bounded glTF/GLB subset with finite
 positions, optional same-count finite vertex normals, optional same-count
 finite f32 `TEXCOORD_0`, optional same-count finite non-zero f32 `TANGENT`
 `VEC4` with exact handedness, one bounded numeric metallic-roughness material
-per mesh, and one shared embedded PNG per base-color or normal role. The image subset
+per mesh, and one shared embedded PNG per base-color, metallic-roughness, or
+normal role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
 retained-byte, decoder-working-byte, per-asset, and aggregate CPU limits into
-at most two immutable RGBA8 values; a source shared by both roles counts once
+at most three immutable RGBA8 role values; a source shared by roles counts once
 on CPU. Decoders verify declared and decoded sizes before allocation; expanded
 upload vertices always reserve exactly 48 bytes for position, unit normal,
 primary coordinate, and unit tangent plus handedness. Missing non-normal-map

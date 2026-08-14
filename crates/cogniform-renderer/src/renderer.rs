@@ -148,6 +148,8 @@ pub struct HeadlessRenderer {
     white_base_color_view: wgpu::TextureView,
     _neutral_normal_texture: wgpu::Texture,
     neutral_normal_view: wgpu::TextureView,
+    _neutral_metallic_roughness_texture: wgpu::Texture,
+    neutral_metallic_roughness_view: wgpu::TextureView,
     asset_texture_sampler: wgpu::Sampler,
     cube_vertices: wgpu::Buffer,
     plane_vertices: wgpu::Buffer,
@@ -203,6 +205,8 @@ impl HeadlessRenderer {
             white_base_color_view,
             neutral_normal_texture,
             neutral_normal_view,
+            neutral_metallic_roughness_texture,
+            neutral_metallic_roughness_view,
             asset_texture_sampler,
         ) = create_asset_texture_resources(&device, &queue);
         let cube_vertices =
@@ -228,6 +232,8 @@ impl HeadlessRenderer {
             white_base_color_view,
             _neutral_normal_texture: neutral_normal_texture,
             neutral_normal_view,
+            _neutral_metallic_roughness_texture: neutral_metallic_roughness_texture,
+            neutral_metallic_roughness_view,
             asset_texture_sampler,
             cube_vertices,
             plane_vertices,
@@ -342,6 +348,7 @@ impl HeadlessRenderer {
                 roughness: 0.8,
                 normal_scale: 1.0,
                 use_imported_base_color_texture: false,
+                use_imported_metallic_roughness_texture: false,
                 use_imported_normal_texture: false,
                 compact_id: REFERENCE_ENTITY_ID,
             }],
@@ -407,6 +414,7 @@ impl HeadlessRenderer {
                 draw_layout: &self.draw_layout,
                 white_base_color_view: &self.white_base_color_view,
                 neutral_normal_view: &self.neutral_normal_view,
+                neutral_metallic_roughness_view: &self.neutral_metallic_roughness_view,
                 asset_texture_sampler: &self.asset_texture_sampler,
                 cube_vertices: &self.cube_vertices,
                 plane_vertices: &self.plane_vertices,
@@ -562,47 +570,7 @@ async fn create_reference_pipeline(
         label: Some("cogniform-reference-scene-shader"),
         source: wgpu::ShaderSource::Wgsl(include_str!("reference_scene.wgsl").into()),
     });
-    let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("cogniform-draw-bind-group-layout"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 3,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 2,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-        ],
-    });
+    let draw_layout = create_draw_bind_group_layout(device);
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("cogniform-reference-scene-layout"),
         bind_group_layouts: &[Some(&draw_layout)],
@@ -650,6 +618,60 @@ async fn create_reference_pipeline(
         });
     }
     Ok((pipeline, draw_layout))
+}
+
+fn create_draw_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("cogniform-draw-bind-group-layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ],
+    })
 }
 
 fn validate_config(config: &RendererConfig) -> Result<(), RendererError> {
@@ -987,6 +1009,7 @@ struct ScenePassResources<'a> {
     draw_layout: &'a wgpu::BindGroupLayout,
     white_base_color_view: &'a wgpu::TextureView,
     neutral_normal_view: &'a wgpu::TextureView,
+    neutral_metallic_roughness_view: &'a wgpu::TextureView,
     asset_texture_sampler: &'a wgpu::Sampler,
     cube_vertices: &'a wgpu::Buffer,
     plane_vertices: &'a wgpu::Buffer,
@@ -1053,7 +1076,7 @@ fn encode_scene_pass(
     });
     render_pass.set_pipeline(resources.pipeline);
     for draw in draws {
-        let (vertices, vertex_count, base_color_view, normal_view) =
+        let (vertices, vertex_count, base_color_view, normal_view, metallic_roughness_view) =
             draw_resources(draw, resources);
         let bytes = encode_draw_uniform(draw, directional_lights, point_lights);
         let buffer = resources.device.create_buffer(&wgpu::BufferDescriptor {
@@ -1085,6 +1108,10 @@ fn encode_scene_pass(
                         binding: 3,
                         resource: wgpu::BindingResource::TextureView(normal_view),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(metallic_roughness_view),
+                    },
                 ],
             });
         render_pass.set_bind_group(0, &bind_group, &[]);
@@ -1101,6 +1128,7 @@ fn draw_resources<'a>(
     u32,
     &'a wgpu::TextureView,
     &'a wgpu::TextureView,
+    &'a wgpu::TextureView,
 ) {
     match draw.geometry {
         PreparedGeometry::Cuboid => (
@@ -1108,18 +1136,21 @@ fn draw_resources<'a>(
             CUBE_VERTEX_COUNT,
             resources.white_base_color_view,
             resources.neutral_normal_view,
+            resources.neutral_metallic_roughness_view,
         ),
         PreparedGeometry::Plane => (
             resources.plane_vertices,
             PLANE_VERTEX_COUNT,
             resources.white_base_color_view,
             resources.neutral_normal_view,
+            resources.neutral_metallic_roughness_view,
         ),
         PreparedGeometry::Sphere => (
             resources.sphere_vertices,
             SPHERE_VERTEX_COUNT,
             resources.white_base_color_view,
             resources.neutral_normal_view,
+            resources.neutral_metallic_roughness_view,
         ),
         PreparedGeometry::Asset(key) => {
             let mesh = resources
@@ -1142,11 +1173,22 @@ fn draw_resources<'a>(
             } else {
                 resources.neutral_normal_view
             };
+            let metallic_roughness_view = if draw.use_imported_metallic_roughness_texture {
+                resources
+                    .assets
+                    .texture_view(key.content_hash, AssetTextureRole::MetallicRoughness)
+                    .expect(
+                        "metallic-roughness-textured resident mesh retains its shared GPU texture",
+                    )
+            } else {
+                resources.neutral_metallic_roughness_view
+            };
             (
                 mesh.buffer(),
                 mesh.vertex_count(),
                 base_color_view,
                 normal_view,
+                metallic_roughness_view,
             )
         }
     }
@@ -1160,76 +1202,31 @@ fn create_asset_texture_resources(
     wgpu::TextureView,
     wgpu::Texture,
     wgpu::TextureView,
+    wgpu::Texture,
+    wgpu::TextureView,
     wgpu::Sampler,
 ) {
-    let base_color_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("cogniform-white-base-color"),
-        size: wgpu::Extent3d {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: ASSET_BASE_COLOR_FORMAT,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &base_color_texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        &[255, 255, 255, 255],
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(4),
-            rows_per_image: Some(1),
-        },
-        wgpu::Extent3d {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        },
+    let (base_color_texture, base_color_view) = create_solid_asset_texture(
+        device,
+        queue,
+        "cogniform-white-base-color",
+        ASSET_BASE_COLOR_FORMAT,
+        [255; 4],
     );
-    let base_color_view = base_color_texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let normal_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("cogniform-neutral-normal"),
-        size: wgpu::Extent3d {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: ASSET_NORMAL_FORMAT,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &normal_texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        &[128, 128, 255, 255],
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(4),
-            rows_per_image: Some(1),
-        },
-        wgpu::Extent3d {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        },
+    let (normal_texture, normal_view) = create_solid_asset_texture(
+        device,
+        queue,
+        "cogniform-neutral-normal",
+        ASSET_NORMAL_FORMAT,
+        [128, 128, 255, 255],
     );
-    let normal_view = normal_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let (metallic_roughness_texture, metallic_roughness_view) = create_solid_asset_texture(
+        device,
+        queue,
+        "cogniform-neutral-metallic-roughness",
+        ASSET_NORMAL_FORMAT,
+        [255; 4],
+    );
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("cogniform-asset-repeat-linear"),
         address_mode_u: wgpu::AddressMode::Repeat,
@@ -1245,8 +1242,51 @@ fn create_asset_texture_resources(
         base_color_view,
         normal_texture,
         normal_view,
+        metallic_roughness_texture,
+        metallic_roughness_view,
         sampler,
     )
+}
+
+fn create_solid_asset_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &'static str,
+    format: wgpu::TextureFormat,
+    texel: [u8; 4],
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let size = wgpu::Extent3d {
+        width: 1,
+        height: 1,
+        depth_or_array_layers: 1,
+    };
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &texel,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4),
+            rows_per_image: Some(1),
+        },
+        size,
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
 }
 
 fn create_builtin_vertex_buffer(
@@ -1751,6 +1791,7 @@ mod tests {
             roughness: 0.2,
             normal_scale: 1.0,
             use_imported_base_color_texture: false,
+            use_imported_metallic_roughness_texture: false,
             use_imported_normal_texture: false,
             compact_id: 42,
         };
