@@ -182,6 +182,20 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 
 ### Changed
 
+- the bounded MCP stdio adapter now serves exact MCP `2026-07-28`
+  `server/discover` and self-contained requests beside its byte-compatible MCP
+  `2025-11-25` initialize lifecycle. One Cogniform-owned era gate validates
+  every modern request, prevents lifecycle switching, retains existing
+  identified legacy opening errors, and rejects client response/error
+  directions through the existing redacted transport category. Modern
+  discovery advertises only tools and resources; supported successes carry
+  `resultType` and informational server identity, while discovery, list, and
+  read results use zero-lifetime private cache hints. The exact four tools, one
+  latest resource, cancellation/backpressure behavior, dependencies, local
+  trusted-parent authority, workspace version, deployment, and release state
+  are unchanged. `MCP_MODERN_PROTOCOL_VERSION` is an additive public constant;
+  `MCP_PROTOCOL_VERSION` remains the legacy initialization revision;
+
 - the shared workspace version, all fifteen exact first-party workspace
   dependency requirements, and all sixteen first-party lockfile package
   entries now use `0.1.0-rc.1`. Every member still inherits the shared version
@@ -345,9 +359,10 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   negotiated close only. It creates no process or endpoint and supplies no
   confidentiality, authorization, freshness, replay policy, cancellation,
   resynchronization, full duplex, multi-client, daemon, or remote guarantee;
-- `serve-mcp-stdio` supports one parent-owned inherited-stream client, stable
-  MCP `2025-11-25`, four fixed tools, one in-memory latest-value observation
-  resource, serialized calls, and one lazy 64x64 local service. Its observation
+- `serve-mcp-stdio` supports one parent-owned inherited-stream client pinned to
+  exact MCP `2025-11-25` or exact MCP `2026-07-28`, four fixed tools, one
+  in-memory latest-value observation resource, serialized calls, and one lazy
+  64x64 local service. Its observation
   poll has a fixed 15 second deadline and exact matching active cancellation is
   process-terminal before response writing, but it supplies no general
   operation deadline, rollback, effect receipt, reusable cancellation,

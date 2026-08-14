@@ -6,13 +6,15 @@ observation resource by CF047. CF048 refreshes the official Rust SDK while
 preserving this protocol profile byte-for-byte. CF049 closes every advertised
 tool result shape and adds bounded workflow instructions for agent clients.
 CF053 makes one exact matching active-request cancellation observable while
-keeping the child process terminal and the request pipeline bounded.
+keeping the child process terminal and the request pipeline bounded. CF054
+adds exact MCP `2026-07-28` discovery and self-contained requests beside the
+unchanged legacy lifecycle.
 
-`cogniform-cli serve-mcp-stdio` serves stable MCP `2025-11-25` over inherited
-redirected stdin/stdout. It is a local child-process adapter, not a listener or
-remote security boundary. A parent owns pipe creation, child lifetime, peer
-identity, authorization, confidentiality, freshness, rate policy, and
-supervision.
+`cogniform-cli serve-mcp-stdio` serves exact MCP `2025-11-25` legacy sessions
+and exact MCP `2026-07-28` stateless requests over inherited redirected
+stdin/stdout. It is a local child-process adapter, not a listener or remote
+security boundary. A parent owns pipe creation, child lifetime, peer identity,
+authorization, confidentiality, freshness, rate policy, and supervision.
 
 ## Protocol profile
 
@@ -30,10 +32,24 @@ completely encoded, written, and flushed. No further line is read while that
 slot is occupied, so the fixed reader buffer and inherited pipe provide
 backpressure. CR remains ordinary JSON whitespace.
 
-Initialization must request exactly protocol version `2025-11-25`. Ping is the
-only request accepted before initialize. Initialization and tool discovery do
+The opening request selects one connection era:
+
+- a legacy client sends `initialize` with exactly `2025-11-25`; ping is the
+  only request accepted before it;
+- a modern client sends `server/discover` or any supported tool/resource
+  request with `_meta.io.modelcontextprotocol/protocolVersion` equal to
+  `2026-07-28` and a decodable
+  `_meta.io.modelcontextprotocol/clientCapabilities` object.
+
+Every later modern request repeats those two fields. Optional client identity
+is not inherited from discovery, and neither identity nor declared extensions
+grant authority. Modern `initialize`, direct 2025 requests, missing or
+malformed modern metadata, unsupported versions, and switching either way
+after the first accepted request fail before semantic dispatch. Identified
+legacy wrong-order and unsupported-initialize requests retain their small
+pre-service JSON-RPC errors. Opening exchange, discovery, and tool listing do
 not construct the local service or select a GPU adapter. The fixed service is
-created lazily on the first valid tool call and all tool calls are serialized.
+created lazily on the first valid tool call and all calls are serialized.
 
 Initialization returns this exact 508-byte ASCII/UTF-8 instruction:
 
@@ -41,15 +57,21 @@ Initialization returns this exact 508-byte ASCII/UTF-8 instruction:
 Fresh child: call query_scene with scene_revision 0. Thereafter use exact revisions from receipts or metadata. Use submit_imagination for semantic changes or apply_patch for direct changes; reuse transaction_id and idempotency_key only for an exact retry. Add a Camera before observe_scene, then read its cogniform:// resource. Calls are serialized. Discard the child after service_failed, invalid_service_output, observation_timeout, or mutating output_unavailable; never infer or retry an uncertain effect.
 ```
 
-The first 512 bytes are therefore self-contained. The instruction summarizes
-the existing contract; it grants no capability and does not replace the typed
-arguments, structured outcomes, or parent-owned supervision policy below.
+Legacy initialization and modern discovery both return the instruction. The
+first 512 bytes are therefore self-contained. It grants no capability and does
+not replace the typed arguments, structured outcomes, or parent-owned
+supervision policy below.
 
 The implementation dependency is exact-pinned `rmcp` 3.1.2, but SDK support is
-not adapter support. The handler advertises only `2025-11-25` and rejects
-`server/discover`, Tasks methods, and per-request selection of `2026-07-28`;
-it advertises no extension capability. Accepted 2025 responses omit the newer `resultType`
-discriminator and per-tool execution metadata.
+not adapter support. Modern discovery advertises only `2026-07-28`, tools, and
+resources; it advertises no extension or Tasks capability. Only
+`server/discover`, `tools/list`, `tools/call`, `resources/list`, and
+`resources/read` are accepted in the modern era. Every supported modern result
+contains `resultType: "complete"` and informational namespaced server identity.
+Discovery, tool/resource lists, and resource reads use `ttlMs: 0` with
+`cacheScope: "private"`, so the mutable latest-resource view is immediately
+stale. Accepted 2025 responses remain byte-compatible and omit `resultType`,
+cache hints, and namespaced server identity.
 
 The server advertises tools plus resources without subscription or list-change
 support. It exposes these tools in this order:
@@ -139,7 +161,7 @@ readable until the session ends.
 
 ## Cancellation
 
-For an active post-initialization request, the parent may send MCP
+For an active request in either connection era, the parent may send MCP
 `notifications/cancelled` with the exact numeric or string request ID. It must
 be the next message if the parent needs prompt cancellation; a previously
 decoded nonmatching message occupies the sole pending slot and keeps later
@@ -158,8 +180,8 @@ general operation deadline, or reusable-session guarantee. The optional reason
 text is ignored before SDK handling and never appears in diagnostics.
 
 Prompts, resource templates, resource subscriptions and notifications,
-observation history, `server/discover`, multi-round-trip results, task
-execution, sampling, elicitation, logging, custom
+observation history, multi-round-trip results, task execution, sampling,
+elicitation, logging, custom
 models, procedure/asset/recovery
 tools, HTTP, sockets, OAuth, and server-created processes are not advertised or
 supported.
@@ -180,17 +202,22 @@ categories:
 | inherited read | `input_failed` |
 | inherited write or flush | `output_failed` |
 
-Wrong initialization order or protocol version returns a stable JSON-RPC
-error when possible and exits with `initialization rejected`. Failures never
-include the input payload, tool arguments, OS error text, adapter identity, or
-scene content. A partial physical output remains possible after an operating
-system write failure; the adapter never retries or resynchronizes that line.
+Wrong opening order, unsupported initialization, or invalid first modern
+metadata returns a stable JSON-RPC error when possible and exits with
+`initialization rejected`. Later missing, malformed, unsupported, mixed-era,
+or unsupported-method requests receive bounded JSON-RPC errors without
+semantic dispatch. A client Response or Error is an invalid direction and
+terminates with `invalid_message`. Failures never include the input payload,
+tool arguments, OS error text, adapter identity, or scene content. A partial
+physical output remains possible after an operating system write failure; the
+adapter never retries or resynchronizes that line.
 
 See [ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md),
 [ADR 0046](../adr/0046-bounded-mcp-apply-patch-tool.md),
 [ADR 0047](../adr/0047-bounded-mcp-observation-resource.md),
 [ADR 0048](../adr/0048-pin-current-rust-mcp-sdk-without-protocol-expansion.md),
 [ADR 0049](../adr/0049-conformant-mcp-discovery-contract.md),
-[ADR 0053](../adr/0053-bounded-terminal-mcp-cancellation.md), the
+[ADR 0053](../adr/0053-bounded-terminal-mcp-cancellation.md),
+[ADR 0054](../adr/0054-bounded-dual-era-mcp-stdio-lifecycle.md), the
 [quickstart](../getting-started/mcp-stdio-adapter.md), and the
 [threat model](../threat-model/mvp.md).

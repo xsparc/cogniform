@@ -35,7 +35,7 @@ release publication, or deployment.
 | Local-session messages | Pass for declared CPU profile | Exact unchanged schema-v1 client/server LF fixtures plus exact schema-v2 hello/imagination/completion/replay fixtures; outer-only correlation; negotiated frame/result bytes and nesting; direction/version/unknown/canonical/substitution/nested identity, revision, receipt, and role validation; no executor or endpoint authority; exhaustive message construction and `LocalSessionValidationKind` matching remain pre-stable in the unpublished source-candidate API |
 | Local-session executor | Pass for declared CPU profile | One version-locked hello; field-wise peer/local/service frame and compilation limits installed before semantic work; every patch/imagination admission; both cross-kind supersession directions; deterministic one-command advancement; exact terminal command/observation correlation; compiled/unresolved/replay/service-invalid outcomes; one-time pending; two-frame output cap; redacted failures; and quiescent close |
 | Local stdio session | Pass for declared CPU and controlled Windows profile | Exact pre-adapter argument/terminal/first-frame behavior, half-duplex no-read-while-live scheduling, asymmetric version-two result-limit adoption, positive-cadence fixed completion deadline, partial-output/flush/fatal handling, stable diagnostics, and passing controlled child-process v1 patch plus v2 imagination/patch/query/observation/replay/close exchanges |
-| MCP stdio adapter | Pass for declared CPU and controlled Windows profile | Exact stable-version initialization with a 508-byte workflow instruction and singleton handler advertisement on exact-pinned official SDK 3.1.2; no advertised extensions; explicit 2026 discovery/Tasks/per-request-version rejection and omission of newer result shapes; exactly four ordered tools with closed mutually exclusive success/error schemas and stable vocabularies, plus resources without subscriptions/list-change; incremental input byte/nesting bounds; one active request plus one decoded pending message, with exact matching cancellation delivered before response writing and terminal no-response/no-later-dispatch behavior; wrong/missing/late cancellation remains response-through-flush; bounded encode-before-write output; typed validation before lazy service creation; serialized exact-revision query, one-command imagination, direct atomic patch application, and cooperative bounded observation; exact retained replay without duplicate compile/mutation; one exact-URI latest-value canonical resource with atomic replacement and cancellation/failure preservation; stable invalid/stale/conflict/busy/output roles; official-client, raw-wire, cancellation, stalled-writer, and controlled child-process evidence; no listener or remote authority |
+| MCP stdio adapter | Pass for declared CPU and controlled Windows profile | Byte-compatible exact `2025-11-25` initialization beside exact `2026-07-28` discovery or direct requests; one pinned connection era and independent modern protocol/capability validation; a 508-byte workflow instruction; no advertised extensions or inherited discovery authority; complete modern result discrimination, informational server identity, and zero-TTL private discovery/list/read cache roles; explicit Tasks and unsupported-method rejection; exactly four ordered tools with closed mutually exclusive success/error schemas and stable vocabularies, plus resources without subscriptions/list-change; incremental input byte/nesting bounds; one active request plus one decoded pending message, with exact matching cancellation delivered before response writing and terminal no-response/no-later-dispatch behavior; wrong/missing/late cancellation remains response-through-flush; bounded encode-before-write output; typed validation before lazy service creation; serialized exact-revision query, one-command imagination, direct atomic patch application, and cooperative bounded observation; exact retained replay without duplicate compile/mutation; one exact-URI latest-value canonical resource with atomic replacement and cancellation/failure preservation; stable invalid/stale/conflict/busy/output roles; official-client, raw-wire, cancellation, stalled-writer, and controlled child-process evidence in both eras; no listener or remote authority |
 | Compilation result contract | Pass for declared CPU profile | Exact compiled/unresolved schema-v1 LF fixtures, bounded canonical round trips, malformed/substituted/order/duplicate/outcome/revision rejection, nested patch validation, compiler pre-return encoded/nesting enforcement, source-path compiler re-exports, and unchanged normalization/IDs/patch bytes without session or I/O authority; exhaustive result/config construction and `CompileError` matching remain pre-stable in the unpublished source-candidate API |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
@@ -57,10 +57,12 @@ published release.
 
 ## Required evidence and preparation before publication
 
-Checked items below were reproduced on the CF051 candidate branch and are
-recorded in the validation baseline. Pull-request quality must reproduce its
-portable subset, and the exact clean merged/tagged commit must remain unchanged
-through the still-open identity, archive, and publication gates.
+Checked items below were reproduced through CF054 and are recorded in the
+validation baseline; the package/source identity matrix originated on CF051
+and the executable MCP evidence was revalidated on CF054. Pull-request quality
+must reproduce the portable subset, and the exact clean merged/tagged commit
+must remain unchanged through the still-open identity, archive, and publication
+gates.
 
 - [ ] Start from a clean, protected `main` commit whose pull-request checks and
       reviewed tree are recorded.
@@ -106,8 +108,10 @@ through the still-open identity, archive, and publication gates.
       without duplicate processing, query/observation causality, and orderly
       close.
 - [x] Re-run the ordinary MCP adapter/CLI contracts and the controlled ignored
-      child-process flow on an approved adapter; confirm exact `2025-11-25`
-      negotiation, exact 508-byte workflow instructions, four-tool order,
+      child-process flows on an approved adapter; confirm byte-compatible exact
+      `2025-11-25` negotiation and exact `2026-07-28` discovery/direct requests,
+      one pinned era, independent modern metadata validation, exact 508-byte
+      workflow instructions, four-tool order,
       deterministic closed success/error schema metadata and stable vocabularies,
       authoritative typed core validation, pessimistic annotations, and byte
       and nesting equality,
@@ -116,9 +120,10 @@ through the still-open identity, archive, and publication gates.
       duplicate mutation, stale/conflicting rejection, bounded stdout, stable
       redacted failures, exact-revision observation, canonical base64 resource
       link/list/read, atomic latest-value replacement and failure preservation,
-      one-request-through-flush pipelined-read backpressure, and clean EOF. Re-review the
-      exact-pinned SDK/runtime features, the rejected 2026 lifecycle and Tasks
-      surface, `uuid`/`getrandom` reachability, vendored build scripts, and
+      one-request-through-flush pipelined-read backpressure, complete modern
+      result/server/cache roles, and clean EOF. Re-review the exact-pinned
+      SDK/runtime features, excluded Tasks and unsupported modern methods,
+      `uuid`/`getrandom` reachability, vendored build scripts, and
       advisory policy from the candidate tree.
 - [x] Review `CHANGELOG.md`, the threat model, failure/recovery guide, support
       matrix, recovery-envelope, recovery-file, and asset-file
@@ -251,8 +256,12 @@ The GitHub release must be marked prerelease and state:
   confidentiality/freshness/replay/rate/tenancy policy, supervise/restart the
   child, or support configurable, multi-client, full-duplex, or remote use;
 - `cogniform-cli serve-mcp-stdio` supplies one fixed inherited redirected-stream
-  owner, stable MCP `2025-11-25`, four fixed tools, one in-memory latest-value
-  observation resource, and one lazily initialized 64x64 local service. It
+  owner, byte-compatible exact MCP `2025-11-25` plus exact MCP `2026-07-28`
+  discovery/direct-request lifecycles, four fixed tools, one in-memory latest-
+  value observation resource, and one lazily initialized 64x64 local service.
+  A connection pins one era; every modern request repeats exact protocol and
+  client-capability metadata. Discovery and informational server identity grant
+  no extension or authentication authority. It
   serializes tool calls and bounds newline input plus encoded output. A matching
   active request cancellation is observable only before response writing and
   terminates the child without a response or later dispatch; it supplies no

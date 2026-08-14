@@ -1252,6 +1252,34 @@ preservation, and unchanged ordinary/controlled compatibility. Do not add MCP
 deadline, new dependencies, remote authority, deployment, or release action.
 See [ADR 0053](../adr/0053-bounded-terminal-mcp-cancellation.md).
 
+### PR 54 - CF054: Bounded dual-era MCP stdio lifecycle
+
+Outcome: modern MCP clients can discover or directly use Cogniform through
+exact self-contained `2026-07-28` requests while legacy `2025-11-25` bytes,
+bounds, surface, and authority remain fixed.
+
+Gate: keep the project-owned bounded transport and use RMCP's dual-era server
+lifecycle only after a bounded opening preflight preserves identified legacy
+wrong-order/version responses. Pin one connection era before semantic
+dispatch. Require exact protocol and client-capability metadata on every
+modern request without inheriting discovery context. Reject modern initialize,
+missing/malformed/unsupported/mixed metadata, unsupported methods, and client
+Response/Error directions. Accept an unadvertised client extension declaration
+only as authority-neutral metadata for an otherwise core request.
+
+Modern discovery advertises only `2026-07-28`, tools, and resources. Preserve
+the exact four-tool order, closed schemas, 508-byte instructions, one latest
+resource, lazy serialized service, response-flush backpressure, and terminal
+cancellation. Require `resultType` and informational server identity on every
+supported modern success; use `ttlMs: 0` and private scope for discovery,
+tool/resource lists, and resource reads. Prove official-client, direct-request,
+raw mixed-era, malformed metadata, invalid-direction, cancellation, exact
+legacy compatibility, controlled production-service, and legacy/modern CLI
+child flows. Do not add Tasks, MRTR, subscriptions, Apps, prompts, sampling,
+models, transports, clients, auth, persistence, dependencies, deployment, or a
+release action. See
+[ADR 0054](../adr/0054-bounded-dual-era-mcp-stdio-lifecycle.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1262,6 +1290,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
+  -> CF054
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1497,6 +1526,14 @@ Validation expands with capability:
   exact discovery bytes and representative errors without service startup,
   while existing controlled production-service evidence covers successful
   query and imagination execution.
+- CF054: exact byte-compatible 2025 initialization and exact self-contained
+  2026 discovery/direct requests; connection-era pinning; required modern
+  protocol/capability metadata on every request; complete result, server-
+  identity, and zero-lifetime private-cache roles; invalid direction,
+  missing/malformed/unsupported/mixed-era and unsupported-method rejection
+  before semantic dispatch; extension-declaration neutrality; unchanged
+  four-tool/resource/cancellation/bounds authority; and official-client,
+  raw-wire, ordinary CLI, plus controlled legacy/modern production evidence.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
@@ -1504,8 +1541,8 @@ No performance threshold becomes a merge gate until reference hardware, fixture,
 
 After the MVP and only with evidence: configurable stdio profiles, MCP resource
 templates, subscriptions, list-change notifications, resource history and
-persistence, MCP `2026-07-28` stateless discovery/per-request metadata and
-multi-round-trip results, prompts, tasks, sampling, models, named-pipe or socket creation,
+persistence, MCP multi-round-trip results, prompts, tasks, sampling, models,
+named-pipe or socket creation,
 multiple clients, full-duplex scheduling, process supervision, shared-memory
 observation leases, authenticated MCP HTTP or gRPC/QUIC transport, Wasmtime procedures,
 KTX2/mesh optimization, advanced culling/batching, model bridge, Gaussian

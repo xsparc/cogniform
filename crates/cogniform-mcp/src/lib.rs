@@ -11,12 +11,11 @@ use std::io::IsTerminal as _;
 
 use cogniform_engine::LocalServiceConfig;
 use rmcp::{
-    ServerHandler as _,
     model::{
-        ClientJsonRpcMessage, ClientRequest, EmptyResult, ErrorData, ProtocolVersion,
+        ClientJsonRpcMessage, ClientRequest, EmptyResult, ErrorData, GetMeta as _, ProtocolVersion,
         ServerJsonRpcMessage, ServerResult,
     },
-    service::{RoleServer, serve_directly},
+    service::serve_server,
     transport::Transport as _,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -24,8 +23,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 pub use server::{APPLY_PATCH_TOOL, OBSERVE_SCENE_TOOL, QUERY_SCENE_TOOL, SUBMIT_IMAGINATION_TOOL};
 pub use transport::{McpTransportLimits, TransportFailureKind};
 
-/// Stable MCP revision implemented by this adapter.
+/// Stable legacy initialization revision retained by this adapter.
 pub const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
+/// Stateless discovery and per-request revision implemented by this adapter.
+pub const MCP_MODERN_PROTOCOL_VERSION: &str = "2026-07-28";
 
 /// Complete configuration for one inherited-stdio MCP session.
 #[derive(Debug, Clone)]
@@ -54,7 +55,7 @@ pub enum McpServeError {
     StdioNotRedirected,
     /// A current-thread async runtime could not be created.
     RuntimeUnavailable,
-    /// The MCP initialization exchange was rejected.
+    /// The MCP opening lifecycle exchange was rejected.
     InitializationRejected,
     /// The bounded transport rejected or failed a frame.
     Transport(TransportFailureKind),
@@ -129,8 +130,34 @@ where
     W: AsyncWrite + Unpin + Send + 'static,
 {
     let (mut transport, status) = transport::BoundedTransport::new(reader, writer, limits);
-    let client_info = loop {
-        let message = transport.receive().await.ok_or_else(|| {
+    preflight_opening(&mut transport, &status).await?;
+    let service = server::CogniformMcpService::new(handler);
+    let running = serve_server(service, transport).await.map_err(|_| {
+        status.failure().map_or(
+            McpServeError::InitializationRejected,
+            McpServeError::Transport,
+        )
+    })?;
+    running
+        .waiting()
+        .await
+        .map_err(|_| McpServeError::ServiceTaskFailed)?;
+    match status.failure() {
+        Some(kind) => Err(McpServeError::Transport(kind)),
+        None => Ok(()),
+    }
+}
+
+async fn preflight_opening<R, W>(
+    transport: &mut transport::BoundedTransport<R, W>,
+    status: &transport::TransportStatus,
+) -> Result<(), McpServeError>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    loop {
+        let message = transport.read_opening_message().await.ok_or_else(|| {
             status.failure().map_or(
                 McpServeError::InitializationRejected,
                 McpServeError::Transport,
@@ -147,7 +174,7 @@ where
                         request.id,
                     ))
                     .await
-                    .map_err(|_| transport_failure(&status))?;
+                    .map_err(|_| transport_failure(status))?;
             }
             ClientRequest::InitializeRequest(initialize) => {
                 if initialize.params.protocol_version != ProtocolVersion::V_2025_11_25 {
@@ -157,39 +184,65 @@ where
                             Some(request.id),
                         ))
                         .await
-                        .map_err(|_| transport_failure(&status))?;
+                        .map_err(|_| transport_failure(status))?;
                     return Err(McpServeError::InitializationRejected);
                 }
-                transport
-                    .send(ServerJsonRpcMessage::response(
-                        ServerResult::InitializeResult(handler.get_info()),
-                        request.id,
-                    ))
-                    .await
-                    .map_err(|_| transport_failure(&status))?;
-                break initialize.params;
+                transport.retain_opening_message(ClientJsonRpcMessage::request(
+                    ClientRequest::InitializeRequest(initialize),
+                    request.id,
+                ));
+                break;
             }
-            _ => {
+            request_kind => {
+                let protocol_key_present = request_kind
+                    .get_meta()
+                    .contains_key("io.modelcontextprotocol/protocolVersion");
+                let requested_version = request_kind.get_meta().protocol_version();
+                let missing = request_kind
+                    .get_meta()
+                    .missing_required_keys(&ProtocolVersion::V_2026_07_28);
+                if requested_version == Some(ProtocolVersion::V_2026_07_28) && missing.is_empty() {
+                    transport.retain_opening_message(ClientJsonRpcMessage::request(
+                        request_kind,
+                        request.id,
+                    ));
+                    break;
+                }
+                let error = match requested_version {
+                    Some(version) if version == ProtocolVersion::V_2026_07_28 => {
+                        ErrorData::invalid_params(
+                            format!(
+                                "request _meta is missing or has malformed required fields: {}",
+                                missing.join(", ")
+                            ),
+                            None,
+                        )
+                    }
+                    Some(version) if version == ProtocolVersion::V_2025_11_25 => {
+                        ErrorData::invalid_request("initialize required", None)
+                    }
+                    Some(version) => ErrorData::unsupported_protocol_version(
+                        version,
+                        &[ProtocolVersion::V_2026_07_28],
+                    ),
+                    None if protocol_key_present => ErrorData::invalid_params(
+                        format!(
+                            "request _meta is missing or has malformed required fields: {}",
+                            missing.join(", ")
+                        ),
+                        None,
+                    ),
+                    None => ErrorData::invalid_request("initialize required", None),
+                };
                 transport
-                    .send(ServerJsonRpcMessage::error(
-                        ErrorData::invalid_request("initialize required", None),
-                        Some(request.id),
-                    ))
+                    .send(ServerJsonRpcMessage::error(error, Some(request.id)))
                     .await
-                    .map_err(|_| transport_failure(&status))?;
+                    .map_err(|_| transport_failure(status))?;
                 return Err(McpServeError::InitializationRejected);
             }
         }
-    };
-    let running = serve_directly::<RoleServer, _, _, _, _>(handler, transport, Some(client_info));
-    running
-        .waiting()
-        .await
-        .map_err(|_| McpServeError::ServiceTaskFailed)?;
-    match status.failure() {
-        Some(kind) => Err(McpServeError::Transport(kind)),
-        None => Ok(()),
     }
+    Ok(())
 }
 
 fn transport_failure(status: &transport::TransportStatus) -> McpServeError {
@@ -211,10 +264,12 @@ mod tests {
         ObservationRequest, ObservationStaleness, RuntimeLimits, SchemaVersion, StableEntityId,
     };
     use rmcp::{
-        ServiceError, ServiceExt as _,
+        ClientLifecycleMode, ClientServiceExt as _, ServerHandler as _, ServiceError,
+        ServiceExt as _,
         model::{
-            CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, ContentBlock,
-            ErrorCode, ProtocolVersion, ReadResourceRequestParams, ResourceContents, Tool,
+            CacheScope, CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest,
+            ContentBlock, ErrorCode, MetaObject, ProtocolVersion, ReadResourceRequestParams,
+            ResourceContents, ResultType, Tool,
         },
         service::PeerRequestOptions,
     };
@@ -251,6 +306,30 @@ mod tests {
         (client, server)
     }
 
+    async fn modern_client_and_server() -> (
+        rmcp::service::RunningService<rmcp::service::RoleClient, ()>,
+        tokio::task::JoinHandle<Result<(), McpServeError>>,
+    ) {
+        let (client_stream, server_stream) = duplex(16 * 1024 * 1024);
+        let (client_read, client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let server = tokio::spawn(serve_io(
+            server_read,
+            server_write,
+            McpServerConfig::local_profile(64, 64),
+        ));
+        let client = ()
+            .serve_with_lifecycle(
+                (client_read, client_write),
+                ClientLifecycleMode::Discover {
+                    preferred_versions: vec![ProtocolVersion::V_2026_07_28],
+                },
+            )
+            .await
+            .unwrap();
+        (client, server)
+    }
+
     async fn client_and_server_with_observation_backend(
         backend: Box<dyn server::ObservationBackend>,
     ) -> (
@@ -270,6 +349,36 @@ mod tests {
             handler,
         ));
         let client = ().serve((client_read, client_write)).await.unwrap();
+        (client, server)
+    }
+
+    async fn modern_client_and_server_with_observation_backend(
+        backend: Box<dyn server::ObservationBackend>,
+    ) -> (
+        rmcp::service::RunningService<rmcp::service::RoleClient, ()>,
+        tokio::task::JoinHandle<Result<(), McpServeError>>,
+    ) {
+        let (client_stream, server_stream) = duplex(16 * 1024 * 1024);
+        let (client_read, client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let config = McpServerConfig::local_profile(64, 64);
+        let handler =
+            server::CogniformMcpServer::new_with_observation_backend(config.service, backend);
+        let server = tokio::spawn(serve_io_with_handler(
+            server_read,
+            server_write,
+            config.transport,
+            handler,
+        ));
+        let client = ()
+            .serve_with_lifecycle(
+                (client_read, client_write),
+                ClientLifecycleMode::Discover {
+                    preferred_versions: vec![ProtocolVersion::V_2026_07_28],
+                },
+            )
+            .await
+            .unwrap();
         (client, server)
     }
 
@@ -294,6 +403,38 @@ mod tests {
             handler,
         ));
         let client = ().serve((client_read, client_write)).await.unwrap();
+        (client, server, inspector)
+    }
+
+    async fn cancellable_modern_client_and_server(
+        backend: Box<dyn server::ObservationBackend>,
+    ) -> (
+        rmcp::service::RunningService<rmcp::service::RoleClient, ()>,
+        tokio::task::JoinHandle<Result<(), McpServeError>>,
+        server::CogniformMcpServer,
+    ) {
+        let (client_stream, server_stream) = duplex(16 * 1024 * 1024);
+        let (client_read, client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let config = McpServerConfig::local_profile(64, 64);
+        let handler =
+            server::CogniformMcpServer::new_with_observation_backend(config.service, backend);
+        let inspector = handler.clone();
+        let server = tokio::spawn(serve_io_with_handler(
+            server_read,
+            server_write,
+            config.transport,
+            handler,
+        ));
+        let client = ()
+            .serve_with_lifecycle(
+                (client_read, client_write),
+                ClientLifecycleMode::Discover {
+                    preferred_versions: vec![ProtocolVersion::V_2026_07_28],
+                },
+            )
+            .await
+            .unwrap();
         (client, server, inspector)
     }
 
@@ -748,17 +889,581 @@ mod tests {
     }
 
     #[test]
-    fn handler_supports_only_the_accepted_protocol_version() {
+    fn handler_supports_both_accepted_protocol_versions_without_added_capabilities() {
         let handler = server::CogniformMcpServer::new(LocalServiceConfig::new(64, 64));
         assert_eq!(
             handler.supported_protocol_versions().as_ref(),
-            [ProtocolVersion::V_2025_11_25]
+            [ProtocolVersion::V_2025_11_25, ProtocolVersion::V_2026_07_28]
         );
         assert_eq!(
             handler.get_info().protocol_version,
             ProtocolVersion::V_2025_11_25
         );
         assert!(!handler.get_info().capabilities.supports_tasks());
+    }
+
+    #[tokio::test]
+    async fn official_modern_client_discovers_exact_surface_and_result_roles() {
+        let (client, server) = modern_client_and_server().await;
+        let peer_info = client.peer().peer_info().unwrap();
+        assert_eq!(peer_info.protocol_version, ProtocolVersion::V_2026_07_28);
+        assert_eq!(
+            peer_info.instructions.as_deref(),
+            Some(server::MCP_SERVER_INSTRUCTIONS)
+        );
+        assert_eq!(
+            peer_info
+                .server_info
+                .as_ref()
+                .map(|info| info.name.as_str()),
+            Some("cogniform")
+        );
+        assert!(!peer_info.capabilities.supports_tasks());
+        assert!(peer_info.capabilities.extensions.is_none());
+
+        let tools = client.peer().list_tools(None).await.unwrap();
+        assert_eq!(tools.result_type, Some(ResultType::COMPLETE));
+        assert_eq!(tools.ttl_ms, Some(0));
+        assert_eq!(tools.cache_scope, Some(CacheScope::Private));
+        assert_server_identity(tools.meta.as_ref());
+        assert_eq!(
+            tools
+                .tools
+                .iter()
+                .map(|tool| tool.name.as_ref())
+                .collect::<Vec<_>>(),
+            [
+                QUERY_SCENE_TOOL,
+                SUBMIT_IMAGINATION_TOOL,
+                APPLY_PATCH_TOOL,
+                OBSERVE_SCENE_TOOL
+            ]
+        );
+
+        let resources = client.peer().list_resources(None).await.unwrap();
+        assert_eq!(resources.result_type, Some(ResultType::COMPLETE));
+        assert_eq!(resources.ttl_ms, Some(0));
+        assert_eq!(resources.cache_scope, Some(CacheScope::Private));
+        assert_server_identity(resources.meta.as_ref());
+        assert!(resources.resources.is_empty());
+
+        let invalid = client
+            .peer()
+            .call_tool(CallToolRequestParams::new(QUERY_SCENE_TOOL))
+            .await
+            .unwrap();
+        assert_eq!(invalid.result_type, Some(ResultType::COMPLETE));
+        assert_eq!(invalid.is_error, Some(true));
+        assert_eq!(
+            invalid.structured_content,
+            Some(json!({"schema_version": 1, "error": "invalid_arguments"}))
+        );
+        assert_server_identity(invalid.meta.as_ref());
+        close(client, server).await;
+    }
+
+    #[tokio::test]
+    async fn official_modern_client_calls_every_tool_and_reads_the_latest_resource() {
+        let backend = FakeObservationBackend::new([FakeObservationOutcome::Completed(
+            ObservationPayload::Visibility(Vec::new()),
+        )]);
+        let (client, server) =
+            modern_client_and_server_with_observation_backend(Box::new(backend)).await;
+
+        for tool in [QUERY_SCENE_TOOL, SUBMIT_IMAGINATION_TOOL, APPLY_PATCH_TOOL] {
+            let result = client
+                .peer()
+                .call_tool(CallToolRequestParams::new(tool))
+                .await
+                .unwrap();
+            assert_eq!(result.result_type, Some(ResultType::COMPLETE));
+            assert_eq!(result.is_error, Some(true));
+            assert_server_identity(result.meta.as_ref());
+        }
+
+        let observation = call_visibility_observation(&client, 0x61).await;
+        assert_eq!(observation.result_type, Some(ResultType::COMPLETE));
+        assert_eq!(observation.is_error, Some(false));
+        assert_server_identity(observation.meta.as_ref());
+        let uri = observation.structured_content.as_ref().unwrap()["resource_uri"]
+            .as_str()
+            .unwrap();
+
+        let listed = client.peer().list_resources(None).await.unwrap();
+        assert_eq!(listed.result_type, Some(ResultType::COMPLETE));
+        assert_eq!(listed.ttl_ms, Some(0));
+        assert_eq!(listed.cache_scope, Some(CacheScope::Private));
+        assert_server_identity(listed.meta.as_ref());
+        assert_eq!(listed.resources.len(), 1);
+        assert_eq!(listed.resources[0].uri, uri);
+
+        let read = client
+            .peer()
+            .read_resource(ReadResourceRequestParams::new(uri))
+            .await
+            .unwrap();
+        assert_eq!(read.result_type, Some(ResultType::COMPLETE));
+        assert_eq!(read.ttl_ms, Some(0));
+        assert_eq!(read.cache_scope, Some(CacheScope::Private));
+        assert_server_identity(read.meta.as_ref());
+        assert_eq!(resource_blob(&read).len(), 80);
+        let missing = client
+            .peer()
+            .read_resource(ReadResourceRequestParams::new(
+                "cogniform://observation/000000000000000000000000000000ff",
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            missing,
+            ServiceError::McpError(error) if error.code == ErrorCode::INVALID_PARAMS
+        ));
+        close(client, server).await;
+    }
+
+    fn assert_server_identity(meta: Option<&MetaObject>) {
+        let info = meta
+            .and_then(|meta| meta.get("io.modelcontextprotocol/serverInfo"))
+            .expect("modern success carries server identity");
+        assert_eq!(info["name"], "cogniform");
+        assert_eq!(info["version"], env!("CARGO_PKG_VERSION"));
+    }
+
+    #[tokio::test]
+    async fn raw_modern_connection_is_self_contained_pinned_and_authority_neutral() {
+        let (client_stream, server_stream) = duplex(256 * 1024);
+        let (client_read, mut client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let config = McpServerConfig::local_profile(64, 64);
+        let handler = server::CogniformMcpServer::new(config.service);
+        let inspector = handler.clone();
+        let server = tokio::spawn(serve_io_with_handler(
+            server_read,
+            server_write,
+            config.transport,
+            handler,
+        ));
+        let mut client_read = BufReader::new(client_read);
+
+        write_json_line(
+            &mut client_write,
+            &modern_request(
+                1,
+                "server/discover",
+                &json!({}),
+                &json!({"example.test": {}}),
+            ),
+        )
+        .await;
+        let discover = read_json_line(&mut client_read).await;
+        assert_modern_discovery_response(&discover);
+
+        write_json_line(
+            &mut client_write,
+            &modern_request(2, "tools/list", &json!({}), &json!({"example.test": {}})),
+        )
+        .await;
+        let tools = read_json_line(&mut client_read).await;
+        assert_eq!(tools["result"]["resultType"], "complete");
+        assert_eq!(tools["result"]["ttlMs"], 0);
+        assert_eq!(tools["result"]["cacheScope"], "private");
+        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 4);
+
+        write_json_line(
+            &mut client_write,
+            &json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}}),
+        )
+        .await;
+        assert_eq!(
+            read_json_line(&mut client_read).await["error"]["code"],
+            -32602
+        );
+
+        write_json_line(
+            &mut client_write,
+            &modern_request_with_version(4, "tools/list", "2099-01-01", &json!({})),
+        )
+        .await;
+        assert_eq!(
+            read_json_line(&mut client_read).await["error"]["code"],
+            -32022
+        );
+
+        write_json_line(
+            &mut client_write,
+            &modern_request_with_version(5, "tools/list", "2025-11-25", &json!({})),
+        )
+        .await;
+        assert_eq!(
+            read_json_line(&mut client_read).await["error"]["code"],
+            -32600
+        );
+
+        write_json_line(
+            &mut client_write,
+            &modern_request(6, "tasks/get", &json!({"taskId": "none"}), &json!({})),
+        )
+        .await;
+        assert_eq!(
+            read_json_line(&mut client_read).await["error"]["code"],
+            -32601
+        );
+
+        write_json_line(
+            &mut client_write,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "late", "version": "1"}
+                }
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_json_line(&mut client_read).await["error"]["code"],
+            -32600
+        );
+        assert!(!inspector.local_service_was_created().await);
+
+        client_write.shutdown().await.unwrap();
+        assert_eq!(server.await.unwrap(), Ok(()));
+    }
+
+    fn assert_modern_discovery_response(discover: &Value) {
+        assert_eq!(discover["id"], 1);
+        assert_eq!(discover["result"]["resultType"], "complete");
+        assert_eq!(
+            discover["result"]["supportedVersions"],
+            json!(["2026-07-28"])
+        );
+        assert_eq!(discover["result"]["ttlMs"], 0);
+        assert_eq!(discover["result"]["cacheScope"], "private");
+        assert_eq!(
+            discover["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
+            "cogniform"
+        );
+        assert!(
+            discover["result"]["capabilities"]
+                .get("extensions")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn direct_modern_request_opens_without_discovery_or_initialization() {
+        let (client_stream, server_stream) = duplex(64 * 1024);
+        let (client_read, mut client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let server = tokio::spawn(serve_io(
+            server_read,
+            server_write,
+            McpServerConfig::local_profile(64, 64),
+        ));
+        let mut client_read = BufReader::new(client_read);
+
+        write_json_line(
+            &mut client_write,
+            &modern_request(1, "tools/list", &json!({}), &json!({})),
+        )
+        .await;
+        let response = read_json_line(&mut client_read).await;
+        assert_eq!(response["id"], 1);
+        assert_eq!(response["result"]["resultType"], "complete");
+        assert_eq!(response["result"]["tools"].as_array().unwrap().len(), 4);
+        assert_eq!(response["result"]["ttlMs"], 0);
+        assert_eq!(response["result"]["cacheScope"], "private");
+        client_write.shutdown().await.unwrap();
+        assert_eq!(server.await.unwrap(), Ok(()));
+    }
+
+    #[tokio::test]
+    async fn opening_preflight_rejects_invalid_lifecycles_before_service_creation() {
+        let cases = [
+            (
+                json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}),
+                ErrorCode::INVALID_REQUEST,
+            ),
+            (
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/list",
+                    "params": {
+                        "_meta": {
+                            "io.modelcontextprotocol/protocolVersion": 20_260_728,
+                            "io.modelcontextprotocol/clientCapabilities": {}
+                        }
+                    }
+                }),
+                ErrorCode::INVALID_PARAMS,
+            ),
+            (
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/list",
+                    "params": {
+                        "_meta": {
+                            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+                        }
+                    }
+                }),
+                ErrorCode::INVALID_PARAMS,
+            ),
+            (
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/list",
+                    "params": {
+                        "_meta": {
+                            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                            "io.modelcontextprotocol/clientInfo": {
+                                "name": "malformed-capabilities",
+                                "version": "1"
+                            },
+                            "io.modelcontextprotocol/clientCapabilities": "invalid"
+                        }
+                    }
+                }),
+                ErrorCode::INVALID_PARAMS,
+            ),
+            (
+                modern_request_with_version(1, "tools/list", "2099-01-01", &json!({})),
+                ErrorCode::UNSUPPORTED_PROTOCOL_VERSION,
+            ),
+            (
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2026-07-28",
+                        "capabilities": {},
+                        "clientInfo": {"name": "modern-init", "version": "1"}
+                    }
+                }),
+                ErrorCode::INVALID_PARAMS,
+            ),
+        ];
+
+        for (message, expected_code) in cases {
+            assert_opening_rejection(message, expected_code).await;
+        }
+    }
+
+    async fn assert_opening_rejection(message: Value, expected_code: ErrorCode) {
+        let (client_stream, server_stream) = duplex(64 * 1024);
+        let (client_read, mut client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let config = McpServerConfig::local_profile(64, 64);
+        let handler = server::CogniformMcpServer::new(config.service);
+        let inspector = handler.clone();
+        let server = tokio::spawn(serve_io_with_handler(
+            server_read,
+            server_write,
+            config.transport,
+            handler,
+        ));
+        let mut client_read = BufReader::new(client_read);
+        write_json_line(&mut client_write, &message).await;
+        let response = read_json_line(&mut client_read).await;
+        assert_eq!(response["error"]["code"], expected_code.0);
+        client_write.shutdown().await.unwrap();
+        assert_eq!(
+            server.await.unwrap(),
+            Err(McpServeError::InitializationRejected)
+        );
+        assert!(!inspector.local_service_was_created().await);
+    }
+
+    #[tokio::test]
+    async fn client_response_and_error_directions_are_terminal_redacted_failures() {
+        for message in [
+            json!({"jsonrpc": "2.0", "id": 1, "result": {}}),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32600, "message": "unexpected"}
+            }),
+        ] {
+            assert_invalid_client_direction(message).await;
+        }
+    }
+
+    async fn assert_invalid_client_direction(message: Value) {
+        let (client_stream, server_stream) = duplex(64 * 1024);
+        let (client_read, mut client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let server = tokio::spawn(serve_io(
+            server_read,
+            server_write,
+            McpServerConfig::local_profile(64, 64),
+        ));
+        let mut client_read = BufReader::new(client_read);
+        write_json_line(&mut client_write, &message).await;
+        client_write.shutdown().await.unwrap();
+        let mut output = Vec::new();
+        client_read.read_to_end(&mut output).await.unwrap();
+        assert!(output.is_empty());
+        assert_eq!(
+            server.await.unwrap(),
+            Err(McpServeError::Transport(
+                TransportFailureKind::InvalidMessage
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_wrong_order_rejection_bytes_remain_exact() {
+        let (client_stream, server_stream) = duplex(64 * 1024);
+        let (client_read, mut client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let server = tokio::spawn(serve_io(
+            server_read,
+            server_write,
+            McpServerConfig::local_profile(64, 64),
+        ));
+        let mut client_read = BufReader::new(client_read);
+
+        write_json_line(
+            &mut client_write,
+            &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}),
+        )
+        .await;
+        let mut line = String::new();
+        client_read.read_line(&mut line).await.unwrap();
+        assert_eq!(
+            line,
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32600,\"message\":\"initialize required\"}}\n"
+        );
+        client_write.shutdown().await.unwrap();
+        assert_eq!(
+            server.await.unwrap(),
+            Err(McpServeError::InitializationRejected)
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_initialize_response_bytes_remain_exact() {
+        let (client_stream, server_stream) = duplex(64 * 1024);
+        let (client_read, mut client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let server = tokio::spawn(serve_io(
+            server_read,
+            server_write,
+            McpServerConfig::local_profile(64, 64),
+        ));
+        let mut client_read = BufReader::new(client_read);
+
+        write_json_line(
+            &mut client_write,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "legacy-byte-fixture", "version": "1"}
+                }
+            }),
+        )
+        .await;
+        let mut line = String::new();
+        client_read.read_line(&mut line).await.unwrap();
+        let expected = format!(
+            "{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{{\"resources\":{{}},\"tools\":{{}}}},\"serverInfo\":{{\"name\":\"cogniform\",\"title\":\"Cogniform local scene service\",\"version\":\"{}\"}},\"instructions\":{}}}}}\n",
+            env!("CARGO_PKG_VERSION"),
+            serde_json::to_string(server::MCP_SERVER_INSTRUCTIONS).unwrap()
+        );
+        assert_eq!(line, expected);
+        client_write.shutdown().await.unwrap();
+        assert_eq!(server.await.unwrap(), Ok(()));
+    }
+
+    #[tokio::test]
+    async fn legacy_unsupported_initialize_rejection_bytes_remain_exact() {
+        let (client_stream, server_stream) = duplex(64 * 1024);
+        let (client_read, mut client_write) = split(client_stream);
+        let (server_read, server_write) = split(server_stream);
+        let server = tokio::spawn(serve_io(
+            server_read,
+            server_write,
+            McpServerConfig::local_profile(64, 64),
+        ));
+        let mut client_read = BufReader::new(client_read);
+
+        write_json_line(
+            &mut client_write,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2026-07-28",
+                    "capabilities": {},
+                    "clientInfo": {"name": "unsupported-byte-fixture", "version": "1"}
+                }
+            }),
+        )
+        .await;
+        let mut line = String::new();
+        client_read.read_line(&mut line).await.unwrap();
+        assert_eq!(
+            line,
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"unsupported protocol version\"}}\n"
+        );
+        client_write.shutdown().await.unwrap();
+        assert_eq!(
+            server.await.unwrap(),
+            Err(McpServeError::InitializationRejected)
+        );
+    }
+
+    fn modern_request(id: u64, method: &str, params: &Value, extensions: &Value) -> Value {
+        let mut request = modern_request_with_version(id, method, "2026-07-28", extensions);
+        request["params"]
+            .as_object_mut()
+            .unwrap()
+            .extend(params.as_object().unwrap().clone());
+        request
+    }
+
+    fn modern_request_with_version(
+        id: u64,
+        method: &str,
+        protocol_version: &str,
+        extensions: &Value,
+    ) -> Value {
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": {
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": protocol_version,
+                    "io.modelcontextprotocol/clientInfo": {
+                        "name": "cogniform-modern-test",
+                        "version": "1"
+                    },
+                    "io.modelcontextprotocol/clientCapabilities": {
+                        "extensions": extensions
+                    }
+                }
+            }
+        })
+    }
+
+    async fn read_json_line<R: tokio::io::AsyncRead + Unpin>(reader: &mut BufReader<R>) -> Value {
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+        assert!(!line.is_empty(), "expected one JSON response line");
+        serde_json::from_str(&line).unwrap()
     }
 
     #[tokio::test]
@@ -960,6 +1665,64 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(1), client.waiting())
             .await
             .expect("client observes terminal server close")
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn official_modern_cancellation_is_prompt_terminal_and_preserves_resource() {
+        let pending = Arc::new(Notify::new());
+        let backend = FakeObservationBackend::with_pending_signal(
+            [
+                FakeObservationOutcome::Completed(ObservationPayload::Visibility(Vec::new())),
+                FakeObservationOutcome::Pending,
+            ],
+            Arc::clone(&pending),
+        );
+        let (client, server, inspector) =
+            cancellable_modern_client_and_server(Box::new(backend)).await;
+
+        let seeded = call_observation(&client, 0x71, ObservationKind::Visibility).await;
+        assert_eq!(seeded.is_error, Some(false));
+        assert_eq!(seeded.result_type, Some(ResultType::COMPLETE));
+        let (retained_before, poisoned_before) = inspector.observation_test_state().await;
+        assert!(retained_before.is_some());
+        assert!(!poisoned_before);
+
+        let params =
+            CallToolRequestParams::new(OBSERVE_SCENE_TOOL).with_arguments(arguments(json!({
+                "schema_version": 1,
+                "observation_id": ObservationId::new(0x72).unwrap().to_string(),
+                "scene_revision": 0,
+                "camera_id": StableEntityId::new(0x31).unwrap().to_string(),
+                "kind": "visibility",
+                "quality": "low"
+            })));
+        let handle = client
+            .peer()
+            .send_cancellable_request(
+                ClientRequest::CallToolRequest(CallToolRequest::new(params)),
+                PeerRequestOptions::no_options(),
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), pending.notified())
+            .await
+            .expect("modern observation reaches its first pending poll");
+        handle.cancel(None).await.unwrap();
+
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), server)
+                .await
+                .expect("modern cancelled server terminates promptly")
+                .unwrap(),
+            Ok(())
+        );
+        let (retained_after, poisoned_after) = inspector.observation_test_state().await;
+        assert_eq!(retained_after, retained_before);
+        assert!(poisoned_after);
+        tokio::time::timeout(Duration::from_secs(1), client.waiting())
+            .await
+            .expect("modern client observes terminal server close")
             .unwrap();
     }
 
@@ -1297,14 +2060,26 @@ mod tests {
     #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
     async fn query_patch_imagination_observation_and_replay_preserve_exact_effects() {
         let (client, server) = client_and_server().await;
-        assert_initial_query(&client).await;
-        let patch = camera_patch();
-        assert_patch_apply_replay_and_conflict(&client, &patch).await;
-        assert_imagination_apply_and_replay(&client).await;
-        assert_stale_patch_is_rejected(&client, patch).await;
-        assert_final_query(&client).await;
-        assert_production_observation_resource(&client).await;
+        assert_production_workflow(&client).await;
         close(client, server).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+    async fn modern_query_patch_imagination_observation_and_replay_preserve_exact_effects() {
+        let (client, server) = modern_client_and_server().await;
+        assert_production_workflow(&client).await;
+        close(client, server).await;
+    }
+
+    async fn assert_production_workflow(client: &TestClient) {
+        assert_initial_query(client).await;
+        let patch = camera_patch();
+        assert_patch_apply_replay_and_conflict(client, &patch).await;
+        assert_imagination_apply_and_replay(client).await;
+        assert_stale_patch_is_rejected(client, patch).await;
+        assert_final_query(client).await;
+        assert_production_observation_resource(client).await;
     }
 
     async fn assert_production_observation_resource(client: &TestClient) {

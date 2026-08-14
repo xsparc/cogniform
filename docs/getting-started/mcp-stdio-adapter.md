@@ -11,21 +11,30 @@ Both stdin and stdout must be redirected pipes. Do not run the command in an
 interactive terminal. Stdout is newline-delimited MCP JSON-RPC and must not be
 mixed with application logs; stable payload-redacted failures use stderr.
 
-The parent must request MCP `2025-11-25`. It can then list and invoke exactly
-`cogniform.query_scene`, `cogniform.submit_imagination`,
-`cogniform.apply_patch`, and `cogniform.observe_scene`, in that order. Tool
-arguments are the complete snake-case Cogniform core objects described in the
+Choose either exact lifecycle:
+
+- initialize a legacy session with MCP `2025-11-25`; or
+- send `server/discover` or a direct supported request with exact MCP
+  `2026-07-28` plus client capabilities in that request's `_meta`.
+
+Repeat the modern protocol version and capabilities on every modern request;
+discovery does not establish inherited request context. The connection cannot
+switch eras. Both paths expose exactly `cogniform.query_scene`,
+`cogniform.submit_imagination`, `cogniform.apply_patch`, and
+`cogniform.observe_scene`, in that order. Tool arguments are the complete
+snake-case Cogniform core objects described in the
 [gateway guide](../protocol/local-gateway-and-imagination.md). Use one stable
 idempotency key for retries: replay returns the retained compilation/receipt
 without applying another revision.
 
-Initialization returns one exact workflow instruction. For a fresh child,
-query revision zero; thereafter use only revisions returned by receipts or
-metadata. Choose `submit_imagination` for semantic work and `apply_patch` for a
-complete direct change. Reuse both transaction ID and idempotency key only for
-an exact retry. Add a camera before observation, then read the returned
-`cogniform://` resource. Calls are serialized. Discard the child after
-`service_failed`, `invalid_service_output`, `observation_timeout`, or mutating
+Legacy initialization and modern discovery return one exact workflow
+instruction. For a fresh child, query revision zero; thereafter use only
+revisions returned by receipts or metadata. Choose `submit_imagination` for
+semantic work and `apply_patch` for a complete direct change. Reuse both
+transaction ID and idempotency key only for an exact retry. Add a camera before
+observation, then read the returned `cogniform://` resource. Calls are
+serialized. Discard the child after `service_failed`,
+`invalid_service_output`, `observation_timeout`, or mutating
 `output_unavailable`; never infer or retry an uncertain effect.
 
 To stop an active request, send `notifications/cancelled` with that exact MCP
@@ -39,10 +48,13 @@ polling notices matching cancellation cooperatively, keeps
 the prior completed resource until teardown, and never rolls back admitted
 work.
 
-Configure newer MCP parents to use the legacy session revision explicitly.
-This adapter intentionally rejects `server/discover`, Tasks, per-request
-`2026-07-28`, and every other newer lifecycle path, and advertises no extensions,
-even though its official Rust SDK dependency can model them.
+Modern success results contain `resultType: "complete"` and informational
+server identity. Discovery, `tools/list`, `resources/list`, and
+`resources/read` use `ttlMs: 0` and private cache scope; do not reuse a prior
+latest-resource listing as fresh state. The adapter advertises no extensions.
+A client extension declaration alone is tolerated for core calls but grants no
+authority. Tasks, multi-round-trip input, subscriptions, Apps, prompts,
+sampling, models, and other SDK capabilities remain unsupported.
 
 Use `cogniform.apply_patch` when the caller already has one complete validated
 atomic scene change, including components outside the current semantic

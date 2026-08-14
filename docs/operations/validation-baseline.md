@@ -106,6 +106,12 @@ cooperative observation cancellation, retained-resource preservation, and
 terminal service-poison evidence were collected on the CPU profile on
 2026-08-13. The existing controlled production-service and optimized CLI child
 flows were also revalidated on the Windows/Vulkan profile.
+CF054 exact dual-era MCP lifecycle selection, independently validated modern
+request metadata, complete result/server/cache roles, unchanged legacy bytes,
+invalid-direction rejection, and both legacy and modern controlled production
+flows were collected on the CPU and validated Windows/Vulkan profile on
+2026-08-14. No dependency, feature, lockfile, vendor, workflow, permission,
+package, version, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -435,9 +441,10 @@ path. CF047 adds the existing observation-codec edge and composes one bounded
 request with one latest-value MCP resource. CF048 updates only the official SDK
 to exact-pinned 3.1.2 and re-runs the complete compatibility surface. CF049
 closes query/imagination discovery results and adds one exact bounded workflow
-instruction without changing runtime behavior. The ordinary and controlled
-commands were. CF053 additionally re-runs the complete workspace tests, Clippy,
-and warning-as-error rustdoc because it changes transport scheduling:
+instruction without changing runtime behavior. The following ordinary and
+controlled commands cover those slices. CF053 additionally re-runs the complete
+workspace tests, Clippy, and warning-as-error rustdoc because it changes
+transport scheduling:
 
 ```text
 cargo fmt --all --check
@@ -505,6 +512,53 @@ request through the same public `serve_io` composition. The public CLI has no
 deterministic pending-observation injection seam, so no successful cancellation
 claim is made for a fresh child process; its existing raw batch/EOF fixture and
 controlled GPU-backed child instead re-prove compatibility and clean close.
+
+### CF054 dual-era lifecycle
+
+CF054 preserves the exact legacy lifecycle and adds only the reviewed modern
+wire lifecycle over the same project-owned transport and service handler. The
+following commands passed on 2026-08-14:
+
+```text
+cargo build --workspace --locked --offline
+cargo fmt --all --check
+cargo clippy -p cogniform-mcp -p cogniform-cli --all-targets --all-features --locked --offline -- -D warnings
+cargo test -p cogniform-mcp -p cogniform-cli --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test -p cogniform-mcp --release --all-features --locked --offline query_patch_imagination_observation_and_replay_preserve_exact_effects -- --ignored --nocapture
+cargo test -p cogniform-cli --release --test mcp_stdio --all-features --locked --offline controlled_ -- --ignored --nocapture
+cargo deny check advisories bans licenses sources
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --check
+```
+
+The official SDK client exercises exact modern discovery and all four existing
+tools, one successful observation resource link/list/read, complete result
+discrimination, informational server identity, and zero-lifetime private cache
+roles. Raw fixtures prove direct modern requests without discovery, unknown
+extension neutrality, missing/malformed/unsupported metadata rejection,
+modern-to-legacy and legacy-to-modern switching rejection, unsupported Tasks
+and late initialization, and terminal rejection of both client response and
+error directions. Invalid opening requests do not construct `LocalService`.
+Exact fixtures pin the accepted legacy initialization response and identified
+wrong-order rejection bytes; the ordinary CLI fixture re-proves the legacy
+method/version/result omissions.
+
+Both official-client cancellation flows preserve the prior byte-exact resource
+and terminate with service poison. The two controlled library tests and two
+optimized CLI child tests pass the same real query, direct camera patch,
+imagination/replay, stale/conflict rejection, observation, resource readback,
+stdout-purity, and clean-close workflow in legacy and modern eras on the
+validated adapter. The complete workspace ordinary suite passes; other
+GPU-dependent ignored suites remain outside this slice. The public-tree,
+package-policy, workflow-state, first-party diff, and changed-Markdown local-
+link checks pass. The dependency audit passes with only the already accepted
+duplicate-version warnings for `hashbrown` and `syn`.
 
 ## Deterministic source-candidate commands
 

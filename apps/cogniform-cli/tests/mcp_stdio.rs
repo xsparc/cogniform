@@ -132,6 +132,78 @@ fn initialize_list_and_eof_keep_stdout_protocol_pure() {
 }
 
 #[test]
+fn modern_discovery_calls_and_eof_keep_stdout_protocol_pure() {
+    let output = run_batch(&[
+        modern_request(1, "server/discover", &json!({})),
+        modern_request(2, "tools/list", &json!({})),
+        modern_request(
+            3,
+            "tools/call",
+            &json!({"name": "cogniform.query_scene", "arguments": {}}),
+        ),
+        modern_request(4, "resources/list", &json!({})),
+    ]);
+    assert!(output.status.success(), "{}", normalize(&output.stderr));
+    assert!(output.stderr.is_empty());
+    let responses = json_lines(&output.stdout);
+    assert_eq!(responses.len(), 4);
+
+    let discover = &responses[0]["result"];
+    assert_eq!(discover["resultType"], "complete");
+    assert_eq!(discover["supportedVersions"], json!(["2026-07-28"]));
+    assert_eq!(discover["instructions"], MCP_SERVER_INSTRUCTIONS);
+    assert_eq!(discover["ttlMs"], 0);
+    assert_eq!(discover["cacheScope"], "private");
+    assert_eq!(
+        discover["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
+        "cogniform"
+    );
+    assert!(discover["capabilities"].get("extensions").is_none());
+    assert!(discover["capabilities"].get("tasks").is_none());
+
+    let tools = &responses[1]["result"];
+    assert_eq!(tools["resultType"], "complete");
+    assert_eq!(tools["ttlMs"], 0);
+    assert_eq!(tools["cacheScope"], "private");
+    assert_eq!(
+        tools["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "cogniform.query_scene",
+            "cogniform.submit_imagination",
+            "cogniform.apply_patch",
+            "cogniform.observe_scene"
+        ]
+    );
+    assert_eq!(
+        tools["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
+        "cogniform"
+    );
+
+    let call = &responses[2]["result"];
+    assert_eq!(call["resultType"], "complete");
+    assert_eq!(call["isError"], true);
+    assert_eq!(
+        call["structuredContent"],
+        json!({"schema_version": 1, "error": "invalid_arguments"})
+    );
+    assert_eq!(
+        call["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
+        "cogniform"
+    );
+
+    let resources = &responses[3]["result"];
+    assert_eq!(resources["resultType"], "complete");
+    assert_eq!(resources["ttlMs"], 0);
+    assert_eq!(resources["cacheScope"], "private");
+    assert_eq!(resources["resources"], json!([]));
+}
+
+#[test]
 fn malformed_input_is_redacted_and_emits_no_stdout() {
     let mut child = command()
         .arg("serve-mcp-stdio")
@@ -159,6 +231,19 @@ fn malformed_input_is_redacted_and_emits_no_stdout() {
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn controlled_child_applies_patch_and_imagination_replays_and_closes_cleanly() {
     let mut session = Session::start();
+    assert_controlled_workflow(&mut session);
+    session.finish();
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn controlled_modern_child_applies_patch_and_imagination_replays_and_closes_cleanly() {
+    let mut session = Session::start_modern();
+    assert_controlled_workflow(&mut session);
+    session.finish();
+}
+
+fn assert_controlled_workflow(session: &mut Session) {
     let initial = session.call(
         2,
         "cogniform.query_scene",
@@ -175,7 +260,7 @@ fn controlled_child_applies_patch_and_imagination_replays_and_closes_cleanly() {
         initial["result"]["structuredContent"]["entities"],
         json!([])
     );
-    assert_missing_camera_observation_preserves_empty_resources(&mut session);
+    assert_missing_camera_observation_preserves_empty_resources(session);
 
     let patch = camera_patch();
     let patch_applied = session.call(3, "cogniform.apply_patch", &patch);
@@ -238,9 +323,8 @@ fn controlled_child_applies_patch_and_imagination_replays_and_closes_cleanly() {
         "patch_rejected"
     );
 
-    assert_camera_query(&mut session);
-    assert_observation_resource(&mut session);
-    session.finish();
+    assert_camera_query(session);
+    assert_observation_resource(session);
 }
 
 fn assert_missing_camera_observation_preserves_empty_resources(session: &mut Session) {
@@ -282,7 +366,10 @@ fn assert_observation_resource(session: &mut Session) {
         "method": "resources/read",
         "params": {"uri": uri}
     }));
-    assert!(read["result"].get("resultType").is_none());
+    match session.era {
+        SessionEra::Legacy => assert!(read["result"].get("resultType").is_none()),
+        SessionEra::Modern => assert_eq!(read["result"]["resultType"], "complete"),
+    }
     let blob = read["result"]["contents"][0]["blob"].as_str().unwrap();
     let envelope = decode_base64(blob).unwrap();
     assert_eq!(
@@ -352,15 +439,50 @@ fn assert_camera_query(session: &mut Session) {
     );
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SessionEra {
+    Legacy,
+    Modern,
+}
+
 struct Session {
     child: Child,
     input: Option<ChildStdin>,
     output: BufReader<ChildStdout>,
     error: ChildStderr,
+    era: SessionEra,
 }
 
 impl Session {
     fn start() -> Self {
+        let mut session = Self::launch(SessionEra::Legacy);
+        let response = session.send(&initialize(1));
+        assert_eq!(response["result"]["protocolVersion"], "2025-11-25");
+        session.notify(&json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        }));
+        session
+    }
+
+    fn start_modern() -> Self {
+        let mut session = Self::launch(SessionEra::Modern);
+        let response = session.send(&json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "server/discover",
+            "params": {}
+        }));
+        assert_eq!(
+            response["result"]["supportedVersions"],
+            json!(["2026-07-28"])
+        );
+        assert_eq!(response["result"]["ttlMs"], 0);
+        assert_eq!(response["result"]["cacheScope"], "private");
+        session
+    }
+
+    fn launch(era: SessionEra) -> Self {
         let mut child = command()
             .arg("serve-mcp-stdio")
             .stdin(Stdio::piped())
@@ -371,19 +493,13 @@ impl Session {
         let input = child.stdin.take().unwrap();
         let output = BufReader::new(child.stdout.take().unwrap());
         let error = child.stderr.take().unwrap();
-        let mut session = Self {
+        Self {
             child,
             input: Some(input),
             output,
             error,
-        };
-        let response = session.send(&initialize(1));
-        assert_eq!(response["result"]["protocolVersion"], "2025-11-25");
-        session.notify(&json!({
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized"
-        }));
-        session
+            era,
+        }
     }
 
     fn call(&mut self, id: u64, name: &str, arguments: &Value) -> Value {
@@ -396,11 +512,23 @@ impl Session {
     }
 
     fn send(&mut self, message: &Value) -> Value {
-        self.notify(message);
+        let message = match self.era {
+            SessionEra::Legacy => message.clone(),
+            SessionEra::Modern => with_modern_metadata(message.clone()),
+        };
+        self.notify(&message);
         let mut line = String::new();
         self.output.read_line(&mut line).unwrap();
         assert!(!line.is_empty(), "MCP child closed before responding");
-        serde_json::from_str(&line).unwrap()
+        let response: Value = serde_json::from_str(&line).unwrap();
+        if self.era == SessionEra::Modern && response.get("result").is_some() {
+            assert_eq!(response["result"]["resultType"], "complete");
+            assert_eq!(
+                response["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
+                "cogniform"
+            );
+        }
+        response
     }
 
     fn notify(&mut self, message: &Value) {
@@ -423,6 +551,26 @@ impl Session {
     }
 }
 
+fn with_modern_metadata(mut message: Value) -> Value {
+    let params = message
+        .as_object_mut()
+        .unwrap()
+        .entry("params")
+        .or_insert_with(|| json!({}));
+    params.as_object_mut().unwrap().insert(
+        "_meta".to_owned(),
+        json!({
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientInfo": {
+                "name": "cogniform-cli-modern-controlled-test",
+                "version": "1"
+            },
+            "io.modelcontextprotocol/clientCapabilities": {}
+        }),
+    );
+    message
+}
+
 fn initialize(id: u64) -> Value {
     json!({
         "jsonrpc": "2.0",
@@ -434,6 +582,31 @@ fn initialize(id: u64) -> Value {
             "clientInfo": {"name": "cogniform-cli-test", "version": "1"}
         }
     })
+}
+
+fn modern_request(id: u64, method: &str, params: &Value) -> Value {
+    let mut request = json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": method,
+        "params": {
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientInfo": {
+                    "name": "cogniform-cli-modern-test",
+                    "version": "1"
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                    "extensions": {"example.test": {}}
+                }
+            }
+        }
+    });
+    request["params"]
+        .as_object_mut()
+        .unwrap()
+        .extend(params.as_object().unwrap().clone());
+    request
 }
 
 fn camera_patch() -> Value {
