@@ -37,9 +37,9 @@ pub struct AssetUploadOutcome {
     pub vertex_count: u32,
     /// Exact allocated GPU vertex bytes.
     pub byte_len: u64,
-    /// Whether this processing step uploaded the source's shared texture.
+    /// Whether this processing step uploaded one or more source texture roles.
     pub texture_uploaded: bool,
-    /// Exact texture bytes uploaded by this step, or zero when already resident or absent.
+    /// Exact aggregate texture bytes uploaded by this step, or zero when already resident or absent.
     pub texture_byte_len: u64,
 }
 
@@ -56,11 +56,11 @@ pub struct RendererAssetStats {
     pub resident_meshes: u32,
     /// Exact resident vertex-buffer bytes.
     pub resident_bytes: u64,
-    /// Unique source textures reserved by pending upload jobs.
+    /// Unique source-and-role textures reserved by pending upload jobs.
     pub pending_textures: u32,
     /// Exact bytes reserved by pending unique textures.
     pub pending_texture_bytes: u64,
-    /// Unique immutable source textures resident on the GPU.
+    /// Unique immutable source-and-role textures resident on the GPU.
     pub resident_textures: u32,
     /// Exact resident RGBA8 texture bytes.
     pub resident_texture_bytes: u64,
@@ -79,11 +79,11 @@ pub struct RendererAssetEviction {
     pub removed_resident_meshes: u32,
     /// Exact resident vertex-buffer bytes released from renderer ownership.
     pub released_resident_bytes: u64,
-    /// Unique pending texture reservations removed; currently zero or one.
+    /// Unique pending role-texture reservations removed; currently zero to two.
     pub removed_pending_textures: u32,
     /// Exact pending RGBA8 texture bytes released.
     pub released_pending_texture_bytes: u64,
-    /// Unique resident textures removed; currently zero or one.
+    /// Unique resident role textures removed; currently zero to two.
     pub removed_resident_textures: u32,
     /// Exact resident RGBA8 texture bytes released from renderer ownership.
     pub released_resident_texture_bytes: u64,
@@ -117,6 +117,18 @@ struct GpuAssetTexture {
     byte_len: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum AssetTextureRole {
+    BaseColor,
+    Normal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct AssetTextureKey {
+    content_hash: ContentHash,
+    role: AssetTextureRole,
+}
+
 impl GpuAssetMesh {
     pub(crate) const fn buffer(&self) -> &wgpu::Buffer {
         &self.buffer
@@ -148,16 +160,27 @@ impl PendingAssetUpload {
     fn base_color_texture(&self) -> Option<&AssetTexture> {
         self.job.base_color_texture()
     }
+
+    fn normal_texture(&self) -> Option<&AssetTexture> {
+        self.job.normal_texture()
+    }
+
+    fn texture(&self, role: AssetTextureRole) -> Option<&AssetTexture> {
+        match role {
+            AssetTextureRole::BaseColor => self.base_color_texture(),
+            AssetTextureRole::Normal => self.normal_texture(),
+        }
+    }
 }
 
 pub(crate) struct RendererAssets {
     pending: VecDeque<PendingAssetUpload>,
     pending_bytes: u64,
-    pending_textures: BTreeSet<ContentHash>,
+    pending_textures: BTreeSet<AssetTextureKey>,
     pending_texture_bytes: u64,
     resident: BTreeMap<AssetMeshKey, GpuAssetMesh>,
     resident_bytes: u64,
-    resident_textures: BTreeMap<ContentHash, GpuAssetTexture>,
+    resident_textures: BTreeMap<AssetTextureKey, GpuAssetTexture>,
     resident_texture_bytes: u64,
 }
 
@@ -210,6 +233,12 @@ impl RendererAssets {
             return Err(RendererError::InvalidAssetMesh {
                 key,
                 reason: "textured material and immutable image must be present together",
+            });
+        }
+        if job.material().has_normal_texture() != job.normal_texture().is_some() {
+            return Err(RendererError::InvalidAssetMesh {
+                key,
+                reason: "normal-textured material and immutable image must be present together",
             });
         }
         let vertex_count = u32::try_from(job.vertices().len()).unwrap_or(u32::MAX);
@@ -269,7 +298,7 @@ impl RendererAssets {
                 limit: config.max_resident_asset_bytes.get(),
             });
         }
-        self.reserve_texture(key, job.base_color_texture(), config)?;
+        self.reserve_textures(&job, config)?;
         self.pending.push_back(PendingAssetUpload {
             job,
             queued_at: queued_at.unwrap_or_else(Instant::now),
@@ -278,23 +307,31 @@ impl RendererAssets {
         Ok(AssetUploadAdmission::Queued { key })
     }
 
-    fn reserve_texture(
+    fn reserve_textures(
         &mut self,
-        key: AssetMeshKey,
-        texture: Option<&AssetTexture>,
+        job: &AssetUploadJob,
         config: &RendererConfig,
     ) -> Result<(), RendererError> {
-        let Some(texture) = texture else {
-            return Ok(());
-        };
-        validate_texture(key, texture, config)?;
-        if self.resident_textures.contains_key(&key.content_hash)
-            || self.pending_textures.contains(&key.content_hash)
-        {
-            return Ok(());
+        let mesh_key = job.key();
+        let mut reservations = Vec::with_capacity(2);
+        for (role, texture) in [
+            (AssetTextureRole::BaseColor, job.base_color_texture()),
+            (AssetTextureRole::Normal, job.normal_texture()),
+        ] {
+            let Some(texture) = texture else {
+                continue;
+            };
+            validate_texture(mesh_key, texture, config)?;
+            let key = AssetTextureKey {
+                content_hash: mesh_key.content_hash,
+                role,
+            };
+            if !self.resident_textures.contains_key(&key) && !self.pending_textures.contains(&key) {
+                reservations.push((key, texture.byte_len()));
+            }
         }
-        let texture_bytes = texture.byte_len();
-        let projected_pending = self.pending_texture_bytes.saturating_add(texture_bytes);
+        let new_bytes = reservations.iter().map(|(_, bytes)| bytes).sum::<u64>();
+        let projected_pending = self.pending_texture_bytes.saturating_add(new_bytes);
         if projected_pending > config.max_pending_asset_texture_bytes.get() {
             return Err(RendererError::AssetTextureUploadBytesExceeded {
                 actual: projected_pending,
@@ -305,7 +342,7 @@ impl RendererAssets {
             .resident_textures
             .len()
             .saturating_add(self.pending_textures.len())
-            .saturating_add(1);
+            .saturating_add(reservations.len());
         if projected_textures
             > usize::try_from(config.max_resident_asset_textures.get())
                 .expect("u32 texture capacity fits usize")
@@ -323,7 +360,9 @@ impl RendererAssets {
                 limit: config.max_resident_asset_texture_bytes.get(),
             });
         }
-        self.pending_textures.insert(key.content_hash);
+        for (key, _) in reservations {
+            self.pending_textures.insert(key);
+        }
         self.pending_texture_bytes = projected_pending;
         Ok(())
     }
@@ -356,27 +395,41 @@ impl RendererAssets {
         }
         buffer.unmap();
         let material = job.material();
-        let (texture_uploaded, texture_byte_len) = if let Some(texture) = job.base_color_texture()
-            && !self.resident_textures.contains_key(&key.content_hash)
-        {
-            let gpu_texture = create_texture(device, queue, texture);
-            let texture_byte_len = gpu_texture.byte_len;
-            let was_pending = self.pending_textures.remove(&key.content_hash);
-            debug_assert!(was_pending, "unique texture was reserved at admission");
+        let mut texture_uploaded = false;
+        let mut texture_byte_len = 0_u64;
+        for (role, texture) in [
+            (AssetTextureRole::BaseColor, job.base_color_texture()),
+            (AssetTextureRole::Normal, job.normal_texture()),
+        ] {
+            let Some(texture) = texture else {
+                continue;
+            };
+            let texture_key = AssetTextureKey {
+                content_hash: key.content_hash,
+                role,
+            };
+            if self.resident_textures.contains_key(&texture_key) {
+                continue;
+            }
+            let gpu_texture = create_texture(device, queue, texture, role);
+            let uploaded_bytes = gpu_texture.byte_len;
+            let was_pending = self.pending_textures.remove(&texture_key);
+            debug_assert!(was_pending, "unique role texture was reserved at admission");
             self.pending_texture_bytes = self
                 .pending_texture_bytes
-                .checked_sub(texture_byte_len)
+                .checked_sub(uploaded_bytes)
                 .expect("admitted texture bytes remain reserved");
-            let previous = self.resident_textures.insert(key.content_hash, gpu_texture);
-            debug_assert!(previous.is_none(), "shared texture uploads only once");
+            let previous = self.resident_textures.insert(texture_key, gpu_texture);
+            debug_assert!(previous.is_none(), "shared role texture uploads only once");
             self.resident_texture_bytes = self
                 .resident_texture_bytes
-                .checked_add(texture_byte_len)
+                .checked_add(uploaded_bytes)
                 .expect("admission reserved resident texture bytes");
-            (true, texture_byte_len)
-        } else {
-            (false, 0)
-        };
+            texture_uploaded = true;
+            texture_byte_len = texture_byte_len
+                .checked_add(uploaded_bytes)
+                .expect("admission bounded aggregate texture upload bytes");
+        }
         let previous = self.resident.insert(
             key,
             GpuAssetMesh {
@@ -404,17 +457,28 @@ impl RendererAssets {
     }
 
     pub(crate) fn evict(&mut self, content_hash: ContentHash) -> RendererAssetEviction {
-        let removed_pending_textures = u32::from(self.pending_textures.remove(&content_hash));
-        let pending_texture_bytes = if removed_pending_textures != 0 {
-            self.pending
-                .iter()
-                .filter(|job| job.key().content_hash == content_hash)
-                .find_map(|job| job.base_color_texture())
-                .expect("pending texture reservation retains an upload job")
-                .byte_len()
-        } else {
-            0
-        };
+        let pending_texture_keys: Vec<_> = self
+            .pending_textures
+            .iter()
+            .copied()
+            .filter(|key| key.content_hash == content_hash)
+            .collect();
+        let removed_pending_textures =
+            u32::try_from(pending_texture_keys.len()).expect("at most two roles are reserved");
+        let pending_texture_bytes = pending_texture_keys
+            .iter()
+            .map(|key| {
+                self.pending
+                    .iter()
+                    .filter(|job| job.key().content_hash == content_hash)
+                    .find_map(|job| job.texture(key.role))
+                    .expect("pending texture reservation retains an upload job")
+                    .byte_len()
+            })
+            .sum();
+        for key in pending_texture_keys {
+            self.pending_textures.remove(&key);
+        }
 
         let mut removed_pending_uploads = 0_u32;
         let mut released_pending_bytes = 0_u64;
@@ -460,9 +524,23 @@ impl RendererAssets {
             .checked_sub(released_resident_bytes)
             .expect("resident vertex bytes remain exactly accounted");
 
-        let resident_texture = self.resident_textures.remove(&content_hash);
-        let removed_resident_textures = u32::from(resident_texture.is_some());
-        let resident_texture_bytes = resident_texture.map_or(0, |texture| texture.byte_len);
+        let resident_texture_keys: Vec<_> = self
+            .resident_textures
+            .keys()
+            .copied()
+            .filter(|key| key.content_hash == content_hash)
+            .collect();
+        let removed_resident_textures =
+            u32::try_from(resident_texture_keys.len()).expect("at most two roles are resident");
+        let resident_texture_bytes = resident_texture_keys
+            .into_iter()
+            .map(|key| {
+                self.resident_textures
+                    .remove(&key)
+                    .expect("collected resident texture key remains present")
+                    .byte_len
+            })
+            .sum();
         self.resident_texture_bytes = self
             .resident_texture_bytes
             .checked_sub(resident_texture_bytes)
@@ -485,9 +563,13 @@ impl RendererAssets {
         self.resident.get(&key)
     }
 
-    pub(crate) fn texture_view(&self, content_hash: ContentHash) -> Option<&wgpu::TextureView> {
+    pub(crate) fn texture_view(
+        &self,
+        content_hash: ContentHash,
+        role: AssetTextureRole,
+    ) -> Option<&wgpu::TextureView> {
         self.resident_textures
-            .get(&content_hash)
+            .get(&AssetTextureKey { content_hash, role })
             .map(|texture| &texture.view)
     }
 
@@ -572,6 +654,7 @@ fn create_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     source: &AssetTexture,
+    role: AssetTextureRole,
 ) -> GpuAssetTexture {
     let size = wgpu::Extent3d {
         width: source.width(),
@@ -579,12 +662,18 @@ fn create_texture(
         depth_or_array_layers: 1,
     };
     let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("cogniform-asset-base-color"),
+        label: Some(match role {
+            AssetTextureRole::BaseColor => "cogniform-asset-base-color",
+            AssetTextureRole::Normal => "cogniform-asset-normal",
+        }),
         size,
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        format: match role {
+            AssetTextureRole::BaseColor => wgpu::TextureFormat::Rgba8UnormSrgb,
+            AssetTextureRole::Normal => wgpu::TextureFormat::Rgba8Unorm,
+        },
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
@@ -620,6 +709,7 @@ fn encode_vertices(vertices: &[cogniform_assets::AssetVertex]) -> Vec<u8> {
                 .iter()
                 .chain(&vertex.normal)
                 .chain(&vertex.texcoord_0)
+                .chain(&vertex.tangent)
                 .flat_map(|value| value.get().to_le_bytes())
         })
         .collect()
@@ -730,34 +820,40 @@ mod tests {
     }
 
     #[test]
-    fn upload_vertices_are_interleaved_position_normal_then_texcoord() {
+    fn upload_vertices_are_interleaved_position_normal_texcoord_then_tangent() {
         let finite = |value| FiniteF32::new(value).unwrap();
         let vertex = AssetVertex {
             position: [finite(1.0), finite(2.0), finite(3.0)],
             normal: [finite(0.0), finite(0.0), finite(1.0)],
             texcoord_0: [finite(-0.25), finite(1.25)],
+            tangent: [finite(1.0), finite(0.0), finite(0.0), finite(-1.0)],
         };
         let encoded = encode_vertices(&[vertex]);
-        assert_eq!(encoded.len(), 32);
+        assert_eq!(encoded.len(), 48);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
-        assert_eq!(values, [1.0, 2.0, 3.0, 0.0, 0.0, 1.0, -0.25, 1.25]);
+        assert_eq!(
+            values,
+            [
+                1.0, 2.0, 3.0, 0.0, 0.0, 1.0, -0.25, 1.25, 1.0, 0.0, 0.0, -1.0
+            ]
+        );
     }
 
     #[test]
     fn exact_interleaved_bytes_are_rejected_before_gpu_allocation() {
         let upload = fixture_upload(false);
-        assert_eq!(upload.byte_len(), 96);
+        assert_eq!(upload.byte_len(), 144);
         let config =
-            RendererConfig::new(64, 64).with_max_asset_mesh_bytes(NonZeroU64::new(95).unwrap());
+            RendererConfig::new(64, 64).with_max_asset_mesh_bytes(NonZeroU64::new(143).unwrap());
         let mut assets = RendererAssets::new();
         assert!(matches!(
             assets.enqueue(upload, &config),
             Err(RendererError::AssetMeshBytesExceeded {
-                actual: 96,
-                limit: 95,
+                actual: 144,
+                limit: 143,
                 ..
             })
         ));
@@ -786,7 +882,7 @@ mod tests {
             .enqueue(upload, &RendererConfig::new(64, 64))
             .unwrap();
         assert_eq!(assets.stats().pending_uploads, 1);
-        assert_eq!(assets.stats().pending_bytes, 96);
+        assert_eq!(assets.stats().pending_bytes, 144);
         assert_eq!(assets.stats().pending_textures, 1);
         assert_eq!(assets.stats().pending_texture_bytes, 4);
         assert_eq!(assets.stats().resident_textures, 0);
@@ -849,6 +945,42 @@ mod tests {
     }
 
     #[test]
+    fn dual_role_texture_reservations_are_atomic_and_exact() {
+        let upload = dual_textured_upload([128, 128, 255, 255]);
+        assert!(upload.base_color_texture().is_some());
+        assert!(upload.normal_texture().is_some());
+        let cases = [
+            RendererConfig::new(64, 64)
+                .with_max_pending_asset_texture_bytes(NonZeroU64::new(7).unwrap()),
+            RendererConfig::new(64, 64)
+                .with_max_resident_asset_textures(NonZeroU32::new(1).unwrap()),
+            RendererConfig::new(64, 64)
+                .with_max_resident_asset_texture_bytes(NonZeroU64::new(7).unwrap()),
+        ];
+        for config in cases {
+            let mut assets = RendererAssets::new();
+            assert!(assets.enqueue(upload.clone(), &config).is_err());
+            assert_eq!(assets.stats().pending_uploads, 0);
+            assert_eq!(assets.stats().pending_bytes, 0);
+            assert_eq!(assets.stats().pending_textures, 0);
+            assert_eq!(assets.stats().pending_texture_bytes, 0);
+        }
+
+        let mut assets = RendererAssets::new();
+        assets
+            .enqueue(upload.clone(), &RendererConfig::new(64, 64))
+            .unwrap();
+        assert_eq!(assets.stats().pending_uploads, 1);
+        assert_eq!(assets.stats().pending_textures, 2);
+        assert_eq!(assets.stats().pending_texture_bytes, 8);
+        let eviction = assets.evict(upload.key().content_hash);
+        assert_eq!(eviction.removed_pending_uploads, 1);
+        assert_eq!(eviction.removed_pending_textures, 2);
+        assert_eq!(eviction.released_pending_texture_bytes, 8);
+        assert!(assets.stats().pending_uploads == 0 && assets.stats().pending_textures == 0);
+    }
+
+    #[test]
     fn pending_eviction_releases_exact_reservations_and_preserves_other_fifo_work() {
         let selected = textured_upload([255, 0, 0, 255]);
         let selected_key = selected.key();
@@ -870,7 +1002,7 @@ mod tests {
         assert_eq!(eviction.removed_resident_textures, 0);
         assert_eq!(eviction.released_resident_texture_bytes, 0);
         assert_eq!(assets.stats().pending_uploads, 1);
-        assert_eq!(assets.stats().pending_bytes, 96);
+        assert_eq!(assets.stats().pending_bytes, 144);
         assert_eq!(assets.stats().pending_textures, 0);
         assert_eq!(assets.pending.front().unwrap().key(), retained_key);
 
@@ -930,6 +1062,60 @@ mod tests {
         binary.extend_from_slice(&png_bytes);
         let json = format!(
             r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":2,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0}}]}}]}}"#,
+            binary_length = binary.len(),
+            image_length = png_bytes.len(),
+        );
+        let bytes = glb_with_json(&json, &binary);
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        store.process_next().unwrap();
+        store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap()
+    }
+
+    fn dual_textured_upload(texel: [u8; 4]) -> AssetUploadJob {
+        let mut binary = Vec::new();
+        for position in [
+            [-0.75_f32, -0.75, 0.0],
+            [0.75, -0.75, 0.0],
+            [0.0, 0.75, 0.0],
+        ] {
+            for value in position {
+                binary.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+            for value in normal {
+                binary.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+            for value in tangent {
+                binary.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        for texcoord in [[0.5_f32, 0.5]; 3] {
+            for value in texcoord {
+                binary.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        let mut png_bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png_bytes, 1, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&texel).unwrap();
+        }
+        let image_offset = binary.len();
+        binary.extend_from_slice(&png_bytes);
+        let json = format!(
+            r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":0}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0}}]}}]}}"#,
             binary_length = binary.len(),
             image_length = png_bytes.len(),
         );

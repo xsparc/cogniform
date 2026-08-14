@@ -325,8 +325,8 @@ impl RenderScene {
                     )
                 },
             );
-            let use_imported_texture = entity.material().is_none()
-                && imported_material.is_some_and(AssetMaterial::has_base_color_texture);
+            let (use_imported_base_color_texture, use_imported_normal_texture, normal_scale) =
+                imported_texture_selection(entity.material().is_none(), imported_material);
             draws.push(PreparedDraw {
                 geometry,
                 model,
@@ -335,7 +335,9 @@ impl RenderScene {
                 camera_position,
                 metallic,
                 roughness,
-                use_imported_texture,
+                normal_scale,
+                use_imported_base_color_texture,
+                use_imported_normal_texture,
                 compact_id: compact_id.get(),
             });
             id_lookup.insert(compact_id.get(), entity_id);
@@ -450,7 +452,9 @@ pub(crate) struct PreparedDraw {
     pub(crate) camera_position: [f32; 3],
     pub(crate) metallic: f32,
     pub(crate) roughness: f32,
-    pub(crate) use_imported_texture: bool,
+    pub(crate) normal_scale: f32,
+    pub(crate) use_imported_base_color_texture: bool,
+    pub(crate) use_imported_normal_texture: bool,
     pub(crate) compact_id: u32,
 }
 
@@ -468,6 +472,22 @@ fn primitive_geometry(shape: cogniform_protocol::PrimitiveShape) -> PreparedGeom
         cogniform_protocol::PrimitiveShape::Plane => PreparedGeometry::Plane,
         cogniform_protocol::PrimitiveShape::Sphere => PreparedGeometry::Sphere,
     }
+}
+
+fn imported_texture_selection(
+    use_imported_material: bool,
+    material: Option<AssetMaterial>,
+) -> (bool, bool, f32) {
+    let use_base_color =
+        use_imported_material && material.is_some_and(AssetMaterial::has_base_color_texture);
+    let use_normal =
+        use_imported_material && material.is_some_and(AssetMaterial::has_normal_texture);
+    let normal_scale = if use_normal {
+        material.map_or(1.0, AssetMaterial::normal_scale)
+    } else {
+        1.0
+    };
+    (use_base_color, use_normal, normal_scale)
 }
 
 fn color_values(color: ColorRgba) -> [f32; 4] {

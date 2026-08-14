@@ -34,7 +34,9 @@ inspect unusual license files, notices, and bundled native or generated code.
 ## Approved PNG decoder
 
 CF029 admits exact-pinned `png` 0.18.1 as a runtime dependency only inside
-`cogniform-assets` for the strict embedded base-color image boundary;
+`cogniform-assets` for the strict embedded base-color image boundary; CF055
+reuses the same decoder and limits for the approved linear normal-image role
+without changing the dependency graph.
 `cogniform-renderer` and `cogniform-engine` use it only to generate test
 fixtures. It is dual licensed `MIT OR Apache-2.0`, uses the pure-Rust miniz
 backend with the direct crate's default features disabled, and requires no

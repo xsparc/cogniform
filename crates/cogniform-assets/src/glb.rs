@@ -1,5 +1,9 @@
 use core::num::NonZeroU32;
-use std::{collections::BTreeMap, io::Cursor, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io::Cursor,
+    sync::Arc,
+};
 
 use cogniform_protocol::{FiniteF32, UnitF32};
 use serde::Deserialize;
@@ -220,7 +224,6 @@ fn remove_unsupported_material_features(
             continue;
         };
         for (field, expected) in [
-            ("normalTexture", JsonKind::Object),
             ("occlusionTexture", JsonKind::Object),
             ("emissiveTexture", JsonKind::Object),
             ("emissiveFactor", JsonKind::Array),
@@ -329,8 +332,8 @@ fn validate_root(
     limits: AssetLimits,
 ) -> Result<DecodedAsset, AssetDiagnostic> {
     validate_root_header(root, binary, limits)?;
-    let texture = decode_base_color_texture(root, binary, limits)?;
-    let mut decoded_bytes = texture.as_ref().map_or(0, AssetTexture::byte_len);
+    let textures = decode_textures(root, binary, limits)?;
+    let mut decoded_bytes = textures.byte_len;
     let mut meshes = Vec::with_capacity(root.meshes.len());
     for (mesh_index, mesh) in root.meshes.iter().enumerate() {
         meshes.push(decode_mesh(
@@ -349,7 +352,7 @@ fn validate_root(
             None,
         ));
     }
-    if texture.is_some()
+    if textures.base_color.is_some()
         && !meshes
             .iter()
             .any(|mesh| mesh.material.has_base_color_texture())
@@ -360,9 +363,17 @@ fn validate_root(
             None,
         ));
     }
+    if textures.normal.is_some() && !meshes.iter().any(|mesh| mesh.material.has_normal_texture()) {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.materials.normalTexture",
+            None,
+        ));
+    }
     Ok(DecodedAsset {
         meshes,
-        texture,
+        base_color_texture: textures.base_color,
+        normal_texture: textures.normal,
         byte_len: decoded_bytes,
     })
 }
@@ -439,7 +450,7 @@ fn validate_root_header(
             ));
         }
     }
-    if root.images.len() > 1 || root.textures.len() > 1 {
+    if root.images.len() > 2 || root.textures.len() > 2 {
         return Err(diagnostic(
             AssetDiagnosticCode::CollectionLimitExceeded,
             "glb.json.textures",
@@ -456,21 +467,42 @@ fn validate_root_header(
     Ok(())
 }
 
-fn decode_base_color_texture(
+struct DecodedTextures {
+    base_color: Option<AssetTexture>,
+    normal: Option<AssetTexture>,
+    byte_len: u64,
+}
+
+fn decode_textures(
     root: &Root,
     binary: &[u8],
     limits: AssetLimits,
-) -> Result<Option<AssetTexture>, AssetDiagnostic> {
-    let references_texture = root.materials.iter().any(|material| {
-        material
-            .pbr_metallic_roughness
-            .as_ref()
-            .and_then(|pbr| pbr.base_color_texture.as_ref())
-            .is_some()
-    });
-    if !references_texture {
+) -> Result<DecodedTextures, AssetDiagnostic> {
+    let base_color_index = shared_texture_index(
+        root.materials.iter().filter_map(|material| {
+            material
+                .pbr_metallic_roughness
+                .as_ref()
+                .and_then(|pbr| pbr.base_color_texture.as_ref())
+                .map(|info| info.index)
+        }),
+        root.textures.len(),
+        "glb.json.materials.baseColorTexture.index",
+    )?;
+    let normal_index = shared_texture_index(
+        root.materials
+            .iter()
+            .filter_map(|material| material.normal_texture.as_ref().map(|info| info.index)),
+        root.textures.len(),
+        "glb.json.materials.normalTexture.index",
+    )?;
+    if base_color_index.is_none() && normal_index.is_none() {
         if root.textures.is_empty() && root.images.is_empty() {
-            return Ok(None);
+            return Ok(DecodedTextures {
+                base_color: None,
+                normal: None,
+                byte_len: 0,
+            });
         }
         return Err(diagnostic(
             AssetDiagnosticCode::UnsupportedFeature,
@@ -478,146 +510,245 @@ fn decode_base_color_texture(
             None,
         ));
     }
-    validate_texture_references(root)?;
-    decode_png(embedded_image_bytes(root, binary)?, limits).map(Some)
-}
-
-fn validate_texture_references(root: &Root) -> Result<(), AssetDiagnostic> {
-    if root.textures.len() != 1 || root.images.len() != 1 {
+    validate_texture_coordinates(root)?;
+    let role_indices = [base_color_index, normal_index];
+    let referenced_textures: BTreeSet<_> = role_indices.into_iter().flatten().collect();
+    if referenced_textures.len() != root.textures.len() {
         return Err(diagnostic(
-            AssetDiagnosticCode::InvalidBufferRange,
+            AssetDiagnosticCode::UnsupportedFeature,
             "glb.json.textures",
             None,
         ));
     }
+    let (texture_sources, referenced_images) = resolve_texture_sources(root, &referenced_textures)?;
+    let (decoded_images, byte_len) =
+        decode_referenced_images(root, binary, limits, referenced_images)?;
+    let role_texture = |texture_index: Option<u32>| {
+        texture_index.map(|texture_index| {
+            let source = texture_sources[&texture_index];
+            decoded_images[&source].clone()
+        })
+    };
+    Ok(DecodedTextures {
+        base_color: role_texture(base_color_index),
+        normal: role_texture(normal_index),
+        byte_len,
+    })
+}
+
+fn resolve_texture_sources(
+    root: &Root,
+    referenced_textures: &BTreeSet<u32>,
+) -> Result<(BTreeMap<u32, u32>, BTreeSet<u32>), AssetDiagnostic> {
+    let mut texture_sources = BTreeMap::new();
+    let mut referenced_images = BTreeSet::new();
+    for &texture_index in referenced_textures {
+        let texture = get(&root.textures, texture_index, "glb.json.textures")?;
+        if texture.sampler.is_some() {
+            return Err(diagnostic(
+                AssetDiagnosticCode::UnsupportedFeature,
+                "glb.json.textures[].sampler",
+                Some(texture_index),
+            ));
+        }
+        let source = texture.source.ok_or_else(|| {
+            diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.textures[].source",
+                Some(texture_index),
+            )
+        })?;
+        get(&root.images, source, "glb.json.images")?;
+        referenced_images.insert(source);
+        texture_sources.insert(texture_index, source);
+    }
+    if referenced_images.len() != root.images.len() {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.images",
+            None,
+        ));
+    }
+    Ok((texture_sources, referenced_images))
+}
+
+fn decode_referenced_images(
+    root: &Root,
+    binary: &[u8],
+    limits: AssetLimits,
+    referenced_images: BTreeSet<u32>,
+) -> Result<(BTreeMap<u32, AssetTexture>, u64), AssetDiagnostic> {
+    let mut decoded_images = BTreeMap::new();
+    let mut byte_len = 0_u64;
+    for image_index in referenced_images {
+        let decoded = decode_png(
+            embedded_image_bytes(root, binary, image_index)?,
+            limits,
+            image_index,
+        )?;
+        byte_len = byte_len.checked_add(decoded.byte_len()).ok_or_else(|| {
+            diagnostic(
+                AssetDiagnosticCode::ByteLimitExceeded,
+                "glb.decoded.asset_bytes",
+                None,
+            )
+        })?;
+        if byte_len > limits.max_asset_decoded_bytes.get() {
+            return Err(diagnostic(
+                AssetDiagnosticCode::ByteLimitExceeded,
+                "glb.decoded.asset_bytes",
+                None,
+            ));
+        }
+        decoded_images.insert(image_index, decoded);
+    }
+    Ok((decoded_images, byte_len))
+}
+
+fn shared_texture_index(
+    references: impl Iterator<Item = u32>,
+    texture_count: usize,
+    location: &'static str,
+) -> Result<Option<u32>, AssetDiagnostic> {
+    let indices: BTreeSet<_> = references.collect();
+    if let Some(&invalid) = indices
+        .iter()
+        .find(|&&index| usize::try_from(index).map_or(true, |index| index >= texture_count))
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidBufferRange,
+            location,
+            Some(invalid),
+        ));
+    }
+    if indices.len() > 1 {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            location,
+            None,
+        ));
+    }
+    Ok(indices.into_iter().next())
+}
+
+fn validate_texture_coordinates(root: &Root) -> Result<(), AssetDiagnostic> {
     for material in &root.materials {
-        let Some(info) = material
+        if let Some(info) = material
             .pbr_metallic_roughness
             .as_ref()
             .and_then(|pbr| pbr.base_color_texture.as_ref())
-        else {
-            continue;
-        };
-        if info.tex_coord.unwrap_or(0) != 0 {
+            && info.tex_coord.unwrap_or(0) != 0
+        {
             return Err(diagnostic(
                 AssetDiagnosticCode::UnsupportedFeature,
                 "glb.json.materials.baseColorTexture.texCoord",
                 None,
             ));
         }
-        if info.index != 0 {
+        if let Some(info) = material.normal_texture.as_ref()
+            && info.tex_coord.unwrap_or(0) != 0
+        {
             return Err(diagnostic(
-                AssetDiagnosticCode::InvalidBufferRange,
-                "glb.json.materials.baseColorTexture.index",
-                Some(info.index),
+                AssetDiagnosticCode::UnsupportedFeature,
+                "glb.json.materials.normalTexture.texCoord",
+                None,
             ));
         }
-    }
-    let texture = &root.textures[0];
-    if texture.sampler.is_some() {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.textures[0].sampler",
-            Some(0),
-        ));
-    }
-    let source = texture.source.ok_or_else(|| {
-        diagnostic(
-            AssetDiagnosticCode::InvalidJson,
-            "glb.json.textures[0].source",
-            Some(0),
-        )
-    })?;
-    if source != 0 {
-        return Err(diagnostic(
-            AssetDiagnosticCode::InvalidBufferRange,
-            "glb.json.textures[0].source",
-            Some(source),
-        ));
     }
     Ok(())
 }
 
-fn embedded_image_bytes<'a>(root: &Root, binary: &'a [u8]) -> Result<&'a [u8], AssetDiagnostic> {
-    let image = &root.images[0];
+fn embedded_image_bytes<'a>(
+    root: &Root,
+    binary: &'a [u8],
+    image_index: u32,
+) -> Result<&'a [u8], AssetDiagnostic> {
+    let image = get(&root.images, image_index, "glb.json.images")?;
     if image.uri.is_some() || image.mime_type.as_deref() != Some("image/png") {
         return Err(diagnostic(
             AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.images[0]",
-            Some(0),
+            "glb.json.images[]",
+            Some(image_index),
         ));
     }
     let view_index = image.buffer_view.ok_or_else(|| {
         diagnostic(
             AssetDiagnosticCode::InvalidJson,
-            "glb.json.images[0].bufferView",
-            Some(0),
+            "glb.json.images[].bufferView",
+            Some(image_index),
         )
     })?;
     let view = get(&root.buffer_views, view_index, "glb.json.bufferViews")?;
     if view.buffer != 0 {
         return Err(diagnostic(
             AssetDiagnosticCode::InvalidBufferRange,
-            "glb.json.images[0].bufferView",
+            "glb.json.images[].bufferView",
             Some(view_index),
         ));
     }
     if view.byte_stride.is_some() {
         return Err(diagnostic(
             AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.images[0].bufferView.byteStride",
+            "glb.json.images[].bufferView.byteStride",
             Some(view_index),
         ));
     }
     let start = usize::try_from(view.byte_offset).map_err(|_| {
         diagnostic(
             AssetDiagnosticCode::InvalidBufferRange,
-            "glb.json.images[0].bufferView",
+            "glb.json.images[].bufferView",
             Some(view_index),
         )
     })?;
     let length = usize::try_from(view.byte_length).map_err(|_| {
         diagnostic(
             AssetDiagnosticCode::InvalidBufferRange,
-            "glb.json.images[0].bufferView",
+            "glb.json.images[].bufferView",
             Some(view_index),
         )
     })?;
     let end = start.checked_add(length).ok_or_else(|| {
         diagnostic(
             AssetDiagnosticCode::InvalidBufferRange,
-            "glb.json.images[0].bufferView",
+            "glb.json.images[].bufferView",
             Some(view_index),
         )
     })?;
     binary.get(start..end).ok_or_else(|| {
         diagnostic(
             AssetDiagnosticCode::InvalidBufferRange,
-            "glb.json.images[0].bufferView",
+            "glb.json.images[].bufferView",
             Some(view_index),
         )
     })
 }
 
-fn decode_png(bytes: &[u8], limits: AssetLimits) -> Result<AssetTexture, AssetDiagnostic> {
-    validate_png_framing(bytes)?;
+fn decode_png(
+    bytes: &[u8],
+    limits: AssetLimits,
+    image_index: u32,
+) -> Result<AssetTexture, AssetDiagnostic> {
+    validate_png_framing(bytes, image_index)?;
     let width = read_be_u32(bytes, 16)
         .and_then(NonZeroU32::new)
-        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::InvalidImage))?;
+        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::InvalidImage, image_index))?;
     let height = read_be_u32(bytes, 20)
         .and_then(NonZeroU32::new)
-        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::InvalidImage))?;
-    decode_png_image(bytes, width, height, limits)
+        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::InvalidImage, image_index))?;
+    decode_png_image(bytes, width, height, limits, image_index)
 }
 
-fn validate_png_framing(bytes: &[u8]) -> Result<(), AssetDiagnostic> {
+fn validate_png_framing(bytes: &[u8], image_index: u32) -> Result<(), AssetDiagnostic> {
     if bytes.len() < 33
         || bytes.get(..8) != Some(&PNG_SIGNATURE)
         || !bytes.ends_with(&PNG_IEND)
         || read_be_u32(bytes, 8) != Some(PNG_IHDR_LENGTH)
         || bytes.get(12..16) != Some(b"IHDR")
     {
-        return Err(image_diagnostic(AssetDiagnosticCode::InvalidImage));
+        return Err(image_diagnostic(
+            AssetDiagnosticCode::InvalidImage,
+            image_index,
+        ));
     }
     Ok(())
 }
@@ -627,36 +758,95 @@ fn decode_png_image(
     width: NonZeroU32,
     height: NonZeroU32,
     limits: AssetLimits,
+    image_index: u32,
 ) -> Result<AssetTexture, AssetDiagnostic> {
+    let (pixels, rgba_bytes) = validated_texture_size(width, height, limits, image_index)?;
+    let color_type = validated_png_color(bytes, image_index)?;
+    decode_png_pixels(
+        bytes,
+        PngLayout {
+            width,
+            height,
+            pixels,
+            rgba_bytes,
+            color_type,
+        },
+        limits,
+        image_index,
+    )
+}
+
+#[derive(Clone, Copy)]
+struct PngLayout {
+    width: NonZeroU32,
+    height: NonZeroU32,
+    pixels: u64,
+    rgba_bytes: u64,
+    color_type: u8,
+}
+
+fn validated_texture_size(
+    width: NonZeroU32,
+    height: NonZeroU32,
+    limits: AssetLimits,
+    image_index: u32,
+) -> Result<(u64, u64), AssetDiagnostic> {
     if width.get() > limits.max_texture_dimension_2d.get()
         || height.get() > limits.max_texture_dimension_2d.get()
     {
         return Err(image_diagnostic(
             AssetDiagnosticCode::CollectionLimitExceeded,
+            image_index,
         ));
     }
     let pixels = u64::from(width.get())
         .checked_mul(u64::from(height.get()))
-        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded))?;
+        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded, image_index))?;
     if pixels > limits.max_texture_pixels.get() {
         return Err(image_diagnostic(
             AssetDiagnosticCode::CollectionLimitExceeded,
+            image_index,
         ));
     }
     let rgba_bytes = pixels
         .checked_mul(4)
-        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded))?;
+        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded, image_index))?;
     if rgba_bytes > limits.max_texture_decoded_bytes.get()
         || rgba_bytes > limits.max_asset_decoded_bytes.get()
     {
-        return Err(image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded));
+        return Err(image_diagnostic(
+            AssetDiagnosticCode::ByteLimitExceeded,
+            image_index,
+        ));
     }
+    Ok((pixels, rgba_bytes))
+}
+
+fn validated_png_color(bytes: &[u8], image_index: u32) -> Result<u8, AssetDiagnostic> {
     let bit_depth = bytes[24];
     let color_type = bytes[25];
     if bit_depth != 8 || !matches!(color_type, PNG_RGB | PNG_RGBA) || bytes[26..29] != [0, 0, 0] {
-        return Err(image_diagnostic(AssetDiagnosticCode::UnsupportedFeature));
+        return Err(image_diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            image_index,
+        ));
     }
+    Ok(color_type)
+}
 
+fn decode_png_pixels(
+    bytes: &[u8],
+    layout: PngLayout,
+    limits: AssetLimits,
+    image_index: u32,
+) -> Result<AssetTexture, AssetDiagnostic> {
+    let PngLayout {
+        width,
+        height,
+        pixels,
+        rgba_bytes,
+        color_type,
+    } = layout;
     let decoder_limit =
         usize::try_from(limits.max_texture_decoder_bytes.get()).unwrap_or(usize::MAX);
     let mut decoder = png::Decoder::new_with_limits(
@@ -670,25 +860,34 @@ fn decode_png_image(
     decoder.set_ignore_iccp_chunk(true);
     let mut reader = decoder
         .read_info()
-        .map_err(|error| png_diagnostic(&error))?;
+        .map_err(|error| png_diagnostic(&error, image_index))?;
     if reader.info().animation_control.is_some() {
-        return Err(image_diagnostic(AssetDiagnosticCode::UnsupportedFeature));
+        return Err(image_diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            image_index,
+        ));
     }
     if reader.info().trns.is_some() {
-        return Err(image_diagnostic(AssetDiagnosticCode::UnsupportedFeature));
+        return Err(image_diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            image_index,
+        ));
     }
     let channels = if color_type == PNG_RGB { 3_u64 } else { 4_u64 };
     let raw_bytes = pixels
         .checked_mul(channels)
         .and_then(|value| usize::try_from(value).ok())
-        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded))?;
+        .ok_or_else(|| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded, image_index))?;
     if reader.output_buffer_size() != Some(raw_bytes) {
-        return Err(image_diagnostic(AssetDiagnosticCode::InvalidImage));
+        return Err(image_diagnostic(
+            AssetDiagnosticCode::InvalidImage,
+            image_index,
+        ));
     }
     let mut raw = vec![0_u8; raw_bytes];
     let output = reader
         .next_frame(&mut raw)
-        .map_err(|error| png_diagnostic(&error))?;
+        .map_err(|error| png_diagnostic(&error, image_index))?;
     let expected_color = if color_type == PNG_RGB {
         png::ColorType::Rgb
     } else {
@@ -700,14 +899,19 @@ fn decode_png_image(
         || output.color_type != expected_color
         || output.buffer_size() != raw_bytes
     {
-        return Err(image_diagnostic(AssetDiagnosticCode::InvalidImage));
+        return Err(image_diagnostic(
+            AssetDiagnosticCode::InvalidImage,
+            image_index,
+        ));
     }
-    reader.finish().map_err(|error| png_diagnostic(&error))?;
+    reader
+        .finish()
+        .map_err(|error| png_diagnostic(&error, image_index))?;
     let rgba8 = if color_type == PNG_RGBA {
         raw
     } else {
         let capacity = usize::try_from(rgba_bytes)
-            .map_err(|_| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded))?;
+            .map_err(|_| image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded, image_index))?;
         let mut rgba8 = Vec::with_capacity(capacity);
         for rgb in raw.chunks_exact(3) {
             rgba8.extend_from_slice(rgb);
@@ -723,15 +927,15 @@ fn read_be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_be_bytes(encoded))
 }
 
-const fn image_diagnostic(code: AssetDiagnosticCode) -> AssetDiagnostic {
-    diagnostic(code, "glb.binary.image.png", Some(0))
+const fn image_diagnostic(code: AssetDiagnosticCode, image_index: u32) -> AssetDiagnostic {
+    diagnostic(code, "glb.binary.image.png", Some(image_index))
 }
 
-fn png_diagnostic(error: &png::DecodingError) -> AssetDiagnostic {
+fn png_diagnostic(error: &png::DecodingError, image_index: u32) -> AssetDiagnostic {
     if matches!(error, png::DecodingError::LimitsExceeded) {
-        image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded)
+        image_diagnostic(AssetDiagnosticCode::ByteLimitExceeded, image_index)
     } else {
-        image_diagnostic(AssetDiagnosticCode::InvalidImage)
+        image_diagnostic(AssetDiagnosticCode::InvalidImage, image_index)
     }
 }
 
@@ -744,7 +948,13 @@ fn decode_mesh(
     decoded_bytes: &mut u64,
 ) -> Result<DecodedMesh, AssetDiagnostic> {
     let primitive = validated_primitive(mesh, limits, mesh_index)?;
-    let (position_index, positions, normals, texcoords) = vertex_layouts(root, binary, primitive)?;
+    let VertexLayouts {
+        position_index,
+        positions,
+        normals,
+        tangents,
+        texcoords,
+    } = vertex_layouts(root, binary, primitive)?;
     let (indices, output_count) =
         output_layout(root, binary, primitive, positions, position_index, limits)?;
     if output_count > limits.max_vertices_per_mesh.get() {
@@ -780,12 +990,30 @@ fn decode_mesh(
     if let Some(texcoords) = texcoords {
         validate_texcoords(binary, texcoords)?;
     }
-    let vertices = decode_vertices(binary, positions, normals, texcoords, indices, output_count)?;
+    if let Some(tangents) = tangents {
+        validate_tangents(binary, tangents)?;
+    }
+    let vertices = decode_vertices(
+        binary,
+        positions,
+        normals,
+        tangents,
+        texcoords,
+        indices,
+        output_count,
+    )?;
     let material = decode_material(root, primitive.material)?;
     if material.has_base_color_texture() && texcoords.is_none() {
         return Err(diagnostic(
             AssetDiagnosticCode::InvalidTexcoord,
             "glb.json.meshes[].primitives[].attributes.TEXCOORD_0",
+            Some(mesh_index),
+        ));
+    }
+    if material.has_normal_texture() && (normals.is_none() || tangents.is_none()) {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.meshes[].primitives[].attributes.TANGENT",
             Some(mesh_index),
         ));
     }
@@ -818,10 +1046,12 @@ fn validated_primitive(
         ));
     }
     let attributes_supported = primitive.attributes.contains_key("POSITION")
-        && primitive
-            .attributes
-            .keys()
-            .all(|attribute| matches!(attribute.as_str(), "POSITION" | "NORMAL" | "TEXCOORD_0"));
+        && primitive.attributes.keys().all(|attribute| {
+            matches!(
+                attribute.as_str(),
+                "POSITION" | "NORMAL" | "TANGENT" | "TEXCOORD_0"
+            )
+        });
     if !attributes_supported {
         return Err(diagnostic(
             AssetDiagnosticCode::UnsupportedFeature,
@@ -832,19 +1062,19 @@ fn validated_primitive(
     Ok(primitive)
 }
 
+struct VertexLayouts {
+    position_index: u32,
+    positions: AccessorLayout,
+    normals: Option<AccessorLayout>,
+    tangents: Option<AccessorLayout>,
+    texcoords: Option<AccessorLayout>,
+}
+
 fn vertex_layouts(
     root: &Root,
     binary: &[u8],
     primitive: &Primitive,
-) -> Result<
-    (
-        u32,
-        AccessorLayout,
-        Option<AccessorLayout>,
-        Option<AccessorLayout>,
-    ),
-    AssetDiagnostic,
-> {
+) -> Result<VertexLayouts, AssetDiagnostic> {
     let position_index = primitive.attributes["POSITION"];
     let positions = accessor_layout(root, binary, position_index, AccessorExpectation::Positions)?;
     let normals = primitive
@@ -865,6 +1095,24 @@ fn vertex_layouts(
             Some(normal_index),
         ));
     }
+    let tangents = primitive
+        .attributes
+        .get("TANGENT")
+        .copied()
+        .map(|tangent_index| {
+            accessor_layout(root, binary, tangent_index, AccessorExpectation::Tangents)
+                .map(|layout| (tangent_index, layout))
+        })
+        .transpose()?;
+    if let Some((tangent_index, tangents)) = tangents
+        && tangents.count != positions.count
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidTangent,
+            "glb.json.accessors.tangent.count",
+            Some(tangent_index),
+        ));
+    }
     let texcoords = primitive
         .attributes
         .get("TEXCOORD_0")
@@ -883,12 +1131,13 @@ fn vertex_layouts(
             Some(texcoord_index),
         ));
     }
-    Ok((
+    Ok(VertexLayouts {
         position_index,
         positions,
-        normals.map(|(_, layout)| layout),
-        texcoords.map(|(_, layout)| layout),
-    ))
+        normals: normals.map(|(_, layout)| layout),
+        tangents: tangents.map(|(_, layout)| layout),
+        texcoords: texcoords.map(|(_, layout)| layout),
+    })
 }
 
 fn output_layout(
@@ -932,6 +1181,7 @@ fn output_layout(
 enum AccessorExpectation {
     Positions,
     Normals,
+    Tangents,
     Texcoords,
     Indices,
 }
@@ -993,6 +1243,11 @@ fn accessor_format(
         {
             Ok((12, 4))
         }
+        AccessorExpectation::Tangents
+            if accessor.component_type == FLOAT && accessor.kind == "VEC4" =>
+        {
+            Ok((16, 4))
+        }
         AccessorExpectation::Texcoords
             if accessor.component_type == FLOAT && accessor.kind == "VEC2" =>
         {
@@ -1011,6 +1266,7 @@ fn accessor_format(
         }
         AccessorExpectation::Positions
         | AccessorExpectation::Normals
+        | AccessorExpectation::Tangents
         | AccessorExpectation::Texcoords
         | AccessorExpectation::Indices => Err(diagnostic(
             AssetDiagnosticCode::UnsupportedAccessor,
@@ -1125,6 +1381,7 @@ fn decode_vertices(
     binary: &[u8],
     positions: AccessorLayout,
     normals: Option<AccessorLayout>,
+    tangents: Option<AccessorLayout>,
     texcoords: Option<AccessorLayout>,
     indices: Option<AccessorLayout>,
     output_count: u32,
@@ -1148,6 +1405,15 @@ fn decode_vertices(
             .map(|layout| read_normal(binary, layout, position_index))
             .transpose()?
             .unwrap_or([FiniteF32::new(0.0).expect("zero is finite"); 3]);
+        let tangent = tangents
+            .map(|layout| read_tangent(binary, layout, position_index))
+            .transpose()?
+            .unwrap_or([
+                FiniteF32::new(1.0).expect("one is finite"),
+                FiniteF32::new(0.0).expect("zero is finite"),
+                FiniteF32::new(0.0).expect("zero is finite"),
+                FiniteF32::new(1.0).expect("one is finite"),
+            ]);
         let texcoord_0 = texcoords
             .map(|layout| read_texcoord(binary, layout, position_index))
             .transpose()?
@@ -1155,6 +1421,7 @@ fn decode_vertices(
         vertices.push(AssetVertex {
             position,
             normal,
+            tangent,
             texcoord_0,
         });
     }
@@ -1170,12 +1437,34 @@ fn decode_vertices(
             }
         }
     }
+    if tangents.is_some() {
+        for (triangle_index, triangle) in vertices.chunks_exact(3).enumerate() {
+            let handedness = triangle[0].tangent[3].get();
+            if triangle[1..]
+                .iter()
+                .any(|vertex| vertex.tangent[3].get().to_bits() != handedness.to_bits())
+            {
+                return Err(diagnostic(
+                    AssetDiagnosticCode::InvalidTangent,
+                    "glb.decoded.triangle_tangent_handedness",
+                    Some(stable_index(triangle_index)),
+                ));
+            }
+        }
+    }
     Ok(vertices)
 }
 
 fn validate_texcoords(binary: &[u8], layout: AccessorLayout) -> Result<(), AssetDiagnostic> {
     for index in 0..layout.count {
         read_texcoord(binary, layout, index)?;
+    }
+    Ok(())
+}
+
+fn validate_tangents(binary: &[u8], layout: AccessorLayout) -> Result<(), AssetDiagnostic> {
+    for index in 0..layout.count {
+        read_tangent(binary, layout, index)?;
     }
     Ok(())
 }
@@ -1277,6 +1566,48 @@ fn read_normal(
     normalize_vector(normal, "glb.binary.normals", Some(index))
 }
 
+fn read_tangent(
+    binary: &[u8],
+    layout: AccessorLayout,
+    index: u32,
+) -> Result<[FiniteF32; 4], AssetDiagnostic> {
+    let offset = element_offset(layout, index, "glb.binary.tangents")?;
+    let mut tangent = [FiniteF32::new(0.0).expect("zero is finite"); 4];
+    for (component, target) in tangent.iter_mut().enumerate() {
+        let start = offset + component * 4;
+        let encoded: [u8; 4] = binary
+            .get(start..start + 4)
+            .and_then(|value| value.try_into().ok())
+            .ok_or_else(|| {
+                diagnostic(
+                    AssetDiagnosticCode::InvalidBufferRange,
+                    "glb.binary.tangents",
+                    Some(index),
+                )
+            })?;
+        *target = FiniteF32::new(f32::from_le_bytes(encoded)).map_err(|_| {
+            diagnostic(
+                AssetDiagnosticCode::InvalidTangent,
+                "glb.binary.tangents",
+                Some(index),
+            )
+        })?;
+    }
+    if !matches!(tangent[3].get(), -1.0 | 1.0) {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidTangent,
+            "glb.binary.tangents.handedness",
+            Some(index),
+        ));
+    }
+    let xyz = normalize_tangent_vector(
+        [tangent[0], tangent[1], tangent[2]],
+        "glb.binary.tangents",
+        Some(index),
+    )?;
+    Ok([xyz[0], xyz[1], xyz[2], tangent[3]])
+}
+
 fn read_texcoord(
     binary: &[u8],
     layout: AccessorLayout,
@@ -1342,6 +1673,30 @@ fn normalize_vector(
     index: Option<u32>,
 ) -> Result<[FiniteF32; 3], AssetDiagnostic> {
     normalize_f64_vector(vector.map(|value| f64::from(value.get())), location, index)
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn normalize_tangent_vector(
+    vector: [FiniteF32; 3],
+    location: &'static str,
+    index: Option<u32>,
+) -> Result<[FiniteF32; 3], AssetDiagnostic> {
+    let vector = vector.map(|value| f64::from(value.get()));
+    let length_squared = vector.iter().map(|value| value * value).sum::<f64>();
+    if !length_squared.is_finite() || length_squared == 0.0 {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidTangent,
+            location,
+            index,
+        ));
+    }
+    let inverse_length = length_squared.sqrt().recip();
+    let mut normalized = [FiniteF32::new(0.0).expect("zero is finite"); 3];
+    for (target, value) in normalized.iter_mut().zip(vector) {
+        *target = FiniteF32::new((value * inverse_length) as f32)
+            .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidTangent, location, index))?;
+    }
+    Ok(normalized)
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -1431,11 +1786,28 @@ fn decode_material(
             .and_then(|pbr| pbr.base_color_texture.as_ref())
             .is_some()
     });
-    Ok(if has_base_color_texture {
+    let mut material = if has_base_color_texture {
         material.with_base_color_texture()
     } else {
         material
-    })
+    };
+    if let Some(normal_texture) = material_index
+        .and_then(|index| {
+            root.materials
+                .get(usize::try_from(index).unwrap_or(usize::MAX))
+        })
+        .and_then(|material| material.normal_texture.as_ref())
+    {
+        let scale = FiniteF32::new(normal_texture.scale.unwrap_or(1.0)).map_err(|_| {
+            diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.materials.normalTexture.scale",
+                material_index,
+            )
+        })?;
+        material = material.with_normal_texture(scale);
+    }
+    Ok(material)
 }
 
 pub(crate) fn proxy_asset() -> DecodedAsset {
@@ -1488,6 +1860,12 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
             positions.into_iter().map(move |position| AssetVertex {
                 position,
                 normal,
+                tangent: [
+                    FiniteF32::new(1.0).expect("one is finite"),
+                    FiniteF32::new(0.0).expect("zero is finite"),
+                    FiniteF32::new(0.0).expect("zero is finite"),
+                    FiniteF32::new(1.0).expect("one is finite"),
+                ],
                 texcoord_0: [FiniteF32::new(0.0).expect("zero is finite"); 2],
             })
         })
@@ -1506,7 +1884,8 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
                 UnitF32::new(0.8).expect("constant is in range"),
             ),
         }],
-        texture: None,
+        base_color_texture: None,
+        normal_texture: None,
         byte_len: 36 * ASSET_VERTEX_BYTES,
     }
 }
@@ -1626,6 +2005,8 @@ struct Primitive {
 struct Material {
     #[serde(default)]
     pbr_metallic_roughness: Option<PbrMetallicRoughness>,
+    #[serde(default)]
+    normal_texture: Option<NormalTextureInfo>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1647,6 +2028,16 @@ struct TextureInfo {
     index: u32,
     #[serde(default)]
     tex_coord: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalTextureInfo {
+    index: u32,
+    #[serde(default)]
+    tex_coord: Option<u32>,
+    #[serde(default)]
+    scale: Option<f32>,
 }
 
 #[derive(Debug, Deserialize)]

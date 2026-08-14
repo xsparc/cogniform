@@ -10,7 +10,9 @@ the same immutable upload and renderer-residency path. CF028 retains one
 bounded primary f32 coordinate set. CF029 admits one shared embedded PNG
 base-color texture through that path without adding scene-graph traversal.
 CF030 adds explicit content-hash-wide eviction across the CPU store and
-renderer without changing logical scene state.
+renderer without changing logical scene state. CF055 adds one bounded
+source-tangent normal-texture role while preserving geometric-normal
+observation semantics.
 
 ## Ownership and lifecycle
 
@@ -27,10 +29,10 @@ exact GLB bytes + expected hash
   -> Queued record
   -> caller invokes AssetStore::process_next
   -> Ready, ProxyReady, or Rejected record
-  -> immutable AssetUploadJob for (content hash, mesh index, optional texture)
-  -> reserve renderer mesh and unique-texture upload/residency capacity
+  -> immutable AssetUploadJob for (content hash, mesh index, optional role textures)
+  -> atomically reserve renderer mesh and content-hash-and-role upload/residency capacity
   -> caller invokes HeadlessRenderer::process_next_asset_upload
-  -> immutable GPU-resident mesh and optional shared texture
+  -> immutable GPU-resident mesh and optional role textures
 ```
 
 Neither admission nor world mutation decodes an asset. Frame submission never
@@ -57,11 +59,13 @@ renderer APIs remain available for embedders that own those domains directly.
 Records are retained as `Queued`, `Ready`, `ProxyReady`, or `Rejected`. The
 original source is retained only while queued. Ready records retain expanded
 triangle positions, unit normals, primary coordinates, one typed immutable
-numeric material per mesh, and at most one shared immutable RGBA8 texture.
+source tangent per vertex, one typed immutable numeric material per mesh, and
+at most two role-separated immutable RGBA8 textures. A PNG referenced by both
+roles shares its decoded CPU allocation.
 Proxy records have no texture. `AssetStore::evict` removes one hash's queued
-source or terminal CPU record, decoded meshes, and shared decoded texture.
+source or terminal CPU record, decoded meshes, and decoded role textures.
 `HeadlessRenderer::evict_asset` removes every pending or resident mesh for the
-hash and its optional unique texture reservation or residency. Unrelated work
+hash and its optional unique role-texture reservations or residency. Unrelated work
 keeps its FIFO order.
 
 The authoritative world stores only `AssetMeshComponent`, containing the
@@ -110,19 +114,24 @@ The importer accepts only the following baseline:
 - one embedded buffer with no URI;
 - one or more meshes, with exactly one primitive per mesh;
 - triangle-list mode, either explicit mode `4` or the glTF default;
-- exactly `POSITION`, with optional `NORMAL` and optional `TEXCOORD_0`;
+- exactly `POSITION`, with optional `NORMAL`, `TANGENT`, and `TEXCOORD_0`;
 - finite non-normalized f32 `VEC3` positions;
 - optional non-normalized f32 `VEC3` normals with the same source count as
   positions; each direction must be finite and non-zero;
 - optional non-normalized finite f32 `VEC2` `TEXCOORD_0` with the same source
   count as positions; values outside `[0, 1]` are retained unchanged;
-- at most one root texture and one root image, shared by all referencing
-  materials; `pbrMetallicRoughness.baseColorTexture` must reference texture
-  zero with omitted or zero `texCoord`, and each referencing primitive must
+- optional non-normalized f32 `VEC4` `TANGENT` with the same source count as
+  positions; XYZ must be finite and non-zero, W must be exactly `-1` or `1`,
+  and all expanded vertices in one triangle must use the same W sign;
+- at most two root textures and two referenced root images across one shared
+  base-color index and one shared normal index. Every referencing material
+  must use omitted or zero `texCoord`, and each referencing primitive must
   provide `TEXCOORD_0`;
-- texture zero must reference image zero with no sampler; the root samplers
-  collection must be empty;
-- image zero must have no URI, use an in-BIN buffer view, declare
+- `normalTexture` additionally requires explicit source `NORMAL` and
+  `TANGENT`; its optional `scale` must be finite and defaults to one;
+- every texture must reference an in-range image with no sampler, every table
+  entry must be referenced, and the root samplers collection must be empty;
+- each image must have no URI, use an in-BIN buffer view, declare
   `image/png`, and decode as a static non-interlaced 8-bit RGB or RGBA image;
 - optional non-normalized scalar u16 or u32 indices;
 - tightly packed or valid component-aligned buffer-view strides up to 252
@@ -135,13 +144,16 @@ The importer accepts only the following baseline:
   and roughness `0.8`.
 
 Indexed geometry is expanded into a triangle vertex stream, using the same
-source index for position, normal, and primary coordinate. The complete source
-coordinate accessor is validated before expanded allocation, including values
-not selected by the index stream. Accepted source normals are normalized
-deterministically. When `NORMAL` is absent, each expanded triangle receives one
-unit cross-product normal following its winding; degenerate triangles reject.
-Every output vertex is interleaved position, normal, and primary coordinate and
-consumes exactly 32 decoded and GPU bytes. Missing coordinates are exact zero.
+source index for position, normal, tangent, and primary coordinate. The
+complete source coordinate and tangent accessors are validated before expanded
+allocation, including values not selected by the index stream. Accepted source
+normals and tangent XYZ are normalized deterministically. When `NORMAL` is
+absent, each expanded triangle receives one unit cross-product normal following
+its winding; degenerate triangles reject. Every output vertex is interleaved
+position, normal, primary coordinate, and tangent and consumes exactly 48
+decoded and GPU bytes. The prior 32-byte position/normal/coordinate prefix is
+unchanged. Missing coordinates are exact zero; missing tangents use
+`[1, 0, 0, 1]` and never enable normal sampling.
 Every referenced range and index is checked before use, and the complete
 expanded byte requirement is checked before allocation.
 A primitive without indices must contain a multiple of three positions; an
@@ -150,9 +162,10 @@ indexed primitive must contain a multiple of three indices.
 The strict schema rejects unknown fields after recognized unsupported feature
 declarations are classified. External buffers or images, data URIs, additional
 GLB chunks, sparse accessors, unsupported normal or primary-coordinate
-encodings, additional coordinate sets, tangents, colors, morph targets,
-multiple primitives/images/textures, explicit samplers, JPEG and wider PNG
-forms, texture transforms, metallic-roughness/normal/occlusion/emissive texture
+encodings, additional coordinate sets, colors, morph targets, multiple
+primitives, more than two images/textures, unused image or texture records,
+explicit samplers, JPEG and wider PNG forms, texture transforms,
+metallic-roughness/occlusion/emissive texture
 roles, alpha modes, nodes, scenes, cameras, animations, skins, and extensions
 are not supported. There is no compressed geometry, mipmap, anisotropy, or
 scene-graph traversal path.
@@ -173,30 +186,36 @@ magenta unit-cube `ProxyReady` record:
 - unsupported primitive mode.
 
 Invalid GLB framing or lengths, malformed or type-invalid JSON, invalid buffer
-ranges or indices, non-finite positions, zero or non-finite normals, normal
-count mismatches, non-finite primary coordinates, primary-coordinate count
-mismatches, malformed or truncated PNG data, invalid image ranges, degenerate
+ranges or indices, non-finite positions, zero or non-finite normals or
+tangents, invalid tangent handedness, normal/tangent count mismatches,
+non-finite primary coordinates, primary-coordinate count mismatches, malformed
+or truncated PNG data, invalid image ranges, degenerate
 fallback triangles, and collection or byte-limit failures always produce
 `Rejected`. A proxy therefore never masks malformed or over-limit input. A
-syntactically valid but unsupported normal, primary-coordinate, image format,
-or texture role may proxy only under explicit policy. Proxy vertices always
-contain exact zero primary coordinates and use no imported texture.
+syntactically valid but unsupported normal, tangent accessor, missing
+normal-texture basis, primary-coordinate, image format, or texture role may
+proxy only under explicit policy. Proxy vertices always contain exact zero
+primary coordinates, the disabled fallback tangent, and no imported texture.
 
 At draw time, a resident mesh uses its imported base-color factor, optional
-base-color texture, metallic, and roughness unless the world entity has an
-explicit material, which overrides the imported material as a whole and uses
-the renderer's white fallback. The fixed repeat/linear one-mip sampler samples
-the sRGB texture, and sampled linear RGBA multiplies the factor before the
-existing unlit or direct-light path. If the referenced mesh is not resident,
+base-color and tangent-space normal textures, metallic, roughness, and normal
+scale unless the world entity has an explicit material, which overrides the
+imported material as a whole and uses renderer-owned white and neutral-normal
+fallbacks. The fixed repeat/linear one-mip sampler samples base color as sRGB
+and normals as linear RGB; normal alpha is ignored. Sampled base RGBA
+multiplies the factor before the existing unlit or direct-light path. The
+source-tangent basis perturbs direct lighting only; depth, identity, and the
+normal observation retain the geometric direction. If the referenced mesh is not resident,
 an explicit primitive component is used as the author-chosen fallback. Without
 that component, preparation fails with `AssetUnavailable`.
 
-`AssetMaterial` carries validated unit-interval numeric metadata and the
-immutable fact that it references the asset texture. `AssetUploadJob` exposes
-that material and the optional shared `AssetTexture`; the compatible
-`base_color` accessor remains. Texture bytes count once in CPU asset residency
-and once per content hash in the renderer's separate pending/resident texture
-counters. They do not change the exact 32-byte expanded vertex accounting.
+`AssetMaterial` carries validated numeric metadata, immutable texture-role
+facts, and finite normal scale. `AssetUploadJob` exposes that material and
+separate optional base-color and normal `AssetTexture` values; the compatible
+`base_color` accessor remains. A source image shared by both roles counts once
+in CPU asset residency, while GPU bytes count once per content-hash-and-role
+resource because transfer formats differ. Both roles are reserved atomically.
+Vertex bytes use the exact 48-byte expanded accounting independently.
 
 ## Default bounds
 
@@ -233,7 +252,7 @@ counters. They do not change the exact 32-byte expanded vertex accounting.
 | Resident meshes, including reservations | 256 |
 | Resident vertex bytes, including reservations | 64 MiB |
 | Texture width or height | 2,048 |
-| Texture bytes per asset | 16 MiB |
+| Texture bytes per role | 16 MiB |
 | Aggregate pending texture bytes | 32 MiB |
 | Resident textures, including reservations | 256 |
 | Resident texture bytes, including reservations | 64 MiB |
@@ -246,12 +265,13 @@ resident-byte limits.
 
 The default offline suite verifies exact hash admission, every truncated prefix
 of the checked fixture, malformed extension declarations, proxy eligibility,
-material retention/defaults/range failures, normal
-normalization/count/value/range failures, primary-coordinate exact and indexed
+material retention/defaults/range failures, normal and tangent
+normalization/count/value/range/handedness failures, primary-coordinate exact and indexed
 retention, zero defaults, full-source validation, embedded RGB/RGBA expansion,
 PNG truncation and malformed/reference/format/resource-limit failures,
-unsupported encodings and texture roles, winding fallback, exact 32-byte and
-independent texture accounting, procedure replay, world extraction, and
+unsupported encodings and texture roles, winding fallback, exact 48-byte and
+shared/distinct role-texture accounting, atomic reservation, procedure replay,
+world extraction, and
 renderer upload reservation:
 
 ```text
@@ -268,6 +288,7 @@ cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ig
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_material_factors_drive_direct_light_and_scene_override
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact primary_texcoords_are_retained_without_changing_rendered_observations
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact embedded_base_color_texture_preserves_orientation_factor_override_and_residency
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact normal_texture_changes_direct_lighting_not_geometric_normal_observation
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work
 cargo test --release -p cogniform-storage --test asset_file --locked --offline -- --ignored --exact persisted_recovery_and_asset_sources_restore_renderable_state
@@ -282,7 +303,10 @@ identity, normal, and background sample remains exact with coordinates that
 include values outside the unit interval. The texture check pins top-to-bottom
 orientation, sRGB sampling, factor/alpha multiplication, direct-light response,
 scene override, and one shared 16-byte GPU texture without changing depth,
-identity, normal, or background. The service checks then prove that restored
+identity, normal, or background. The normal-texture check pins linear sampling,
+finite scale, source-tangent shading, alpha irrelevance, and direct-light color
+change while depth, identity, background, and geometric-normal observations
+remain unchanged. The service checks then prove that restored
 plain and textured asset references require explicit exact-hash CPU/GPU
 rehydration without another logical mutation. The CF019 case
 persists recovery and asset source in separate files, drops the source service,

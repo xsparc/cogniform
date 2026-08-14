@@ -6,6 +6,7 @@ use cogniform_assets::{
     ASSET_VERTEX_BYTES, AssetDiagnosticCode, AssetError, AssetMeshKey, AssetState, AssetStore,
     AssetStoreConfig, UnsupportedAssetPolicy, content_hash,
 };
+use cogniform_protocol::FiniteF32;
 
 fn fixture() -> Vec<u8> {
     decode_hex(include_str!("../../../tests/assets/triangle.glb.hex"))
@@ -134,6 +135,124 @@ fn rgba_texture_glb(pixels: &[[u8; 4]], width: u32, height: u32) -> Vec<u8> {
     )
 }
 
+#[derive(Clone, Copy)]
+struct NormalTexturedFixture<'a> {
+    tangents: [[f32; 4]; 3],
+    tangent_count: u32,
+    tangent_kind: &'a str,
+    tangent_normalized: bool,
+    include_normals: bool,
+    include_tangents: bool,
+    normal_texture_fields: &'a str,
+}
+
+impl Default for NormalTexturedFixture<'_> {
+    fn default() -> Self {
+        Self {
+            tangents: [[1.0, 0.0, 0.0, 1.0]; 3],
+            tangent_count: 3,
+            tangent_kind: "VEC4",
+            tangent_normalized: false,
+            include_normals: true,
+            include_tangents: true,
+            normal_texture_fields: r#""index":0"#,
+        }
+    }
+}
+
+fn normal_textured_triangle_glb(png: &[u8], fixture: NormalTexturedFixture<'_>) -> Vec<u8> {
+    let NormalTexturedFixture {
+        tangents,
+        tangent_count,
+        tangent_kind,
+        tangent_normalized,
+        include_normals,
+        include_tangents,
+        normal_texture_fields,
+    } = fixture;
+    let mut binary = triangle_binary();
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in tangents {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let image_offset = binary.len();
+    binary.extend_from_slice(png);
+    let mut attributes = vec![r#""POSITION":0"#];
+    if include_normals {
+        attributes.push(r#""NORMAL":1"#);
+    }
+    if include_tangents {
+        attributes.push(r#""TANGENT":2"#);
+    }
+    attributes.push(r#""TEXCOORD_0":3"#);
+    let attributes = attributes.join(",");
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":{tangent_count},"type":"{tangent_kind}","normalized":{tangent_normalized}}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"normalTexture":{{{normal_texture_fields}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{{attributes}}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        image_length = png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn dual_textured_triangle_glb(base_png: &[u8], normal_png: &[u8], shared_image: bool) -> Vec<u8> {
+    let mut binary = triangle_binary();
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let base_offset = binary.len();
+    binary.extend_from_slice(base_png);
+    let normal_offset = binary.len();
+    if !shared_image {
+        binary.extend_from_slice(normal_png);
+    }
+    let (images, normal_source, image_views) = if shared_image {
+        (
+            r#"{"bufferView":4,"mimeType":"image/png"}"#.to_owned(),
+            0,
+            String::new(),
+        )
+    } else {
+        (
+            r#"{"bufferView":4,"mimeType":"image/png"},{"bufferView":5,"mimeType":"image/png"}"#
+                .to_owned(),
+            1,
+            format!(
+                r#",{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{}}}"#,
+                normal_png.len()
+            ),
+        )
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{base_length}}}{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"scale":0.5}}}}],"textures":[{{"source":0}},{{"source":{normal_source}}}],"images":[{images}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        base_length = base_png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
 fn glb_with_normals(
     normals: [[f32; 3]; 3],
     normal_count: u32,
@@ -227,6 +346,31 @@ fn indexed_glb_with_texcoords(
     glb_with_json(&json, &binary)
 }
 
+fn indexed_glb_with_tangents(tangents: [[f32; 4]; 4]) -> Vec<u8> {
+    let positions = [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+        [0.0, 0.0, 1.0],
+    ];
+    let mut binary = Vec::with_capacity(120);
+    for position in positions {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in tangents {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for index in [2_u16, 0, 1] {
+        binary.extend_from_slice(&index.to_le_bytes());
+    }
+    let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":118}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":48},{"buffer":0,"byteOffset":48,"byteLength":64},{"buffer":0,"byteOffset":112,"byteLength":6}],"accessors":[{"bufferView":0,"componentType":5126,"count":4,"type":"VEC3"},{"bufferView":1,"componentType":5126,"count":4,"type":"VEC4"},{"bufferView":2,"componentType":5123,"count":3,"type":"SCALAR"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"TANGENT":1},"indices":2,"mode":4}]}]}"#;
+    glb_with_json(json, &binary)
+}
+
 fn degenerate_position_only_glb() -> Vec<u8> {
     let mut binary = Vec::with_capacity(36);
     for vertex in [[0.0_f32; 3], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]] {
@@ -255,7 +399,7 @@ fn verified_fixture_decodes_only_when_explicitly_processed() {
     assert_eq!(outcome.mesh_count, 1);
     assert_eq!(store.stats().pending_imports, 0);
     assert_eq!(store.stats().oldest_pending_import_age_micros, None);
-    assert_eq!(store.stats().resident_cpu_bytes, 96);
+    assert_eq!(store.stats().resident_cpu_bytes, 144);
 
     let upload = store
         .upload_job(AssetMeshKey {
@@ -264,7 +408,7 @@ fn verified_fixture_decodes_only_when_explicitly_processed() {
         })
         .expect("decoded fixture should produce an upload job");
     assert_eq!(upload.vertices().len(), 3);
-    assert_eq!(upload.byte_len(), 96);
+    assert_eq!(upload.byte_len(), 144);
     for vertex in upload.vertices() {
         assert_normal(vertex.normal, [0.0, 0.0, 1.0]);
         assert_texcoord(vertex.texcoord_0, [0.0, 0.0]);
@@ -428,8 +572,8 @@ fn embedded_rgba_and_rgb_base_color_textures_are_bounded_and_retained() {
     let mut rgba_store = AssetStore::default();
     rgba_store.enqueue(rgba_hash, rgba).unwrap();
     assert_eq!(rgba_store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(rgba_store.record(rgba_hash).unwrap().decoded_bytes, 112);
-    assert_eq!(rgba_store.stats().resident_cpu_bytes, 112);
+    assert_eq!(rgba_store.record(rgba_hash).unwrap().decoded_bytes, 160);
+    assert_eq!(rgba_store.stats().resident_cpu_bytes, 160);
     let upload = rgba_store
         .upload_job(AssetMeshKey {
             content_hash: rgba_hash,
@@ -451,7 +595,7 @@ fn embedded_rgba_and_rgb_base_color_textures_are_bounded_and_retained() {
     let rgba_eviction = rgba_store.evict(rgba_hash);
     assert_eq!(rgba_eviction.removed_meshes, 1);
     assert_eq!(rgba_eviction.removed_textures, 1);
-    assert_eq!(rgba_eviction.released_resident_cpu_bytes, 112);
+    assert_eq!(rgba_eviction.released_resident_cpu_bytes, 160);
     assert_eq!(rgba_store.stats().resident_cpu_bytes, 0);
 
     let rgb_png = encode_png(
@@ -487,6 +631,238 @@ fn embedded_rgba_and_rgb_base_color_textures_are_bounded_and_retained() {
             .unwrap()
             .rgba8(),
         [10, 20, 30, 255, 40, 50, 60, 255]
+    );
+}
+
+#[test]
+fn source_tangent_normal_texture_is_typed_normalized_and_retained() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 255, 255, 7],
+    );
+    let bytes = normal_textured_triangle_glb(
+        &png,
+        NormalTexturedFixture {
+            tangents: [[2.0, 0.0, 0.0, -1.0]; 3],
+            normal_texture_fields: r#""index":0,"texCoord":0,"scale":0.25"#,
+            ..NormalTexturedFixture::default()
+        },
+    );
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 148);
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert!(!upload.material().has_base_color_texture());
+    assert!(upload.base_color_texture().is_none());
+    assert!(upload.material().has_normal_texture());
+    assert_eq!(
+        upload.material().normal_scale().to_bits(),
+        0.25_f32.to_bits()
+    );
+    assert_eq!(upload.normal_texture().unwrap().rgba8(), [128, 255, 255, 7]);
+    for vertex in upload.vertices() {
+        assert_eq!(
+            vertex.tangent.map(|value| value.get().to_bits()),
+            [1.0_f32, 0.0, 0.0, -1.0].map(f32::to_bits)
+        );
+    }
+    let eviction = store.evict(hash);
+    assert_eq!(eviction.removed_textures, 1);
+    assert_eq!(eviction.released_resident_cpu_bytes, 148);
+}
+
+#[test]
+fn dual_texture_roles_account_shared_and_distinct_images_exactly() {
+    let base_png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[255, 0, 0, 255],
+    );
+    let normal_png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    for (shared_image, expected_bytes) in [(true, 148), (false, 152)] {
+        let bytes = dual_textured_triangle_glb(&base_png, &normal_png, shared_image);
+        let hash = content_hash(&bytes);
+        let mut exact_config = AssetStoreConfig::default();
+        exact_config.limits.max_asset_decoded_bytes = NonZeroU64::new(expected_bytes).unwrap();
+        exact_config.limits.max_resident_cpu_bytes = NonZeroU64::new(expected_bytes).unwrap();
+        let mut store = AssetStore::new(exact_config);
+        store.enqueue(hash, bytes.clone()).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        assert_eq!(store.record(hash).unwrap().decoded_bytes, expected_bytes);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert!(upload.base_color_texture().is_some());
+        assert!(upload.normal_texture().is_some());
+        if shared_image {
+            assert_eq!(
+                upload.base_color_texture().unwrap().rgba8(),
+                upload.normal_texture().unwrap().rgba8()
+            );
+        } else {
+            assert_ne!(
+                upload.base_color_texture().unwrap().rgba8(),
+                upload.normal_texture().unwrap().rgba8()
+            );
+        }
+        let eviction = store.evict(hash);
+        assert_eq!(eviction.removed_textures, 2);
+        assert_eq!(eviction.released_resident_cpu_bytes, expected_bytes);
+
+        let mut narrow_config = exact_config;
+        narrow_config.limits.max_asset_decoded_bytes = NonZeroU64::new(expected_bytes - 1).unwrap();
+        let mut narrow = AssetStore::new(narrow_config);
+        narrow.enqueue(hash, bytes).unwrap();
+        assert_eq!(narrow.process_next().unwrap().state, AssetState::Rejected);
+        assert_eq!(narrow.stats().resident_cpu_bytes, 0);
+        assert_eq!(
+            narrow.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::ByteLimitExceeded
+        );
+    }
+}
+
+#[test]
+fn invalid_source_tangent_values_fail_closed() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let invalid_tangents = [
+        [[0.0, 0.0, 0.0, 1.0]; 3],
+        [[f32::NAN, 0.0, 0.0, 1.0]; 3],
+        [[1.0, 0.0, 0.0, 0.0]; 3],
+        [
+            [1.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, -1.0],
+            [1.0, 0.0, 0.0, 1.0],
+        ],
+    ];
+    for tangents in invalid_tangents {
+        let bytes = normal_textured_triangle_glb(
+            &png,
+            NormalTexturedFixture {
+                tangents,
+                ..NormalTexturedFixture::default()
+            },
+        );
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidTangent
+        );
+    }
+}
+
+#[test]
+fn unsupported_tangent_encodings_and_normal_texture_roles_fail_closed() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    for bytes in [
+        normal_textured_triangle_glb(
+            &png,
+            NormalTexturedFixture {
+                tangent_count: 2,
+                ..NormalTexturedFixture::default()
+            },
+        ),
+        normal_textured_triangle_glb(
+            &png,
+            NormalTexturedFixture {
+                tangent_kind: "VEC3",
+                ..NormalTexturedFixture::default()
+            },
+        ),
+        normal_textured_triangle_glb(
+            &png,
+            NormalTexturedFixture {
+                tangent_normalized: true,
+                ..NormalTexturedFixture::default()
+            },
+        ),
+    ] {
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert!(matches!(
+            store.record(hash).unwrap().state,
+            AssetState::Rejected | AssetState::ProxyReady
+        ));
+        assert!(matches!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidTangent | AssetDiagnosticCode::UnsupportedAccessor
+        ));
+    }
+
+    for (include_normals, include_tangents) in [(false, true), (true, false)] {
+        let bytes = normal_textured_triangle_glb(
+            &png,
+            NormalTexturedFixture {
+                include_normals,
+                include_tangents,
+                ..NormalTexturedFixture::default()
+            },
+        );
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::UnsupportedFeature
+        );
+    }
+
+    for fields in [r#""index":0,"texCoord":1"#, r#""index":0,"scale":1e999"#] {
+        let bytes = normal_textured_triangle_glb(
+            &png,
+            NormalTexturedFixture {
+                normal_texture_fields: fields,
+                ..NormalTexturedFixture::default()
+            },
+        );
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_ne!(store.record(hash).unwrap().state, AssetState::Ready);
+    }
+
+    let invalid_index = normal_textured_triangle_glb(
+        &png,
+        NormalTexturedFixture {
+            normal_texture_fields: r#""index":999"#,
+            ..NormalTexturedFixture::default()
+        },
+    );
+    let (store, hash) = process_with_proxy_policy(invalid_index);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidBufferRange
     );
 }
 
@@ -571,13 +947,13 @@ fn texture_resource_shape_and_coordinate_contract_is_typed() {
 }
 
 #[test]
-fn multiple_texture_or_image_resources_fail_closed() {
+fn more_than_two_texture_or_image_resources_fail_closed() {
     let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
     for bytes in [
         textured_triangle_glb(
             &png,
             r#""baseColorTexture":{"index":0}"#,
-            r#"{"source":0},{"source":0}"#,
+            r#"{"source":0},{"source":0},{"source":0}"#,
             r#"{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
@@ -586,7 +962,7 @@ fn multiple_texture_or_image_resources_fail_closed() {
             &png,
             r#""baseColorTexture":{"index":0}"#,
             r#"{"source":0}"#,
-            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
         ),
@@ -646,8 +1022,8 @@ fn texture_dimension_pixel_and_decoded_byte_limits_fail_before_adoption() {
         ("pixels", 3_u64),
         ("texture_bytes", 15_u64),
         ("decoder_bytes", 1_u64),
-        ("asset_bytes", 111_u64),
-        ("resident_bytes", 111_u64),
+        ("asset_bytes", 159_u64),
+        ("resident_bytes", 159_u64),
     ];
     for (kind, limit) in cases {
         let mut config = AssetStoreConfig::default();
@@ -711,7 +1087,7 @@ fn finite_source_normals_are_normalized_and_retained() {
             mesh_index: 0,
         })
         .unwrap();
-    assert_eq!(upload.byte_len(), 96);
+    assert_eq!(upload.byte_len(), 144);
     for vertex in upload.vertices() {
         assert_normal(
             vertex.normal,
@@ -738,7 +1114,7 @@ fn indexed_positions_and_normals_expand_with_the_same_source_index() {
             mesh_index: 0,
         })
         .unwrap();
-    assert_eq!(upload.byte_len(), 96);
+    assert_eq!(upload.byte_len(), 144);
     for (vertex, expected) in
         upload
             .vertices()
@@ -778,6 +1154,49 @@ fn indexed_primary_texcoords_expand_with_the_same_source_index() {
     {
         assert_texcoord(vertex.texcoord_0, expected);
     }
+}
+
+#[test]
+fn indexed_source_tangents_expand_and_validate_unused_values() {
+    let bytes = indexed_glb_with_tangents([
+        [2.0, 0.0, 0.0, 1.0],
+        [0.0, 3.0, 0.0, 1.0],
+        [0.0, 0.0, 4.0, 1.0],
+        [1.0, 1.0, 0.0, -1.0],
+    ]);
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    for (vertex, expected) in upload.vertices().iter().zip([
+        [0.0, 0.0, 1.0, 1.0],
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 1.0],
+    ]) {
+        assert_eq!(
+            vertex.tangent.map(FiniteF32::get).map(f32::to_bits),
+            expected.map(f32::to_bits)
+        );
+    }
+
+    let invalid_unused = indexed_glb_with_tangents([
+        [1.0, 0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 1.0],
+        [f32::NAN, 0.0, 0.0, 1.0],
+    ]);
+    let (store, hash) = process_with_proxy_policy(invalid_unused);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidTangent
+    );
 }
 
 #[test]

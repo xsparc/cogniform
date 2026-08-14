@@ -57,11 +57,13 @@ scene revision that produced it.
 > validates and carries those values without moving compiler execution into the
 > schema crate. The current
 > asset baseline adds content-addressed GLB geometry with optional finite vertex
-> normals, one retained finite primary coordinate set, and unit-bounded numeric
-> metallic-roughness materials, plus one bounded embedded PNG base-color
-> texture. Exact caller-driven CPU decode and explicit GPU upload remain
-> separate; sampled sRGB RGBA multiplies the imported factor and drives the
-> existing direct-light path when the entity has no explicit scene material.
+> normals, one retained finite primary coordinate set, optional source
+> tangents, and unit-bounded numeric metallic-roughness materials, plus bounded
+> embedded PNG base-color and tangent-space normal roles. Exact caller-driven
+> CPU decode and explicit role-separated GPU upload remain separate; sampled
+> sRGB base color multiplies the imported factor, while a linear normal map can
+> perturb direct lighting without changing geometric-normal observations when
+> the entity has no explicit scene material.
 > The baseline also includes pure seeded cuboid-grid procedures. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, can explicitly evict all CPU/GPU state for one
@@ -113,7 +115,7 @@ implementations arrive:
 | `cogniform-mcp` | Bounded stable MCP stdio query/imagination/patch/observation translation and one retained canonical observation resource over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/primary-coordinate/material/embedded-PNG decoding, immutable upload jobs, and explicit CPU-state eviction |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent/primary-coordinate/material/embedded-PNG decoding, immutable role-textured upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |
