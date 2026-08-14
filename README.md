@@ -31,7 +31,8 @@ scene revision that produced it.
 > failures. It creates no pipe, listener, daemon, or remote security boundary.
 > A separate `serve-mcp-stdio` command now exposes the already-bounded exact
 > query, semantic imagination/replay, direct atomic patch, and exact-revision
-> observation semantics as exactly four stable MCP 2025-11-25 tools. One
+> observation semantics as exactly four tools through byte-compatible MCP
+> 2025-11-25 sessions or self-contained MCP 2026-07-28 requests. One
 > successful canonical observation envelope is retained as the sole explicit
 > binary resource. Its custom newline transport
 > bounds input and output bytes
@@ -44,9 +45,9 @@ scene revision that produced it.
 > service lazily, serializes calls, and adds no HTTP, socket, OAuth, model,
 > prompt, resource-template, subscription, history, task, or remote-security
 > surface.
-> Its official SDK is exact-pinned at `rmcp` 3.1.2, while the adapter advertises
-> only `2025-11-25`, advertises no extensions, rejects newer discovery, Tasks,
-> and versions, and omits newer result shapes.
+> Its official SDK is exact-pinned at `rmcp` 3.1.2. Modern discovery advertises
+> only `2026-07-28`, tools, and resources; legacy bytes remain fixed. The
+> adapter advertises no extensions or Tasks and adds no newer method authority.
 > A bounded
 > in-process gateway, exact logical queries, and a
 > deterministic primitive imagination compiler are also available. Compiler
@@ -240,11 +241,13 @@ cargo test --release -p cogniform-cli --test stdio_session --all-features --lock
 ```
 
 For an MCP parent, launch `cogniform-cli serve-mcp-stdio` with both standard
-streams piped and request protocol `2025-11-25`. Stdout contains only
-newline-delimited MCP JSON-RPC. The parent owns child supervision, identity,
+streams piped. Use exact `2025-11-25` initialization or exact `2026-07-28`
+discovery/self-contained request metadata. Stdout contains only newline-
+delimited MCP JSON-RPC. The parent owns child supervision, identity,
 authorization, confidentiality, freshness, and rate policy. See the
 [MCP quickstart](docs/getting-started/mcp-stdio-adapter.md). Its controlled
-query/application/replay/observation-resource child proof is:
+legacy and modern query/application/replay/observation-resource child proofs
+are:
 
 ```text
 cargo test --release -p cogniform-cli --test mcp_stdio --all-features --locked --offline -- --ignored

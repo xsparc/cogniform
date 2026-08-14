@@ -207,7 +207,25 @@ impl<R: AsyncRead + Unpin, W> BoundedTransport<R, W> {
         {
             cancelled.params.reason = None;
         }
+        if matches!(
+            message,
+            Some(ClientJsonRpcMessage::Response(_) | ClientJsonRpcMessage::Error(_))
+        ) {
+            self.status.record(TransportFailureKind::InvalidMessage);
+            return None;
+        }
         message
+    }
+
+    pub(crate) async fn read_opening_message(&mut self) -> Option<ClientJsonRpcMessage> {
+        debug_assert!(self.pending_input.is_none());
+        debug_assert!(self.request_flow.lock().await.active.is_none());
+        self.read_message().await
+    }
+
+    pub(crate) fn retain_opening_message(&mut self, message: ClientJsonRpcMessage) {
+        debug_assert!(self.pending_input.is_none());
+        self.pending_input = Some(message);
     }
 
     async fn dispatch_pending(&mut self) -> Option<ClientJsonRpcMessage> {

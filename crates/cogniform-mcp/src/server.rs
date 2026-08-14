@@ -1,4 +1,12 @@
-use std::{borrow::Cow, future::Future, sync::Arc, time::Duration};
+use std::{
+    borrow::Cow,
+    future::Future,
+    sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
+    },
+    time::Duration,
+};
 
 use cogniform_compilation::{CompilationLimits, CompilationResult};
 use cogniform_engine::{
@@ -15,12 +23,13 @@ use cogniform_protocol::{
 use rmcp::{
     ErrorData as McpError, ServerHandler,
     model::{
-        CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, DiscoverResult,
-        Implementation, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
-        ProtocolVersion, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult,
-        Resource, ResourceContents, ServerCapabilities, ServerInfo, Tool, ToolAnnotations,
+        CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, ClientNotification,
+        ClientRequest, ContentBlock, DiscoverResult, ErrorCode, Implementation,
+        ListResourcesResult, ListToolsResult, MetaObject, PaginatedRequestParams, ProtocolVersion,
+        ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
+        ResourceContents, ServerCapabilities, ServerInfo, ServerResult, Tool, ToolAnnotations,
     },
-    service::{RequestContext, RoleServer},
+    service::{NotificationContext, RequestContext, RoleServer, Service},
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -43,10 +52,36 @@ const OBSERVATION_POLL_CADENCE: Duration = Duration::from_millis(2);
 const OBSERVATION_POLL_DEADLINE: Duration = Duration::from_secs(15);
 const BASE64_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const REQUEST_PROTOCOL_VERSION_META_KEY: &str = "io.modelcontextprotocol/protocolVersion";
+const SERVER_INFO_META_KEY: &str = "io.modelcontextprotocol/serverInfo";
+
+const ERA_UNSET: u8 = 0;
+const ERA_LEGACY: u8 = 1;
+const ERA_MODERN: u8 = 2;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConnectionEra {
+    Legacy,
+    Modern,
+}
+
+impl ConnectionEra {
+    const fn encoded(self) -> u8 {
+        match self {
+            Self::Legacy => ERA_LEGACY,
+            Self::Modern => ERA_MODERN,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct CogniformMcpServer {
     state: Arc<Mutex<LazyLocalService>>,
+}
+
+pub(crate) struct CogniformMcpService {
+    inner: CogniformMcpServer,
+    era: AtomicU8,
 }
 
 struct LazyLocalService {
@@ -209,6 +244,11 @@ impl CogniformMcpServer {
                 .map(|retained| (retained.resource.uri.clone(), retained.blob.clone())),
             state.service_failed,
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn local_service_was_created(&self) -> bool {
+        self.state.lock().await.service.is_some()
     }
 
     async fn query_scene(&self, arguments: Option<Map<String, Value>>) -> CallToolResult {
@@ -404,6 +444,218 @@ impl CogniformMcpServer {
                 tool_error(failure.code)
             }
         }
+    }
+}
+
+impl CogniformMcpService {
+    pub(crate) fn new(inner: CogniformMcpServer) -> Self {
+        Self {
+            inner,
+            era: AtomicU8::new(ERA_UNSET),
+        }
+    }
+
+    fn pin_era(&self, requested: ConnectionEra) -> Result<ConnectionEra, McpError> {
+        let encoded = requested.encoded();
+        match self
+            .era
+            .compare_exchange(ERA_UNSET, encoded, Ordering::AcqRel, Ordering::Acquire)
+        {
+            Ok(_) => Ok(requested),
+            Err(ERA_LEGACY) if requested == ConnectionEra::Legacy => Ok(ConnectionEra::Legacy),
+            Err(ERA_MODERN) if requested == ConnectionEra::Modern => Ok(ConnectionEra::Modern),
+            Err(ERA_LEGACY | ERA_MODERN) => Err(McpError::invalid_request(
+                "mixed MCP lifecycle on one stdio connection",
+                None,
+            )),
+            Err(_) => Err(McpError::internal_error(
+                "invalid MCP connection state",
+                None,
+            )),
+        }
+    }
+
+    fn validate_request(
+        &self,
+        request: &ClientRequest,
+        context: &RequestContext<RoleServer>,
+    ) -> Result<ConnectionEra, McpError> {
+        if let ClientRequest::InitializeRequest(initialize) = request {
+            if self.era.load(Ordering::Acquire) != ERA_UNSET {
+                return Err(McpError::invalid_request(
+                    "initialize is not valid after the opening exchange",
+                    None,
+                ));
+            }
+            if initialize.params.protocol_version != ProtocolVersion::V_2025_11_25 {
+                return Err(McpError::invalid_params(
+                    "unsupported protocol version",
+                    None,
+                ));
+            }
+            return self.pin_era(ConnectionEra::Legacy);
+        }
+
+        let current = self.era.load(Ordering::Acquire);
+        let protocol_key_present = context.meta.contains_key(REQUEST_PROTOCOL_VERSION_META_KEY);
+        let requested_version = context.meta.protocol_version();
+        let requested = match requested_version {
+            Some(version) if version == ProtocolVersion::V_2026_07_28 && current == ERA_LEGACY => {
+                return Err(McpError::unsupported_protocol_version(
+                    version,
+                    &[ProtocolVersion::V_2025_11_25],
+                ));
+            }
+            Some(version) if version == ProtocolVersion::V_2026_07_28 => {
+                let missing = context
+                    .meta
+                    .missing_required_keys(&ProtocolVersion::V_2026_07_28);
+                if !missing.is_empty() {
+                    return Err(malformed_modern_metadata(&missing));
+                }
+                ConnectionEra::Modern
+            }
+            Some(version) if version == ProtocolVersion::V_2025_11_25 => {
+                if current == ERA_UNSET {
+                    return Err(McpError::invalid_request("initialize required", None));
+                }
+                ConnectionEra::Legacy
+            }
+            Some(version) => {
+                let supported = if current == ERA_LEGACY {
+                    &[ProtocolVersion::V_2025_11_25][..]
+                } else {
+                    &[ProtocolVersion::V_2026_07_28][..]
+                };
+                return Err(McpError::unsupported_protocol_version(version, supported));
+            }
+            None if protocol_key_present => {
+                return Err(malformed_modern_metadata(&[
+                    REQUEST_PROTOCOL_VERSION_META_KEY,
+                ]));
+            }
+            None if current == ERA_LEGACY => ConnectionEra::Legacy,
+            None if current == ERA_MODERN => {
+                return Err(malformed_modern_metadata(
+                    &rmcp::model::RequestMetaObject::DRAFT_REQUIRED_KEYS,
+                ));
+            }
+            None => return Err(McpError::invalid_request("initialize required", None)),
+        };
+
+        let era = self.pin_era(requested)?;
+        if era == ConnectionEra::Legacy && matches!(request, ClientRequest::DiscoverRequest(_)) {
+            return Err(McpError::new(
+                ErrorCode::METHOD_NOT_FOUND,
+                "server/discover",
+                None,
+            ));
+        }
+        if era == ConnectionEra::Modern && !modern_method_is_supported(request) {
+            return Err(McpError::new(
+                ErrorCode::METHOD_NOT_FOUND,
+                "Method not found",
+                None,
+            ));
+        }
+        Ok(era)
+    }
+}
+
+fn malformed_modern_metadata(missing: &[&str]) -> McpError {
+    McpError::invalid_params(
+        format!(
+            "request _meta is missing or has malformed required fields: {}",
+            missing.join(", ")
+        ),
+        None,
+    )
+}
+
+const fn modern_method_is_supported(request: &ClientRequest) -> bool {
+    matches!(
+        request,
+        ClientRequest::DiscoverRequest(_)
+            | ClientRequest::ListToolsRequest(_)
+            | ClientRequest::CallToolRequest(_)
+            | ClientRequest::ListResourcesRequest(_)
+            | ClientRequest::ReadResourceRequest(_)
+    )
+}
+
+fn stamp_server_info(meta: &mut Option<MetaObject>, server_info: &Implementation) {
+    let value = serde_json::to_value(server_info)
+        .expect("MCP server implementation identity must serialize");
+    meta.get_or_insert_default()
+        .insert(SERVER_INFO_META_KEY.to_owned(), value);
+}
+
+fn decorate_modern_result(result: &mut ServerResult, server_info: &Implementation) {
+    match result {
+        ServerResult::DiscoverResult(result) => result.set_server_info(server_info.clone()),
+        ServerResult::ListToolsResult(result) => {
+            result.ttl_ms = Some(0);
+            result.cache_scope = Some(CacheScope::Private);
+            stamp_server_info(&mut result.meta, server_info);
+        }
+        ServerResult::ListResourcesResult(result) => {
+            result.ttl_ms = Some(0);
+            result.cache_scope = Some(CacheScope::Private);
+            stamp_server_info(&mut result.meta, server_info);
+        }
+        ServerResult::ReadResourceResult(result) => {
+            result.ttl_ms = Some(0);
+            result.cache_scope = Some(CacheScope::Private);
+            stamp_server_info(&mut result.meta, server_info);
+        }
+        ServerResult::CallToolResult(result) => {
+            stamp_server_info(&mut result.meta, server_info);
+        }
+        _ => {}
+    }
+}
+
+impl Service<RoleServer> for CogniformMcpService {
+    async fn handle_request(
+        &self,
+        request: ClientRequest,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ServerResult, McpError> {
+        let era = self.validate_request(&request, &context)?;
+        let mut result =
+            Service::<RoleServer>::handle_request(&self.inner, request, context).await?;
+        if era == ConnectionEra::Modern {
+            decorate_modern_result(
+                &mut result,
+                &ServerHandler::get_info(&self.inner).server_info,
+            );
+        }
+        Ok(result)
+    }
+
+    async fn handle_notification(
+        &self,
+        notification: ClientNotification,
+        context: NotificationContext<RoleServer>,
+    ) -> Result<(), McpError> {
+        if self.era.load(Ordering::Acquire) == ERA_MODERN
+            && !matches!(notification, ClientNotification::CancelledNotification(_))
+        {
+            return Err(McpError::new(
+                ErrorCode::METHOD_NOT_FOUND,
+                "Method not found",
+                None,
+            ));
+        }
+        Service::<RoleServer>::handle_notification(&self.inner, notification, context).await
+    }
+
+    fn get_info(&self) -> ServerInfo {
+        ServerHandler::get_info(&self.inner)
+    }
+
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Borrowed(&[ProtocolVersion::V_2025_11_25, ProtocolVersion::V_2026_07_28])
     }
 }
 
@@ -683,16 +935,17 @@ impl LazyLocalService {
 
 impl ServerHandler for CogniformMcpServer {
     fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
-        Cow::Borrowed(&[ProtocolVersion::V_2025_11_25])
+        Cow::Borrowed(&[ProtocolVersion::V_2025_11_25, ProtocolVersion::V_2026_07_28])
     }
 
     fn discover(
         &self,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<DiscoverResult, McpError>> + Send + '_ {
-        std::future::ready(Err(McpError::method_not_found::<
-            rmcp::model::DiscoverRequestMethod,
-        >()))
+        std::future::ready(Ok(DiscoverResult::from_server_info(
+            vec![ProtocolVersion::V_2026_07_28],
+            ServerHandler::get_info(self),
+        )))
     }
 
     fn get_info(&self) -> ServerInfo {

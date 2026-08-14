@@ -140,8 +140,9 @@ constructs controlled test values only.
 CF045 initially admitted exact-pinned `rmcp` 2.2.0 and Tokio 1.53.1 for the
 isolated `cogniform-mcp` adapter. CF048 supersedes only the SDK pin with exact
 stable `rmcp` 3.1.2. `rmcp` is the Apache-2.0 official Rust MCP SDK; Cogniform
-continues to implement only MCP 2025-11-25 under the workspace's Rust 1.97.1
-toolchain. Default SDK features are disabled. Production enables only `server`,
+implements exact MCP `2025-11-25` and `2026-07-28` inherited-stdio lifecycles
+under the workspace's Rust 1.97.1 toolchain. Default SDK features are disabled.
+Production enables only `server`,
 which requires schema support, the async read/write codec, and—in 3.1.2—UUID
 version-four support. The adapter deliberately does not enable macros,
 built-in stdio, child process, HTTP client/server, reqwest, TLS, OAuth/auth,
@@ -234,6 +235,20 @@ silently becoming adapter authority. The official
 [Rust SDK releases](https://github.com/modelcontextprotocol/rust-sdk/releases)
 and [MCP 2025-11-25 specification](https://modelcontextprotocol.io/specification/2025-11-25)
 remain the external references; MCP 2026 support requires a new approved ADR.
+
+CF054 adopts that separately approved modern lifecycle without changing any
+Cargo manifest, lock entry, vendored byte, feature, build script, or runtime
+edge. One connection selects exact legacy `2025-11-25` initialization or exact
+modern `2026-07-28` discovery/direct request metadata and cannot switch eras.
+Every modern request is independently validated; the adapter advertises only
+the existing tools and resources, grants no extension authority, and continues
+to reject Tasks and every other unsupported method. The SDK's compiled UUID
+task path therefore remains unreachable, and no new randomness, network, auth,
+model, persistence, or remote-service authority is introduced. See the
+[MCP 2026-07-28 lifecycle](https://modelcontextprotocol.io/specification/2026-07-28/basic),
+[versioning rules](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning),
+[server discovery](https://modelcontextprotocol.io/specification/2026-07-28/server/discover),
+and [caching semantics](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching).
 
 CF050 changes no Cargo manifest, lock entry, vendored source, action, or Python
 package graph. Its source-candidate tool uses only the Python standard library

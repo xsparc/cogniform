@@ -166,12 +166,17 @@ it as a remote or multi-tenant endpoint. See the
 ### MCP stdio failure
 
 The launching parent owns redirected stdin/stdout, the child lifetime, and all
-JSON-RPC, scene, compilation, and receipt values. Initialization must negotiate
-exactly MCP `2025-11-25`; identified pre-initialization requests receive a small
-JSON-RPC error where possible, while malformed, over-limit, deeply nested,
-truncated, or failed input terminates the session with a stable payload-redacted
-transport category. Invalid typed tool arguments are rejected before the lazy
-`LocalService` is created.
+JSON-RPC, scene, compilation, and receipt values. The opening exchange must be
+either exact MCP `2025-11-25` initialization or an exact self-contained MCP
+`2026-07-28` discovery/direct request. Every later modern request repeats its
+protocol version and client capabilities; one connection cannot switch eras.
+Identified invalid opening requests receive a small JSON-RPC error where
+possible, while malformed, over-limit, deeply nested, truncated, invalid-
+direction, or failed input terminates with a stable payload-redacted transport
+category. Later missing, malformed, unsupported, mixed-era, or unsupported-
+method requests return bounded JSON-RPC errors before semantic dispatch.
+Invalid typed tool arguments are rejected before the lazy `LocalService` is
+created.
 
 Tool calls are serialized against one service. A query binds to one exact
 revision and cannot mutate. An imagination admits at most one command, validates

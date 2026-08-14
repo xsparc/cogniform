@@ -157,6 +157,14 @@ uses cooperative Tokio waits, poisons the service on cancellation, and retains
 the prior completed resource until teardown. Missing, mismatched, pending-
 blocked, or post-write cancellation remains late. The exact 2025 tool/resource
 contract, dependency graph, and authority boundary do not change.
+CF054 activates exact MCP 2026-07-28 discovery and self-contained requests
+beside that unchanged legacy contract. A bounded opening preflight preserves
+identified legacy rejection bytes before `rmcp::serve_server`; a service
+wrapper pins one connection era, validates every modern request, restricts the
+modern method set to discovery plus existing tool/resource calls, and adds
+complete result, server-identity, and zero-lifetime private-cache roles. It
+does not add a tool, resource, extension, Task, dependency, endpoint, client,
+or runtime authority.
 CF050 adds a separate standard-library-only release-preparation boundary. It
 accepts only a clean `HEAD` exactly named by a direct annotated tag, creates one
 bounded uncompressed Git tar and exact SHA-256 sidecar outside repository state,
@@ -575,9 +583,10 @@ control message without executing it, including version-two imagination and
 compilation-result roles,
 execute one bounded caller-driven local session over an owned service without
 opening an endpoint or starting an automatic loop,
-serve one exact bounded MCP 2025-11-25 inherited-stdio session with
-exact-revision query, semantic imagination, direct atomic patch, and bounded
-observation tools plus one latest-value canonical observation resource,
+serve one bounded inherited-stdio MCP connection as either an exact 2025-11-25
+session or exact self-contained 2026-07-28 requests, with exact-revision query,
+semantic imagination, direct atomic patch, and bounded observation tools plus
+one latest-value canonical observation resource,
 capture complete or exact-revision local recovery state, restore it into a
 fresh service, explicitly persist/load one immutable local recovery file or
 one independent exact-hash asset-source file, inspect one recovery file through
@@ -595,7 +604,9 @@ semantics were tested, CF046 adds only the existing bounded patch contract,
 CF047 composes one bounded observation request with one retained resource, and
 CF048 refreshes its SDK while keeping the accepted 2025 wire and lifecycle
 fixed. CF049 makes every tool's discovery output schema conform to its actual
-structured results and adds bounded workflow instructions.
+structured results and adds bounded workflow instructions. CF054 activates
+only the SDK's exact 2026-07-28 discovery/per-request lifecycle while retaining
+the same surface, bounds, and authority.
 Protobuf/gRPC, MCP HTTP/authentication, resource templates, subscriptions,
 notifications, history, model features, local shared memory, and QUIC remain
 separate future adapters.
@@ -636,7 +647,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Local-session messages | Every schema-version-one client/server variant round-trips exact LF bytes; direction, version, unknown fields, noncanonical bytes, nesting, substitutions, nested values, receipt roles, frame kind, and effective limits fail closed before returning a message |
 | Local-session executor | One caller-driven service session negotiates field-wise limits, preserves exact patch/observation correlations through deterministic bounded advancement, emits stable failures, and closes only when quiescent |
 | Local stdio session | Exact arguments and redirected streams are checked before adapter selection; immediate EOF is a clean no-op, while complete-session EOF, truncation, corruption, service/executor failure, deadline, write, and flush failures terminate with stable redacted diagnostics and no whole-frame retry |
-| MCP stdio adapter | Stable 2025-11-25 initialization with exact 508-byte workflow instructions, exact singleton version advertisement, no advertised extensions, explicit 2026 discovery/task/per-request-version rejection, omission of newer result shapes, exact deterministic query/imagination/patch/observation metadata with closed mutually exclusive success/error schemas and complete stable error vocabularies, incremental input and encode-before-output bounds, one active request plus one decoded pending message, exact matching pre-response cancellation with response suppression and terminal no-later-dispatch semantics, response-through-flush treatment of wrong/missing/late cancellation, cooperative observation polling with prior-resource preservation, lazy serialized service access, exact query/application/replay/observation roles, direct atomic camera-capable patch application, one latest-value canonical binary resource with exact-URI read and atomic replacement, stdout purity, EOF, and redacted transport failure behavior pass through official-SDK, raw-wire, and CLI child tests |
+| MCP stdio adapter | Exact byte-compatible 2025-11-25 initialization or self-contained 2026-07-28 discovery/direct requests; one pinned connection era; exact per-request modern protocol/capability validation; no advertised extensions or Tasks; exact 508-byte workflow instructions; complete modern result/server-identity/zero-lifetime private-cache roles with legacy omission; exact deterministic query/imagination/patch/observation metadata with closed mutually exclusive success/error schemas and complete stable error vocabularies; incremental input and encode-before-output bounds; one active request plus one decoded pending message; exact matching pre-response cancellation with response suppression and terminal no-later-dispatch semantics; response-through-flush treatment of wrong/missing/late cancellation; cooperative observation polling with prior-resource preservation; lazy serialized service access; exact query/application/replay/observation roles; direct atomic camera-capable patch application; one latest-value canonical binary resource with exact-URI read and atomic replacement; stdout purity, EOF, invalid-direction, mixed-era, and redacted transport failure behavior pass through official-SDK, raw-wire, and legacy/modern controlled CLI child tests |
 | Source candidate | One clean direct annotated-tag commit repeatedly produces the same bounded uncompressed tar under the recorded Git implementation and one exact SHA-256 sidecar; independent raw verification proves stable tag/HEAD identities, the sole commit PAX value, canonical termination, exact portable inventory/blob/mode/owner/time roles, mandatory offline source content, public-safe actual bytes, and fail-closed cleanup without extraction or publication |
 | Package candidate identity | Every explicit workspace member inherits `0.1.0-rc.1` and remains non-publishable; every local crate edge has one exact path-bound shared requirement; every first-party lock entry is source-less at that version; disposable drift cases and the live inventory pass without network access |
 | Release integrity and support | The future prerelease contract requires release immutability, draft-first exact two-asset assembly, six separately authorized live gates, release and per-asset attestation checks, independent SHA-256 verification, and a latest-candidate-only support lifetime without claiming that a release exists |
