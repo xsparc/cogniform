@@ -59,11 +59,13 @@ scene revision that produced it.
 > asset baseline adds content-addressed GLB geometry with optional finite vertex
 > normals, one retained finite primary coordinate set, optional source
 > tangents, and unit-bounded numeric metallic-roughness materials, plus bounded
-> embedded PNG base-color and tangent-space normal roles. Exact caller-driven
+> embedded PNG base-color, linear packed metallic-roughness, and tangent-space
+> normal roles. Exact caller-driven
 > CPU decode and explicit role-separated GPU upload remain separate; sampled
 > sRGB base color multiplies the imported factor, while a linear normal map can
-> perturb direct lighting without changing geometric-normal observations when
-> the entity has no explicit scene material.
+> perturb direct lighting without changing geometric-normal observations,
+> while metallic-roughness green/blue multiply the numeric direct-light
+> factors when the entity has no explicit scene material.
 > The baseline also includes pure seeded cuboid-grid procedures. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, can explicitly evict all CPU/GPU state for one

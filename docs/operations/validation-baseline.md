@@ -116,6 +116,12 @@ override precedence, geometric-normal observation preservation, and exact
 eviction/rehydration evidence were collected on the CPU and validated
 Windows/Vulkan profile on 2026-08-14. No dependency, feature, lockfile, vendor,
 workflow, permission, package, version, or release action changed.
+CF056 bounded metallic-roughness role decode, unique-image CPU accounting,
+atomic three-role GPU reservation, linear G/B direct-light factor
+multiplication, scene-override precedence, non-color observation preservation,
+and exact eviction/rehydration evidence were collected on the CPU and validated
+Windows/Vulkan profile on 2026-08-15. No dependency, feature, lockfile, vendor,
+workflow, permission, package, version, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -125,7 +131,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded sRGB base-color and linear normal-texture orientation/factor/scale/override response, dual-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded sRGB base-color plus linear normal and packed metallic-roughness texture response, three-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -136,7 +142,8 @@ The renderer is capability based. An adapter must satisfy the configured target
 dimensions, buffer bounds, attachment count, and render/copy usage for RGBA8
 color, Depth32Float depth, R32Uint identity, and RGBA8 signed normal targets
 before device creation, plus copy-destination, sampled binding, and filterable
-sampling for sRGB RGBA8 base-color textures and linear RGBA8 normal textures.
+sampling for sRGB RGBA8 base-color textures and linear RGBA8 normal and
+metallic-roughness textures.
 The normal path requires three color attachments and twelve color-attachment
 bytes per sample.
 The validated GPU above is evidence that one adapter meets the contract; it does
@@ -607,6 +614,44 @@ unchanged. The complete workspace ordinary suite passes; other controlled GPU
 suites remain ignored outside their approved adapter runs. The dependency audit
 passes with only the already accepted duplicate-version warnings for
 `hashbrown` and `syn`.
+
+### CF056 packed metallic-roughness textures
+
+CF056 extends the bounded GLB subset with one optional shared-per-role packed
+metallic-roughness texture. It decodes referenced source images once for CPU
+accounting, retains explicit role metadata, atomically reserves zero-to-three
+GPU role resources, uploads this role as linear `Rgba8Unorm`, and multiplies
+numeric roughness by green and metallic by blue only inside the existing
+direct-light response. Red/alpha, unlit output, non-color observations, and
+logical state remain unchanged. The following commands passed on 2026-08-15:
+
+```text
+cargo fmt --all --check
+cargo test -p cogniform-assets -p cogniform-renderer --all-features --locked --offline
+cargo clippy -p cogniform-assets -p cogniform-renderer --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test --release -p cogniform-renderer --test asset_fixture metallic_roughness_texture_multiplies_factors_for_direct_lights_only --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture three_texture_roles_upload_evict_and_rehydrate_exactly --all-features --locked --offline -- --ignored --exact --nocapture
+cargo deny check advisories bans licenses sources
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --check
+```
+
+The CPU matrix proves typed material/upload metadata, exact source texels,
+missing/non-zero coordinate rejection, root resource bounds, unique
+shared-image CPU bytes, exact aggregate limit equality/failure, and atomic
+three-role count/byte reservation. The controlled GPU test proves directional
+and point G/B factor multiplication matches equivalent scalar values, R/A are
+ignored, unlit base color is exact, scene override disables the role, and
+eviction/rehydration restores exact role bytes. The separate controlled
+three-role test proves exact 12-byte upload, residency, eviction, and
+rehydration for three distinct one-pixel sources. Depth, identity, background,
+and geometric-normal observations remain unchanged.
 
 ## Deterministic source-candidate commands
 

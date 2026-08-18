@@ -36,7 +36,7 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 - optional finite same-count f32 `TEXCOORD_0`, including exact out-of-unit and
   indexed retention, a preserved 32-byte position/normal/primary-coordinate
   vertex prefix, zero defaults, and shader input location 2;
-- bounded shared embedded PNG GLB base-color and normal texture roles, with strict static
+- bounded shared embedded PNG GLB base-color, metallic-roughness, and normal texture roles, with strict static
   8-bit RGB/RGBA decode, independent CPU/GPU accounting, explicit unique
   role upload, fixed repeat/linear sRGB/linear sampling, white/neutral fallbacks,
   factor/override semantics, and controlled orientation plus rehydration evidence;
@@ -44,6 +44,11 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   finite normal scale, exact 48-byte expanded vertex accounting, atomic dual-
   role GPU reservation, transform-safe TBN direct-light shading, and unchanged
   geometric-normal observations;
+- optional packed glTF `metallicRoughnessTexture` through the existing bounded
+  embedded PNG path, with unique-image CPU accounting, atomic zero-to-three
+  role GPU reservation, linear green/blue factor multiplication for
+  directional and point direct lighting, factor-one fallback, ignored red and
+  alpha, scene-override suppression, and unchanged unlit/non-color outputs;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
@@ -185,6 +190,14 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF056 adds the additive
+  `AssetMaterial::has_metallic_roughness_texture` and
+  `AssetUploadJob::metallic_roughness_texture` accessors. Asset/renderer
+  texture counts now admit zero to three role-separated values, while shared
+  source images remain counted once in CPU decoded bytes. No vertex/uniform,
+  logical scene, observation, protocol, dependency, package, version, tag,
+  asset, workflow, or release contract changed;
 
 - CF055 expands `AssetVertex` and `ASSET_VERTEX_BYTES` from the prior 32-byte
   position/normal/primary-coordinate layout to a prefix-compatible 48-byte
@@ -392,8 +405,9 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   Normal output is quantized and the imported subset supports numeric base
   color, metallic, roughness, and one source-tangent normal map, but no
   generated tangents, emissive/alpha modes, or other material texture roles;
-  the GLB subset samples at most one shared embedded PNG per base-color/normal
-  role but excludes external/data images, JPEG, explicit samplers, compression,
+  the GLB subset samples at most one shared embedded PNG per base-color,
+  metallic-roughness, or normal role but excludes external/data images, JPEG,
+  explicit samplers, compression,
   scene traversal, and most vertex attributes. Normal mapping affects direct
   light only and never replaces the geometric-normal observation.
   Built-in geometry supports

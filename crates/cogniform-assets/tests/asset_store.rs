@@ -143,6 +143,7 @@ struct NormalTexturedFixture<'a> {
     tangent_normalized: bool,
     include_normals: bool,
     include_tangents: bool,
+    texcoord_attribute: &'a str,
     normal_texture_fields: &'a str,
 }
 
@@ -155,6 +156,7 @@ impl Default for NormalTexturedFixture<'_> {
             tangent_normalized: false,
             include_normals: true,
             include_tangents: true,
+            texcoord_attribute: r#""TEXCOORD_0":3"#,
             normal_texture_fields: r#""index":0"#,
         }
     }
@@ -168,6 +170,7 @@ fn normal_textured_triangle_glb(png: &[u8], fixture: NormalTexturedFixture<'_>) 
         tangent_normalized,
         include_normals,
         include_tangents,
+        texcoord_attribute,
         normal_texture_fields,
     } = fixture;
     let mut binary = triangle_binary();
@@ -195,7 +198,9 @@ fn normal_textured_triangle_glb(png: &[u8], fixture: NormalTexturedFixture<'_>) 
     if include_tangents {
         attributes.push(r#""TANGENT":2"#);
     }
-    attributes.push(r#""TEXCOORD_0":3"#);
+    if !texcoord_attribute.is_empty() {
+        attributes.push(texcoord_attribute);
+    }
     let attributes = attributes.join(",");
     let json = format!(
         r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":{tangent_count},"type":"{tangent_kind}","normalized":{tangent_normalized}}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"normalTexture":{{{normal_texture_fields}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{{attributes}}},"material":0,"mode":4}}]}}]}}"#,
@@ -247,6 +252,66 @@ fn dual_textured_triangle_glb(base_png: &[u8], normal_png: &[u8], shared_image: 
     };
     let json = format!(
         r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{base_length}}}{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"scale":0.5}}}}],"textures":[{{"source":0}},{{"source":{normal_source}}}],"images":[{images}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        base_length = base_png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn triple_textured_triangle_glb(
+    base_png: &[u8],
+    metallic_roughness_png: &[u8],
+    normal_png: &[u8],
+    shared_image: bool,
+) -> Vec<u8> {
+    let mut binary = triangle_binary();
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let base_offset = binary.len();
+    binary.extend_from_slice(base_png);
+    let metallic_roughness_offset = binary.len();
+    let normal_offset;
+    if shared_image {
+        normal_offset = base_offset;
+    } else {
+        binary.extend_from_slice(metallic_roughness_png);
+        normal_offset = binary.len();
+        binary.extend_from_slice(normal_png);
+    }
+    let (image_views, images, metallic_roughness_source, normal_source) = if shared_image {
+        (
+            String::new(),
+            r#"{"bufferView":4,"mimeType":"image/png"}"#.to_owned(),
+            0,
+            0,
+        )
+    } else {
+        (
+            format!(
+                r#",{{"buffer":0,"byteOffset":{metallic_roughness_offset},"byteLength":{}}},{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{}}}"#,
+                metallic_roughness_png.len(),
+                normal_png.len()
+            ),
+            r#"{"bufferView":4,"mimeType":"image/png"},{"bufferView":5,"mimeType":"image/png"},{"bufferView":6,"mimeType":"image/png"}"#.to_owned(),
+            1,
+            2,
+        )
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{base_length}}}{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1}},"metallicFactor":0.75,"roughnessFactor":0.5}},"normalTexture":{{"index":2,"scale":0.5}}}}],"textures":[{{"source":0}},{{"source":{metallic_roughness_source}}},{{"source":{normal_source}}}],"images":[{images}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         base_length = base_png.len(),
     );
@@ -682,6 +747,51 @@ fn source_tangent_normal_texture_is_typed_normalized_and_retained() {
 }
 
 #[test]
+fn metallic_roughness_texture_is_linear_role_metadata_with_exact_texels() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[17, 64, 192, 231],
+    );
+    let bytes = textured_triangle_glb(
+        &png,
+        r#""metallicFactor":0.75,"roughnessFactor":0.5,"metallicRoughnessTexture":{"index":0,"texCoord":0}"#,
+        r#"{"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        "",
+        true,
+    );
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 148);
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert!(!upload.material().has_base_color_texture());
+    assert!(upload.material().has_metallic_roughness_texture());
+    assert!(!upload.material().has_normal_texture());
+    assert_eq!(
+        upload.material().roughness().get().to_bits(),
+        0.5_f32.to_bits()
+    );
+    assert_eq!(
+        upload.material().metallic().get().to_bits(),
+        0.75_f32.to_bits()
+    );
+    assert_eq!(
+        upload.metallic_roughness_texture().unwrap().rgba8(),
+        [17, 64, 192, 231]
+    );
+}
+
+#[test]
 fn dual_texture_roles_account_shared_and_distinct_images_exactly() {
     let base_png = encode_png(
         1,
@@ -740,6 +850,71 @@ fn dual_texture_roles_account_shared_and_distinct_images_exactly() {
             narrow.record(hash).unwrap().diagnostics[0].code,
             AssetDiagnosticCode::ByteLimitExceeded
         );
+    }
+}
+
+#[test]
+fn three_texture_roles_count_shared_cpu_images_once_and_roles_exactly() {
+    let base_png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[255, 0, 0, 255],
+    );
+    let metallic_roughness_png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[7, 64, 192, 9],
+    );
+    let normal_png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    for (shared_image, expected_bytes) in [(true, 148), (false, 156)] {
+        let bytes = triple_textured_triangle_glb(
+            &base_png,
+            &metallic_roughness_png,
+            &normal_png,
+            shared_image,
+        );
+        let hash = content_hash(&bytes);
+        let mut exact_config = AssetStoreConfig::default();
+        exact_config.limits.max_asset_decoded_bytes = NonZeroU64::new(expected_bytes).unwrap();
+        exact_config.limits.max_resident_cpu_bytes = NonZeroU64::new(expected_bytes).unwrap();
+        let mut store = AssetStore::new(exact_config);
+        store.enqueue(hash, bytes.clone()).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert!(upload.base_color_texture().is_some());
+        assert!(upload.metallic_roughness_texture().is_some());
+        assert!(upload.normal_texture().is_some());
+        if shared_image {
+            assert_eq!(
+                upload.base_color_texture().unwrap().rgba8(),
+                upload.metallic_roughness_texture().unwrap().rgba8()
+            );
+        }
+        let eviction = store.evict(hash);
+        assert_eq!(eviction.removed_textures, 3);
+        assert_eq!(eviction.released_resident_cpu_bytes, expected_bytes);
+
+        let mut narrow_config = exact_config;
+        narrow_config.limits.max_asset_decoded_bytes = NonZeroU64::new(expected_bytes - 1).unwrap();
+        let mut narrow = AssetStore::new(narrow_config);
+        narrow.enqueue(hash, bytes).unwrap();
+        assert_eq!(narrow.process_next().unwrap().state, AssetState::Rejected);
+        assert_eq!(narrow.stats().resident_cpu_bytes, 0);
     }
 }
 
@@ -864,6 +1039,20 @@ fn unsupported_tangent_encodings_and_normal_texture_roles_fail_closed() {
         store.record(hash).unwrap().diagnostics[0].code,
         AssetDiagnosticCode::InvalidBufferRange
     );
+
+    let missing_coordinates = normal_textured_triangle_glb(
+        &png,
+        NormalTexturedFixture {
+            texcoord_attribute: "",
+            ..NormalTexturedFixture::default()
+        },
+    );
+    let (store, hash) = process_with_proxy_policy(missing_coordinates);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidTexcoord
+    );
 }
 
 #[test]
@@ -904,7 +1093,7 @@ fn texture_resource_shape_and_coordinate_contract_is_typed() {
         ),
         textured_triangle_glb(
             &png,
-            r#""baseColorTexture":{"index":0},"metallicRoughnessTexture":{"index":0}"#,
+            r#""metallicRoughnessTexture":{"index":0,"texCoord":1}"#,
             r#"{"source":0}"#,
             r#"{"bufferView":2,"mimeType":"image/png"}"#,
             "",
@@ -930,30 +1119,50 @@ fn texture_resource_shape_and_coordinate_contract_is_typed() {
         );
     }
 
-    let missing_coordinates = textured_triangle_glb(
-        &png,
+    for pbr_fields in [
         r#""baseColorTexture":{"index":0}"#,
+        r#""metallicRoughnessTexture":{"index":0}"#,
+    ] {
+        let missing_coordinates = textured_triangle_glb(
+            &png,
+            pbr_fields,
+            r#"{"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"}"#,
+            "",
+            false,
+        );
+        let (store, hash) = process_with_proxy_policy(missing_coordinates);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidTexcoord
+        );
+    }
+
+    let invalid_metallic_roughness_index = textured_triangle_glb(
+        &png,
+        r#""metallicRoughnessTexture":{"index":999}"#,
         r#"{"source":0}"#,
         r#"{"bufferView":2,"mimeType":"image/png"}"#,
         "",
-        false,
+        true,
     );
-    let (store, hash) = process_with_proxy_policy(missing_coordinates);
+    let (store, hash) = process_with_proxy_policy(invalid_metallic_roughness_index);
     assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
     assert_eq!(
         store.record(hash).unwrap().diagnostics[0].code,
-        AssetDiagnosticCode::InvalidTexcoord
+        AssetDiagnosticCode::InvalidBufferRange
     );
 }
 
 #[test]
-fn more_than_two_texture_or_image_resources_fail_closed() {
+fn more_than_three_texture_or_image_resources_fail_closed() {
     let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
     for bytes in [
         textured_triangle_glb(
             &png,
             r#""baseColorTexture":{"index":0}"#,
-            r#"{"source":0},{"source":0},{"source":0}"#,
+            r#"{"source":0},{"source":0},{"source":0},{"source":0}"#,
             r#"{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
@@ -962,7 +1171,7 @@ fn more_than_two_texture_or_image_resources_fail_closed() {
             &png,
             r#""baseColorTexture":{"index":0}"#,
             r#"{"source":0}"#,
-            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
         ),

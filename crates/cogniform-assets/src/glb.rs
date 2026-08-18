@@ -233,16 +233,6 @@ fn remove_unsupported_material_features(
         ] {
             remove_typed_unsupported(material, field, expected, unsupported)?;
         }
-        if let Some(pbr) = material.get_mut("pbrMetallicRoughness")
-            && let Some(pbr) = pbr.as_object_mut()
-        {
-            remove_typed_unsupported(
-                pbr,
-                "metallicRoughnessTexture",
-                JsonKind::Object,
-                unsupported,
-            )?;
-        }
     }
     Ok(())
 }
@@ -370,9 +360,21 @@ fn validate_root(
             None,
         ));
     }
+    if textures.metallic_roughness.is_some()
+        && !meshes
+            .iter()
+            .any(|mesh| mesh.material.has_metallic_roughness_texture())
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.materials.metallicRoughnessTexture",
+            None,
+        ));
+    }
     Ok(DecodedAsset {
         meshes,
         base_color_texture: textures.base_color,
+        metallic_roughness_texture: textures.metallic_roughness,
         normal_texture: textures.normal,
         byte_len: decoded_bytes,
     })
@@ -450,7 +452,7 @@ fn validate_root_header(
             ));
         }
     }
-    if root.images.len() > 2 || root.textures.len() > 2 {
+    if root.images.len() > 3 || root.textures.len() > 3 {
         return Err(diagnostic(
             AssetDiagnosticCode::CollectionLimitExceeded,
             "glb.json.textures",
@@ -469,6 +471,7 @@ fn validate_root_header(
 
 struct DecodedTextures {
     base_color: Option<AssetTexture>,
+    metallic_roughness: Option<AssetTexture>,
     normal: Option<AssetTexture>,
     byte_len: u64,
 }
@@ -496,10 +499,22 @@ fn decode_textures(
         root.textures.len(),
         "glb.json.materials.normalTexture.index",
     )?;
-    if base_color_index.is_none() && normal_index.is_none() {
+    let metallic_roughness_index = shared_texture_index(
+        root.materials.iter().filter_map(|material| {
+            material
+                .pbr_metallic_roughness
+                .as_ref()
+                .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
+                .map(|info| info.index)
+        }),
+        root.textures.len(),
+        "glb.json.materials.metallicRoughnessTexture.index",
+    )?;
+    if base_color_index.is_none() && metallic_roughness_index.is_none() && normal_index.is_none() {
         if root.textures.is_empty() && root.images.is_empty() {
             return Ok(DecodedTextures {
                 base_color: None,
+                metallic_roughness: None,
                 normal: None,
                 byte_len: 0,
             });
@@ -511,7 +526,7 @@ fn decode_textures(
         ));
     }
     validate_texture_coordinates(root)?;
-    let role_indices = [base_color_index, normal_index];
+    let role_indices = [base_color_index, metallic_roughness_index, normal_index];
     let referenced_textures: BTreeSet<_> = role_indices.into_iter().flatten().collect();
     if referenced_textures.len() != root.textures.len() {
         return Err(diagnostic(
@@ -531,6 +546,7 @@ fn decode_textures(
     };
     Ok(DecodedTextures {
         base_color: role_texture(base_color_index),
+        metallic_roughness: role_texture(metallic_roughness_index),
         normal: role_texture(normal_index),
         byte_len,
     })
@@ -651,6 +667,18 @@ fn validate_texture_coordinates(root: &Root) -> Result<(), AssetDiagnostic> {
             return Err(diagnostic(
                 AssetDiagnosticCode::UnsupportedFeature,
                 "glb.json.materials.normalTexture.texCoord",
+                None,
+            ));
+        }
+        if let Some(info) = material
+            .pbr_metallic_roughness
+            .as_ref()
+            .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
+            && info.tex_coord.unwrap_or(0) != 0
+        {
+            return Err(diagnostic(
+                AssetDiagnosticCode::UnsupportedFeature,
+                "glb.json.materials.metallicRoughnessTexture.texCoord",
                 None,
             ));
         }
@@ -1003,7 +1031,11 @@ fn decode_mesh(
         output_count,
     )?;
     let material = decode_material(root, primitive.material)?;
-    if material.has_base_color_texture() && texcoords.is_none() {
+    if (material.has_base_color_texture()
+        || material.has_metallic_roughness_texture()
+        || material.has_normal_texture())
+        && texcoords.is_none()
+    {
         return Err(diagnostic(
             AssetDiagnosticCode::InvalidTexcoord,
             "glb.json.meshes[].primitives[].attributes.TEXCOORD_0",
@@ -1791,6 +1823,15 @@ fn decode_material(
     } else {
         material
     };
+    if material_index.is_some_and(|index| {
+        root.materials
+            .get(usize::try_from(index).unwrap_or(usize::MAX))
+            .and_then(|material| material.pbr_metallic_roughness.as_ref())
+            .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
+            .is_some()
+    }) {
+        material = material.with_metallic_roughness_texture();
+    }
     if let Some(normal_texture) = material_index
         .and_then(|index| {
             root.materials
@@ -1885,6 +1926,7 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
             ),
         }],
         base_color_texture: None,
+        metallic_roughness_texture: None,
         normal_texture: None,
         byte_len: 36 * ASSET_VERTEX_BYTES,
     }
@@ -2020,6 +2062,8 @@ struct PbrMetallicRoughness {
     roughness: Option<f32>,
     #[serde(rename = "baseColorTexture", default)]
     base_color_texture: Option<TextureInfo>,
+    #[serde(rename = "metallicRoughnessTexture", default)]
+    metallic_roughness_texture: Option<TextureInfo>,
 }
 
 #[derive(Debug, Deserialize)]

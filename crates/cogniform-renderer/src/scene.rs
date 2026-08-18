@@ -325,21 +325,23 @@ impl RenderScene {
                     )
                 },
             );
-            let (use_imported_base_color_texture, use_imported_normal_texture, normal_scale) =
-                imported_texture_selection(entity.material().is_none(), imported_material);
-            draws.push(PreparedDraw {
-                geometry,
-                model,
-                view_projection,
-                color,
-                camera_position,
-                metallic,
-                roughness,
-                normal_scale,
-                use_imported_base_color_texture,
-                use_imported_normal_texture,
-                compact_id: compact_id.get(),
-            });
+            draws.push(
+                PreparedDraw {
+                    geometry,
+                    model,
+                    view_projection,
+                    color,
+                    camera_position,
+                    metallic,
+                    roughness,
+                    normal_scale: 1.0,
+                    use_imported_base_color_texture: false,
+                    use_imported_metallic_roughness_texture: false,
+                    use_imported_normal_texture: false,
+                    compact_id: compact_id.get(),
+                }
+                .with_imported_textures(entity.material().is_none(), imported_material),
+            );
             id_lookup.insert(compact_id.get(), entity_id);
         }
         Ok(PreparedScene {
@@ -454,8 +456,25 @@ pub(crate) struct PreparedDraw {
     pub(crate) roughness: f32,
     pub(crate) normal_scale: f32,
     pub(crate) use_imported_base_color_texture: bool,
+    pub(crate) use_imported_metallic_roughness_texture: bool,
     pub(crate) use_imported_normal_texture: bool,
     pub(crate) compact_id: u32,
+}
+
+impl PreparedDraw {
+    fn with_imported_textures(
+        mut self,
+        use_imported_material: bool,
+        material: Option<AssetMaterial>,
+    ) -> Self {
+        let (base_color, metallic_roughness, normal, normal_scale) =
+            imported_texture_selection(use_imported_material, material);
+        self.use_imported_base_color_texture = base_color;
+        self.use_imported_metallic_roughness_texture = metallic_roughness;
+        self.use_imported_normal_texture = normal;
+        self.normal_scale = normal_scale;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -477,17 +496,24 @@ fn primitive_geometry(shape: cogniform_protocol::PrimitiveShape) -> PreparedGeom
 fn imported_texture_selection(
     use_imported_material: bool,
     material: Option<AssetMaterial>,
-) -> (bool, bool, f32) {
+) -> (bool, bool, bool, f32) {
     let use_base_color =
         use_imported_material && material.is_some_and(AssetMaterial::has_base_color_texture);
     let use_normal =
         use_imported_material && material.is_some_and(AssetMaterial::has_normal_texture);
+    let use_metallic_roughness = use_imported_material
+        && material.is_some_and(AssetMaterial::has_metallic_roughness_texture);
     let normal_scale = if use_normal {
         material.map_or(1.0, AssetMaterial::normal_scale)
     } else {
         1.0
     };
-    (use_base_color, use_normal, normal_scale)
+    (
+        use_base_color,
+        use_metallic_roughness,
+        use_normal,
+        normal_scale,
+    )
 }
 
 fn color_values(color: ColorRgba) -> [f32; 4] {

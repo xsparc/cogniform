@@ -1306,6 +1306,32 @@ UV sets/samplers/image formats/material textures, alter transport or recovery,
 or take release action. See
 [ADR 0055](../adr/0055-bounded-source-tangent-normal-textures.md).
 
+### PR 56 - CF056: Bounded glTF metallic-roughness textures
+
+Outcome: the approved GLB path can multiply numeric direct-light material
+factors by one bounded packed metallic-roughness texture without changing
+unlit or machine-observation semantics.
+
+Gate: accept one shared-per-role
+`pbrMetallicRoughness.metallicRoughnessTexture` index using `TEXCOORD_0` and
+the existing embedded static PNG subset. Retain at most three texture/image
+records across base-color, metallic-roughness, and normal roles; decode a
+source image shared by roles once on CPU, but reserve each linear/sRGB GPU role
+independently and atomically. Sample the linear texture's green roughness and
+blue metallic channels, multiply the existing numeric factors, ignore red and
+alpha, and bind a neutral factor-one fallback. Apply the result only to the
+existing directional and point direct-light BRDF. Explicit scene material
+override disables every imported texture role.
+
+Prove malformed coordinates/resources fail before adoption, exact shared and
+distinct CPU accounting, zero-to-three GPU reservation and
+eviction/rehydration, channel/factor semantics under both light kinds, and
+unchanged unlit color, depth, identity, background, geometric normal,
+revision, replay, and world hash. Do not add occlusion/emissive/alpha roles,
+ambient or image-based lighting, additional UV/sampler/image support,
+dependencies, transport/recovery changes, or release action. See
+[ADR 0056](../adr/0056-bounded-metallic-roughness-textures.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1316,7 +1342,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
-  -> CF054 -> CF055
+  -> CF054 -> CF055 -> CF056
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1567,6 +1593,12 @@ Validation expands with capability:
   sampling with finite scale and transform-safe TBN; unchanged unlit, depth,
   identity, background, and geometric-normal observations; and controlled
   direct-light perturbation evidence.
+- CF056: strict metallic-roughness texture index/coordinate/image validation;
+  shared/distinct three-role CPU accounting; atomic three-role GPU reservation,
+  upload, eviction, and rehydration; linear green-roughness and blue-metallic
+  factor multiplication; explicit scene-material precedence; unchanged unlit,
+  depth, identity, background, geometric-normal, logical, and replay outputs;
+  and controlled directional/point direct-light evidence.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
