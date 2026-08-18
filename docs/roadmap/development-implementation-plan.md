@@ -1332,6 +1332,29 @@ ambient or image-based lighting, additional UV/sampler/image support,
 dependencies, transport/recovery changes, or release action. See
 [ADR 0056](../adr/0056-bounded-metallic-roughness-textures.md).
 
+### PR 57 - CF057: Bounded core glTF emissive factors
+
+Outcome: approved GLBs can retain core unit-bounded `emissiveFactor` and add it
+to their own bounded surface color without gaining light, texture, exposure,
+or scene authority.
+
+Gate: accept exactly three finite unit-interval linear RGB values with the
+core glTF zero default. Reject malformed length, type, finiteness, or range
+before readiness and without proxy substitution. Preserve the existing public
+material constructor by defaulting it to zero emission. Imported emission is
+used only when no explicit scene `MaterialComponent` is present; built-in,
+material-free, proxy, and overridden draws remain non-emissive.
+
+Append one aligned emissive vector after the existing 480-byte private draw-
+uniform prefix. Add emission after either the unlit base-color path or the
+directional/point direct-light response, clamp RGB to one, and preserve alpha,
+depth, identity, background, geometric-normal observation, decoded/GPU asset
+accounting, revision, replay, and world hash. Do not add `emissiveTexture`,
+`KHR_materials_emissive_strength`, illumination of other entities, ambient or
+image-based lighting, HDR/exposure/tone mapping, bloom, new texture/image
+support, dependencies, transport/recovery changes, or release action. See
+[ADR 0057](../adr/0057-bounded-glb-emissive-factors.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1342,7 +1365,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
-  -> CF054 -> CF055 -> CF056
+  -> CF054 -> CF055 -> CF056 -> CF057
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1599,6 +1622,11 @@ Validation expands with capability:
   factor multiplication; explicit scene-material precedence; unchanged unlit,
   depth, identity, background, geometric-normal, logical, and replay outputs;
   and controlled directional/point direct-light evidence.
+- CF057: exact core emissive-factor default/length/type/range validation;
+  unchanged asset accounting; prefix-compatible 496-byte uniform layout;
+  scene-material suppression; bounded unlit/directional/point surface
+  addition with alpha and non-color preservation; and unchanged revision,
+  logical hash, and idempotent replay.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

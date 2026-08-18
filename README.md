@@ -60,12 +60,13 @@ scene revision that produced it.
 > normals, one retained finite primary coordinate set, optional source
 > tangents, and unit-bounded numeric metallic-roughness materials, plus bounded
 > embedded PNG base-color, linear packed metallic-roughness, and tangent-space
-> normal roles. Exact caller-driven
+> normal roles and bounded core emissive RGB. Exact caller-driven
 > CPU decode and explicit role-separated GPU upload remain separate; sampled
 > sRGB base color multiplies the imported factor, while a linear normal map can
 > perturb direct lighting without changing geometric-normal observations,
 > while metallic-roughness green/blue multiply the numeric direct-light
-> factors when the entity has no explicit scene material.
+> factors and emissive RGB adds to the bounded surface result when the entity
+> has no explicit scene material.
 > The baseline also includes pure seeded cuboid-grid procedures. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, can explicitly evict all CPU/GPU state for one
@@ -117,7 +118,7 @@ implementations arrive:
 | `cogniform-mcp` | Bounded stable MCP stdio query/imagination/patch/observation translation and one retained canonical observation resource over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent/primary-coordinate/material/embedded-PNG decoding, immutable role-textured upload jobs, and explicit CPU-state eviction |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent/primary-coordinate/material/emissive/embedded-PNG decoding, immutable role-textured upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |

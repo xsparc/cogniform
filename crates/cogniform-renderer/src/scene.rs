@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cogniform_assets::{AssetMaterial, AssetMeshKey};
 use cogniform_protocol::{
-    CameraComponent, ColorRgba, LightKind, RenderChange, RenderEntity, RenderExtraction,
-    SceneRevision, StableEntityId,
+    CameraComponent, ColorRgba, LightKind, MaterialComponent, RenderChange, RenderEntity,
+    RenderExtraction, SceneRevision, StableEntityId,
 };
 
 use crate::RendererError;
@@ -304,27 +304,8 @@ impl RenderScene {
                     model[8 + row] *= dimensions[2];
                 }
             }
-            let (color, metallic, roughness) = entity.material().map_or_else(
-                || {
-                    imported_material.map_or(
-                        ([0.8, 0.8, 0.8, 1.0], DEFAULT_METALLIC, DEFAULT_ROUGHNESS),
-                        |material| {
-                            (
-                                material.base_color().map(cogniform_protocol::UnitF32::get),
-                                material.metallic().get(),
-                                material.roughness().get(),
-                            )
-                        },
-                    )
-                },
-                |material| {
-                    (
-                        color_values(material.base_color),
-                        material.metallic.get(),
-                        material.roughness.get(),
-                    )
-                },
-            );
+            let (color, metallic, roughness, emissive) =
+                material_values(entity.material(), imported_material);
             draws.push(
                 PreparedDraw {
                     geometry,
@@ -334,6 +315,7 @@ impl RenderScene {
                     camera_position,
                     metallic,
                     roughness,
+                    emissive,
                     normal_scale: 1.0,
                     use_imported_base_color_texture: false,
                     use_imported_metallic_roughness_texture: false,
@@ -454,6 +436,7 @@ pub(crate) struct PreparedDraw {
     pub(crate) camera_position: [f32; 3],
     pub(crate) metallic: f32,
     pub(crate) roughness: f32,
+    pub(crate) emissive: [f32; 3],
     pub(crate) normal_scale: f32,
     pub(crate) use_imported_base_color_texture: bool,
     pub(crate) use_imported_metallic_roughness_texture: bool,
@@ -518,6 +501,40 @@ fn imported_texture_selection(
 
 fn color_values(color: ColorRgba) -> [f32; 4] {
     [color.r.get(), color.g.get(), color.b.get(), color.a.get()]
+}
+
+fn material_values(
+    scene_material: Option<MaterialComponent>,
+    imported_material: Option<AssetMaterial>,
+) -> ([f32; 4], f32, f32, [f32; 3]) {
+    scene_material.map_or_else(
+        || {
+            imported_material.map_or(
+                (
+                    [0.8, 0.8, 0.8, 1.0],
+                    DEFAULT_METALLIC,
+                    DEFAULT_ROUGHNESS,
+                    [0.0; 3],
+                ),
+                |material| {
+                    (
+                        material.base_color().map(cogniform_protocol::UnitF32::get),
+                        material.metallic().get(),
+                        material.roughness().get(),
+                        material.emissive(),
+                    )
+                },
+            )
+        },
+        |material| {
+            (
+                color_values(material.base_color),
+                material.metallic.get(),
+                material.roughness.get(),
+                [0.0; 3],
+            )
+        },
+    )
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -1344,6 +1361,7 @@ mod tests {
         );
         assert_eq!(fallback.draws[0].metallic.to_bits(), 0.0_f32.to_bits());
         assert_eq!(fallback.draws[0].roughness.to_bits(), 0.8_f32.to_bits());
+        assert_eq!(fallback.draws[0].emissive.map(f32::to_bits), [0; 3]);
         assert_exact_f32(fallback.draws[0].model[0], 2.0);
         assert_exact_f32(fallback.draws[0].model[5], 3.0);
         assert_exact_f32(fallback.draws[0].model[10], 4.0);
@@ -1390,6 +1408,7 @@ mod tests {
         );
         assert_exact_f32(prepared.draws[0].metallic, 0.75);
         assert_exact_f32(prepared.draws[0].roughness, 0.25);
+        assert_eq!(prepared.draws[0].emissive.map(f32::to_bits), [0; 3]);
 
         let unit = |value| UnitF32::new(value).unwrap();
         let scene_material = MaterialComponent {
@@ -1426,5 +1445,6 @@ mod tests {
         );
         assert_exact_f32(overridden.draws[0].metallic, 0.0);
         assert_exact_f32(overridden.draws[0].roughness, 0.9);
+        assert_eq!(overridden.draws[0].emissive.map(f32::to_bits), [0; 3]);
     }
 }

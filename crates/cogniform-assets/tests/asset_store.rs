@@ -58,8 +58,12 @@ fn triangle_binary() -> Vec<u8> {
 }
 
 fn triangle_glb_with_material(pbr_fields: &str) -> Vec<u8> {
+    triangle_glb_with_material_fields(&format!(r#""pbrMetallicRoughness":{{{pbr_fields}}}"#))
+}
+
+fn triangle_glb_with_material_fields(material_fields: &str) -> Vec<u8> {
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":[{{"pbrMetallicRoughness":{{{pbr_fields}}}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":0,"mode":4}}]}}]}}"#
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":[{{{material_fields}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":0,"mode":4}}]}}]}}"#
     );
     glb_with_json(&json, &triangle_binary())
 }
@@ -589,6 +593,7 @@ fn explicit_material_defaults_and_no_material_fallback_are_retained() {
         explicit_upload.material().roughness().get().to_bits(),
         1.0_f32.to_bits()
     );
+    assert_emissive(explicit_upload.material().emissive(), [0.0; 3]);
 
     let unmaterialed = triangle_glb_without_material();
     let unmaterialed_hash = content_hash(&unmaterialed);
@@ -618,7 +623,37 @@ fn explicit_material_defaults_and_no_material_fallback_are_retained() {
         unmaterialed_upload.material().roughness().get().to_bits(),
         0.8_f32.to_bits()
     );
+    assert_emissive(unmaterialed_upload.material().emissive(), [0.0; 3]);
     assert_eq!(explicit_upload.byte_len(), unmaterialed_upload.byte_len());
+}
+
+#[test]
+fn emissive_factors_are_bounded_and_do_not_change_asset_accounting() {
+    let emissive = triangle_glb_with_material_fields(
+        r#""pbrMetallicRoughness":{"baseColorFactor":[0.3,0.4,0.5,0.6]},"emissiveFactor":[0.25,0.5,0.75]"#,
+    );
+    let baseline = triangle_glb_with_material_fields(
+        r#""pbrMetallicRoughness":{"baseColorFactor":[0.3,0.4,0.5,0.6]}"#,
+    );
+    let mut decoded_bytes = Vec::new();
+    let mut upload_bytes = Vec::new();
+    for (bytes, expected) in [(emissive, [0.25, 0.5, 0.75]), (baseline, [0.0; 3])] {
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        decoded_bytes.push(store.record(hash).unwrap().decoded_bytes);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert_emissive(upload.material().emissive(), expected);
+        upload_bytes.push(upload.byte_len());
+    }
+    assert_eq!(decoded_bytes[0], decoded_bytes[1]);
+    assert_eq!(upload_bytes[0], upload_bytes[1]);
 }
 
 #[test]
@@ -1284,6 +1319,40 @@ fn out_of_range_material_factors_are_rejected() {
 }
 
 #[test]
+fn malformed_emissive_factors_are_rejected_without_a_proxy() {
+    for emissive in [
+        "[0.0,0.0]",
+        "[0.0,0.0,0.0,0.0]",
+        "null",
+        "{}",
+        r#"[0.0,"green",0.0]"#,
+        "[-0.1,0.0,0.0]",
+        "[0.0,1.1,0.0]",
+        "[0.0,1e999,0.0]",
+    ] {
+        let bytes = triangle_glb_with_material_fields(&format!(r#""emissiveFactor":{emissive}"#));
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+
+    let unused_invalid = glb_with_json(
+        r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}],"materials":[{"emissiveFactor":[2.0,0.0,0.0]},{}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":1,"mode":4}]}]}"#,
+        &triangle_binary(),
+    );
+    let (store, hash) = process_with_proxy_policy(unused_invalid);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+    assert_eq!(store.record(hash).unwrap().diagnostics[0].index, Some(0));
+}
+
+#[test]
 fn finite_source_normals_are_normalized_and_retained() {
     let bytes = glb_with_normals([[0.0, 2.0, 2.0]; 3], 3, 36, false);
     let hash = content_hash(&bytes);
@@ -1531,6 +1600,7 @@ fn unsupported_normal_encoding_obeys_explicit_proxy_policy() {
         })
         .unwrap();
     assert_eq!(upload.byte_len(), 36 * ASSET_VERTEX_BYTES);
+    assert_emissive(upload.material().emissive(), [0.0; 3]);
     for vertex in upload.vertices() {
         let length = vertex
             .normal
@@ -1713,6 +1783,10 @@ fn assert_color(actual: [cogniform_protocol::UnitF32; 4], expected: [f32; 4]) {
     for (actual, expected) in actual.into_iter().zip(expected) {
         assert!((actual.get() - expected).abs() <= f32::EPSILON);
     }
+}
+
+fn assert_emissive(actual: [f32; 3], expected: [f32; 3]) {
+    assert_eq!(actual.map(f32::to_bits), expected.map(f32::to_bits));
 }
 
 fn assert_normal(actual: [cogniform_protocol::FiniteF32; 3], expected: [f32; 3]) {

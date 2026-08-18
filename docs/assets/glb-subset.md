@@ -14,7 +14,8 @@ renderer without changing logical scene state. CF055 adds one bounded
 source-tangent normal-texture role while preserving geometric-normal
 observation semantics. CF056 adds one bounded linear packed
 metallic-roughness role whose green and blue channels multiply the existing
-direct-light factors.
+direct-light factors. CF057 retains bounded core emissive RGB and adds it to
+the imported surface without adding an emissive texture or light authority.
 
 ## Ownership and lifecycle
 
@@ -144,8 +145,10 @@ The importer accepts only the following baseline:
   bytes; and
 - an optional material with unit-interval
   `pbrMetallicRoughness.baseColorFactor`, `metallicFactor`, and
-  `roughnessFactor`. For an explicitly selected material, omitted factors use
-  the glTF defaults of one. A primitive without a material retains the
+  `roughnessFactor`, plus optional `emissiveFactor` containing exactly three
+  finite unit-interval linear RGB values. For an explicitly selected material,
+  omitted PBR factors use the glTF defaults of one and omitted emissive uses
+  `[0, 0, 0]`. A primitive without a material retains the
   existing neutral Cogniform fallback `(0.8, 0.8, 0.8, 1.0)`, metallic `0`,
   and roughness `0.8`.
 
@@ -195,17 +198,19 @@ Invalid GLB framing or lengths, malformed or type-invalid JSON, invalid buffer
 ranges or indices, non-finite positions, zero or non-finite normals or
 tangents, invalid tangent handedness, normal/tangent count mismatches,
 non-finite primary coordinates, primary-coordinate count mismatches, malformed
-or truncated PNG data, invalid image ranges, degenerate
+or out-of-range emissive factors, malformed or truncated PNG data, invalid
+image ranges, degenerate
 fallback triangles, and collection or byte-limit failures always produce
 `Rejected`. A proxy therefore never masks malformed or over-limit input. A
 syntactically valid but unsupported normal, tangent accessor, missing
 normal-texture basis, primary-coordinate, image format, or texture role may
 proxy only under explicit policy. Proxy vertices always contain exact zero
-primary coordinates, the disabled fallback tangent, and no imported texture.
+primary coordinates, the disabled fallback tangent, zero emission, and no
+imported texture.
 
 At draw time, a resident mesh uses its imported base-color factor, optional
 base-color, metallic-roughness, and tangent-space normal textures, metallic,
-roughness, and normal scale unless the world entity has an explicit material,
+roughness, normal scale, and emissive RGB unless the world entity has an explicit material,
 which overrides the imported material as a whole and uses renderer-owned
 white, factor-one metallic-roughness, and neutral-normal fallbacks. The fixed
 repeat/linear one-mip sampler samples base color as sRGB and the other roles as
@@ -215,12 +220,14 @@ multiplies the factor before the existing unlit or direct-light path. The
 metallic-roughness green and blue channels multiply the numeric roughness and
 metallic factors only for the direct-light response. The
 source-tangent basis perturbs direct lighting only; depth, identity, and the
-normal observation retain the geometric direction. If the referenced mesh is not resident,
+normal observation retain the geometric direction. Emissive RGB is added after
+the unlit or direct-light surface response and clamped to one while alpha stays
+unchanged; it neither creates a light nor illuminates another entity. If the referenced mesh is not resident,
 an explicit primitive component is used as the author-chosen fallback. Without
 that component, preparation fails with `AssetUnavailable`.
 
-`AssetMaterial` carries validated numeric metadata, immutable texture-role
-facts, and finite normal scale. `AssetUploadJob` exposes that material and
+`AssetMaterial` carries validated numeric metadata including core emissive
+RGB, immutable texture-role facts, and finite normal scale. `AssetUploadJob` exposes that material and
 separate optional base-color, metallic-roughness, and normal `AssetTexture`
 values; the compatible
 `base_color` accessor remains. A source image shared by multiple roles counts once
@@ -276,7 +283,7 @@ resident-byte limits.
 
 The default offline suite verifies exact hash admission, every truncated prefix
 of the checked fixture, malformed extension declarations, proxy eligibility,
-material retention/defaults/range failures, normal and tangent
+material and emissive retention/defaults/range/type failures, normal and tangent
 normalization/count/value/range/handedness failures, primary-coordinate exact and indexed
 retention, zero defaults, full-source validation, embedded RGB/RGBA expansion,
 PNG truncation and malformed/reference/format/resource-limit failures,
@@ -301,6 +308,7 @@ cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ig
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact embedded_base_color_texture_preserves_orientation_factor_override_and_residency
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact normal_texture_changes_direct_lighting_not_geometric_normal_observation
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact metallic_roughness_texture_multiplies_factors_for_direct_lights_only
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outputs
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact three_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work
@@ -321,7 +329,10 @@ finite scale, source-tangent shading, alpha irrelevance, and direct-light color
 change while depth, identity, background, and geometric-normal observations
 remain unchanged. The metallic-roughness check proves linear green/blue factor multiplication
 for directional and point lights, red/alpha irrelevance, exact unlit and
-scene-override behavior and unchanged non-color observations. The three-role
+scene-override behavior and unchanged non-color observations. The emissive
+check proves bounded addition after unlit, directional, and point response,
+clamping, alpha preservation, scene-override suppression, unchanged non-color
+and background output, and unchanged revision/hash/replay. The three-role
 test proves exact distinct-image CPU bytes plus GPU upload, eviction, and
 rehydration counts. The service checks then prove that restored
 plain and textured asset references require explicit exact-hash CPU/GPU

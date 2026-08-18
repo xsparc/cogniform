@@ -122,6 +122,12 @@ multiplication, scene-override precedence, non-color observation preservation,
 and exact eviction/rehydration evidence were collected on the CPU and validated
 Windows/Vulkan profile on 2026-08-15. No dependency, feature, lockfile, vendor,
 workflow, permission, package, version, or release action changed.
+CF057 bounded core emissive-factor decode, zero-default and scene-override
+precedence, exact 496-byte uniform append, bounded unlit/directional/point
+surface addition, alpha and non-color preservation, and logical-state neutrality
+were collected on the CPU and validated Windows/Vulkan profile on 2026-08-19.
+No dependency, feature, lockfile, vendor, workflow, permission, package,
+version, texture, tag, asset, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -131,7 +137,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded sRGB base-color plus linear normal and packed metallic-roughness texture response, three-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, bounded sRGB base-color plus linear normal and packed metallic-roughness texture response, three-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -652,6 +658,47 @@ eviction/rehydration restores exact role bytes. The separate controlled
 three-role test proves exact 12-byte upload, residency, eviction, and
 rehydration for three distinct one-pixel sources. Depth, identity, background,
 and geometric-normal observations remain unchanged.
+
+### CF057 core glTF emissive factors
+
+CF057 accepts exactly three finite unit-interval core `emissiveFactor` values,
+defaults omitted/material-free/proxy paths to zero, and retains the factor
+without changing asset byte or texture accounting. Imported emission applies
+only without an explicit scene material. The private uniform preserves its
+480-byte prefix and appends one aligned emissive vector for an exact 496-byte
+layout. The shader adds emission after either the unlit or direct-light result,
+clamps RGB, preserves alpha, and grants no light or cross-surface authority.
+The following commands passed on 2026-08-19:
+
+```text
+cargo fmt --all --check
+cargo test -p cogniform-assets --all-features --locked --offline
+cargo test -p cogniform-renderer --all-features --locked --offline
+cargo clippy -p cogniform-assets -p cogniform-renderer --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test --release -p cogniform-renderer --test asset_fixture emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outputs --all-features --locked --offline -- --ignored --exact --nocapture
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python tests/release/test_package_policy.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --check
+```
+
+CPU tests prove exact defaults and retention, malformed length/type/non-finite/
+range rejection without proxy, unchanged decoded/upload accounting, explicit
+scene-material suppression, proxy zeroing, and the exact prefix-compatible
+uniform bytes. The controlled optimized test proves unlit, directional, and
+point addition, saturation, alpha preservation, unchanged depth/identity/
+background/geometric normals, and unchanged revision, logical hash, and
+idempotent replay. A changed-Markdown local-link check also passed for all
+fourteen touched public Markdown files. The installed `cargo-deny` binary could
+not execute because Windows Application Control blocked it before startup; the
+dependency graph is unchanged, the prior CF056 audit remains applicable, and
+this gate remains required on an environment where the approved binary can
+run.
 
 ## Deterministic source-candidate commands
 
