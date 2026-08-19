@@ -458,11 +458,19 @@ shaded normals on back faces before observation and lighting. Built-ins,
 authored primitive fallbacks, and explicit scene materials remain unculled
 without imported face correction. Pipeline selection is per draw in stable
 order; the renderer owns exactly these two fixed instances and no asset-keyed
-pipeline cache. The metallic-roughness green and blue channels multiply numeric
+pipeline cache. A material may select the ratified `KHR_materials_unlit`
+extension only through consistent non-empty unique top-level declarations,
+declared actual extension members, and an exact empty material marker. That
+selected imported path emits only sampled
+base color multiplied by its numeric factor, independently of active direct
+lights. Normal, metallic-roughness, and emissive fallback values and textures
+remain strictly validated and lifecycle-accounted but visually inert. An
+explicit scene material disables the imported unlit selection. The
+metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source-tangent TBN perturbs only direct-light response. Emissive texture RGB
 is decoded from sRGB, multiplied by the numeric linear emissive factor, added
-after either the unlit or direct-light path, and clamped to one without
+after the ordinary metallic-roughness response, and clamped to one without
 changing alpha; texture alpha is ignored. Untextured draws use white
 base-color/emissive, factor-one metallic-roughness, and neutral-normal
 fallbacks. A scene `MaterialComponent` overrides the whole imported material,
@@ -500,7 +508,9 @@ finite f32 `TEXCOORD_0`, optional same-count finite non-zero f32 `TANGENT`
 `VEC4` with exact handedness, one bounded numeric metallic-roughness material
 plus an optional three-channel unit-bounded core emissive factor and bounded
 OPAQUE/MASK alpha coverage plus a strict optional boolean `doubleSided` per
-mesh material, and
+mesh material. The ratified `KHR_materials_unlit` marker is the sole supported
+extension and retains one typed shading model only after strict declaration,
+selected/unused material, and fallback-resource validation. The subset also retains
 one shared embedded PNG per base-color, metallic-roughness, normal, or
 emissive role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
@@ -522,9 +532,10 @@ state empty, so callers must rehydrate exact matching bytes before dependent
 rendering resumes. An opt-in storage adapter can retain
 one exact source in a separate immutable bounded file, but it neither maps that
 file to recovery state nor decodes, imports, uploads, or schedules the source.
-Unsupported extensions and valid out-of-subset image features produce
-structured diagnostics or approved proxies; malformed normal, tangent,
-primary-coordinate, material, image, or over-limit data cannot proxy.
+Unknown or wider extension payloads and valid out-of-subset image features
+produce structured diagnostics or approved proxies; malformed declaration,
+unlit marker, normal, tangent, primary-coordinate, material, image, or over-
+limit data cannot proxy.
 Aggregate asset status includes optional monotonic oldest-import and
 oldest-upload ages without exposing source bytes, mesh keys, texture content,
 or backend handles. Processing and explicit eviction remove matching age state
@@ -674,7 +685,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
 | Asset source inspection | One explicit expected hash and CLI path pass the existing bounded regular-file load; the exact human report and optional fixed-layout schema-v1 JSON expose only hash and byte count after success, mutate no file or service, and perform no format decode or GPU work |
 | Headless render | Outward-wound reference cuboid plus extracted plane, sphere, and bounded direct metallic-roughness directional/point-lit scenes render without a visible window |
-| Machine outputs | Entity-ID probes are exact; exact unlit and tolerant direct-material color/depth plus quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
+| Machine outputs | Entity-ID probes are exact; exact no-active-light and imported-unlit color plus tolerant direct-material color/depth and quantized outward built-in, source-wound asset, or imported-smooth world-space normals meet declared tolerance |
 | Causality | Receipt, extracted revision, rendered frame, observation, and visibility metadata agree |
 | Observation payload envelope | All five payload kinds round-trip fixed version-one layouts; bounds, canonical values, metadata substitution, truncation, extension, and every-byte corruption reject before decoded output is returned |
 | Local stream framing | Fixed version-one control and observation frames round-trip under short/interrupted I/O; header limits reject before body reads, clean EOF differs from truncation, back-to-back boundaries survive, and malformed/corrupted/substituted input returns no frame |

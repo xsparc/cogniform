@@ -3,7 +3,8 @@
 #![cfg(any(target_os = "windows", target_os = "linux"))]
 
 use cogniform_assets::{
-    ASSET_VERTEX_BYTES, AssetMeshKey, AssetState, AssetStore, AssetVertex, content_hash,
+    ASSET_VERTEX_BYTES, AssetMeshKey, AssetShadingModel, AssetState, AssetStore, AssetVertex,
+    content_hash,
 };
 use cogniform_protocol::{
     ApplyStatus, AssetMeshComponent, CameraComponent, ColorRgb, ColorRgba, ComponentValue,
@@ -349,6 +350,50 @@ fn imported_material_factors_drive_direct_light_and_scene_override() {
     );
     assert_eq!(imported.color_at(0, 0), unlit.color_at(0, 0));
     assert_eq!(overridden.color_at(0, 0), unlit.color_at(0, 0));
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn unlit_base_texture_is_exact_across_lights_and_scene_override_restores_lighting() {
+    let bytes = unlit_four_role_texture_fixture();
+    let hash = content_hash(&bytes);
+    let mut assets = AssetStore::default();
+    assets.enqueue(hash, bytes.clone()).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(assets.record(hash).unwrap().decoded_bytes, 160);
+    let upload = assets
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_eq!(upload.material().shading_model(), AssetShadingModel::Unlit);
+    assert!(upload.base_color_texture().is_some());
+    assert!(upload.emissive_texture().is_some());
+    assert!(upload.metallic_roughness_texture().is_some());
+    assert!(upload.normal_texture().is_some());
+
+    let no_light = material_frame(bytes.clone(), None, false);
+    let directional = material_frame(bytes.clone(), Some(LightKind::Directional), false);
+    let point = material_frame(bytes.clone(), Some(LightKind::Point), false);
+    let combined = material_frame_with_combined_lights(bytes.clone());
+    let overridden = material_frame(bytes, Some(LightKind::Directional), true);
+    let center = (WIDTH / 2, HEIGHT / 2);
+    assert_color_near(&no_light, center, [28, 3, 3, 255]);
+    for frame in [&directional, &point, &combined] {
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                assert_eq!(frame.color_at(x, y), no_light.color_at(x, y));
+            }
+        }
+        assert_non_color_observations_equal(frame, &no_light);
+    }
+    assert_color_near(&overridden, center, [38, 22, 14, 255]);
+    assert_ne!(
+        overridden.color_at(center.0, center.1),
+        no_light.color_at(center.0, center.1)
+    );
+    assert_non_color_observations_equal(&overridden, &no_light);
 }
 
 #[test]
@@ -817,6 +862,37 @@ fn double_sided_back_face_preserves_mask_discard_and_equality() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn unlit_double_sided_back_face_preserves_opaque_and_mask_coverage() {
+    let below = oriented_material_frame(
+        unlit_double_sided_alpha_fixture("MASK", 0.25, None, Some(0.5)),
+        None,
+        None,
+        true,
+    );
+    let equality = oriented_material_frame(
+        unlit_double_sided_alpha_fixture("MASK", 0.5, None, Some(0.5)),
+        None,
+        None,
+        true,
+    );
+    let opaque = oriented_material_frame(
+        unlit_double_sided_alpha_fixture("OPAQUE", 0.0, None, None),
+        Some(LightKind::Point),
+        None,
+        true,
+    );
+    assert_fully_discarded(&below);
+    assert_opaque_center(&equality, 255);
+    assert_opaque_center(&opaque, 255);
+    let center = (WIDTH / 2, HEIGHT / 2);
+    let equality_normal = equality.normal_at(center.0, center.1).unwrap();
+    let opaque_normal = opaque.normal_at(center.0, center.1).unwrap();
+    assert!(equality_normal[2] > 0.99);
+    assert!(opaque_normal[2] > 0.99);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn alpha_texture_product_opaque_mode_and_scene_override_are_exact() {
     let texture_only = alpha_material_frame(alpha_fixture("MASK", 1.0, Some(64), Some(0.3)), None);
     let multiplied = alpha_material_frame(alpha_fixture("MASK", 0.5, Some(128), Some(0.3)), None);
@@ -1167,6 +1243,10 @@ fn material_frame(
     material_frame_with_override_alpha(bytes, light_kind, override_material.then_some(1.0))
 }
 
+fn material_frame_with_combined_lights(bytes: Vec<u8>) -> RenderedFrame {
+    oriented_material_frame_with_lights(bytes, FixtureLights::Combined, None, false)
+}
+
 fn alpha_material_frame(bytes: Vec<u8>, override_alpha: Option<f32>) -> RenderedFrame {
     material_frame_with_override_alpha(bytes, None, override_alpha)
 }
@@ -1182,6 +1262,23 @@ fn material_frame_with_override_alpha(
 fn oriented_material_frame(
     bytes: Vec<u8>,
     light_kind: Option<LightKind>,
+    override_alpha: Option<f32>,
+    back_facing: bool,
+) -> RenderedFrame {
+    let lights = light_kind.map_or(FixtureLights::None, FixtureLights::One);
+    oriented_material_frame_with_lights(bytes, lights, override_alpha, back_facing)
+}
+
+#[derive(Clone, Copy)]
+enum FixtureLights {
+    None,
+    One(LightKind),
+    Combined,
+}
+
+fn oriented_material_frame_with_lights(
+    bytes: Vec<u8>,
+    lights: FixtureLights,
     override_alpha: Option<f32>,
     back_facing: bool,
 ) -> RenderedFrame {
@@ -1246,12 +1343,9 @@ fn oriented_material_frame(
         .apply_extraction(&world.take_render_extraction().unwrap())
         .unwrap();
     let mut revision = SceneRevision::new(1);
-    if let Some(light_kind) = light_kind {
+    if let Some(light_patch) = fixture_light_patch(lights, revision, light) {
         world
-            .apply_patch(
-                &add_light_patch(revision, light, light_kind),
-                FrameId::new(2).unwrap(),
-            )
+            .apply_patch(&light_patch, FrameId::new(2).unwrap())
             .unwrap();
         renderer
             .apply_extraction(&world.take_render_extraction().unwrap())
@@ -1278,6 +1372,22 @@ fn oriented_material_frame(
     assert_eq!(world.revision(), revision_before_replay);
     assert_eq!(world.logical_hash().unwrap(), hash_before_replay);
     renderer.submit_scene(camera).unwrap().read().unwrap()
+}
+
+fn fixture_light_patch(
+    lights: FixtureLights,
+    base_revision: SceneRevision,
+    light: StableEntityId,
+) -> Option<ScenePatch> {
+    match lights {
+        FixtureLights::None => None,
+        FixtureLights::One(kind) => Some(add_light_patch(base_revision, light, kind)),
+        FixtureLights::Combined => Some(add_combined_lights_patch(
+            base_revision,
+            light,
+            StableEntityId::new(4).unwrap(),
+        )),
+    }
 }
 
 fn assert_fully_discarded(frame: &RenderedFrame) {
@@ -1430,6 +1540,32 @@ fn add_light_patch(
             ],
         })],
     }
+}
+
+fn add_combined_lights_patch(
+    base_revision: SceneRevision,
+    directional: StableEntityId,
+    point: StableEntityId,
+) -> ScenePatch {
+    let mut patch = add_light_patch(base_revision, directional, LightKind::Directional);
+    patch.transaction_id = TransactionId::new(40).unwrap();
+    patch.idempotency_key = IdempotencyKey::new(41).unwrap();
+    patch.operations.push(SceneOperation::Create(CreateEntity {
+        entity_id: point,
+        components: vec![
+            ComponentValue::LocalTransform(transform(2.0, [1.0; 3])),
+            ComponentValue::Light(LightComponent {
+                kind: LightKind::Point,
+                color: ColorRgb {
+                    r: unit(1.0),
+                    g: unit(1.0),
+                    b: unit(1.0),
+                },
+                intensity: NonNegativeF32::new(2.0).unwrap(),
+            }),
+        ],
+    }));
+    patch
 }
 
 fn override_material_patch(base_revision: SceneRevision, triangle: StableEntityId) -> ScenePatch {
@@ -1700,7 +1836,14 @@ fn alpha_fixture(
     texture_alpha: Option<u8>,
     cutoff: Option<f32>,
 ) -> Vec<u8> {
-    alpha_fixture_with_double_sided(alpha_mode, factor_alpha, texture_alpha, cutoff, false)
+    alpha_fixture_with_double_sided(
+        alpha_mode,
+        factor_alpha,
+        texture_alpha,
+        cutoff,
+        false,
+        false,
+    )
 }
 
 fn double_sided_alpha_fixture(
@@ -1709,7 +1852,16 @@ fn double_sided_alpha_fixture(
     texture_alpha: Option<u8>,
     cutoff: Option<f32>,
 ) -> Vec<u8> {
-    alpha_fixture_with_double_sided(alpha_mode, factor_alpha, texture_alpha, cutoff, true)
+    alpha_fixture_with_double_sided(alpha_mode, factor_alpha, texture_alpha, cutoff, true, false)
+}
+
+fn unlit_double_sided_alpha_fixture(
+    alpha_mode: &str,
+    factor_alpha: f32,
+    texture_alpha: Option<u8>,
+    cutoff: Option<f32>,
+) -> Vec<u8> {
+    alpha_fixture_with_double_sided(alpha_mode, factor_alpha, texture_alpha, cutoff, true, true)
 }
 
 fn alpha_fixture_with_double_sided(
@@ -1718,6 +1870,7 @@ fn alpha_fixture_with_double_sided(
     texture_alpha: Option<u8>,
     cutoff: Option<f32>,
     double_sided: bool,
+    unlit: bool,
 ) -> Vec<u8> {
     let mut binary = Vec::new();
     for position in [
@@ -1757,8 +1910,16 @@ fn alpha_fixture_with_double_sided(
     } else {
         ""
     };
+    let (extension_declaration, extension_marker) = if unlit {
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"#,
+            r#", "extensions":{"KHR_materials_unlit":{}}"#,
+        )
+    } else {
+        ("", "")
+    };
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}}{image_view}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,{factor_alpha}]{texture_role}}},"alphaMode":"{alpha_mode}"{cutoff}{double_sided}}}]{resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}},{extension_declaration}"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}}{image_view}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,{factor_alpha}]{texture_role}}},"alphaMode":"{alpha_mode}"{cutoff}{double_sided}{extension_marker}}}]{resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
     );
     glb_with_json(&json, &binary)
@@ -1968,6 +2129,14 @@ fn normal_texture_fixture_with_double_sided(
 }
 
 fn four_role_texture_fixture() -> Vec<u8> {
+    four_role_texture_fixture_with_unlit(false)
+}
+
+fn unlit_four_role_texture_fixture() -> Vec<u8> {
+    four_role_texture_fixture_with_unlit(true)
+}
+
+fn four_role_texture_fixture_with_unlit(unlit: bool) -> Vec<u8> {
     let mut binary = Vec::new();
     for position in [
         [-0.75_f32, -0.75, 0.0],
@@ -1994,7 +2163,15 @@ fn four_role_texture_fixture() -> Vec<u8> {
         }
     }
     let images = [
-        encode_png(1, 1, &[255, 255, 255, 255]),
+        encode_png(
+            1,
+            1,
+            if unlit {
+                &[128, 64, 32, 255]
+            } else {
+                &[255, 255, 255, 255]
+            },
+        ),
         encode_png(1, 1, &[7, 128, 64, 9]),
         encode_png(1, 1, &[128, 128, 255, 255]),
         encode_png(1, 1, &[32, 64, 128, 3]),
@@ -2004,8 +2181,16 @@ fn four_role_texture_fixture() -> Vec<u8> {
         binary.extend_from_slice(image);
         offset
     });
+    let (extension_declaration, material_fields) = if unlit {
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"#,
+            r#", "emissiveFactor":[1.0,0.5,0.25], "extensions":{"KHR_materials_unlit":{}}"#,
+        )
+    } else {
+        ("", "")
+    };
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{base_length}}},{{"buffer":0,"byteOffset":{material_offset},"byteLength":{material_length}}},{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{normal_length}}},{{"buffer":0,"byteOffset":{emissive_offset},"byteLength":{emissive_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1}}}},"normalTexture":{{"index":2}},"emissiveTexture":{{"index":3}}}}],"textures":[{{"source":0}},{{"source":1}},{{"source":2}},{{"source":3}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}},{{"bufferView":6,"mimeType":"image/png"}},{{"bufferView":7,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}},{extension_declaration}"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{base_length}}},{{"buffer":0,"byteOffset":{material_offset},"byteLength":{material_length}}},{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{normal_length}}},{{"buffer":0,"byteOffset":{emissive_offset},"byteLength":{emissive_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.5,0.25,0.75,1.0],"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1}}}},"normalTexture":{{"index":2}},"emissiveTexture":{{"index":3}}{material_fields}}}],"textures":[{{"source":0}},{{"source":1}},{{"source":2}},{{"source":3}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}},{{"bufferView":6,"mimeType":"image/png"}},{{"bufferView":7,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         base_offset = offsets[0],
         base_length = images[0].len(),

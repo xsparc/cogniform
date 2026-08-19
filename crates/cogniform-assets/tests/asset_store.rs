@@ -3,8 +3,9 @@
 use core::num::{NonZeroU32, NonZeroU64};
 
 use cogniform_assets::{
-    ASSET_VERTEX_BYTES, AssetAlphaMode, AssetDiagnosticCode, AssetError, AssetMeshKey, AssetState,
-    AssetStore, AssetStoreConfig, UnsupportedAssetPolicy, content_hash,
+    ASSET_VERTEX_BYTES, AssetAlphaMode, AssetDiagnosticCode, AssetError, AssetMeshKey,
+    AssetShadingModel, AssetState, AssetStore, AssetStoreConfig, UnsupportedAssetPolicy,
+    content_hash,
 };
 use cogniform_protocol::FiniteF32;
 
@@ -71,6 +72,17 @@ fn triangle_glb_with_material_fields(material_fields: &str) -> Vec<u8> {
 fn triangle_glb_without_material() -> Vec<u8> {
     let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"mode":4}]}]}"#;
     glb_with_json(json, &triangle_binary())
+}
+
+fn triangle_glb_with_extension_materials(
+    root_extension_fields: &str,
+    materials: &str,
+    selected_material: u32,
+) -> Vec<u8> {
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},{root_extension_fields}"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":{materials},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":{selected_material},"mode":4}}]}}]}}"#,
+    );
+    glb_with_json(&json, &triangle_binary())
 }
 
 fn encode_png(
@@ -670,6 +682,10 @@ fn explicit_material_defaults_and_no_material_fallback_are_retained() {
         1.0_f32.to_bits()
     );
     assert_emissive(explicit_upload.material().emissive(), [0.0; 3]);
+    assert_eq!(
+        explicit_upload.material().shading_model(),
+        AssetShadingModel::MetallicRoughness
+    );
     assert!(!explicit_upload.material().double_sided());
 
     let unmaterialed = triangle_glb_without_material();
@@ -701,6 +717,10 @@ fn explicit_material_defaults_and_no_material_fallback_are_retained() {
         0.8_f32.to_bits()
     );
     assert_emissive(unmaterialed_upload.material().emissive(), [0.0; 3]);
+    assert_eq!(
+        unmaterialed_upload.material().shading_model(),
+        AssetShadingModel::MetallicRoughness
+    );
     assert!(!unmaterialed_upload.material().double_sided());
     assert_eq!(explicit_upload.byte_len(), unmaterialed_upload.byte_len());
 }
@@ -732,6 +752,187 @@ fn double_sided_defaults_and_explicit_values_are_retained_without_accounting_gro
     }
     assert!(decoded_bytes.windows(2).all(|pair| pair[0] == pair[1]));
     assert!(upload_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn unlit_declarations_and_selected_or_unused_markers_are_typed_and_bounded() {
+    let cases = [
+        ("", r"[{}]", 0, AssetShadingModel::MetallicRoughness),
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"#,
+            r#"[{"extensions":{"KHR_materials_unlit":{}}}]"#,
+            0,
+            AssetShadingModel::Unlit,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"extensionsRequired":["KHR_materials_unlit"],"#,
+            r#"[{}, {"extensions":{"KHR_materials_unlit":{}}}]"#,
+            1,
+            AssetShadingModel::Unlit,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"#,
+            r#"[{}, {"extensions":{"KHR_materials_unlit":{}}}]"#,
+            0,
+            AssetShadingModel::MetallicRoughness,
+        ),
+    ];
+    let mut decoded_bytes = Vec::new();
+    let mut upload_bytes = Vec::new();
+    for (root_fields, materials, selected, expected) in cases {
+        let bytes = triangle_glb_with_extension_materials(root_fields, materials, selected);
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        decoded_bytes.push(store.record(hash).unwrap().decoded_bytes);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert_eq!(upload.material().shading_model(), expected);
+        upload_bytes.push(upload.byte_len());
+    }
+    assert!(decoded_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+    assert!(upload_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn malformed_unlit_declarations_and_markers_never_receive_a_proxy() {
+    let cases = [
+        (r#""extensionsUsed":[],"#, r"[{}]"),
+        (
+            r#""extensionsUsed":["KHR_materials_unlit","KHR_materials_unlit"],"#,
+            r"[{}]",
+        ),
+        (r#""extensionsUsed":[""],"#, r"[{}]"),
+        (r#""extensionsUsed":[1],"#, r"[{}]"),
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"extensionsRequired":[],"#,
+            r"[{}]",
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"extensionsRequired":["KHR_materials_unlit","KHR_materials_unlit"],"#,
+            r"[{}]",
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"extensionsRequired":[1],"#,
+            r"[{}]",
+        ),
+        (r#""extensionsRequired":["KHR_materials_unlit"],"#, r"[{}]"),
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"extensionsRequired":["EXT_other"],"#,
+            r"[{}]",
+        ),
+        ("", r#"[{"extensions":{"KHR_materials_unlit":{}}}]"#),
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"#,
+            r#"[{"extensions":{"KHR_materials_unlit":null}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"#,
+            r#"[{"extensions":{"KHR_materials_unlit":[]}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"#,
+            r#"[{}, {"extensions":{"KHR_materials_unlit":1}}]"#,
+        ),
+    ];
+    for (root_fields, materials) in cases {
+        let bytes = triangle_glb_with_extension_materials(root_fields, materials, 0);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+}
+
+#[test]
+fn wider_extensions_proxy_only_after_malformed_material_peers_are_excluded() {
+    for (root_fields, materials) in [
+        (
+            r#""extensionsUsed":["KHR_materials_unlit"],"#,
+            r#"[{"extensions":{"KHR_materials_unlit":{"future":true}}}]"#,
+        ),
+        (r#""extensionsUsed":["EXT_other"],"#, r"[{}]"),
+    ] {
+        let bytes = triangle_glb_with_extension_materials(root_fields, materials, 0);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::UnsupportedExtension
+        );
+    }
+
+    let bytes = triangle_glb_with_extension_materials(
+        r#""extensionsUsed":["KHR_materials_unlit","EXT_other"],"#,
+        r#"[{"extensions":{"KHR_materials_unlit":{}},"doubleSided":null}, {"extensions":{"EXT_other":{}}}]"#,
+        0,
+    );
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+
+    for payload in ["null", "true", "1", r#""value""#, "[]"] {
+        let materials = format!(r#"[{{"extensions":{{"EXT_other":{payload}}}}}]"#);
+        let bytes = triangle_glb_with_extension_materials(
+            r#""extensionsUsed":["EXT_other"],"#,
+            &materials,
+            0,
+        );
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+    let bytes =
+        triangle_glb_with_extension_materials("", r#"[{"extensions":{"EXT_other":{}}}]"#, 0);
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+    let bytes = triangle_glb_with_extension_materials(
+        r#""extensionsUsed":["KHR_materials_unlit","EXT_other"],"#,
+        r#"[{"extensions":{"KHR_materials_unlit":{"future":true},"EXT_other":null}}]"#,
+        0,
+    );
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+
+    for unused_material in [
+        r#"{"pbrMetallicRoughness":{"baseColorFactor":[1.1,0.0,0.0,1.0]}}"#,
+        r#"{"pbrMetallicRoughness":{"metallicFactor":1.1}}"#,
+        r#"{"pbrMetallicRoughness":{"roughnessFactor":-0.1}}"#,
+    ] {
+        let materials = format!(r"[{{}}, {unused_material}]");
+        let bytes = triangle_glb_with_extension_materials(
+            r#""extensionsUsed":["EXT_other"],"#,
+            &materials,
+            0,
+        );
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
 }
 
 #[test]

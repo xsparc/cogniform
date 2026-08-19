@@ -231,8 +231,9 @@ fn fs_main(
     ).gb;
     let roughness = clamp(draw.material.y * sampled_material.x, 0.0, 1.0);
     let metallic = clamp(draw.material.x * sampled_material.y, 0.0, 1.0);
+    let unlit = (material_flags & 16u) != 0u;
     var shaded_color = base_color.rgb;
-    if draw.directional_light_count.x > 0u || draw.point_light_count.x > 0u {
+    if !unlit && (draw.directional_light_count.x > 0u || draw.point_light_count.x > 0u) {
         shaded_color = vec3(0.0);
         let to_view = draw.camera_position.xyz - input.world_position;
         let view_distance_squared = dot(to_view, to_view);
@@ -295,10 +296,13 @@ fn fs_main(
             }
         }
     }
-    let emissive = textureSample(emissive_texture, base_color_sampler, input.texcoord_0).rgb
-        * draw.emissive.rgb;
+    if !unlit {
+        let emissive = textureSample(emissive_texture, base_color_sampler, input.texcoord_0).rgb
+            * draw.emissive.rgb;
+        shaded_color = min(shaded_color + emissive, vec3(1.0));
+    }
     let output_alpha = select(base_color.a, 1.0, (material_flags & 2u) != 0u);
-    output.color = vec4(min(shaded_color + emissive, vec3(1.0)), output_alpha);
+    output.color = vec4(shaded_color, output_alpha);
     output.entity_id = draw.entity_id.x;
     output.normal = vec4(geometric_world_normal * 0.5 + vec3(0.5), 1.0);
     return output;

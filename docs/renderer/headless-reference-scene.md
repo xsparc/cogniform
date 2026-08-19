@@ -111,9 +111,15 @@ response, and clamped to one while preserving material alpha; texture alpha is
 ignored and emission affects only that surface. An explicit `MaterialComponent` overrides all imported
 values together and selects zero imported emission. Built-in and material-free asset fallbacks retain
 the existing color with neutral dielectric `metallic = 0`, `roughness = 0.8`.
+An exact declared `KHR_materials_unlit` material instead selects sampled base
+color multiplied by its numeric factor regardless of active directional or
+point lights. Its normal, metallic-roughness, and emissive fallback data remain
+resident and bounded but have no color effect. A scene material disables this
+imported unlit selection and restores the ordinary direct response.
 An imported normal texture constructs a source-tangent basis after the model
 transform, applies finite normal scale to sampled XY, and perturbs only this
-direct-light response. Unlit output and the normal observation retain the
+direct-light response. No-active-light output, imported unlit output, and the
+normal observation retain the
 geometric transformed direction. An imported metallic-roughness texture
 multiplies perceptual roughness by green and metallic by blue before both
 directional and point response; red and alpha are ignored. A scene material
@@ -147,7 +153,8 @@ The existing bind group carries one fixed 496-byte per-draw uniform. The prior
 count and four directional slots, point count and four point slots, camera
 position, and metallic/roughness plus normal scale/material flags. One appended
 `vec4` contains core emissive RGB and uses its prior padding lane for the mask
-cutoff. Bindings 1, 3, 4, and 5 select
+cutoff. Material flag bit 4 selects imported unlit shading without changing
+the uniform size. Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 is the fixed sampler. This adds
 no light buffer, runtime-selected pipeline creation, runtime
@@ -229,6 +236,8 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_draws_switch_pipelines_without_reordering_or_causality_changes
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_back_face_composes_with_normal_maps_and_scene_override
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_back_face_preserves_mask_discard_and_equality
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact unlit_base_texture_is_exact_across_lights_and_scene_override_restores_lighting
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact unlit_double_sided_back_face_preserves_opaque_and_mask_coverage
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work
 ```
 
@@ -263,6 +272,11 @@ MASK discard/equality, exact identity and derived visibility, and explicit
 scene-material precedence. The separate built-in-plane regression proves that
 the same back orientation remains unculled and unflipped outside imported
 material authority.
+The imported-unlit contract proves byte-identical sampled base color across no,
+directional, point, and combined lights; visually inert but retained four-role
+fallback resources; explicit scene-material restoration of direct lighting;
+OPAQUE/MASK and double-sided composition; face-oriented geometric normals; and
+unchanged eviction, rehydration, revision, hash, and replay.
 The eviction contract partially uploads a two-mesh textured asset, submits a
 frame, releases the remaining reservation and all logical residency exactly,
 keeps the submitted readback valid, verifies the authored cuboid fallback, and
@@ -282,6 +296,8 @@ See [ADR 0021](../adr/0021-centered-built-in-plane-rendering.md) for the plane
 geometry, dimension, and fallback convention.
 See [ADR 0060](../adr/0060-bounded-gltf-double-sided-materials.md) for strict
 material decoding, fixed pipeline selection, and back-face normal semantics.
+See [ADR 0061](../adr/0061-bounded-gltf-unlit-materials.md) for strict extension
+declarations, typed unlit selection, and base-color-only response.
 See [ADR 0022](../adr/0022-fixed-built-in-uv-sphere-rendering.md) for the fixed
 sphere topology, dimension, normal, and allocation convention.
 See [ADR 0023](../adr/0023-bounded-directional-diffuse-lighting.md) for the

@@ -1435,6 +1435,33 @@ new asset features, protocol/recovery/transport changes, dependencies, or
 release action. See
 [ADR 0060](../adr/0060-bounded-gltf-double-sided-materials.md).
 
+### PR 61 - CF061: Bounded glTF unlit materials
+
+Outcome: imported materials may use the ratified `KHR_materials_unlit` marker
+to preserve authored sampled base color independently of direct lights, without
+opening general extension, sampler, resource, or pipeline authority.
+
+Gate: strictly preflight non-empty unique string `extensionsUsed` and
+`extensionsRequired` arrays, require the required set to be a subset of used,
+and require each actual supported or unknown extension member to be declared.
+Retain only
+one bounded typed shading value per material. Malformed declarations or marker
+values reject without proxy; well-formed unknown extensions and non-empty
+unlit payloads remain explicit-policy proxy candidates only after every
+selected and unused core material and resource validates.
+
+Selected imported unlit materials render only numeric base color multiplied by
+the existing sRGB base-color texture across no, directional, point, and
+combined lights. Normal, metallic-roughness, and emissive fallback data remain
+strictly validated and lifecycle-accounted but visually inert. Preserve
+OPAQUE/MASK, single/double-sided faces, face-oriented geometric observations,
+and explicit scene-material precedence. Reuse flag bit 4 in the exact 496-byte
+uniform, the 48-byte vertex, four texture roles, two fixed pipelines, stable
+ordering, lifecycle, revision, logical hash, and replay. Do not add other
+extensions, scene-authored unlit authority, samplers, occlusion, BLEND,
+ambient/IBL, dependencies, protocol/recovery/transport changes, or release
+action. See [ADR 0061](../adr/0061-bounded-gltf-unlit-materials.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1445,7 +1472,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
-  -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060
+  -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1726,6 +1753,14 @@ Validation expands with capability:
   normal-map, MASK, explicit scene-material, built-in, and authored fallback
   composition; unchanged lifecycle, revision, logical hash, replay, identity,
   visibility, and all four attachment contracts.
+- CF061: strict extension declaration uniqueness/subset/actual-use and exact
+  empty unlit-marker validation; selected/unused typed shading retention;
+  malformed-peer precedence over wider-extension proxy classification; exact
+  sampled base color across no, directional, point, and combined lights;
+  visually inert but lifecycle-accounted normal, metallic-roughness, and
+  emissive roles; scene-material, OPAQUE/MASK, single/double-sided, observation,
+  lifecycle, revision, logical hash, and replay compatibility; unchanged
+  48-byte vertices, 496-byte uniforms, four texture roles, and two pipelines.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

@@ -72,7 +72,9 @@ scene revision that produced it.
 > remain excluded. Imported materials now follow the glTF single-sided
 > default, while explicit `doubleSided: true` uses bounded two-sided lighting
 > and face-oriented normal observations. An explicit scene material retains
-> its existing alpha and unculled face semantics.
+> its existing alpha and unculled face semantics. Strictly declared exact
+> `KHR_materials_unlit` materials preserve sampled base color independently of
+> direct lights while retaining the same bounded fallback-resource lifecycle.
 > The baseline also includes pure seeded cuboid-grid procedures. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, can explicitly evict all CPU/GPU state for one

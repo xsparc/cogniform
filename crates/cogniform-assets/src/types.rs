@@ -219,6 +219,16 @@ pub enum AssetAlphaMode {
     Mask,
 }
 
+/// Bounded shading model retained from one imported glTF material.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AssetShadingModel {
+    /// Use the supported metallic-roughness material and direct-light response.
+    MetallicRoughness,
+    /// Use only the material's base color and base-color texture.
+    Unlit,
+}
+
 /// Immutable bounded material values imported with one mesh.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssetMaterial {
@@ -231,6 +241,7 @@ pub struct AssetMaterial {
     alpha_mode: AssetAlphaMode,
     alpha_cutoff: f32,
     double_sided: bool,
+    shading_model: AssetShadingModel,
 }
 
 impl AssetMaterial {
@@ -252,6 +263,7 @@ impl AssetMaterial {
             alpha_mode: AssetAlphaMode::Opaque,
             alpha_cutoff: 0.5,
             double_sided: false,
+            shading_model: AssetShadingModel::MetallicRoughness,
         }
     }
 
@@ -289,6 +301,11 @@ impl AssetMaterial {
 
     pub(crate) const fn with_double_sided(mut self) -> Self {
         self.double_sided = true;
+        self
+    }
+
+    pub(crate) const fn with_unlit(mut self) -> Self {
+        self.shading_model = AssetShadingModel::Unlit;
         self
     }
 
@@ -366,6 +383,12 @@ impl AssetMaterial {
     #[must_use]
     pub const fn double_sided(self) -> bool {
         self.double_sided
+    }
+
+    /// Returns the imported bounded shading model.
+    #[must_use]
+    pub const fn shading_model(self) -> AssetShadingModel {
+        self.shading_model
     }
 }
 

@@ -1,7 +1,7 @@
 use core::num::{NonZeroU32, NonZeroU64};
 use std::collections::{BTreeMap, BTreeSet};
 
-use cogniform_assets::{AssetAlphaMode, AssetMaterial, AssetMeshKey};
+use cogniform_assets::{AssetAlphaMode, AssetMaterial, AssetMeshKey, AssetShadingModel};
 use cogniform_protocol::{
     CameraComponent, ColorRgba, LightKind, MaterialComponent, RenderChange, RenderEntity,
     RenderExtraction, SceneRevision, StableEntityId,
@@ -320,6 +320,7 @@ impl RenderScene {
                     imported_texture_roles: ImportedTextureRoles::NONE,
                     imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
                     imported_face_policy: ImportedFacePolicy::Disabled,
+                    imported_shading_model: ImportedShadingModel::MetallicRoughness,
                     compact_id: compact_id.get(),
                 }
                 .with_imported_material(entity.material().is_none(), imported_material),
@@ -441,6 +442,7 @@ pub(crate) struct PreparedDraw {
     pub(crate) imported_texture_roles: ImportedTextureRoles,
     pub(crate) imported_alpha_coverage: ImportedAlphaCoverage,
     pub(crate) imported_face_policy: ImportedFacePolicy,
+    pub(crate) imported_shading_model: ImportedShadingModel,
     pub(crate) compact_id: u32,
 }
 
@@ -450,13 +452,31 @@ impl PreparedDraw {
         use_imported_material: bool,
         material: Option<AssetMaterial>,
     ) -> Self {
-        let (roles, normal_scale, alpha_coverage, face_policy) =
+        let (roles, normal_scale, alpha_coverage, face_policy, shading_model) =
             imported_material_selection(use_imported_material, material);
         self.imported_texture_roles = roles;
         self.normal_scale = normal_scale;
         self.imported_alpha_coverage = alpha_coverage;
         self.imported_face_policy = face_policy;
+        self.imported_shading_model = shading_model;
         self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ImportedShadingModel {
+    MetallicRoughness,
+    Unlit,
+}
+
+impl ImportedShadingModel {
+    const UNLIT_FLAG: u8 = 1 << 4;
+
+    pub(crate) const fn flags(self) -> u8 {
+        match self {
+            Self::MetallicRoughness => 0,
+            Self::Unlit => Self::UNLIT_FLAG,
+        }
     }
 }
 
@@ -562,14 +582,27 @@ fn imported_material_selection(
     f32,
     ImportedAlphaCoverage,
     ImportedFacePolicy,
+    ImportedShadingModel,
 ) {
+    let shading_model = if use_imported_material
+        && material
+            .is_some_and(|material| matches!(material.shading_model(), AssetShadingModel::Unlit))
+    {
+        ImportedShadingModel::Unlit
+    } else {
+        ImportedShadingModel::MetallicRoughness
+    };
+    let use_lit_roles = matches!(shading_model, ImportedShadingModel::MetallicRoughness);
     let use_base_color =
         use_imported_material && material.is_some_and(AssetMaterial::has_base_color_texture);
-    let use_normal =
-        use_imported_material && material.is_some_and(AssetMaterial::has_normal_texture);
-    let use_emissive =
-        use_imported_material && material.is_some_and(AssetMaterial::has_emissive_texture);
+    let use_normal = use_imported_material
+        && use_lit_roles
+        && material.is_some_and(AssetMaterial::has_normal_texture);
+    let use_emissive = use_imported_material
+        && use_lit_roles
+        && material.is_some_and(AssetMaterial::has_emissive_texture);
     let use_metallic_roughness = use_imported_material
+        && use_lit_roles
         && material.is_some_and(AssetMaterial::has_metallic_roughness_texture);
     let normal_scale = if use_normal {
         material.map_or(1.0, AssetMaterial::normal_scale)
@@ -611,6 +644,7 @@ fn imported_material_selection(
         normal_scale,
         alpha_coverage,
         face_policy,
+        shading_model,
     )
 }
 
@@ -1612,6 +1646,16 @@ mod tests {
         assert_eq!(
             imported_material_selection(true, None).3,
             ImportedFacePolicy::Disabled
+        );
+        assert_eq!(ImportedShadingModel::MetallicRoughness.flags(), 0);
+        assert_eq!(ImportedShadingModel::Unlit.flags(), 16);
+        assert_eq!(
+            imported_material_selection(true, Some(material)).4,
+            ImportedShadingModel::MetallicRoughness
+        );
+        assert_eq!(
+            imported_material_selection(false, Some(material)).4,
+            ImportedShadingModel::MetallicRoughness
         );
     }
 }

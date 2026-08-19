@@ -149,6 +149,13 @@ on the CPU and validated Windows/Vulkan profile on 2026-08-19. No dependency,
 feature, lockfile, vendor, workflow, permission, package, version, vertex,
 texture, bind-group, uniform-size, tag, release-asset, or release action
 changed.
+CF061 strict `KHR_materials_unlit` declaration and exact-marker preflight,
+typed shading retention, base-color-only light-independent rendering, scene
+override, OPAQUE/MASK and double-sided composition, four-role lifecycle, and
+logical-state neutrality were collected on the CPU and validated
+Windows/Vulkan profile on 2026-08-19. No dependency, feature, lockfile, vendor,
+workflow, permission, package, version, vertex, texture, bind-group, pipeline,
+uniform-size, tag, release-asset, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -158,7 +165,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -871,6 +878,66 @@ Control blocked the installed binary before startup. The dependency graph is
 unchanged from the prior accepted audit; this remains an explicit environment
 gap until an approved environment can execute the gate. No runtime network,
 secret, deployment, publication, or release action was performed.
+
+### CF061 ratified glTF unlit materials
+
+CF061 accepts only consistent non-empty unique-string `extensionsUsed` and
+`extensionsRequired` declarations, requires the required set to be a subset of
+used, and requires every actual supported or unknown extension member to be
+declared. An
+exact empty material marker retains typed `AssetShadingModel::Unlit`; omission
+retains `MetallicRoughness`. Malformed forms reject without proxy, while valid
+unknown or non-empty extension payloads retain deferred explicit-policy
+handling only after every core material and resource validates. Selected
+imported unlit draws reuse flag bit 4 in the exact 496-byte uniform and render
+only multiplied base color. Four role resources, 48-byte vertices, two fixed
+pipelines, alpha/face policy, observations, and logical causality are unchanged.
+These commands passed on 2026-08-19 unless noted:
+
+```text
+cargo build --workspace --locked --offline
+cargo fmt --all --check
+cargo test -p cogniform-assets -p cogniform-renderer --all-features --locked --offline
+cargo clippy -p cogniform-assets -p cogniform-renderer --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --nocapture
+cargo test --release -p cogniform-renderer --test headless_reference --all-features --locked --offline -- --ignored --nocapture
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python tests/release/test_package_policy.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- .github/workflows
+git diff --exit-code -- Cargo.toml Cargo.lock deny.toml vendor rust-toolchain.toml
+git diff --check
+```
+
+Ordinary tests prove both declaration arrays' type, non-empty, uniqueness, and
+subset roles; declared exact markers on selected and unused materials;
+constructor and material-free metallic-roughness defaults; undeclared/null/
+scalar/array marker rejection; undeclared or non-object unknown member
+rejection; malformed-core precedence over unknown and wider-extension proxy
+candidates; unchanged decoded/upload bytes; scene
+selection; and exact normal-plus-MASK-plus-double-plus-unlit flag value `31`.
+All nineteen optimized asset-render tests and all nine optimized headless-
+reference tests pass together. The CF061 probes retain all four decoded and
+GPU-accounted texture roles through exact eviction/rehydration, then prove
+byte-identical sampled base color across no, directional, point, and combined
+lights; explicit scene override; OPAQUE and MASK boundaries; double-sided back
+faces; face-oriented geometric normals; unchanged non-color outputs; and exact
+revision, logical hash, and idempotent replay.
+
+Public safeguards, package policy, workflow validation, workflow/manifest/
+lock/vendor/toolchain immutability, diff hygiene, and all relative targets
+across the changed public Markdown files pass. `cargo deny check advisories
+bans licenses sources` could not execute because Windows Application Control
+blocked the installed binary before startup with OS error 4551. The dependency
+graph and deny policy are unchanged from the prior accepted audit; this remains
+an explicit environment gap until an approved environment can execute the
+gate. No runtime network, secret, deployment, publication, or release action
+was performed.
 
 ## Deterministic source-candidate commands
 
