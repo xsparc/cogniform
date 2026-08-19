@@ -6,11 +6,12 @@ use cogniform_assets::{
     ASSET_VERTEX_BYTES, AssetMeshKey, AssetState, AssetStore, AssetVertex, content_hash,
 };
 use cogniform_protocol::{
-    AssetMeshComponent, CameraComponent, ColorRgb, ColorRgba, ComponentValue, ConflictPolicy,
-    CreateEntity, DeliverySemantic, FiniteF32, FrameId, IdempotencyKey, LightComponent, LightKind,
-    LocalTransform, MaterialComponent, NonNegativeF32, PatchBudget, PositiveF32, PositiveVec3,
-    PrimitiveComponent, PrimitiveShape, Quaternion, SceneOperation, ScenePatch, SceneRevision,
-    SchemaVersion, SetComponent, StableEntityId, TransactionId, UnitF32, Vec3,
+    ApplyStatus, AssetMeshComponent, CameraComponent, ColorRgb, ColorRgba, ComponentValue,
+    ConflictPolicy, CreateEntity, DeliverySemantic, FiniteF32, FrameId, IdempotencyKey,
+    LightComponent, LightKind, LocalTransform, MaterialComponent, NonNegativeF32, PatchBudget,
+    PositiveF32, PositiveVec3, PrimitiveComponent, PrimitiveShape, Quaternion, SceneOperation,
+    ScenePatch, SceneRevision, SchemaVersion, SetComponent, StableEntityId, TransactionId, UnitF32,
+    Vec3,
 };
 use cogniform_renderer::{AssetUploadAdmission, HeadlessRenderer, RenderedFrame, RendererConfig};
 use cogniform_world::AuthoritativeWorld;
@@ -491,6 +492,46 @@ fn metallic_roughness_texture_multiplies_factors_for_direct_lights_only() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outputs() {
+    let baseline = emissive_fixture(None);
+    let explicit_zero = emissive_fixture(Some([0.0; 3]));
+    let emissive = emissive_fixture(Some([0.1, 0.2, 0.3]));
+    let center = (WIDTH / 2, HEIGHT / 2);
+
+    let unlit_baseline = material_frame(baseline.clone(), None, false);
+    let unlit_explicit_zero = material_frame(explicit_zero, None, false);
+    assert_eq!(
+        unlit_explicit_zero.color_at(center.0, center.1),
+        unlit_baseline.color_at(center.0, center.1)
+    );
+    assert_non_color_observations_equal(&unlit_explicit_zero, &unlit_baseline);
+    let unlit = material_frame(emissive.clone(), None, false);
+    assert_color_near(&unlit, center, [77, 77, 89, 102]);
+    assert_emissive_addition(&unlit, &unlit_baseline, center, [26, 51, 77]);
+    assert_non_color_observations_equal(&unlit, &unlit_baseline);
+
+    for light_kind in [LightKind::Directional, LightKind::Point] {
+        let lit_baseline = material_frame(baseline.clone(), Some(light_kind), false);
+        let lit = material_frame(emissive.clone(), Some(light_kind), false);
+        assert_emissive_addition(&lit, &lit_baseline, center, [26, 51, 77]);
+        assert_non_color_observations_equal(&lit, &lit_baseline);
+    }
+
+    let overridden = material_frame(emissive, Some(LightKind::Directional), true);
+    let overridden_baseline = material_frame(baseline, Some(LightKind::Directional), true);
+    assert_eq!(
+        overridden.color_at(center.0, center.1),
+        overridden_baseline.color_at(center.0, center.1),
+        "an explicit scene material must disable imported emission"
+    );
+    assert_non_color_observations_equal(&overridden, &overridden_baseline);
+
+    let saturated = material_frame(emissive_fixture(Some([1.0; 3])), None, false);
+    assert_color_near(&saturated, center, [255, 255, 255, 102]);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn three_texture_roles_upload_evict_and_rehydrate_exactly() {
     let bytes = three_role_texture_fixture();
     let content_hash = content_hash(&bytes);
@@ -867,11 +908,9 @@ fn material_frame(
     let triangle = StableEntityId::new(2).unwrap();
     let light = StableEntityId::new(3).unwrap();
     let mut world = AuthoritativeWorld::default();
+    let initial_patch = scene_patch(camera, triangle, content_hash, [1.0; 3]);
     world
-        .apply_patch(
-            &scene_patch(camera, triangle, content_hash, [1.0; 3]),
-            FrameId::new(1).unwrap(),
-        )
+        .apply_patch(&initial_patch, FrameId::new(1).unwrap())
         .unwrap();
     renderer
         .apply_extraction(&world.take_render_extraction().unwrap())
@@ -900,6 +939,14 @@ fn material_frame(
             .apply_extraction(&world.take_render_extraction().unwrap())
             .unwrap();
     }
+    let revision_before_replay = world.revision();
+    let hash_before_replay = world.logical_hash().unwrap();
+    let replay = world
+        .apply_patch(&initial_patch, FrameId::new(4).unwrap())
+        .unwrap();
+    assert_eq!(replay.status, ApplyStatus::IdempotentReplay);
+    assert_eq!(world.revision(), revision_before_replay);
+    assert_eq!(world.logical_hash().unwrap(), hash_before_replay);
     renderer.submit_scene(camera).unwrap().read().unwrap()
 }
 
@@ -941,6 +988,25 @@ fn assert_color_near(frame: &RenderedFrame, at: (u32, u32), expected_color: [u8;
             "color {actual_color:?} differs from {expected_color:?}"
         );
     }
+}
+
+fn assert_emissive_addition(
+    actual: &RenderedFrame,
+    baseline: &RenderedFrame,
+    at: (u32, u32),
+    emissive_u8: [u8; 3],
+) {
+    let baseline_color = baseline.color_at(at.0, at.1).unwrap();
+    let mut expected = baseline_color;
+    for index in 0..3 {
+        expected[index] = baseline_color[index].saturating_add(emissive_u8[index]);
+    }
+    assert_color_near(actual, at, expected);
+    assert_eq!(
+        actual.color_at(at.0, at.1).unwrap()[3],
+        baseline_color[3],
+        "emission must preserve material alpha"
+    );
 }
 
 fn assert_non_color_observations_equal(actual: &RenderedFrame, expected: &RenderedFrame) {
@@ -1153,6 +1219,29 @@ fn smooth_fixture() -> Vec<u8> {
 
 fn metallic_fixture() -> Vec<u8> {
     metallic_roughness_fixture(None, 1.0, 0.5)
+}
+
+fn emissive_fixture(emissive: Option<[f32; 3]>) -> Vec<u8> {
+    let mut binary = Vec::with_capacity(36);
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let emissive_field = emissive.map_or_else(String::new, |value| {
+        format!(
+            r#", "emissiveFactor":[{},{},{}]"#,
+            value[0], value[1], value[2]
+        )
+    });
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.2,0.1,0.05,0.4],"metallicFactor":0.0,"roughnessFactor":0.5}}{emissive_field}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":0,"mode":4}}]}}]}}"#,
+    );
+    glb_with_json(&json, &binary)
 }
 
 fn metallic_roughness_fixture(

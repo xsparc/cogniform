@@ -62,5 +62,6 @@ earlier one and links the history.
 | [0054](0054-bounded-dual-era-mcp-stdio-lifecycle.md) | Accepted | Serve exact legacy and stateless MCP eras through one bounded authority-neutral stdio adapter |
 | [0055](0055-bounded-source-tangent-normal-textures.md) | Accepted | Render one bounded embedded normal texture through an exact source-tangent basis |
 | [0056](0056-bounded-metallic-roughness-textures.md) | Accepted | Multiply direct-light material factors by one bounded linear glTF metallic-roughness texture |
+| [0057](0057-bounded-glb-emissive-factors.md) | Accepted | Add one bounded core glTF emissive factor after the existing surface response |
 
 New records use four sections: context, decision, consequences, and status.

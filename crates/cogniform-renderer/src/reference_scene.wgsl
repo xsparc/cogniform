@@ -19,6 +19,7 @@ struct DrawUniform {
     point_lights: array<PointLight, 4>,
     camera_position: vec4<f32>,
     material: vec4<f32>,
+    emissive: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -279,7 +280,7 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
             }
         }
     }
-    output.color = vec4(shaded_color, base_color.a);
+    output.color = vec4(min(shaded_color + draw.emissive.rgb, vec3(1.0)), base_color.a);
     output.entity_id = draw.entity_id.x;
     output.normal = vec4(geometric_world_normal * 0.5 + vec3(0.5), 1.0);
     return output;

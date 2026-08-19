@@ -49,6 +49,10 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   role GPU reservation, linear green/blue factor multiplication for
   directional and point direct lighting, factor-one fallback, ignored red and
   alpha, scene-override suppression, and unchanged unlit/non-color outputs;
+- optional core glTF `emissiveFactor` as exactly three finite unit-bounded
+  linear channels, with zero defaults, unchanged asset accounting, explicit
+  scene-material suppression, bounded post-response RGB addition, preserved
+  alpha/non-color observations, and no light, texture, HDR, or exposure authority;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
@@ -66,7 +70,8 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   evidence;
 - bounded direct Cook-Torrance metallic-roughness response for the existing
   directional and point lights, with GGX/Smith/Schlick terms, finite camera
-  view input, exact unlit compatibility, a fixed 480-byte draw uniform, and
+  view input, exact unlit compatibility, a fixed 496-byte draw uniform with a
+  prefix-compatible emissive append, and
   controlled dielectric/metal/roughness evidence;
 - immutable imported GLB base-color, metallic, and roughness metadata through
   existing upload/residency, with glTF factor defaults, scene-material
@@ -190,6 +195,14 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF057 adds the additive `AssetMaterial::emissive` accessor and appends one
+  private zero-padded emissive vector to the renderer draw uniform, growing it
+  from 480 to 496 bytes while preserving the prior prefix. The existing public
+  `AssetMaterial::new` signature and `const` behavior remain unchanged with a
+  zero-emission default. No vertex, texture, logical scene, observation,
+  protocol, dependency, package, version, tag, release-asset, workflow, or release
+  contract changed;
 
 - CF056 adds the additive
   `AssetMaterial::has_metallic_roughness_texture` and
@@ -400,11 +413,12 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 - renderer materials support base color plus bounded direct metallic-roughness
   response for directional and point lights; configurable point
   range/radius/cutoff, spot lights, ambient/image-based lighting, shadows,
-  emissive, HDR/tone mapping, gamma conversion, and lighting configuration are
-  not implemented.
+  emissive textures/strength/cross-surface illumination, HDR/tone mapping,
+  gamma conversion, and lighting configuration are not implemented.
   Normal output is quantized and the imported subset supports numeric base
   color, metallic, roughness, and one source-tangent normal map, but no
-  generated tangents, emissive/alpha modes, or other material texture roles;
+  generated tangents, emissive textures/strength, alpha modes, or other
+  material texture roles;
   the GLB subset samples at most one shared embedded PNG per base-color,
   metallic-roughness, or normal role but excludes external/data images, JPEG,
   explicit samplers, compression,

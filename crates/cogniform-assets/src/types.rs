@@ -215,6 +215,7 @@ pub struct AssetMaterial {
     base_color: [UnitF32; 4],
     metallic: UnitF32,
     roughness: UnitF32,
+    emissive: [f32; 3],
     has_base_color_texture: bool,
     has_metallic_roughness_texture: bool,
     has_normal_texture: bool,
@@ -222,13 +223,14 @@ pub struct AssetMaterial {
 }
 
 impl AssetMaterial {
-    /// Creates one already-validated linear metallic-roughness material value.
+    /// Creates one validated linear metallic-roughness material with zero emission.
     #[must_use]
     pub const fn new(base_color: [UnitF32; 4], metallic: UnitF32, roughness: UnitF32) -> Self {
         Self {
             base_color,
             metallic,
             roughness,
+            emissive: [0.0; 3],
             has_base_color_texture: false,
             has_metallic_roughness_texture: false,
             has_normal_texture: false,
@@ -243,6 +245,11 @@ impl AssetMaterial {
 
     pub(crate) const fn with_metallic_roughness_texture(mut self) -> Self {
         self.has_metallic_roughness_texture = true;
+        self
+    }
+
+    pub(crate) fn with_emissive(mut self, emissive: [UnitF32; 3]) -> Self {
+        self.emissive = emissive.map(UnitF32::get);
         self
     }
 
@@ -268,6 +275,12 @@ impl AssetMaterial {
     #[must_use]
     pub const fn roughness(self) -> UnitF32 {
         self.roughness
+    }
+
+    /// Returns the imported linear emissive RGB multiplier.
+    #[must_use]
+    pub const fn emissive(self) -> [f32; 3] {
+        self.emissive
     }
 
     /// Returns whether this material samples the asset's shared base-color texture.

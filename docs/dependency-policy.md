@@ -37,7 +37,9 @@ CF029 admits exact-pinned `png` 0.18.1 as a runtime dependency only inside
 `cogniform-assets` for the strict embedded base-color image boundary; CF055
 reuses the same decoder and limits for the approved linear normal-image role
 and CF056 reuses them for the approved linear packed metallic-roughness role,
-without changing the dependency graph.
+without changing the dependency graph. CF057 adds only bounded numeric core
+emissive-factor handling and does not change or invoke the image decoder or
+dependency graph.
 `cogniform-renderer` and `cogniform-engine` use it only to generate test
 fixtures. It is dual licensed `MIT OR Apache-2.0`, uses the pure-Rust miniz
 backend with the direct crate's default features disabled, and requires no

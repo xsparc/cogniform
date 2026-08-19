@@ -346,6 +346,7 @@ impl HeadlessRenderer {
                 camera_position: [0.0, 0.0, 3.0],
                 metallic: 0.0,
                 roughness: 0.8,
+                emissive: [0.0; 3],
                 normal_scale: 1.0,
                 use_imported_base_color_texture: false,
                 use_imported_metallic_roughness_texture: false,
@@ -1435,12 +1436,12 @@ fn encode_draw_uniform(
     const FLOATS_PER_DIRECTIONAL_LIGHT: usize = 8;
     const POINT_COUNT_FLOATS: usize = 4;
     const FLOATS_PER_POINT_LIGHT: usize = 8;
-    const MATERIAL_VIEW_FLOATS: usize = 8;
+    const MATERIAL_VIEW_EMISSIVE_FLOATS: usize = 12;
     const UNIFORM_BYTES: usize = (BASE_FLOATS
         + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT
         + POINT_COUNT_FLOATS
         + MAX_POINT_LIGHTS * FLOATS_PER_POINT_LIGHT
-        + MATERIAL_VIEW_FLOATS)
+        + MATERIAL_VIEW_EMISSIVE_FLOATS)
         * 4;
     debug_assert!(directional_lights.len() <= MAX_DIRECTIONAL_LIGHTS);
     debug_assert!(point_lights.len() <= MAX_POINT_LIGHTS);
@@ -1525,6 +1526,10 @@ fn encode_draw_uniform(
         })
         .to_le_bytes(),
     );
+    for value in draw.emissive {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
     debug_assert_eq!(bytes.len(), UNIFORM_BYTES);
     bytes
 }
@@ -1789,6 +1794,7 @@ mod tests {
             camera_position: [6.0, 7.0, 8.0],
             metallic: 0.9,
             roughness: 0.2,
+            emissive: [0.1, 0.3, 0.7],
             normal_scale: 1.0,
             use_imported_base_color_texture: false,
             use_imported_metallic_roughness_texture: false,
@@ -1814,7 +1820,7 @@ mod tests {
         }];
 
         let bytes = encode_draw_uniform(&draw, &lights, &point_lights);
-        assert_eq!(bytes.len(), 480);
+        assert_eq!(bytes.len(), 496);
         let words = bytes
             .chunks_exact(4)
             .map(|word| <[u8; 4]>::try_from(word).unwrap())
@@ -1855,6 +1861,10 @@ mod tests {
         assert_eq!(
             (116..120).map(float).collect::<Vec<_>>(),
             vec![0.9, 0.2, 1.0, 0.0]
+        );
+        assert_eq!(
+            (120..124).map(float).collect::<Vec<_>>(),
+            vec![0.1, 0.3, 0.7, 0.0]
         );
     }
 

@@ -226,7 +226,6 @@ fn remove_unsupported_material_features(
         for (field, expected) in [
             ("occlusionTexture", JsonKind::Object),
             ("emissiveTexture", JsonKind::Object),
-            ("emissiveFactor", JsonKind::Array),
             ("alphaMode", JsonKind::String),
             ("alphaCutoff", JsonKind::Number),
             ("doubleSided", JsonKind::Bool),
@@ -240,7 +239,6 @@ fn remove_unsupported_material_features(
 #[derive(Clone, Copy)]
 enum JsonKind {
     Object,
-    Array,
     String,
     Number,
     Bool,
@@ -257,7 +255,6 @@ fn remove_typed_unsupported(
     };
     let valid = match expected {
         JsonKind::Object => value.is_object(),
-        JsonKind::Array => value.is_array(),
         JsonKind::String => value.is_string(),
         JsonKind::Number => value.is_number(),
         JsonKind::Bool => value.is_boolean(),
@@ -322,6 +319,7 @@ fn validate_root(
     limits: AssetLimits,
 ) -> Result<DecodedAsset, AssetDiagnostic> {
     validate_root_header(root, binary, limits)?;
+    validate_emissive_factors(root)?;
     let textures = decode_textures(root, binary, limits)?;
     let mut decoded_bytes = textures.byte_len;
     let mut meshes = Vec::with_capacity(root.meshes.len());
@@ -378,6 +376,23 @@ fn validate_root(
         normal_texture: textures.normal,
         byte_len: decoded_bytes,
     })
+}
+
+fn validate_emissive_factors(root: &Root) -> Result<(), AssetDiagnostic> {
+    for (material_index, material) in root.materials.iter().enumerate() {
+        if let Some(values) = material.emissive {
+            for value in values {
+                UnitF32::new(value).map_err(|_| {
+                    diagnostic(
+                        AssetDiagnosticCode::InvalidJson,
+                        "glb.json.materials.emissiveFactor",
+                        Some(stable_index(material_index)),
+                    )
+                })?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_root_header(
@@ -1776,17 +1791,19 @@ fn decode_material(
     root: &Root,
     material_index: Option<u32>,
 ) -> Result<AssetMaterial, AssetDiagnostic> {
-    let (color_values, metallic_value, roughness_value) = if let Some(index) = material_index {
-        let material = get(&root.materials, index, "glb.json.materials")?;
-        let pbr = material.pbr_metallic_roughness.as_ref();
-        (
-            pbr.and_then(|value| value.base_color).unwrap_or([1.0; 4]),
-            pbr.and_then(|value| value.metallic).unwrap_or(1.0),
-            pbr.and_then(|value| value.roughness).unwrap_or(1.0),
-        )
-    } else {
-        ([0.8, 0.8, 0.8, 1.0], 0.0, 0.8)
-    };
+    let (color_values, metallic_value, roughness_value, emissive_values) =
+        if let Some(index) = material_index {
+            let material = get(&root.materials, index, "glb.json.materials")?;
+            let pbr = material.pbr_metallic_roughness.as_ref();
+            (
+                pbr.and_then(|value| value.base_color).unwrap_or([1.0; 4]),
+                pbr.and_then(|value| value.metallic).unwrap_or(1.0),
+                pbr.and_then(|value| value.roughness).unwrap_or(1.0),
+                material.emissive.unwrap_or([0.0; 3]),
+            )
+        } else {
+            ([0.8, 0.8, 0.8, 1.0], 0.0, 0.8, [0.0; 3])
+        };
     let mut color = [UnitF32::new(0.0).expect("zero is in range"); 4];
     for (target, value) in color.iter_mut().zip(color_values) {
         *target = UnitF32::new(value).map_err(|_| {
@@ -1806,11 +1823,22 @@ fn decode_material(
             )
         })
     };
+    let mut emissive = [UnitF32::new(0.0).expect("zero is in range"); 3];
+    for (target, value) in emissive.iter_mut().zip(emissive_values) {
+        *target = UnitF32::new(value).map_err(|_| {
+            diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.materials.emissiveFactor",
+                material_index,
+            )
+        })?;
+    }
     let material = AssetMaterial::new(
         color,
         material_scalar(metallic_value)?,
         material_scalar(roughness_value)?,
-    );
+    )
+    .with_emissive(emissive);
     let has_base_color_texture = material_index.is_some_and(|index| {
         root.materials
             .get(usize::try_from(index).unwrap_or(usize::MAX))
@@ -2049,6 +2077,19 @@ struct Material {
     pbr_metallic_roughness: Option<PbrMetallicRoughness>,
     #[serde(default)]
     normal_texture: Option<NormalTextureInfo>,
+    #[serde(
+        rename = "emissiveFactor",
+        default,
+        deserialize_with = "deserialize_emissive_factor"
+    )]
+    emissive: Option<[f32; 3]>,
+}
+
+fn deserialize_emissive_factor<'de, D>(deserializer: D) -> Result<Option<[f32; 3]>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    <[f32; 3]>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Deserialize)]

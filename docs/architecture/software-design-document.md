@@ -439,24 +439,28 @@ Zero-intensity definitions count toward their kind's capacity but are inactive.
 Only a scene with no active definition of either kind bypasses lighting and
 preserves exact base RGBA. A resident GLB mesh supplies its imported base
 color, optional base-color, metallic-roughness, and tangent-space normal
-textures, metallic, roughness, and normal scale when the entity has no explicit
-material. The shader samples base color as `Rgba8UnormSrgb`, samples the other
+textures, metallic, roughness, normal scale, and core unit-bounded emissive RGB
+when the entity has no explicit material. The shader samples base color as
+`Rgba8UnormSrgb`, samples the other
 roles as linear `Rgba8Unorm`, and uses one fixed repeat/linear one-mip sampler.
 Sampled base RGBA multiplies the numeric base-color factor before either
 shading path. The metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
-A source-tangent TBN perturbs only direct-light response. Untextured draws use
-white, factor-one metallic-roughness, and neutral-normal fallbacks. A scene
-`MaterialComponent` overrides the whole imported material and disables all
-three imported texture roles. A built-in or material-free
+A source-tangent TBN perturbs only direct-light response. After either the
+unlit or direct-light path, imported emissive RGB is added to that surface and
+clamped to one without changing alpha. Untextured draws use white, factor-one
+metallic-roughness, and neutral-normal fallbacks. A scene `MaterialComponent`
+overrides the whole imported material, disables all three imported texture
+roles, and selects zero imported emission. A built-in or material-free
 asset without a scene material uses its existing fallback color with neutral
-dielectric parameters `metallic = 0`, `roughness = 0.8`. Ambient, emissive,
-image-based lighting, shadows, spot lights, configurable point range/radius,
+dielectric parameters `metallic = 0`, `roughness = 0.8`. Emissive textures,
+emissive strength, cross-surface emission, ambient, image-based lighting,
+shadows, spot lights, configurable point range/radius,
 other material texture roles, generated tangents, HDR, and tone mapping are outside this baseline. A
-fixed 480-byte per-draw uniform preserves the prior 448-byte model, view-projection,
-material-color, identity, directional, and point-light prefix and appends
-zero-padded camera-position and metallic/roughness/normal-scale/normal-enabled
-slots. A fifth definition
+fixed 496-byte per-draw uniform preserves the prior 480-byte model,
+view-projection, material-color, identity, directional, point-light,
+camera-position, and metallic/roughness/normal-scale/normal-enabled prefix and
+appends one zero-padded emissive slot. A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU
 submission.
@@ -477,7 +481,8 @@ MVP accepts primitives first, then a bounded glTF/GLB subset with finite
 positions, optional same-count finite vertex normals, optional same-count
 finite f32 `TEXCOORD_0`, optional same-count finite non-zero f32 `TANGENT`
 `VEC4` with exact handedness, one bounded numeric metallic-roughness material
-per mesh, and one shared embedded PNG per base-color, metallic-roughness, or
+plus an optional three-channel unit-bounded core emissive factor per mesh, and
+one shared embedded PNG per base-color, metallic-roughness, or
 normal role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
 retained-byte, decoder-working-byte, per-asset, and aggregate CPU limits into
