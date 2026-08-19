@@ -172,9 +172,15 @@ fn vs_main(
 @fragment
 fn fs_main(input: VertexOutput) -> FragmentOutput {
     var output: FragmentOutput;
+    let material_flags = u32(draw.material.w);
+    let base_color = textureSample(base_color_texture, base_color_sampler, input.texcoord_0)
+        * draw.color;
+    if (material_flags & 4u) != 0u && base_color.a < draw.emissive.w {
+        discard;
+    }
     let geometric_world_normal = normalize(input.world_normal);
     var shaded_world_normal = geometric_world_normal;
-    if draw.material.w > 0.5 {
+    if (material_flags & 1u) != 0u {
         let tangent_rejected = input.world_tangent.xyz
             - geometric_world_normal * dot(geometric_world_normal, input.world_tangent.xyz);
         let tangent_length_squared = dot(tangent_rejected, tangent_rejected);
@@ -210,8 +216,6 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
             }
         }
     }
-    let base_color = textureSample(base_color_texture, base_color_sampler, input.texcoord_0)
-        * draw.color;
     let sampled_material = textureSample(
         metallic_roughness_texture,
         base_color_sampler,
@@ -285,7 +289,8 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
     }
     let emissive = textureSample(emissive_texture, base_color_sampler, input.texcoord_0).rgb
         * draw.emissive.rgb;
-    output.color = vec4(min(shaded_color + emissive, vec3(1.0)), base_color.a);
+    let output_alpha = select(base_color.a, 1.0, (material_flags & 2u) != 0u);
+    output.color = vec4(min(shaded_color + emissive, vec3(1.0)), output_alpha);
     output.entity_id = draw.entity_id.x;
     output.normal = vec4(geometric_world_normal * 0.5 + vec3(0.5), 1.0);
     return output;

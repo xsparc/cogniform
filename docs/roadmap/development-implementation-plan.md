@@ -1384,6 +1384,31 @@ additional coordinates/samplers/images, generated tangents, protocol,
 recovery, transport, dependencies, or release action. See
 [ADR 0058](../adr/0058-bounded-glb-emissive-textures.md).
 
+### PR 59 - CF059: Bounded glTF alpha coverage
+
+Outcome: imported core glTF materials gain deterministic opaque and cutoff-
+mask coverage without granting blending or sorting authority.
+
+Gate: strictly decode optional `alphaMode`, default it to `OPAQUE`, and support
+only `OPAQUE` and `MASK`. Strictly decode optional finite non-negative
+`alphaCutoff`, require its mode declaration, and default a mask cutoff to
+`0.5`. Treat `BLEND` and other well-formed wider strings as explicit-policy
+proxy candidates only after all malformed peer data has failed closed. Retain
+typed coverage in `AssetMaterial` without changing its constructor or asset
+accounting.
+
+For imported material selection, make OPAQUE ignore factor/texture alpha and
+emit alpha one. Make MASK compare multiplied base-color factor and sampled
+texture alpha, discard only below the cutoff before every render attachment,
+and emit surviving alpha one. Exact equality survives and cutoff values above
+one discard all bounded alpha. An explicit scene material disables imported
+coverage and preserves scene alpha. Preserve the 496-byte uniform, texture and
+vertex contracts, logical causality, revision, replay, and world hash. Do not
+add BLEND, sorting, pipeline blending, alpha-to-coverage, MSAA, double-sided
+materials, occlusion/ambient/IBL, new texture/image/UV/sampler support,
+protocol/recovery/transport changes, dependencies, or release action. See
+[ADR 0059](../adr/0059-bounded-gltf-alpha-coverage.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1394,7 +1419,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
-  -> CF054 -> CF055 -> CF056 -> CF057 -> CF058
+  -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1662,6 +1687,12 @@ Validation expands with capability:
   multiplication with ignored alpha and white/zero neutrality; scene-material
   suppression; unchanged non-color observations, revision, logical hash, and
   replay; and controlled unlit/directional/point evidence.
+- CF059: strict alpha-mode/cutoff defaults, type, range, and proxy-precedence
+  validation; unchanged asset and 496-byte uniform accounting; factor-only,
+  texture-only, and multiplied MASK coverage; exact cutoff equality and full
+  discard above one; OPAQUE alpha-one correction; explicit scene-material
+  precedence; unchanged lifecycle, revision, logical hash, and replay; and
+  controlled color/depth/identity/normal evidence.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

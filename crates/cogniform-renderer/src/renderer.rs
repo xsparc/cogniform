@@ -13,8 +13,9 @@ use crate::{
     RendererAssetStats, RendererConfig, RendererError, SceneUpdateError, SceneUpdateSummary,
     asset::{AssetTextureRole, RendererAssets},
     scene::{
-        ImportedTextureRoles, MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, PreparedDirectionalLight,
-        PreparedDraw, PreparedGeometry, PreparedPointLight, PreparedScene, RenderScene,
+        ImportedAlphaCoverage, ImportedTextureRoles, MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS,
+        PreparedDirectionalLight, PreparedDraw, PreparedGeometry, PreparedPointLight,
+        PreparedScene, RenderScene,
     },
 };
 
@@ -349,6 +350,7 @@ impl HeadlessRenderer {
                 emissive: [0.0; 3],
                 normal_scale: 1.0,
                 imported_texture_roles: ImportedTextureRoles::NONE,
+                imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
                 compact_id: REFERENCE_ENTITY_ID,
             }],
             directional_lights: Vec::new(),
@@ -1567,18 +1569,13 @@ fn encode_draw_uniform(
     bytes.extend_from_slice(&draw.metallic.to_le_bytes());
     bytes.extend_from_slice(&draw.roughness.to_le_bytes());
     bytes.extend_from_slice(&draw.normal_scale.to_le_bytes());
-    bytes.extend_from_slice(
-        &(if draw.imported_texture_roles.normal() {
-            1.0_f32
-        } else {
-            0.0_f32
-        })
-        .to_le_bytes(),
-    );
+    let normal_flag = u8::from(draw.imported_texture_roles.normal());
+    let material_flags = normal_flag | draw.imported_alpha_coverage.flags();
+    bytes.extend_from_slice(&f32::from(material_flags).to_le_bytes());
     for value in draw.emissive {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
-    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+    bytes.extend_from_slice(&draw.imported_alpha_coverage.cutoff().to_le_bytes());
     debug_assert_eq!(bytes.len(), UNIFORM_BYTES);
     bytes
 }
@@ -1846,6 +1843,7 @@ mod tests {
             emissive: [0.1, 0.3, 0.7],
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NONE,
+            imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
             compact_id: 42,
         };
         let lights = [
@@ -1913,6 +1911,31 @@ mod tests {
             (120..124).map(float).collect::<Vec<_>>(),
             vec![0.1, 0.3, 0.7, 0.0]
         );
+    }
+
+    #[test]
+    fn draw_uniform_retains_mask_flags_and_cutoff_without_layout_growth() {
+        let draw = PreparedDraw {
+            geometry: PreparedGeometry::Plane,
+            model: [1.0; 16],
+            view_projection: [1.0; 16],
+            color: [1.0; 4],
+            camera_position: [0.0; 3],
+            metallic: 0.0,
+            roughness: 1.0,
+            emissive: [0.0; 3],
+            normal_scale: 1.0,
+            imported_texture_roles: ImportedTextureRoles::NONE,
+            imported_alpha_coverage: ImportedAlphaCoverage::Mask { cutoff: 1.25 },
+            compact_id: 1,
+        };
+
+        let bytes = encode_draw_uniform(&draw, &[], &[]);
+        assert_eq!(bytes.len(), 496);
+        let float_at =
+            |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
+        assert_eq!(float_at(119).to_bits(), 6.0_f32.to_bits());
+        assert_eq!(float_at(123).to_bits(), 1.25_f32.to_bits());
     }
 
     #[test]

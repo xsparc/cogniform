@@ -3,8 +3,8 @@
 use core::num::{NonZeroU32, NonZeroU64};
 
 use cogniform_assets::{
-    ASSET_VERTEX_BYTES, AssetDiagnosticCode, AssetError, AssetMeshKey, AssetState, AssetStore,
-    AssetStoreConfig, UnsupportedAssetPolicy, content_hash,
+    ASSET_VERTEX_BYTES, AssetAlphaMode, AssetDiagnosticCode, AssetError, AssetMeshKey, AssetState,
+    AssetStore, AssetStoreConfig, UnsupportedAssetPolicy, content_hash,
 };
 use cogniform_protocol::FiniteF32;
 
@@ -701,6 +701,102 @@ fn explicit_material_defaults_and_no_material_fallback_are_retained() {
     );
     assert_emissive(unmaterialed_upload.material().emissive(), [0.0; 3]);
     assert_eq!(explicit_upload.byte_len(), unmaterialed_upload.byte_len());
+}
+
+#[test]
+fn alpha_coverage_defaults_and_mask_cutoffs_are_retained_without_accounting_growth() {
+    let cases = [
+        ("", AssetAlphaMode::Opaque, None),
+        (r#""alphaMode":"OPAQUE""#, AssetAlphaMode::Opaque, None),
+        (
+            r#""alphaMode":"OPAQUE","alphaCutoff":0.75"#,
+            AssetAlphaMode::Opaque,
+            None,
+        ),
+        (r#""alphaMode":"MASK""#, AssetAlphaMode::Mask, Some(0.5)),
+        (
+            r#""alphaMode":"MASK","alphaCutoff":1.25"#,
+            AssetAlphaMode::Mask,
+            Some(1.25),
+        ),
+    ];
+    let mut decoded_bytes = Vec::new();
+    let mut upload_bytes = Vec::new();
+    for (fields, expected_mode, expected_cutoff) in cases {
+        let bytes = triangle_glb_with_material_fields(fields);
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        decoded_bytes.push(store.record(hash).unwrap().decoded_bytes);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert_eq!(upload.material().alpha_mode(), expected_mode);
+        assert_eq!(
+            upload.material().alpha_cutoff().map(f32::to_bits),
+            expected_cutoff.map(f32::to_bits)
+        );
+        upload_bytes.push(upload.byte_len());
+    }
+    assert!(decoded_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+    assert!(upload_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn malformed_alpha_coverage_is_rejected_without_proxy_substitution() {
+    for fields in [
+        r#""alphaMode":null"#,
+        r#""alphaMode":1"#,
+        r#""alphaMode":"MASK","alphaCutoff":null"#,
+        r#""alphaMode":"MASK","alphaCutoff":"0.5""#,
+        r#""alphaMode":"MASK","alphaCutoff":-0.1"#,
+        r#""alphaMode":"MASK","alphaCutoff":1e999"#,
+        r#""alphaCutoff":0.5"#,
+    ] {
+        let bytes = triangle_glb_with_material_fields(fields);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+
+    let unused_invalid = glb_with_json(
+        r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}],"materials":[{"alphaMode":"MASK","alphaCutoff":-1.0},{}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":1,"mode":4}]}]}"#,
+        &triangle_binary(),
+    );
+    let (store, hash) = process_with_proxy_policy(unused_invalid);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(store.record(hash).unwrap().diagnostics[0].index, Some(0));
+}
+
+#[test]
+fn wider_alpha_modes_proxy_only_after_malformed_peer_data_is_excluded() {
+    for mode in ["BLEND", "FUTURE_MODE"] {
+        let bytes = triangle_glb_with_material_fields(&format!(r#""alphaMode":"{mode}""#));
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::UnsupportedFeature
+        );
+    }
+
+    let malformed_peer = glb_with_json(
+        r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}],"materials":[{"alphaMode":"BLEND"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":999,"mode":4}]}]}"#,
+        &triangle_binary(),
+    );
+    let (store, hash) = process_with_proxy_policy(malformed_peer);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidBufferRange
+    );
 }
 
 #[test]

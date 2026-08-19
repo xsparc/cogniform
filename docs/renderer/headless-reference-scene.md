@@ -119,6 +119,14 @@ multiplies perceptual roughness by green and metallic by blue before both
 directional and point response; red and alpha are ignored. A scene material
 override disables all four imported texture roles.
 
+Imported GLB alpha coverage is evaluated independently of lighting. OPAQUE
+ignores multiplied factor/texture alpha and emits one. MASK discards products
+below its finite non-negative cutoff before color, depth, identity, or normal
+output; equality survives and surviving alpha is one. A cutoff above one
+therefore discards all bounded alpha. An explicit scene material disables this
+imported coverage and retains the prior scene alpha path. BLEND, draw sorting,
+pipeline blending, alpha-to-coverage, and MSAA are not part of this baseline.
+
 The selected camera's extracted world translation supplies the view direction.
 A zero or derived-overflow view vector suppresses specular without creating a
 non-finite value. A fifth definition of either kind, a degenerate active
@@ -128,8 +136,9 @@ outside finite GPU f32 returns a typed error before submission.
 The existing bind group carries one fixed 496-byte per-draw uniform. The prior
 480-byte prefix remains model, view-projection, color, compact ID, directional
 count and four directional slots, point count and four point slots, camera
-position, and metallic/roughness plus normal scale/enabled state. One appended
-zero-padded `vec4` contains core emissive RGB. Bindings 1, 3, 4, and 5 select
+position, and metallic/roughness plus normal scale/material flags. One appended
+`vec4` contains core emissive RGB and uses its prior padding lane for the mask
+cutoff. Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 is the fixed sampler. This adds
 no light buffer, alternate pipeline, runtime
@@ -205,6 +214,8 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_adds_after_direct_light_and_scene_override_disables_it
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work
 ```
 
@@ -217,7 +228,8 @@ exact unlit compatibility, scene-material override precedence, front- and
 back-facing response, and near/far Point attenuation without changing
 identity/depth/normals. They also compare every output sample between matching
 GLBs with missing versus retained primary coordinates, then pin texture
-orientation, sRGB/factor/alpha response, scene override, and shared residency.
+orientation, sRGB/RGB-factor response, OPAQUE alpha-one output, scene override,
+and shared residency.
 The emissive-factor contract additionally proves bounded addition after unlit,
 directional, and point response, RGB clamping, alpha preservation, explicit
 override suppression, unchanged non-color/background outputs, and unchanged
@@ -226,6 +238,10 @@ The emissive-texture contract additionally proves sRGB RGB-factor
 multiplication, alpha irrelevance, white and zero-factor neutrality,
 directional/point composition, scene-override suppression, exact four-role GPU
 accounting, eviction/rehydration, and unchanged non-color observations.
+The alpha-coverage contract distinguishes factor, texture, and product alpha;
+pins equality, cutoff-above-one, OPAQUE, and scene-override behavior; verifies
+discard across every attachment; and preserves revision, logical hash, and
+idempotent replay.
 The eviction contract partially uploads a two-mesh textured asset, submits a
 frame, releases the remaining reservation and all logical residency exactly,
 keeps the submitted readback valid, verifies the authored cuboid fallback, and

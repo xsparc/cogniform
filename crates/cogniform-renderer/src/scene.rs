@@ -1,7 +1,7 @@
 use core::num::{NonZeroU32, NonZeroU64};
 use std::collections::{BTreeMap, BTreeSet};
 
-use cogniform_assets::{AssetMaterial, AssetMeshKey};
+use cogniform_assets::{AssetAlphaMode, AssetMaterial, AssetMeshKey};
 use cogniform_protocol::{
     CameraComponent, ColorRgba, LightKind, MaterialComponent, RenderChange, RenderEntity,
     RenderExtraction, SceneRevision, StableEntityId,
@@ -318,9 +318,10 @@ impl RenderScene {
                     emissive,
                     normal_scale: 1.0,
                     imported_texture_roles: ImportedTextureRoles::NONE,
+                    imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
                     compact_id: compact_id.get(),
                 }
-                .with_imported_textures(entity.material().is_none(), imported_material),
+                .with_imported_material(entity.material().is_none(), imported_material),
             );
             id_lookup.insert(compact_id.get(), entity_id);
         }
@@ -437,19 +438,49 @@ pub(crate) struct PreparedDraw {
     pub(crate) emissive: [f32; 3],
     pub(crate) normal_scale: f32,
     pub(crate) imported_texture_roles: ImportedTextureRoles,
+    pub(crate) imported_alpha_coverage: ImportedAlphaCoverage,
     pub(crate) compact_id: u32,
 }
 
 impl PreparedDraw {
-    fn with_imported_textures(
+    fn with_imported_material(
         mut self,
         use_imported_material: bool,
         material: Option<AssetMaterial>,
     ) -> Self {
-        let (roles, normal_scale) = imported_texture_selection(use_imported_material, material);
+        let (roles, normal_scale, alpha_coverage) =
+            imported_material_selection(use_imported_material, material);
         self.imported_texture_roles = roles;
         self.normal_scale = normal_scale;
+        self.imported_alpha_coverage = alpha_coverage;
         self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ImportedAlphaCoverage {
+    Disabled,
+    Opaque,
+    Mask { cutoff: f32 },
+}
+
+impl ImportedAlphaCoverage {
+    const ENABLED_FLAG: u8 = 1 << 1;
+    const MASK_FLAG: u8 = 1 << 2;
+
+    pub(crate) const fn flags(self) -> u8 {
+        match self {
+            Self::Disabled => 0,
+            Self::Opaque => Self::ENABLED_FLAG,
+            Self::Mask { .. } => Self::ENABLED_FLAG | Self::MASK_FLAG,
+        }
+    }
+
+    pub(crate) const fn cutoff(self) -> f32 {
+        match self {
+            Self::Disabled | Self::Opaque => 0.0,
+            Self::Mask { cutoff } => cutoff,
+        }
     }
 }
 
@@ -496,10 +527,10 @@ fn primitive_geometry(shape: cogniform_protocol::PrimitiveShape) -> PreparedGeom
     }
 }
 
-fn imported_texture_selection(
+fn imported_material_selection(
     use_imported_material: bool,
     material: Option<AssetMaterial>,
-) -> (ImportedTextureRoles, f32) {
+) -> (ImportedTextureRoles, f32, ImportedAlphaCoverage) {
     let use_base_color =
         use_imported_material && material.is_some_and(AssetMaterial::has_base_color_texture);
     let use_normal =
@@ -518,7 +549,21 @@ fn imported_texture_selection(
     roles |= u8::from(use_emissive) * ImportedTextureRoles::EMISSIVE;
     roles |= u8::from(use_metallic_roughness) * ImportedTextureRoles::METALLIC_ROUGHNESS;
     roles |= u8::from(use_normal) * ImportedTextureRoles::NORMAL;
-    (ImportedTextureRoles(roles), normal_scale)
+    let alpha_coverage = if use_imported_material {
+        material.map_or(ImportedAlphaCoverage::Disabled, |material| {
+            match material.alpha_mode() {
+                AssetAlphaMode::Mask => ImportedAlphaCoverage::Mask {
+                    cutoff: material
+                        .alpha_cutoff()
+                        .expect("mask material retains a cutoff"),
+                },
+                _ => ImportedAlphaCoverage::Opaque,
+            }
+        })
+    } else {
+        ImportedAlphaCoverage::Disabled
+    };
+    (ImportedTextureRoles(roles), normal_scale, alpha_coverage)
 }
 
 fn color_values(color: ColorRgba) -> [f32; 4] {
@@ -1431,6 +1476,10 @@ mod tests {
         assert_exact_f32(prepared.draws[0].metallic, 0.75);
         assert_exact_f32(prepared.draws[0].roughness, 0.25);
         assert_eq!(prepared.draws[0].emissive.map(f32::to_bits), [0; 3]);
+        assert_eq!(
+            prepared.draws[0].imported_alpha_coverage,
+            ImportedAlphaCoverage::Opaque
+        );
 
         let unit = |value| UnitF32::new(value).unwrap();
         let scene_material = MaterialComponent {
@@ -1468,5 +1517,9 @@ mod tests {
         assert_exact_f32(overridden.draws[0].metallic, 0.0);
         assert_exact_f32(overridden.draws[0].roughness, 0.9);
         assert_eq!(overridden.draws[0].emissive.map(f32::to_bits), [0; 3]);
+        assert_eq!(
+            overridden.draws[0].imported_alpha_coverage,
+            ImportedAlphaCoverage::Disabled
+        );
     }
 }

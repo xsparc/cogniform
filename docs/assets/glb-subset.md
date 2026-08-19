@@ -16,7 +16,8 @@ observation semantics. CF056 adds one bounded linear packed
 metallic-roughness role whose green and blue channels multiply the existing
 direct-light factors. CF057 retains bounded core emissive RGB and adds it to
 the imported surface. CF058 adds one bounded sRGB emissive-texture role that
-multiplies that numeric factor without adding light authority.
+multiplies that numeric factor without adding light authority. CF059 adds
+deterministic imported OPAQUE and MASK coverage without blending or sorting.
 
 ## Ownership and lifecycle
 
@@ -150,7 +151,11 @@ The importer accepts only the following baseline:
 - an optional material with unit-interval
   `pbrMetallicRoughness.baseColorFactor`, `metallicFactor`, and
   `roughnessFactor`, plus optional `emissiveFactor` containing exactly three
-  finite unit-interval linear RGB values. For an explicitly selected material,
+  finite unit-interval linear RGB values; and
+- optional string `alphaMode`, defaulting to `OPAQUE`, with `OPAQUE` and `MASK`
+  supported. Optional `alphaCutoff` requires an explicit mode, must be finite
+  and non-negative, and defaults to `0.5` for `MASK`; values above one remain
+  valid. For an explicitly selected material,
   omitted PBR factors use the glTF defaults of one and omitted emissive uses
   `[0, 0, 0]`. A primitive without a material retains the
   existing neutral Cogniform fallback `(0.8, 0.8, 0.8, 1.0)`, metallic `0`,
@@ -178,7 +183,7 @@ GLB chunks, sparse accessors, unsupported normal or primary-coordinate
 encodings, additional coordinate sets, colors, morph targets, multiple
 primitives, more than four images/textures, unused image or texture records,
 explicit samplers, JPEG and wider PNG forms, texture transforms,
-occlusion texture roles, alpha modes, nodes, scenes, cameras, animations,
+occlusion texture roles, `BLEND` alpha coverage, nodes, scenes, cameras, animations,
 skins, and extensions
 are not supported. There is no compressed geometry, mipmap, anisotropy, or
 scene-graph traversal path.
@@ -202,16 +207,18 @@ Invalid GLB framing or lengths, malformed or type-invalid JSON, invalid buffer
 ranges or indices, non-finite positions, zero or non-finite normals or
 tangents, invalid tangent handedness, normal/tangent count mismatches,
 non-finite primary coordinates, primary-coordinate count mismatches, malformed
-or out-of-range emissive factors, malformed emissive texture roles or missing
+or out-of-range emissive factors, malformed alpha mode/cutoff values,
+malformed emissive texture roles or missing
 coordinates, malformed or truncated PNG data, invalid
 image ranges, degenerate
 fallback triangles, and collection or byte-limit failures always produce
 `Rejected`. A proxy therefore never masks malformed or over-limit input. A
 syntactically valid but unsupported normal, tangent accessor, missing
-normal-texture basis, primary-coordinate, image format, or texture role may
-proxy only under explicit policy. Proxy vertices always contain exact zero
-primary coordinates, the disabled fallback tangent, zero emission, and no
-imported texture.
+normal-texture basis, primary-coordinate, image format, texture role, or well-
+formed wider alpha mode may proxy only under explicit policy and only after
+malformed peer data is excluded. Proxy vertices always contain exact zero
+primary coordinates, the disabled fallback tangent, opaque coverage, zero
+emission, and no imported texture.
 
 At draw time, a resident mesh uses its imported base-color factor, optional
 base-color, metallic-roughness, tangent-space normal, and emissive textures,
@@ -222,7 +229,12 @@ fallbacks. The fixed repeat/linear one-mip sampler samples base color and
 emissive as sRGB and the data roles as linear; emissive and normal alpha plus
 metallic-roughness red/alpha are ignored.
 Sampled base RGBA
-multiplies the factor before the existing unlit or direct-light path. The
+multiplies the factor before the existing unlit or direct-light path. Imported
+default or explicit `OPAQUE` ignores that alpha and emits one. Imported `MASK`
+discards only products below its cutoff before any render attachment output;
+equality survives and cutoff above one discards all bounded alpha. Surviving
+fragments emit alpha one. An explicit scene material disables imported
+coverage and preserves its own alpha semantics. The
 metallic-roughness green and blue channels multiply the numeric roughness and
 metallic factors only for the direct-light response. The
 source-tangent basis perturbs direct lighting only; depth, identity, and the
@@ -234,7 +246,8 @@ an explicit primitive component is used as the author-chosen fallback. Without
 that component, preparation fails with `AssetUnavailable`.
 
 `AssetMaterial` carries validated numeric metadata including core emissive
-RGB, immutable texture-role facts, and finite normal scale. `AssetUploadJob` exposes that material and
+RGB, typed alpha coverage/cutoff, immutable texture-role facts, and finite
+normal scale. `AssetUploadJob` exposes that material and
 separate optional base-color, metallic-roughness, normal, and emissive `AssetTexture`
 values; the compatible
 `base_color` accessor remains. A source image shared by multiple roles counts once
@@ -319,6 +332,8 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_adds_after_direct_light_and_scene_override_disables_it
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work
 cargo test --release -p cogniform-storage --test asset_file --locked --offline -- --ignored --exact persisted_recovery_and_asset_sources_restore_renderable_state
@@ -331,7 +346,8 @@ and distinct imported/overridden direct material response with exact unlit
 base RGBA. The primary-coordinate comparison proves every color, depth,
 identity, normal, and background sample remains exact with coordinates that
 include values outside the unit interval. The texture check pins top-to-bottom
-orientation, sRGB sampling, factor/alpha multiplication, direct-light response,
+orientation, sRGB sampling, RGB-factor multiplication, OPAQUE alpha-one output,
+direct-light response,
 scene override, and one shared 16-byte GPU texture without changing depth,
 identity, normal, or background. The normal-texture check pins linear sampling,
 finite scale, source-tangent shading, alpha irrelevance, and direct-light color
@@ -346,7 +362,10 @@ checks prove hardware sRGB decoding, RGB-factor multiplication, alpha
 irrelevance, white/zero neutrality, both direct-light paths, override
 suppression, and unchanged non-color output. The four-role test proves exact
 distinct-image CPU bytes plus GPU upload, eviction, and
-rehydration counts. The service checks then prove that restored
+rehydration counts. The alpha checks prove factor-only, texture-only, and
+multiplied coverage, exact cutoff equality, cutoff-above-one discard, OPAQUE
+alpha-one output, explicit scene override, background preservation, all render
+attachments, and unchanged revision/hash/replay. The service checks then prove that restored
 plain and textured asset references require explicit exact-hash CPU/GPU
 rehydration without another logical mutation. The CF019 case
 persists recovery and asset source in separate files, drops the source service,

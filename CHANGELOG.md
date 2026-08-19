@@ -58,6 +58,11 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   accounting, sRGB RGB-factor multiplication, ignored alpha, white and
   zero-factor neutrality, explicit scene-override suppression, exact
   eviction/rehydration, and no light, strength, HDR, or exposure authority;
+- optional core glTF `OPAQUE` and `MASK` alpha coverage, with strict finite
+  non-negative cutoff handling, multiplied factor/texture alpha, exact cutoff
+  equality, pre-output discard across color/depth/identity/normal, opaque
+  surviving alpha, explicit scene-material precedence, and no blending,
+  sorting, or new texture authority;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
@@ -200,6 +205,16 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF059 adds the non-exhaustive public `AssetAlphaMode` enum and additive
+  `AssetMaterial::alpha_mode` and `AssetMaterial::alpha_cutoff` accessors while
+  preserving the existing `const` constructor with opaque defaults. Imported
+  GLB OPAQUE output now correctly emits alpha one instead of retaining imported
+  factor/texture alpha; built-in and explicit scene-material alpha behavior is
+  unchanged. The private 496-byte uniform reuses existing flag and padding
+  lanes, so no vertex, texture, bind-group, logical scene, observation schema,
+  protocol, dependency, package, version, tag, release-asset, workflow, or
+  release contract changed;
 
 - CF058 adds the additive `AssetMaterial::has_emissive_texture` and
   `AssetUploadJob::emissive_texture` accessors. Asset/renderer texture counts
@@ -430,7 +445,7 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   gamma conversion, and lighting configuration are not implemented.
   Normal output is quantized and the imported subset supports numeric base
   color, metallic, roughness, and one source-tangent normal map, but no
-  generated tangents, emissive strength, alpha modes, or other
+  generated tangents, emissive strength, alpha blending/sorting, or other
   material texture roles;
   the GLB subset samples at most one shared embedded PNG per base-color,
   metallic-roughness, normal, or emissive role but excludes external/data images, JPEG,
