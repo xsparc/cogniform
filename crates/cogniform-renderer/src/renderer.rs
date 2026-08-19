@@ -13,9 +13,9 @@ use crate::{
     RendererAssetStats, RendererConfig, RendererError, SceneUpdateError, SceneUpdateSummary,
     asset::{AssetTextureRole, RendererAssets},
     scene::{
-        ImportedAlphaCoverage, ImportedFacePolicy, ImportedTextureRoles, MAX_DIRECTIONAL_LIGHTS,
-        MAX_POINT_LIGHTS, PreparedDirectionalLight, PreparedDraw, PreparedGeometry,
-        PreparedPointLight, PreparedScene, RenderScene,
+        ImportedAlphaCoverage, ImportedFacePolicy, ImportedShadingModel, ImportedTextureRoles,
+        MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, PreparedDirectionalLight, PreparedDraw,
+        PreparedGeometry, PreparedPointLight, PreparedScene, RenderScene,
     },
 };
 
@@ -355,6 +355,7 @@ impl HeadlessRenderer {
                 imported_texture_roles: ImportedTextureRoles::NONE,
                 imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
                 imported_face_policy: ImportedFacePolicy::Disabled,
+                imported_shading_model: ImportedShadingModel::MetallicRoughness,
                 compact_id: REFERENCE_ENTITY_ID,
             }],
             directional_lights: Vec::new(),
@@ -1598,8 +1599,10 @@ fn encode_draw_uniform(
     bytes.extend_from_slice(&draw.roughness.to_le_bytes());
     bytes.extend_from_slice(&draw.normal_scale.to_le_bytes());
     let normal_flag = u8::from(draw.imported_texture_roles.normal());
-    let material_flags =
-        normal_flag | draw.imported_alpha_coverage.flags() | draw.imported_face_policy.flags();
+    let material_flags = normal_flag
+        | draw.imported_alpha_coverage.flags()
+        | draw.imported_face_policy.flags()
+        | draw.imported_shading_model.flags();
     bytes.extend_from_slice(&f32::from(material_flags).to_le_bytes());
     for value in draw.emissive {
         bytes.extend_from_slice(&value.to_le_bytes());
@@ -1874,6 +1877,7 @@ mod tests {
             imported_texture_roles: ImportedTextureRoles::NONE,
             imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
             imported_face_policy: ImportedFacePolicy::Disabled,
+            imported_shading_model: ImportedShadingModel::MetallicRoughness,
             compact_id: 42,
         };
         let lights = [
@@ -1958,6 +1962,7 @@ mod tests {
             imported_texture_roles: ImportedTextureRoles::NORMAL_ONLY,
             imported_alpha_coverage: ImportedAlphaCoverage::Mask { cutoff: 1.25 },
             imported_face_policy: ImportedFacePolicy::DoubleSided,
+            imported_shading_model: ImportedShadingModel::Unlit,
             compact_id: 1,
         };
 
@@ -1965,7 +1970,7 @@ mod tests {
         assert_eq!(bytes.len(), 496);
         let float_at =
             |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
-        assert_eq!(float_at(119).to_bits(), 15.0_f32.to_bits());
+        assert_eq!(float_at(119).to_bits(), 31.0_f32.to_bits());
         assert_eq!(float_at(123).to_bits(), 1.25_f32.to_bits());
     }
 

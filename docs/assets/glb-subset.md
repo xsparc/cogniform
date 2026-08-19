@@ -19,7 +19,9 @@ the imported surface. CF058 adds one bounded sRGB emissive-texture role that
 multiplies that numeric factor without adding light authority. CF059 adds
 deterministic imported OPAQUE and MASK coverage without blending or sorting.
 CF060 adds the core single-sided default and bounded explicit double-sided
-rendering without draw sorting or asset-keyed pipeline growth.
+rendering without draw sorting or asset-keyed pipeline growth. CF061 admits
+the ratified `KHR_materials_unlit` marker through strict declarations and
+base-color-only shading without new resources or pipelines.
 
 ## Ownership and lifecycle
 
@@ -148,6 +150,10 @@ The importer accepts only the following baseline:
 - each image must have no URI, use an in-BIN buffer view, declare
   `image/png`, and decode as a static non-interlaced 8-bit RGB or RGBA image;
 - optional non-normalized scalar u16 or u32 indices;
+- optional non-empty unique-string `extensionsUsed` and
+  `extensionsRequired`, with required a subset of used. The sole recognized
+  name is `KHR_materials_unlit`; every actual supported or unknown extension
+  member must be declared in used;
 - tightly packed or valid component-aligned buffer-view strides up to 252
   bytes; and
 - an optional material with unit-interval
@@ -164,7 +170,11 @@ The importer accepts only the following baseline:
   and roughness `0.8`; and
 - optional boolean `doubleSided`, defaulting to false. Explicit false and true
   are retained; null and every non-boolean form are invalid, including in an
-  unused material record.
+  unused material record; and
+- optional exact empty material `extensions.KHR_materials_unlit`, retained as
+  typed `AssetShadingModel::Unlit` for selected and unused materials. Omission
+  retains `MetallicRoughness`; null, scalar, array, undeclared, or otherwise
+  malformed markers are invalid.
 
 Indexed geometry is expanded into a triangle vertex stream, using the same
 source index for position, normal, tangent, and primary coordinate. The
@@ -189,7 +199,7 @@ encodings, additional coordinate sets, colors, morph targets, multiple
 primitives, more than four images/textures, unused image or texture records,
 explicit samplers, JPEG and wider PNG forms, texture transforms,
 occlusion texture roles, `BLEND` alpha coverage, nodes, scenes, cameras, animations,
-skins, and extensions
+skins, and all other or wider extensions
 are not supported. There is no compressed geometry, mipmap, anisotropy, or
 scene-graph traversal path.
 
@@ -214,6 +224,8 @@ tangents, invalid tangent handedness, normal/tangent count mismatches,
 non-finite primary coordinates, primary-coordinate count mismatches, malformed
 or out-of-range emissive factors, malformed alpha mode/cutoff values,
 malformed `doubleSided` values,
+malformed, duplicate, empty, or inconsistent extension declarations, malformed
+or undeclared unlit markers,
 malformed emissive texture roles or missing
 coordinates, malformed or truncated PNG data, invalid
 image ranges, degenerate
@@ -221,8 +233,9 @@ fallback triangles, and collection or byte-limit failures always produce
 `Rejected`. A proxy therefore never masks malformed or over-limit input. A
 syntactically valid but unsupported normal, tangent accessor, missing
 normal-texture basis, primary-coordinate, image format, texture role, or well-
-formed wider alpha mode may proxy only under explicit policy and only after
-malformed peer data is excluded. Proxy vertices always contain exact zero
+formed wider alpha mode, unknown extension, or non-empty unlit payload may
+proxy only under explicit policy and only after malformed peer data is
+excluded. Proxy vertices always contain exact zero
 primary coordinates, the disabled fallback tangent, opaque coverage, zero
 emission, no imported texture, and the single-sided material default. The
 generated proxy cube topology is unchanged; its faces therefore follow the
@@ -237,7 +250,7 @@ fallbacks. The fixed repeat/linear one-mip sampler samples base color and
 emissive as sRGB and the data roles as linear; emissive and normal alpha plus
 metallic-roughness red/alpha are ignored.
 Sampled base RGBA
-multiplies the factor before the existing unlit or direct-light path. Imported
+multiplies the factor before material response. Imported
 default or explicit `OPAQUE` ignores that alpha and emits one. Imported `MASK`
 discards only products below its cutoff before any render attachment output;
 equality survives and cutoff above one discards all bounded alpha. Surviving
@@ -248,19 +261,25 @@ writes no color, depth, entity ID, normal, or derived visibility. Explicit
 true keeps both faces and reverses the completed geometric and tangent-mapped
 shaded normals on a back face before observation and lighting. Built-ins,
 authored primitive fallbacks, and explicit scene materials remain unculled
-without that imported face correction. The
+without that imported face correction. A selected imported unlit material
+uses only the multiplied base RGB regardless of no, directional, point, or
+combined lights. Its retained normal, metallic-roughness, and emissive values
+and textures remain validated and CPU/GPU-accounted but are visually inert.
+An explicit scene material disables imported unlit and uses ordinary direct
+lighting. The
 metallic-roughness green and blue channels multiply the numeric roughness and
 metallic factors only for the direct-light response. The
-source-tangent basis perturbs direct lighting only; depth, identity, and the
+source-tangent basis perturbs ordinary direct lighting only; depth, identity, and the
 normal observation retain the geometric direction. Emissive texture RGB
-multiplies the numeric factor before it is added after the unlit or
-direct-light surface response and clamped to one while alpha stays
+multiplies the numeric factor before it is added after the ordinary no-light or
+direct-light metallic-roughness response and clamped to one while alpha stays
 unchanged; it neither creates a light nor illuminates another entity. If the referenced mesh is not resident,
 an explicit primitive component is used as the author-chosen fallback. Without
 that component, preparation fails with `AssetUnavailable`.
 
 `AssetMaterial` carries validated numeric metadata including core emissive
-RGB, typed alpha coverage/cutoff, the retained double-sided value, immutable texture-role facts, and finite
+RGB, typed alpha coverage/cutoff, the retained double-sided value, typed
+shading model, immutable texture-role facts, and finite
 normal scale. `AssetUploadJob` exposes that material and
 separate optional base-color, metallic-roughness, normal, and emissive `AssetTexture`
 values; the compatible
@@ -351,6 +370,8 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_draws_switch_pipelines_without_reordering_or_causality_changes
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_back_face_composes_with_normal_maps_and_scene_override
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_back_face_preserves_mask_discard_and_equality
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact unlit_base_texture_is_exact_across_lights_and_scene_override_restores_lighting
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact unlit_double_sided_back_face_preserves_opaque_and_mask_coverage
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work
 cargo test --release -p cogniform-storage --test asset_file --locked --offline -- --ignored --exact persisted_recovery_and_asset_sources_restore_renderable_state
@@ -388,7 +409,11 @@ face-oriented geometric and tangent-mapped normals, directional normal-map
 lighting, point-light compatibility,
 MASK discard/equality, explicit scene-material precedence, exact identity and
 derived visibility, and unchanged eviction/revision/hash/replay. They do not
-claim mirrored-transform support. The service/storage checks prove that restored
+claim mirrored-transform support. The unlit checks prove exact sampled base
+color across no, directional, point, and combined lights, visually inert but
+retained fallback texture roles, explicit scene override, OPAQUE/MASK and
+double-sided composition, face-oriented geometric normals, exact four-role
+eviction/rehydration, and unchanged revision/hash/replay. The service/storage checks prove that restored
 plain and textured asset references require explicit exact-hash CPU/GPU
 rehydration without another logical mutation. The CF019 case
 persists recovery and asset source in separate files, drops the source service,

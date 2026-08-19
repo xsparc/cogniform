@@ -67,6 +67,10 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   selected/unused-material validation, fixed per-draw back-cull or unculled
   selection, face-oriented geometric and shaded back-face normals, and no
   draw sorting or asset-keyed pipeline cache;
+- ratified `KHR_materials_unlit` imported-material support through strict
+  unique/subset declarations and exact empty markers, typed bounded retention,
+  base-color-only no/directional/point/combined-light response, unchanged
+  OPAQUE/MASK and face semantics, and no new resource or pipeline authority;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
@@ -209,6 +213,17 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF061 adds non-exhaustive public `AssetShadingModel` and the additive
+  `AssetMaterial::shading_model` accessor while preserving the existing
+  `const` constructor with a metallic-roughness default. Exact declared unlit
+  materials move from unsupported/proxy handling into the supported path;
+  unknown and wider extensions retain deferred explicit-policy handling after
+  malformed peers fail closed. The renderer reuses flag bit 4 in the exact
+  496-byte uniform and retains four role resources and two pipelines. No
+  vertex, texture, bind-group, logical scene, observation schema, protocol,
+  dependency, package, version, tag, release-asset, workflow, or release
+  contract changed;
 
 - CF060 adds the additive `AssetMaterial::double_sided` accessor while
   preserving the existing `const` constructor with a false default. Imported

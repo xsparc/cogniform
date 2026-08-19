@@ -26,6 +26,12 @@ const PNG_IHDR_LENGTH: u32 = 13;
 const PNG_IEND: [u8; 12] = [0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xae, 0x42, 0x60, 0x82];
 const PNG_RGB: u8 = 2;
 const PNG_RGBA: u8 = 6;
+const KHR_MATERIALS_UNLIT: &str = "KHR_materials_unlit";
+
+struct ExtensionPreflight {
+    unsupported: Option<AssetDiagnostic>,
+    unlit_materials: Vec<bool>,
+}
 
 pub(crate) fn decode_glb(
     bytes: &[u8],
@@ -34,11 +40,11 @@ pub(crate) fn decode_glb(
     let (json, binary) = split_glb(bytes, limits)?;
     let mut value: serde_json::Value = serde_json::from_slice(json)
         .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, "glb.json", None))?;
-    let unsupported = remove_declared_extensions_and_features(&mut value)?;
+    let extensions = remove_declared_extensions_and_features(&mut value)?;
     let root: Root = serde_json::from_value(value)
         .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, "glb.json.schema", None))?;
-    let decoded = validate_root(&root, binary, limits)?;
-    unsupported.map_or(Ok(decoded), Err)
+    let decoded = validate_root(&root, binary, limits, &extensions.unlit_materials)?;
+    extensions.unsupported.map_or(Ok(decoded), Err)
 }
 
 fn split_glb(bytes: &[u8], limits: AssetLimits) -> Result<(&[u8], &[u8]), AssetDiagnostic> {
@@ -139,7 +145,7 @@ fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
 
 fn remove_declared_extensions_and_features(
     value: &mut serde_json::Value,
-) -> Result<Option<AssetDiagnostic>, AssetDiagnostic> {
+) -> Result<ExtensionPreflight, AssetDiagnostic> {
     let Some(root) = value.as_object_mut() else {
         return Err(diagnostic(
             AssetDiagnosticCode::InvalidJson,
@@ -147,26 +153,25 @@ fn remove_declared_extensions_and_features(
             None,
         ));
     };
-    let mut unsupported = None;
-    for field in ["extensionsUsed", "extensionsRequired"] {
-        if let Some(declared) = root.remove(field) {
-            if !declared
-                .as_array()
-                .is_some_and(|values| values.iter().all(serde_json::Value::is_string))
-            {
-                return Err(diagnostic(
-                    AssetDiagnosticCode::InvalidJson,
-                    "glb.json.extensions",
-                    None,
-                ));
-            }
-            unsupported = Some(diagnostic(
+    let used = remove_extension_names(root, "extensionsUsed")?.unwrap_or_default();
+    let required = remove_extension_names(root, "extensionsRequired")?.unwrap_or_default();
+    if !required.is_subset(&used) {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            "glb.json.extensionsRequired",
+            None,
+        ));
+    }
+    let mut unsupported = used
+        .iter()
+        .any(|name| name != KHR_MATERIALS_UNLIT)
+        .then(|| {
+            diagnostic(
                 AssetDiagnosticCode::UnsupportedExtension,
                 "glb.json.extensions",
                 None,
-            ));
-        }
-    }
+            )
+        });
     for field in ["animations", "cameras", "nodes", "scenes", "skins"] {
         if let Some(feature) = root.remove(field) {
             if !feature.is_array() {
@@ -201,9 +206,115 @@ fn remove_declared_extensions_and_features(
             )
         });
     }
-    remove_nested_extensions(value, &mut unsupported)?;
+    let unlit_materials = remove_material_unlit_extensions(value, &used, &mut unsupported)?;
+    remove_nested_extensions(value, &used, &mut unsupported)?;
     remove_unsupported_material_features(value, &mut unsupported)?;
-    Ok(unsupported)
+    Ok(ExtensionPreflight {
+        unsupported,
+        unlit_materials,
+    })
+}
+
+fn remove_extension_names(
+    root: &mut serde_json::Map<String, serde_json::Value>,
+    field: &str,
+) -> Result<Option<BTreeSet<String>>, AssetDiagnostic> {
+    let Some(value) = root.remove(field) else {
+        return Ok(None);
+    };
+    let Some(values) = value.as_array().filter(|values| !values.is_empty()) else {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            "glb.json.extensions",
+            None,
+        ));
+    };
+    let mut names = BTreeSet::new();
+    for value in values {
+        let Some(name) = value.as_str().filter(|name| !name.is_empty()) else {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.extensions",
+                None,
+            ));
+        };
+        if !names.insert(name.to_owned()) {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.extensions",
+                None,
+            ));
+        }
+    }
+    Ok(Some(names))
+}
+
+fn remove_material_unlit_extensions(
+    value: &mut serde_json::Value,
+    used: &BTreeSet<String>,
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<Vec<bool>, AssetDiagnostic> {
+    let Some(materials) = value
+        .as_object_mut()
+        .and_then(|root| root.get_mut("materials"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(Vec::new());
+    };
+    let mut unlit_materials = Vec::with_capacity(materials.len());
+    for material in materials {
+        let Some(material) = material.as_object_mut() else {
+            unlit_materials.push(false);
+            continue;
+        };
+        let Some(mut extensions) = material.remove("extensions") else {
+            unlit_materials.push(false);
+            continue;
+        };
+        let Some(extensions) = extensions.as_object_mut() else {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.materials.extensions",
+                None,
+            ));
+        };
+        let mut unlit = false;
+        if let Some(marker) = extensions.remove(KHR_MATERIALS_UNLIT) {
+            if !used.contains(KHR_MATERIALS_UNLIT) {
+                return Err(diagnostic(
+                    AssetDiagnosticCode::InvalidJson,
+                    "glb.json.materials.extensions.KHR_materials_unlit",
+                    None,
+                ));
+            }
+            let Some(marker) = marker.as_object() else {
+                return Err(diagnostic(
+                    AssetDiagnosticCode::InvalidJson,
+                    "glb.json.materials.extensions.KHR_materials_unlit",
+                    None,
+                ));
+            };
+            if marker.is_empty() {
+                unlit = true;
+            } else {
+                unsupported.get_or_insert_with(|| {
+                    diagnostic(
+                        AssetDiagnosticCode::UnsupportedExtension,
+                        "glb.json.materials.extensions.KHR_materials_unlit",
+                        None,
+                    )
+                });
+            }
+        }
+        if !extensions.is_empty() {
+            material.insert(
+                "extensions".to_owned(),
+                serde_json::Value::Object(core::mem::take(extensions)),
+            );
+        }
+        unlit_materials.push(unlit);
+    }
+    Ok(unlit_materials)
 }
 
 fn remove_unsupported_material_features(
@@ -264,31 +375,44 @@ fn remove_typed_unsupported(
 
 fn remove_nested_extensions(
     value: &mut serde_json::Value,
+    used: &BTreeSet<String>,
     unsupported: &mut Option<AssetDiagnostic>,
 ) -> Result<(), AssetDiagnostic> {
     match value {
         serde_json::Value::Object(object) => {
             if let Some(extensions) = object.remove("extensions") {
-                if !extensions.is_object() {
+                let Some(extensions) = extensions.as_object() else {
+                    return Err(diagnostic(
+                        AssetDiagnosticCode::InvalidJson,
+                        "glb.json.extensions",
+                        None,
+                    ));
+                };
+                if extensions
+                    .iter()
+                    .any(|(name, payload)| !used.contains(name) || !payload.is_object())
+                {
                     return Err(diagnostic(
                         AssetDiagnosticCode::InvalidJson,
                         "glb.json.extensions",
                         None,
                     ));
                 }
-                *unsupported = Some(diagnostic(
-                    AssetDiagnosticCode::UnsupportedExtension,
-                    "glb.json.extensions",
-                    None,
-                ));
+                unsupported.get_or_insert_with(|| {
+                    diagnostic(
+                        AssetDiagnosticCode::UnsupportedExtension,
+                        "glb.json.extensions",
+                        None,
+                    )
+                });
             }
             for nested in object.values_mut() {
-                remove_nested_extensions(nested, unsupported)?;
+                remove_nested_extensions(nested, used, unsupported)?;
             }
         }
         serde_json::Value::Array(values) => {
             for nested in values {
-                remove_nested_extensions(nested, unsupported)?;
+                remove_nested_extensions(nested, used, unsupported)?;
             }
         }
         serde_json::Value::Null
@@ -303,9 +427,10 @@ fn validate_root(
     root: &Root,
     binary: &[u8],
     limits: AssetLimits,
+    unlit_materials: &[bool],
 ) -> Result<DecodedAsset, AssetDiagnostic> {
     validate_root_header(root, binary, limits)?;
-    validate_emissive_factors(root)?;
+    validate_material_values(root)?;
     let alpha_unsupported = validate_alpha_coverage(root)?;
     let textures = decode_textures(root, binary, limits)?;
     let mut decoded_bytes = textures.byte_len;
@@ -318,6 +443,7 @@ fn validate_root(
             stable_index(mesh_index),
             mesh,
             &mut decoded_bytes,
+            unlit_materials,
         )?);
     }
     if meshes.is_empty() {
@@ -427,15 +553,51 @@ fn validate_alpha_coverage(root: &Root) -> Result<Option<AssetDiagnostic>, Asset
     Ok(unsupported)
 }
 
-fn validate_emissive_factors(root: &Root) -> Result<(), AssetDiagnostic> {
+fn validate_material_values(root: &Root) -> Result<(), AssetDiagnostic> {
     for (material_index, material) in root.materials.iter().enumerate() {
+        let index = Some(stable_index(material_index));
+        if let Some(pbr) = material.pbr_metallic_roughness.as_ref() {
+            if let Some(values) = pbr.base_color {
+                for value in values {
+                    UnitF32::new(value).map_err(|_| {
+                        diagnostic(
+                            AssetDiagnosticCode::InvalidJson,
+                            "glb.json.materials.baseColorFactor",
+                            index,
+                        )
+                    })?;
+                }
+            }
+            for value in [pbr.metallic, pbr.roughness].into_iter().flatten() {
+                UnitF32::new(value).map_err(|_| {
+                    diagnostic(
+                        AssetDiagnosticCode::InvalidJson,
+                        "glb.json.materials.pbrMetallicRoughness",
+                        index,
+                    )
+                })?;
+            }
+        }
+        if let Some(scale) = material
+            .normal_texture
+            .as_ref()
+            .and_then(|texture| texture.scale)
+        {
+            FiniteF32::new(scale).map_err(|_| {
+                diagnostic(
+                    AssetDiagnosticCode::InvalidJson,
+                    "glb.json.materials.normalTexture.scale",
+                    index,
+                )
+            })?;
+        }
         if let Some(values) = material.emissive {
             for value in values {
                 UnitF32::new(value).map_err(|_| {
                     diagnostic(
                         AssetDiagnosticCode::InvalidJson,
                         "glb.json.materials.emissiveFactor",
-                        Some(stable_index(material_index)),
+                        index,
                     )
                 })?;
             }
@@ -1188,6 +1350,7 @@ fn decode_mesh(
     mesh_index: u32,
     mesh: &Mesh,
     decoded_bytes: &mut u64,
+    unlit_materials: &[bool],
 ) -> Result<DecodedMesh, AssetDiagnostic> {
     let primitive = validated_primitive(mesh, limits, mesh_index)?;
     let VertexLayouts {
@@ -1244,7 +1407,7 @@ fn decode_mesh(
         indices,
         output_count,
     )?;
-    let material = decode_material(root, primitive.material)?;
+    let material = decode_material(root, primitive.material, unlit_materials)?;
     if (material.has_base_color_texture()
         || material.has_emissive_texture()
         || material.has_metallic_roughness_texture()
@@ -1990,6 +2153,7 @@ fn element_offset(
 fn decode_material(
     root: &Root,
     material_index: Option<u32>,
+    unlit_materials: &[bool],
 ) -> Result<AssetMaterial, AssetDiagnostic> {
     let (color_values, metallic_value, roughness_value, emissive_values) =
         if let Some(index) = material_index {
@@ -2039,6 +2203,7 @@ fn decode_material(
         material_scalar(roughness_value)?,
     )
     .with_emissive(emissive);
+    let material = apply_unlit(material_index, unlit_materials, material);
     let material = apply_double_sided(root, material_index, material);
     let material = apply_alpha_coverage(root, material_index, material)?;
     let has_base_color_texture = material_index.is_some_and(|index| {
@@ -2087,6 +2252,23 @@ fn decode_material(
         material = material.with_normal_texture(scale);
     }
     Ok(material)
+}
+
+fn apply_unlit(
+    material_index: Option<u32>,
+    unlit_materials: &[bool],
+    material: AssetMaterial,
+) -> AssetMaterial {
+    let enabled = material_index
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| unlit_materials.get(index))
+        .copied()
+        .unwrap_or(false);
+    if enabled {
+        material.with_unlit()
+    } else {
+        material
+    }
 }
 
 fn apply_double_sided(
@@ -2449,4 +2631,44 @@ struct Image {
     mime_type: Option<String>,
     #[serde(default)]
     uri: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn material_preflight_rejects_non_finite_unused_normal_scale() {
+        for scale in [f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            let root = Root {
+                asset: AssetHeader {
+                    version: "2.0".to_owned(),
+                },
+                buffers: Vec::new(),
+                buffer_views: Vec::new(),
+                accessors: Vec::new(),
+                meshes: Vec::new(),
+                materials: vec![Material {
+                    pbr_metallic_roughness: None,
+                    normal_texture: Some(NormalTextureInfo {
+                        index: 0,
+                        tex_coord: None,
+                        scale: Some(scale),
+                    }),
+                    emissive_texture: None,
+                    emissive: None,
+                    alpha_mode: None,
+                    alpha_cutoff: None,
+                    double_sided: None,
+                }],
+                images: Vec::new(),
+                samplers: Vec::new(),
+                textures: Vec::new(),
+            };
+
+            let error = validate_material_values(&root).unwrap_err();
+            assert_eq!(error.code, AssetDiagnosticCode::InvalidJson);
+            assert_eq!(error.index, Some(0));
+        }
+    }
 }
