@@ -230,6 +230,7 @@ pub struct AssetMaterial {
     normal_scale: f32,
     alpha_mode: AssetAlphaMode,
     alpha_cutoff: f32,
+    double_sided: bool,
 }
 
 impl AssetMaterial {
@@ -250,6 +251,7 @@ impl AssetMaterial {
             normal_scale: 1.0,
             alpha_mode: AssetAlphaMode::Opaque,
             alpha_cutoff: 0.5,
+            double_sided: false,
         }
     }
 
@@ -282,6 +284,11 @@ impl AssetMaterial {
     pub(crate) fn with_alpha_mask(mut self, cutoff: FiniteF32) -> Self {
         self.alpha_mode = AssetAlphaMode::Mask;
         self.alpha_cutoff = cutoff.get();
+        self
+    }
+
+    pub(crate) const fn with_double_sided(mut self) -> Self {
+        self.double_sided = true;
         self
     }
 
@@ -353,6 +360,12 @@ impl AssetMaterial {
             AssetAlphaMode::Opaque => None,
             AssetAlphaMode::Mask => Some(self.alpha_cutoff),
         }
+    }
+
+    /// Returns whether the imported material renders and lights both faces.
+    #[must_use]
+    pub const fn double_sided(self) -> bool {
+        self.double_sided
     }
 }
 

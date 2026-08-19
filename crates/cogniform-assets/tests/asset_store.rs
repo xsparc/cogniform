@@ -670,6 +670,7 @@ fn explicit_material_defaults_and_no_material_fallback_are_retained() {
         1.0_f32.to_bits()
     );
     assert_emissive(explicit_upload.material().emissive(), [0.0; 3]);
+    assert!(!explicit_upload.material().double_sided());
 
     let unmaterialed = triangle_glb_without_material();
     let unmaterialed_hash = content_hash(&unmaterialed);
@@ -700,7 +701,74 @@ fn explicit_material_defaults_and_no_material_fallback_are_retained() {
         0.8_f32.to_bits()
     );
     assert_emissive(unmaterialed_upload.material().emissive(), [0.0; 3]);
+    assert!(!unmaterialed_upload.material().double_sided());
     assert_eq!(explicit_upload.byte_len(), unmaterialed_upload.byte_len());
+}
+
+#[test]
+fn double_sided_defaults_and_explicit_values_are_retained_without_accounting_growth() {
+    let cases = [
+        ("", false),
+        (r#""doubleSided":false"#, false),
+        (r#""doubleSided":true"#, true),
+    ];
+    let mut decoded_bytes = Vec::new();
+    let mut upload_bytes = Vec::new();
+    for (fields, expected) in cases {
+        let bytes = triangle_glb_with_material_fields(fields);
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        decoded_bytes.push(store.record(hash).unwrap().decoded_bytes);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert_eq!(upload.material().double_sided(), expected);
+        upload_bytes.push(upload.byte_len());
+    }
+    assert!(decoded_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+    assert!(upload_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn malformed_double_sided_is_rejected_without_proxy_substitution() {
+    for fields in [
+        r#""doubleSided":null"#,
+        r#""doubleSided":1"#,
+        r#""doubleSided":"true""#,
+        r#""doubleSided":{}"#,
+        r#""doubleSided":[]"#,
+        r#""occlusionTexture":{},"doubleSided":null"#,
+        r#""alphaMode":"BLEND","doubleSided":1"#,
+    ] {
+        let bytes = triangle_glb_with_material_fields(fields);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+
+    for materials in [
+        r#"[{"doubleSided":null},{}]"#,
+        r#"[{"alphaMode":"BLEND"},{"doubleSided":1}]"#,
+        r#"[{"doubleSided":"false"},{"occlusionTexture":{}}]"#,
+    ] {
+        let json = format!(
+            r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":{materials},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":1,"mode":4}}]}}]}}"#,
+        );
+        let (store, hash) = process_with_proxy_policy(glb_with_json(&json, &triangle_binary()));
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
 }
 
 #[test]
@@ -2144,6 +2212,7 @@ fn unsupported_extensions_are_typed_and_proxy_policy_is_explicit() {
         upload.material().roughness().get().to_bits(),
         0.8_f32.to_bits()
     );
+    assert!(!upload.material().double_sided());
     let decoded_bytes = proxying.record(hash).unwrap().decoded_bytes;
     let eviction = proxying.evict(hash);
     assert_eq!(eviction.previous_state, Some(AssetState::ProxyReady));

@@ -63,6 +63,10 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   equality, pre-output discard across color/depth/identity/normal, opaque
   surviving alpha, explicit scene-material precedence, and no blending,
   sorting, or new texture authority;
+- optional core glTF boolean `doubleSided`, with a false default, strict
+  selected/unused-material validation, fixed per-draw back-cull or unculled
+  selection, face-oriented geometric and shaded back-face normals, and no
+  draw sorting or asset-keyed pipeline cache;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
@@ -205,6 +209,17 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF060 adds the additive `AssetMaterial::double_sided` accessor while
+  preserving the existing `const` constructor with a false default. Imported
+  omitted/false materials now correctly cull back faces; imported true
+  materials render both faces and orient completed geometric and shaded
+  normals toward the rendered side. Built-ins, authored primitive fallbacks,
+  and explicit scene materials retain unculled behavior. The renderer owns
+  exactly two fixed shared-layout pipelines and reuses the exact 496-byte
+  uniform. No vertex, texture, bind-group, logical scene, observation schema,
+  protocol, dependency, package, version, tag, release-asset, workflow, or
+  release contract changed;
 
 - CF059 adds the non-exhaustive public `AssetAlphaMode` enum and additive
   `AssetMaterial::alpha_mode` and `AssetMaterial::alpha_cutoff` accessors while

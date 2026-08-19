@@ -142,6 +142,13 @@ material precedence, all-attachment discard, and logical-state neutrality were
 collected on the CPU and validated Windows/Vulkan profile on 2026-08-19. No
 dependency, feature, lockfile, vendor, workflow, permission, package, version,
 texture, bind-group, tag, release-asset, or release action changed.
+CF060 strict core `doubleSided` decode, fixed single/double-sided pipeline
+selection, face-oriented back-face normals, scene/built-in/fallback precedence,
+MASK and normal-map composition, and logical-state neutrality were collected
+on the CPU and validated Windows/Vulkan profile on 2026-08-19. No dependency,
+feature, lockfile, vendor, workflow, permission, package, version, vertex,
+texture, bind-group, uniform-size, tag, release-asset, or release action
+changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -151,7 +158,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, deterministic imported OPAQUE/MASK coverage, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -809,6 +816,61 @@ not execute because Windows Application Control blocked the installed binary
 before startup. Manifests, the lockfile, dependency graph, vendor tree, and
 workflows are unchanged from the prior accepted audit; dependency audit remains
 an explicit environment gap until an approved environment can execute it.
+
+### CF060 core glTF double-sided materials
+
+CF060 accepts strict optional boolean `doubleSided` for every material,
+defaults omission to false, and rejects null or non-boolean values before
+proxy substitution. Imported omitted/false materials use a fixed CCW back-cull
+pipeline. Explicit true uses the one fixed shared-layout unculled pipeline and
+reverses completed geometric and tangent-mapped shaded normals on back faces.
+Built-ins, authored primitive fallbacks, and explicit scene materials preserve
+unculled, unflipped behavior. The exact 496-byte uniform reuses flag bit 3;
+asset and upload accounting are unchanged. These commands passed on
+2026-08-19:
+
+```text
+cargo build --workspace --locked --offline
+cargo fmt --all --check
+cargo test -p cogniform-assets -p cogniform-renderer --all-features --locked --offline
+cargo clippy -p cogniform-assets -p cogniform-renderer --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --nocapture
+cargo test --release -p cogniform-renderer --test headless_reference --all-features --locked --offline -- --ignored --nocapture
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python tests/release/test_package_policy.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- .github/workflows
+git diff --exit-code -- Cargo.toml Cargo.lock deny.toml vendor rust-toolchain.toml
+git diff --check
+```
+
+Ordinary tests prove selected omitted/false/true and material-free defaults,
+unchanged decoded/upload bytes, null and wrong-type rejection including unused
+materials, malformed-peer precedence over proxy-eligible occlusion/BLEND
+features, all three private draw policies, explicit scene and authored fallback
+precedence, and exact normal-plus-MASK-plus-double flag value `15` in the fixed
+uniform. All seventeen optimized asset-render tests and all nine optimized
+headless-reference tests pass together on the validated Vulkan adapter. The
+CF060 cases use positive-scale 180-degree Y rotations to prove stable
+back-cull/uncull/back-cull changes in one mixed frame, exact present/absent
+stable IDs and derived visibility, face-oriented geometric normals,
+directional normal-map lighting, point-light compatibility, MASK discard/equality, single-sided
+scene override, and built-in-plane compatibility. Eviction/rehydration leaves
+world revision/hash unchanged and idempotent replay remains exact.
+
+Public safeguards, package policy, workflow validation, workflow/manifest/
+lock/vendor/toolchain immutability, diff hygiene, and 271 relative targets
+across all fourteen changed public Markdown files pass. `cargo deny check
+advisories bans licenses sources` could not execute because Windows Application
+Control blocked the installed binary before startup. The dependency graph is
+unchanged from the prior accepted audit; this remains an explicit environment
+gap until an approved environment can execute the gate. No runtime network,
+secret, deployment, publication, or release action was performed.
 
 ## Deterministic source-candidate commands
 

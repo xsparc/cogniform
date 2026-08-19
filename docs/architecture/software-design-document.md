@@ -450,7 +450,15 @@ emits alpha one. Imported `MASK` coverage discards a fragment when the
 multiplied alpha is below its finite non-negative cutoff (default `0.5`),
 before any color, depth, identity, or normal output; equality survives and
 emits alpha one. An explicit scene material disables imported coverage and
-retains its existing alpha. `BLEND` remains unsupported. The metallic-roughness green and blue channels multiply numeric
+retains its existing alpha. `BLEND` remains unsupported. Imported materials
+default to single-sided rendering: omitted or false `doubleSided` selects a
+fixed CCW back-cull pipeline. Explicit true selects a fixed shared-layout
+unculled pipeline and reverses both completed geometric and tangent-mapped
+shaded normals on back faces before observation and lighting. Built-ins,
+authored primitive fallbacks, and explicit scene materials remain unculled
+without imported face correction. Pipeline selection is per draw in stable
+order; the renderer owns exactly these two fixed instances and no asset-keyed
+pipeline cache. The metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source-tangent TBN perturbs only direct-light response. Emissive texture RGB
 is decoded from sRGB, multiplied by the numeric linear emissive factor, added
@@ -491,7 +499,8 @@ positions, optional same-count finite vertex normals, optional same-count
 finite f32 `TEXCOORD_0`, optional same-count finite non-zero f32 `TANGENT`
 `VEC4` with exact handedness, one bounded numeric metallic-roughness material
 plus an optional three-channel unit-bounded core emissive factor and bounded
-OPAQUE/MASK alpha coverage per mesh, and
+OPAQUE/MASK alpha coverage plus a strict optional boolean `doubleSided` per
+mesh material, and
 one shared embedded PNG per base-color, metallic-roughness, normal, or
 emissive role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,

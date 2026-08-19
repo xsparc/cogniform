@@ -1409,6 +1409,32 @@ materials, occlusion/ambient/IBL, new texture/image/UV/sampler support,
 protocol/recovery/transport changes, dependencies, or release action. See
 [ADR 0059](../adr/0059-bounded-gltf-alpha-coverage.md).
 
+### PR 60 - CF060: Bounded glTF double-sided materials
+
+Outcome: imported core glTF materials follow the single-sided default and can
+explicitly render both sides with face-oriented lighting and observations,
+without attacker-controlled pipeline growth or draw reordering.
+
+Gate: strictly decode optional boolean `doubleSided` for every material,
+default omission to false, retain explicit false/true without changing asset
+accounting, and reject null or non-boolean forms without proxy substitution.
+Malformed peer material data must take precedence over valid unsupported
+features. Preserve the public `AssetMaterial::new` signature and add only a
+read-only retained-value accessor.
+
+Create exactly two fixed shared-layout triangle pipelines: CCW back-cull for
+selected imported false materials and the existing unculled state for
+selected imported true materials, built-ins, authored primitive fallbacks, and
+explicit scene materials. Select per draw without sorting or a keyed cache.
+Reverse both completed geometric and tangent-mapped shaded normals on imported
+double-sided back faces before observation and lighting. Preserve MASK/OPAQUE,
+all four texture roles, the 48-byte vertex and 496-byte uniform layouts,
+stable identity/visibility, lifecycle, revision, logical hash, and replay. Do
+not add BLEND, sorting, blending, MSAA, alpha-to-coverage, mirrored transforms,
+new asset features, protocol/recovery/transport changes, dependencies, or
+release action. See
+[ADR 0060](../adr/0060-bounded-gltf-double-sided-materials.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1419,7 +1445,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
-  -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059
+  -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1693,6 +1719,13 @@ Validation expands with capability:
   discard above one; OPAQUE alpha-one correction; explicit scene-material
   precedence; unchanged lifecycle, revision, logical hash, and replay; and
   controlled color/depth/identity/normal evidence.
+- CF060: strict selected/unused `doubleSided` default, type, and malformed-peer
+  validation; unchanged asset and exact 496-byte uniform accounting; exactly
+  two fixed shared-layout pipelines with stable per-draw selection; omitted/
+  false back-face culling; true back-face geometric and shaded normal reversal;
+  normal-map, MASK, explicit scene-material, built-in, and authored fallback
+  composition; unchanged lifecycle, revision, logical hash, replay, identity,
+  visibility, and all four attachment contracts.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

@@ -170,7 +170,10 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(input: VertexOutput) -> FragmentOutput {
+fn fs_main(
+    input: VertexOutput,
+    @builtin(front_facing) front_facing: bool,
+) -> FragmentOutput {
     var output: FragmentOutput;
     let material_flags = u32(draw.material.w);
     let base_color = textureSample(base_color_texture, base_color_sampler, input.texcoord_0)
@@ -178,16 +181,17 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
     if (material_flags & 4u) != 0u && base_color.a < draw.emissive.w {
         discard;
     }
-    let geometric_world_normal = normalize(input.world_normal);
-    var shaded_world_normal = geometric_world_normal;
+    let source_geometric_world_normal = normalize(input.world_normal);
+    var source_shaded_world_normal = source_geometric_world_normal;
     if (material_flags & 1u) != 0u {
         let tangent_rejected = input.world_tangent.xyz
-            - geometric_world_normal * dot(geometric_world_normal, input.world_tangent.xyz);
+            - source_geometric_world_normal
+                * dot(source_geometric_world_normal, input.world_tangent.xyz);
         let tangent_length_squared = dot(tangent_rejected, tangent_rejected);
         if tangent_length_squared > 1e-12 {
             let world_tangent = tangent_rejected * inverseSqrt(tangent_length_squared);
             let handedness = select(-1.0, 1.0, input.world_tangent.w >= 0.0);
-            let world_bitangent = cross(geometric_world_normal, world_tangent) * handedness;
+            let world_bitangent = cross(source_geometric_world_normal, world_tangent) * handedness;
             let sampled = textureSample(normal_texture, base_color_sampler, input.texcoord_0).rgb;
             let tangent_normal = vec3(
                 (sampled.r * 2.0 - 1.0) * draw.material.z,
@@ -208,14 +212,18 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
                     * inverseSqrt(tangent_normal_length_squared);
                 let candidate = world_tangent * unit_tangent_normal.x
                     + world_bitangent * unit_tangent_normal.y
-                    + geometric_world_normal * unit_tangent_normal.z;
+                    + source_geometric_world_normal * unit_tangent_normal.z;
                 let candidate_length_squared = dot(candidate, candidate);
                 if candidate_length_squared > 1e-12 {
-                    shaded_world_normal = candidate * inverseSqrt(candidate_length_squared);
+                    source_shaded_world_normal = candidate * inverseSqrt(candidate_length_squared);
                 }
             }
         }
     }
+    let double_sided = (material_flags & 8u) != 0u;
+    let face_sign = select(-1.0, 1.0, front_facing || !double_sided);
+    let geometric_world_normal = source_geometric_world_normal * face_sign;
+    let shaded_world_normal = source_shaded_world_normal * face_sign;
     let sampled_material = textureSample(
         metallic_roughness_texture,
         base_color_sampler,
