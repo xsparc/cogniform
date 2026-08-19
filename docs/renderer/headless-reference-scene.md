@@ -1,7 +1,7 @@
 # Headless reference renderer
 
 CF004 establishes the first real render-domain implementation. It creates a
-`wgpu` instance, adapter, device, queue, pipeline, textures, and readback
+`wgpu` instance, adapter, device, queue, fixed pipelines, textures, and readback
 buffers without creating a display handle, window, or presentation surface.
 The public API exposes only project-owned configuration, diagnostics, adapter
 metadata, and owned output values.
@@ -47,7 +47,7 @@ triangles with a positive-Z unit normal. Its positive XYZ dimensions scale the
 full model: X and Y control visible size and Z participates in normal
 transformation without creating thickness. One fixed 288-byte plane vertex
 payload is allocated at renderer initialization; frames do not tessellate or
-upload it. The baseline pipeline does not cull the back side and does not flip
+upload it. The unculled pipeline used by built-ins does not cull the back side and does not flip
 its source normal.
 
 A sphere is centered, unit diameter, and uses a positive-Z polar axis. Its
@@ -127,6 +127,15 @@ therefore discards all bounded alpha. An explicit scene material disables this
 imported coverage and retains the prior scene alpha path. BLEND, draw sorting,
 pipeline blending, alpha-to-coverage, and MSAA are not part of this baseline.
 
+Imported GLB face handling is derived from the selected material. Omitted or
+false `doubleSided` selects a fixed CCW back-cull pipeline; true selects the
+unculled pipeline and reverses both the completed geometric normal and the
+completed tangent-mapped shaded normal on back faces before observation and
+lighting. Built-ins, unresolved authored primitive fallbacks, and explicit
+scene materials use the unculled pipeline without imported face correction.
+The renderer creates exactly these two shared-layout pipelines once, selects
+one per draw in stable entity order, and has no asset-keyed pipeline cache.
+
 The selected camera's extracted world translation supplies the view direction.
 A zero or derived-overflow view vector suppresses specular without creating a
 non-finite value. A fifth definition of either kind, a degenerate active
@@ -141,7 +150,7 @@ position, and metallic/roughness plus normal scale/material flags. One appended
 cutoff. Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 is the fixed sampler. This adds
-no light buffer, alternate pipeline, runtime
+no light buffer, runtime-selected pipeline creation, runtime
 configuration, or observation payload. Point range/cutoff/radius, spot lights,
 emissive strength, cross-surface emission, ambient or image-based
 lighting, shadows, additional material texture roles,
@@ -200,6 +209,7 @@ approved adapter:
 ```text
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact reference_cube_produces_exact_ids_and_tolerant_color_depth_normals
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact extracted_plane_produces_color_depth_identity_and_plus_z_normal
+cargo test --release -p cogniform-renderer --test headless_reference --all-features --locked --offline -- --ignored --exact back_facing_built_in_plane_preserves_unculled_unflipped_behavior
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact extracted_sphere_produces_curved_depth_identity_and_radial_normals
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact directional_light_modulates_front_and_back_facing_direct_color
 cargo test -p cogniform-renderer --test headless_reference --locked --offline -- --ignored --exact point_light_applies_bounded_distance_and_facing_direct_shading
@@ -216,6 +226,9 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_draws_switch_pipelines_without_reordering_or_causality_changes
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_back_face_composes_with_normal_maps_and_scene_override
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_back_face_preserves_mask_discard_and_equality
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work
 ```
 
@@ -242,6 +255,14 @@ The alpha-coverage contract distinguishes factor, texture, and product alpha;
 pins equality, cutoff-above-one, OPAQUE, and scene-override behavior; verifies
 discard across every attachment; and preserves revision, logical hash, and
 idempotent replay.
+The double-sided contract uses positive-scale 180-degree Y rotations to prove
+stable cull/uncull/cull pipeline changes in one mixed frame, face-oriented
+geometric and tangent-mapped normals with directional normal-map response and
+point-light compatibility,
+MASK discard/equality, exact identity and derived visibility, and explicit
+scene-material precedence. The separate built-in-plane regression proves that
+the same back orientation remains unculled and unflipped outside imported
+material authority.
 The eviction contract partially uploads a two-mesh textured asset, submits a
 frame, releases the remaining reservation and all logical residency exactly,
 keeps the submitted readback valid, verifies the authored cuboid fallback, and
@@ -259,6 +280,8 @@ See [ADR 0020](../adr/0020-bounded-imported-vertex-normals.md) for the
 position/normal vertex contract and inverse-transpose decision.
 See [ADR 0021](../adr/0021-centered-built-in-plane-rendering.md) for the plane
 geometry, dimension, and fallback convention.
+See [ADR 0060](../adr/0060-bounded-gltf-double-sided-materials.md) for strict
+material decoding, fixed pipeline selection, and back-face normal semantics.
 See [ADR 0022](../adr/0022-fixed-built-in-uv-sphere-rendering.md) for the fixed
 sphere topology, dimension, normal, and allocation convention.
 See [ADR 0023](../adr/0023-bounded-directional-diffuse-lighting.md) for the

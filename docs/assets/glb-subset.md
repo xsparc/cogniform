@@ -18,6 +18,8 @@ direct-light factors. CF057 retains bounded core emissive RGB and adds it to
 the imported surface. CF058 adds one bounded sRGB emissive-texture role that
 multiplies that numeric factor without adding light authority. CF059 adds
 deterministic imported OPAQUE and MASK coverage without blending or sorting.
+CF060 adds the core single-sided default and bounded explicit double-sided
+rendering without draw sorting or asset-keyed pipeline growth.
 
 ## Ownership and lifecycle
 
@@ -159,7 +161,10 @@ The importer accepts only the following baseline:
   omitted PBR factors use the glTF defaults of one and omitted emissive uses
   `[0, 0, 0]`. A primitive without a material retains the
   existing neutral Cogniform fallback `(0.8, 0.8, 0.8, 1.0)`, metallic `0`,
-  and roughness `0.8`.
+  and roughness `0.8`; and
+- optional boolean `doubleSided`, defaulting to false. Explicit false and true
+  are retained; null and every non-boolean form are invalid, including in an
+  unused material record.
 
 Indexed geometry is expanded into a triangle vertex stream, using the same
 source index for position, normal, tangent, and primary coordinate. The
@@ -208,6 +213,7 @@ ranges or indices, non-finite positions, zero or non-finite normals or
 tangents, invalid tangent handedness, normal/tangent count mismatches,
 non-finite primary coordinates, primary-coordinate count mismatches, malformed
 or out-of-range emissive factors, malformed alpha mode/cutoff values,
+malformed `doubleSided` values,
 malformed emissive texture roles or missing
 coordinates, malformed or truncated PNG data, invalid
 image ranges, degenerate
@@ -218,7 +224,9 @@ normal-texture basis, primary-coordinate, image format, texture role, or well-
 formed wider alpha mode may proxy only under explicit policy and only after
 malformed peer data is excluded. Proxy vertices always contain exact zero
 primary coordinates, the disabled fallback tangent, opaque coverage, zero
-emission, and no imported texture.
+emission, no imported texture, and the single-sided material default. The
+generated proxy cube topology is unchanged; its faces therefore follow the
+same hardware back-cull rule as another imported false material.
 
 At draw time, a resident mesh uses its imported base-color factor, optional
 base-color, metallic-roughness, tangent-space normal, and emissive textures,
@@ -234,7 +242,13 @@ default or explicit `OPAQUE` ignores that alpha and emits one. Imported `MASK`
 discards only products below its cutoff before any render attachment output;
 equality survives and cutoff above one discards all bounded alpha. Surviving
 fragments emit alpha one. An explicit scene material disables imported
-coverage and preserves its own alpha semantics. The
+coverage and preserves its own alpha semantics. An omitted or false imported
+`doubleSided` value uses hardware back-face culling, so a culled fragment
+writes no color, depth, entity ID, normal, or derived visibility. Explicit
+true keeps both faces and reverses the completed geometric and tangent-mapped
+shaded normals on a back face before observation and lighting. Built-ins,
+authored primitive fallbacks, and explicit scene materials remain unculled
+without that imported face correction. The
 metallic-roughness green and blue channels multiply the numeric roughness and
 metallic factors only for the direct-light response. The
 source-tangent basis perturbs direct lighting only; depth, identity, and the
@@ -246,7 +260,7 @@ an explicit primitive component is used as the author-chosen fallback. Without
 that component, preparation fails with `AssetUnavailable`.
 
 `AssetMaterial` carries validated numeric metadata including core emissive
-RGB, typed alpha coverage/cutoff, immutable texture-role facts, and finite
+RGB, typed alpha coverage/cutoff, the retained double-sided value, immutable texture-role facts, and finite
 normal scale. `AssetUploadJob` exposes that material and
 separate optional base-color, metallic-roughness, normal, and emissive `AssetTexture`
 values; the compatible
@@ -334,6 +348,9 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_draws_switch_pipelines_without_reordering_or_causality_changes
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_back_face_composes_with_normal_maps_and_scene_override
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_back_face_preserves_mask_discard_and_equality
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work
 cargo test --release -p cogniform-storage --test asset_file --locked --offline -- --ignored --exact persisted_recovery_and_asset_sources_restore_renderable_state
@@ -364,8 +381,14 @@ suppression, and unchanged non-color output. The four-role test proves exact
 distinct-image CPU bytes plus GPU upload, eviction, and
 rehydration counts. The alpha checks prove factor-only, texture-only, and
 multiplied coverage, exact cutoff equality, cutoff-above-one discard, OPAQUE
-alpha-one output, explicit scene override, background preservation, all render
-attachments, and unchanged revision/hash/replay. The service checks then prove that restored
+alpha-one output, explicit scene override, background preservation, every
+render attachment, and unchanged revision/hash/replay. The double-sided checks use positive-scale
+180-degree Y rotations to prove stable per-draw cull/uncull/cull selection,
+face-oriented geometric and tangent-mapped normals, directional normal-map
+lighting, point-light compatibility,
+MASK discard/equality, explicit scene-material precedence, exact identity and
+derived visibility, and unchanged eviction/revision/hash/replay. They do not
+claim mirrored-transform support. The service/storage checks prove that restored
 plain and textured asset references require explicit exact-hash CPU/GPU
 rehydration without another logical mutation. The CF019 case
 persists recovery and asset source in separate files, drops the source service,

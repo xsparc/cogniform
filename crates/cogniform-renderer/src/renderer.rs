@@ -13,9 +13,9 @@ use crate::{
     RendererAssetStats, RendererConfig, RendererError, SceneUpdateError, SceneUpdateSummary,
     asset::{AssetTextureRole, RendererAssets},
     scene::{
-        ImportedAlphaCoverage, ImportedTextureRoles, MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS,
-        PreparedDirectionalLight, PreparedDraw, PreparedGeometry, PreparedPointLight,
-        PreparedScene, RenderScene,
+        ImportedAlphaCoverage, ImportedFacePolicy, ImportedTextureRoles, MAX_DIRECTIONAL_LIGHTS,
+        MAX_POINT_LIGHTS, PreparedDirectionalLight, PreparedDraw, PreparedGeometry,
+        PreparedPointLight, PreparedScene, RenderScene,
     },
 };
 
@@ -143,7 +143,8 @@ pub struct HeadlessRenderer {
     adapter: AdapterSummary,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    pipeline: wgpu::RenderPipeline,
+    unculled_pipeline: wgpu::RenderPipeline,
+    back_cull_pipeline: wgpu::RenderPipeline,
     draw_layout: wgpu::BindGroupLayout,
     _white_base_color_texture: wgpu::Texture,
     white_base_color_view: wgpu::TextureView,
@@ -200,7 +201,8 @@ impl HeadlessRenderer {
         let (device, queue) =
             request_device(&adapter, &adapter_summary, &config, readback_layout).await?;
         let gpu_retirement = GpuRetirementGuard::start(device.clone(), queue.clone())?;
-        let (pipeline, draw_layout) = create_reference_pipeline(&device).await?;
+        let (unculled_pipeline, back_cull_pipeline, draw_layout) =
+            create_reference_pipelines(&device).await?;
         let (
             white_base_color_texture,
             white_base_color_view,
@@ -227,7 +229,8 @@ impl HeadlessRenderer {
             adapter: adapter_summary,
             device,
             queue,
-            pipeline,
+            unculled_pipeline,
+            back_cull_pipeline,
             draw_layout,
             _white_base_color_texture: white_base_color_texture,
             white_base_color_view,
@@ -351,6 +354,7 @@ impl HeadlessRenderer {
                 normal_scale: 1.0,
                 imported_texture_roles: ImportedTextureRoles::NONE,
                 imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
+                imported_face_policy: ImportedFacePolicy::Disabled,
                 compact_id: REFERENCE_ENTITY_ID,
             }],
             directional_lights: Vec::new(),
@@ -411,7 +415,8 @@ impl HeadlessRenderer {
             &ScenePassResources {
                 device: &self.device,
                 queue: &self.queue,
-                pipeline: &self.pipeline,
+                unculled_pipeline: &self.unculled_pipeline,
+                back_cull_pipeline: &self.back_cull_pipeline,
                 draw_layout: &self.draw_layout,
                 white_base_color_view: &self.white_base_color_view,
                 neutral_normal_view: &self.neutral_normal_view,
@@ -563,9 +568,16 @@ async fn request_device(
         })
 }
 
-async fn create_reference_pipeline(
+async fn create_reference_pipelines(
     device: &wgpu::Device,
-) -> Result<(wgpu::RenderPipeline, wgpu::BindGroupLayout), RendererError> {
+) -> Result<
+    (
+        wgpu::RenderPipeline,
+        wgpu::RenderPipeline,
+        wgpu::BindGroupLayout,
+    ),
+    RendererError,
+> {
     let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("cogniform-reference-scene-shader"),
@@ -582,43 +594,53 @@ async fn create_reference_pipeline(
         Some(ENTITY_ID_FORMAT.into()),
         Some(NORMAL_FORMAT.into()),
     ];
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("cogniform-reference-scene-pipeline"),
-        layout: Some(&layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[Some(wgpu::VertexBufferLayout {
-                array_stride: cogniform_assets::ASSET_VERTEX_BYTES,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &ASSET_VERTEX_ATTRIBUTES,
-            })],
-        },
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::Less),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
-        multisample: wgpu::MultisampleState::default(),
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            targets: &targets,
-        }),
-        multiview_mask: None,
-        cache: None,
-    });
+    let create_pipeline = |label, cull_mode| {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: cogniform_assets::ASSET_VERTEX_BYTES,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &ASSET_VERTEX_ATTRIBUTES,
+                })],
+            },
+            primitive: wgpu::PrimitiveState {
+                cull_mode,
+                ..wgpu::PrimitiveState::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let unculled_pipeline = create_pipeline("cogniform-reference-scene-unculled", None);
+    let back_cull_pipeline = create_pipeline(
+        "cogniform-reference-scene-back-cull",
+        Some(wgpu::Face::Back),
+    );
     if let Some(error) = scope.pop().await {
         return Err(RendererError::PipelineCreationFailed {
             reason: error.to_string(),
         });
     }
-    Ok((pipeline, draw_layout))
+    Ok((unculled_pipeline, back_cull_pipeline, draw_layout))
 }
 
 fn create_draw_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -1016,7 +1038,8 @@ impl Drop for ReadbackLease {
 struct ScenePassResources<'a> {
     device: &'a wgpu::Device,
     queue: &'a wgpu::Queue,
-    pipeline: &'a wgpu::RenderPipeline,
+    unculled_pipeline: &'a wgpu::RenderPipeline,
+    back_cull_pipeline: &'a wgpu::RenderPipeline,
     draw_layout: &'a wgpu::BindGroupLayout,
     white_base_color_view: &'a wgpu::TextureView,
     neutral_normal_view: &'a wgpu::TextureView,
@@ -1085,8 +1108,13 @@ fn encode_scene_pass(
         occlusion_query_set: None,
         multiview_mask: None,
     });
-    render_pass.set_pipeline(resources.pipeline);
     for draw in draws {
+        let pipeline = if draw.imported_face_policy.culls_back_faces() {
+            resources.back_cull_pipeline
+        } else {
+            resources.unculled_pipeline
+        };
+        render_pass.set_pipeline(pipeline);
         let (
             vertices,
             vertex_count,
@@ -1570,7 +1598,8 @@ fn encode_draw_uniform(
     bytes.extend_from_slice(&draw.roughness.to_le_bytes());
     bytes.extend_from_slice(&draw.normal_scale.to_le_bytes());
     let normal_flag = u8::from(draw.imported_texture_roles.normal());
-    let material_flags = normal_flag | draw.imported_alpha_coverage.flags();
+    let material_flags =
+        normal_flag | draw.imported_alpha_coverage.flags() | draw.imported_face_policy.flags();
     bytes.extend_from_slice(&f32::from(material_flags).to_le_bytes());
     for value in draw.emissive {
         bytes.extend_from_slice(&value.to_le_bytes());
@@ -1844,6 +1873,7 @@ mod tests {
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NONE,
             imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
+            imported_face_policy: ImportedFacePolicy::Disabled,
             compact_id: 42,
         };
         let lights = [
@@ -1925,8 +1955,9 @@ mod tests {
             roughness: 1.0,
             emissive: [0.0; 3],
             normal_scale: 1.0,
-            imported_texture_roles: ImportedTextureRoles::NONE,
+            imported_texture_roles: ImportedTextureRoles::NORMAL_ONLY,
             imported_alpha_coverage: ImportedAlphaCoverage::Mask { cutoff: 1.25 },
+            imported_face_policy: ImportedFacePolicy::DoubleSided,
             compact_id: 1,
         };
 
@@ -1934,7 +1965,7 @@ mod tests {
         assert_eq!(bytes.len(), 496);
         let float_at =
             |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
-        assert_eq!(float_at(119).to_bits(), 6.0_f32.to_bits());
+        assert_eq!(float_at(119).to_bits(), 15.0_f32.to_bits());
         assert_eq!(float_at(123).to_bits(), 1.25_f32.to_bits());
     }
 

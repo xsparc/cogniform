@@ -319,6 +319,7 @@ impl RenderScene {
                     normal_scale: 1.0,
                     imported_texture_roles: ImportedTextureRoles::NONE,
                     imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
+                    imported_face_policy: ImportedFacePolicy::Disabled,
                     compact_id: compact_id.get(),
                 }
                 .with_imported_material(entity.material().is_none(), imported_material),
@@ -439,6 +440,7 @@ pub(crate) struct PreparedDraw {
     pub(crate) normal_scale: f32,
     pub(crate) imported_texture_roles: ImportedTextureRoles,
     pub(crate) imported_alpha_coverage: ImportedAlphaCoverage,
+    pub(crate) imported_face_policy: ImportedFacePolicy,
     pub(crate) compact_id: u32,
 }
 
@@ -448,12 +450,35 @@ impl PreparedDraw {
         use_imported_material: bool,
         material: Option<AssetMaterial>,
     ) -> Self {
-        let (roles, normal_scale, alpha_coverage) =
+        let (roles, normal_scale, alpha_coverage, face_policy) =
             imported_material_selection(use_imported_material, material);
         self.imported_texture_roles = roles;
         self.normal_scale = normal_scale;
         self.imported_alpha_coverage = alpha_coverage;
+        self.imported_face_policy = face_policy;
         self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ImportedFacePolicy {
+    Disabled,
+    SingleSided,
+    DoubleSided,
+}
+
+impl ImportedFacePolicy {
+    const DOUBLE_SIDED_FLAG: u8 = 1 << 3;
+
+    pub(crate) const fn culls_back_faces(self) -> bool {
+        matches!(self, Self::SingleSided)
+    }
+
+    pub(crate) const fn flags(self) -> u8 {
+        match self {
+            Self::Disabled | Self::SingleSided => 0,
+            Self::DoubleSided => Self::DOUBLE_SIDED_FLAG,
+        }
     }
 }
 
@@ -489,6 +514,8 @@ pub(crate) struct ImportedTextureRoles(u8);
 
 impl ImportedTextureRoles {
     pub(crate) const NONE: Self = Self(0);
+    #[cfg(test)]
+    pub(crate) const NORMAL_ONLY: Self = Self(Self::NORMAL);
     const BASE_COLOR: u8 = 1 << 0;
     const EMISSIVE: u8 = 1 << 1;
     const METALLIC_ROUGHNESS: u8 = 1 << 2;
@@ -530,7 +557,12 @@ fn primitive_geometry(shape: cogniform_protocol::PrimitiveShape) -> PreparedGeom
 fn imported_material_selection(
     use_imported_material: bool,
     material: Option<AssetMaterial>,
-) -> (ImportedTextureRoles, f32, ImportedAlphaCoverage) {
+) -> (
+    ImportedTextureRoles,
+    f32,
+    ImportedAlphaCoverage,
+    ImportedFacePolicy,
+) {
     let use_base_color =
         use_imported_material && material.is_some_and(AssetMaterial::has_base_color_texture);
     let use_normal =
@@ -563,7 +595,23 @@ fn imported_material_selection(
     } else {
         ImportedAlphaCoverage::Disabled
     };
-    (ImportedTextureRoles(roles), normal_scale, alpha_coverage)
+    let face_policy = if use_imported_material {
+        material.map_or(ImportedFacePolicy::Disabled, |material| {
+            if material.double_sided() {
+                ImportedFacePolicy::DoubleSided
+            } else {
+                ImportedFacePolicy::SingleSided
+            }
+        })
+    } else {
+        ImportedFacePolicy::Disabled
+    };
+    (
+        ImportedTextureRoles(roles),
+        normal_scale,
+        alpha_coverage,
+        face_policy,
+    )
 }
 
 fn color_values(color: ColorRgba) -> [f32; 4] {
@@ -1376,6 +1424,10 @@ mod tests {
             .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None)
             .unwrap();
         assert_eq!(fallback.draws[0].geometry, PreparedGeometry::Sphere);
+        assert_eq!(
+            fallback.draws[0].imported_face_policy,
+            ImportedFacePolicy::Disabled
+        );
         assert_exact_f32(fallback.draws[0].model[0], 2.0);
         assert_exact_f32(fallback.draws[0].model[5], 3.0);
         assert_exact_f32(fallback.draws[0].model[10], 4.0);
@@ -1386,6 +1438,10 @@ mod tests {
             })
             .unwrap();
         assert_eq!(resident.draws[0].geometry, PreparedGeometry::Asset(key));
+        assert_eq!(
+            resident.draws[0].imported_face_policy,
+            ImportedFacePolicy::SingleSided
+        );
         assert_exact_f32(resident.draws[0].model[0], 1.0);
         assert_exact_f32(resident.draws[0].model[5], 1.0);
         assert_exact_f32(resident.draws[0].model[10], 1.0);
@@ -1422,6 +1478,10 @@ mod tests {
             .prepare(id(1), 64, 64, NonZeroU32::new(1).unwrap(), |_| None)
             .unwrap();
         assert_eq!(fallback.draws[0].geometry, PreparedGeometry::Plane);
+        assert_eq!(
+            fallback.draws[0].imported_face_policy,
+            ImportedFacePolicy::Disabled
+        );
         assert_eq!(
             fallback.draws[0].color.map(f32::to_bits),
             [0.8, 0.8, 0.8, 1.0].map(f32::to_bits)
@@ -1480,6 +1540,10 @@ mod tests {
             prepared.draws[0].imported_alpha_coverage,
             ImportedAlphaCoverage::Opaque
         );
+        assert_eq!(
+            prepared.draws[0].imported_face_policy,
+            ImportedFacePolicy::SingleSided
+        );
 
         let unit = |value| UnitF32::new(value).unwrap();
         let scene_material = MaterialComponent {
@@ -1520,6 +1584,34 @@ mod tests {
         assert_eq!(
             overridden.draws[0].imported_alpha_coverage,
             ImportedAlphaCoverage::Disabled
+        );
+        assert_eq!(
+            overridden.draws[0].imported_face_policy,
+            ImportedFacePolicy::Disabled
+        );
+    }
+
+    #[test]
+    fn imported_face_policy_keeps_pipeline_and_shader_selection_coherent() {
+        assert!(ImportedFacePolicy::SingleSided.culls_back_faces());
+        assert!(!ImportedFacePolicy::Disabled.culls_back_faces());
+        assert!(!ImportedFacePolicy::DoubleSided.culls_back_faces());
+        assert_eq!(ImportedFacePolicy::Disabled.flags(), 0);
+        assert_eq!(ImportedFacePolicy::SingleSided.flags(), 0);
+        assert_eq!(ImportedFacePolicy::DoubleSided.flags(), 8);
+
+        let material = asset_material([0.1, 0.2, 0.3, 1.0], 0.0, 0.8);
+        assert_eq!(
+            imported_material_selection(true, Some(material)).3,
+            ImportedFacePolicy::SingleSided
+        );
+        assert_eq!(
+            imported_material_selection(false, Some(material)).3,
+            ImportedFacePolicy::Disabled
+        );
+        assert_eq!(
+            imported_material_selection(true, None).3,
+            ImportedFacePolicy::Disabled
         );
     }
 }

@@ -118,6 +118,94 @@ fn approved_glb_fixture_renders_with_identity_color_depth_and_winding_normal() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn double_sided_draws_switch_pipelines_without_reordering_or_causality_changes() {
+    let bytes = mixed_double_sided_fixture();
+    let content_hash = content_hash(&bytes);
+    let mut assets = AssetStore::default();
+    assets.enqueue(content_hash, bytes).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    let uploads: Vec<_> = (0..3)
+        .map(|mesh_index| {
+            assets
+                .upload_job(AssetMeshKey {
+                    content_hash,
+                    mesh_index,
+                })
+                .unwrap()
+        })
+        .collect();
+    assert!(!uploads[0].material().double_sided());
+    assert!(uploads[1].material().double_sided());
+    assert!(!uploads[2].material().double_sided());
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    for upload in uploads.clone() {
+        renderer.enqueue_asset_upload(upload).unwrap();
+        renderer.process_next_asset_upload().unwrap();
+    }
+
+    let camera = StableEntityId::new(1).unwrap();
+    let front = StableEntityId::new(2).unwrap();
+    let double_back = StableEntityId::new(3).unwrap();
+    let single_back = StableEntityId::new(4).unwrap();
+    let light = StableEntityId::new(5).unwrap();
+    let mut world = AuthoritativeWorld::default();
+    let initial_patch =
+        mixed_double_sided_scene_patch(camera, [front, double_back, single_back], content_hash);
+    world
+        .apply_patch(&initial_patch, FrameId::new(1).unwrap())
+        .unwrap();
+    renderer
+        .apply_extraction(&world.take_render_extraction().unwrap())
+        .unwrap();
+    world
+        .apply_patch(
+            &add_directional_light_patch(SceneRevision::new(1), light),
+            FrameId::new(2).unwrap(),
+        )
+        .unwrap();
+    renderer
+        .apply_extraction(&world.take_render_extraction().unwrap())
+        .unwrap();
+
+    let revision_before_eviction = world.revision();
+    let hash_before_eviction = world.logical_hash().unwrap();
+    let eviction = renderer.evict_asset(content_hash);
+    assert_eq!(eviction.removed_resident_meshes, 3);
+    assert_eq!(world.revision(), revision_before_eviction);
+    assert_eq!(world.logical_hash().unwrap(), hash_before_eviction);
+    for upload in uploads {
+        renderer.enqueue_asset_upload(upload).unwrap();
+        renderer.process_next_asset_upload().unwrap();
+    }
+    let replay = world
+        .apply_patch(&initial_patch, FrameId::new(3).unwrap())
+        .unwrap();
+    assert_eq!(replay.status, ApplyStatus::IdempotentReplay);
+    assert_eq!(world.revision(), revision_before_eviction);
+    assert_eq!(world.logical_hash().unwrap(), hash_before_eviction);
+
+    let frame = renderer.submit_scene(camera).unwrap().read().unwrap();
+    assert!(visible_pixel_count(&frame, front) > 0);
+    assert!(visible_pixel_count(&frame, double_back) > 0);
+    assert_eq!(visible_pixel_count(&frame, single_back), 0);
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            if frame.stable_entity_id_at(x, y) == Some(double_back) {
+                let normal = frame.normal_at(x, y).unwrap();
+                assert!(
+                    normal[2] >= 0.99,
+                    "double-sided back-face normal must face +Z: {normal:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn primary_texcoords_are_retained_without_changing_rendered_observations() {
     let baseline = imported_frame(decode_hex(include_str!(
         "../../../tests/assets/triangle.glb.hex"
@@ -438,6 +526,80 @@ fn normal_texture_changes_direct_lighting_not_geometric_normal_observation() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn double_sided_back_face_composes_with_normal_maps_and_scene_override() {
+    let neutral = oriented_material_frame(
+        double_sided_normal_texture_fixture([128, 128, 255, 0], 1.0),
+        Some(LightKind::Directional),
+        None,
+        true,
+    );
+    let tilted = oriented_material_frame(
+        double_sided_normal_texture_fixture([255, 128, 128, 255], 1.0),
+        Some(LightKind::Directional),
+        None,
+        true,
+    );
+    let point_lit = oriented_material_frame(
+        double_sided_normal_texture_fixture([128, 128, 255, 0], 1.0),
+        Some(LightKind::Point),
+        None,
+        true,
+    );
+    let overridden = oriented_material_frame(
+        normal_texture_fixture([255, 128, 128, 31], 1.0),
+        Some(LightKind::Directional),
+        Some(1.0),
+        true,
+    );
+    let center = (WIDTH / 2, HEIGHT / 2);
+    let triangle = StableEntityId::new(2).unwrap();
+
+    assert_eq!(
+        neutral.stable_entity_id_at(center.0, center.1),
+        Some(triangle)
+    );
+    assert_eq!(
+        tilted.stable_entity_id_at(center.0, center.1),
+        Some(triangle)
+    );
+    assert_eq!(
+        point_lit.stable_entity_id_at(center.0, center.1),
+        Some(triangle)
+    );
+    assert_ne!(
+        neutral.color_at(center.0, center.1),
+        tilted.color_at(center.0, center.1),
+        "the tilted tangent-space normal must change back-face direct lighting"
+    );
+    assert_eq!(
+        neutral.depth_at(center.0, center.1),
+        tilted.depth_at(center.0, center.1)
+    );
+    assert_eq!(
+        neutral.normal_at(center.0, center.1),
+        tilted.normal_at(center.0, center.1)
+    );
+    for frame in [&neutral, &tilted, &point_lit] {
+        let normal = frame.normal_at(center.0, center.1).unwrap();
+        assert!(
+            normal[2] >= 0.99,
+            "back-face geometric normal must face +Z: {normal:?}"
+        );
+    }
+    assert_eq!(
+        overridden.stable_entity_id_at(center.0, center.1),
+        Some(triangle),
+        "a scene material override must preserve legacy unculled rendering"
+    );
+    let overridden_normal = overridden.normal_at(center.0, center.1).unwrap();
+    assert!(
+        overridden_normal[2] <= -0.99,
+        "scene override must disable imported face correction: {overridden_normal:?}"
+    );
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn metallic_roughness_texture_multiplies_factors_for_direct_lights_only() {
     let texture = metallic_roughness_fixture(Some([11, 128, 64, 17]), 1.0, 0.5);
     let ignored_channels = metallic_roughness_fixture(Some([233, 128, 64, 251]), 1.0, 0.5);
@@ -630,6 +792,26 @@ fn alpha_mask_factor_boundaries_control_every_fragment_output() {
 
     assert_fully_discarded(&below);
     assert_fully_discarded(&above_one);
+    assert_opaque_center(&equal, 255);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn double_sided_back_face_preserves_mask_discard_and_equality() {
+    let below = oriented_material_frame(
+        double_sided_alpha_fixture("MASK", 0.25, None, Some(0.5)),
+        None,
+        None,
+        true,
+    );
+    let equal = oriented_material_frame(
+        double_sided_alpha_fixture("MASK", 0.5, None, Some(0.5)),
+        None,
+        None,
+        true,
+    );
+
+    assert_fully_discarded(&below);
     assert_opaque_center(&equal, 255);
 }
 
@@ -994,6 +1176,15 @@ fn material_frame_with_override_alpha(
     light_kind: Option<LightKind>,
     override_alpha: Option<f32>,
 ) -> RenderedFrame {
+    oriented_material_frame(bytes, light_kind, override_alpha, false)
+}
+
+fn oriented_material_frame(
+    bytes: Vec<u8>,
+    light_kind: Option<LightKind>,
+    override_alpha: Option<f32>,
+    back_facing: bool,
+) -> RenderedFrame {
     let content_hash = content_hash(&bytes);
     let key = AssetMeshKey {
         content_hash,
@@ -1047,7 +1238,7 @@ fn material_frame_with_override_alpha(
     let triangle = StableEntityId::new(2).unwrap();
     let light = StableEntityId::new(3).unwrap();
     let mut world = AuthoritativeWorld::default();
-    let initial_patch = scene_patch(camera, triangle, content_hash, [1.0; 3]);
+    let initial_patch = oriented_scene_patch(camera, triangle, content_hash, [1.0; 3], back_facing);
     world
         .apply_patch(&initial_patch, FrameId::new(1).unwrap())
         .unwrap();
@@ -1114,6 +1305,13 @@ fn assert_opaque_center(frame: &RenderedFrame, expected_alpha: u8) {
         frame.color_at(center.0, center.1).unwrap()[3],
         expected_alpha
     );
+}
+
+fn visible_pixel_count(frame: &RenderedFrame, entity_id: StableEntityId) -> usize {
+    (0..HEIGHT)
+        .flat_map(|y| (0..WIDTH).map(move |x| (x, y)))
+        .filter(|&(x, y)| frame.stable_entity_id_at(x, y) == Some(entity_id))
+        .count()
 }
 
 fn upload_textured_meshes(
@@ -1297,6 +1495,16 @@ fn scene_patch(
     content_hash: cogniform_protocol::ContentHash,
     triangle_scale: [f32; 3],
 ) -> ScenePatch {
+    oriented_scene_patch(camera, triangle, content_hash, triangle_scale, false)
+}
+
+fn oriented_scene_patch(
+    camera: StableEntityId,
+    triangle: StableEntityId,
+    content_hash: cogniform_protocol::ContentHash,
+    triangle_scale: [f32; 3],
+    back_facing: bool,
+) -> ScenePatch {
     ScenePatch {
         schema_version: SchemaVersion::V1,
         transaction_id: TransactionId::new(2).unwrap(),
@@ -1320,7 +1528,11 @@ fn scene_patch(
             SceneOperation::Create(CreateEntity {
                 entity_id: triangle,
                 components: vec![
-                    ComponentValue::LocalTransform(transform(0.0, triangle_scale)),
+                    ComponentValue::LocalTransform(oriented_transform(
+                        0.0,
+                        triangle_scale,
+                        back_facing,
+                    )),
                     ComponentValue::AssetMesh(AssetMeshComponent {
                         content_hash,
                         mesh_index: 0,
@@ -1328,6 +1540,52 @@ fn scene_patch(
                 ],
             }),
         ],
+    }
+}
+
+fn mixed_double_sided_scene_patch(
+    camera: StableEntityId,
+    triangles: [StableEntityId; 3],
+    content_hash: cogniform_protocol::ContentHash,
+) -> ScenePatch {
+    let mut operations = vec![SceneOperation::Create(CreateEntity {
+        entity_id: camera,
+        components: vec![
+            ComponentValue::LocalTransform(transform(3.0, [1.0; 3])),
+            ComponentValue::Camera(CameraComponent {
+                vertical_fov_radians: positive(core::f32::consts::FRAC_PI_2),
+                near: positive(0.1),
+                far: positive(100.0),
+            }),
+        ],
+    })];
+    for (mesh_index, (entity_id, (x, back_facing))) in triangles
+        .into_iter()
+        .zip([(-0.9, false), (0.0, true), (0.9, true)])
+        .enumerate()
+    {
+        let mut local_transform = oriented_transform(0.0, [0.65; 3], back_facing);
+        local_transform.translation.x = finite(x);
+        operations.push(SceneOperation::Create(CreateEntity {
+            entity_id,
+            components: vec![
+                ComponentValue::LocalTransform(local_transform),
+                ComponentValue::AssetMesh(AssetMeshComponent {
+                    content_hash,
+                    mesh_index: u32::try_from(mesh_index).unwrap(),
+                }),
+            ],
+        }));
+    }
+    ScenePatch {
+        schema_version: SchemaVersion::V1,
+        transaction_id: TransactionId::new(20).unwrap(),
+        idempotency_key: IdempotencyKey::new(21).unwrap(),
+        base_revision: SceneRevision::INITIAL,
+        conflict_policy: ConflictPolicy::RequireExactBase,
+        delivery: DeliverySemantic::MustApply,
+        declared_budget: PatchBudget::default(),
+        operations,
     }
 }
 
@@ -1354,6 +1612,10 @@ fn scene_patch_with_cuboid_fallback(
 }
 
 fn transform(z: f32, scale: [f32; 3]) -> LocalTransform {
+    oriented_transform(z, scale, false)
+}
+
+fn oriented_transform(z: f32, scale: [f32; 3], back_facing: bool) -> LocalTransform {
     LocalTransform {
         translation: Vec3 {
             x: finite(0.0),
@@ -1362,9 +1624,9 @@ fn transform(z: f32, scale: [f32; 3]) -> LocalTransform {
         },
         rotation: Quaternion {
             x: finite(0.0),
-            y: finite(0.0),
+            y: finite(if back_facing { 1.0 } else { 0.0 }),
             z: finite(0.0),
-            w: finite(1.0),
+            w: finite(if back_facing { 0.0 } else { 1.0 }),
         },
         scale: PositiveVec3 {
             x: positive(scale[0]),
@@ -1388,6 +1650,20 @@ fn smooth_fixture() -> Vec<u8> {
         }
     }
     let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":72}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":36}],"accessors":[{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"},{"bufferView":1,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"NORMAL":1},"mode":4}]}]}"#;
+    glb_with_json(json, &binary)
+}
+
+fn mixed_double_sided_fixture() -> Vec<u8> {
+    let binary = [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ]
+    .into_iter()
+    .flatten()
+    .flat_map(f32::to_le_bytes)
+    .collect::<Vec<_>>();
+    let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}],"materials":[{"pbrMetallicRoughness":{"baseColorFactor":[0.8,0.4,0.2,1.0]}},{"pbrMetallicRoughness":{"baseColorFactor":[0.2,0.8,0.4,1.0]},"doubleSided":true},{"pbrMetallicRoughness":{"baseColorFactor":[0.2,0.4,0.8,1.0]},"doubleSided":false}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0,"mode":4}]},{"primitives":[{"attributes":{"POSITION":0},"material":1,"mode":4}]},{"primitives":[{"attributes":{"POSITION":0},"material":2,"mode":4}]}]}"#;
     glb_with_json(json, &binary)
 }
 
@@ -1424,6 +1700,25 @@ fn alpha_fixture(
     texture_alpha: Option<u8>,
     cutoff: Option<f32>,
 ) -> Vec<u8> {
+    alpha_fixture_with_double_sided(alpha_mode, factor_alpha, texture_alpha, cutoff, false)
+}
+
+fn double_sided_alpha_fixture(
+    alpha_mode: &str,
+    factor_alpha: f32,
+    texture_alpha: Option<u8>,
+    cutoff: Option<f32>,
+) -> Vec<u8> {
+    alpha_fixture_with_double_sided(alpha_mode, factor_alpha, texture_alpha, cutoff, true)
+}
+
+fn alpha_fixture_with_double_sided(
+    alpha_mode: &str,
+    factor_alpha: f32,
+    texture_alpha: Option<u8>,
+    cutoff: Option<f32>,
+    double_sided: bool,
+) -> Vec<u8> {
     let mut binary = Vec::new();
     for position in [
         [-0.75_f32, -0.75, 0.0],
@@ -1457,8 +1752,13 @@ fn alpha_fixture(
         },
     );
     let cutoff = cutoff.map_or_else(String::new, |value| format!(r#", "alphaCutoff":{value}"#));
+    let double_sided = if double_sided {
+        r#", "doubleSided":true"#
+    } else {
+        ""
+    };
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}}{image_view}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,{factor_alpha}]{texture_role}}},"alphaMode":"{alpha_mode}"{cutoff}}}]{resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}}{image_view}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,{factor_alpha}]{texture_role}}},"alphaMode":"{alpha_mode}"{cutoff}{double_sided}}}]{resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
     );
     glb_with_json(&json, &binary)
@@ -1609,6 +1909,18 @@ fn textured_two_mesh_fixture() -> Vec<u8> {
 }
 
 fn normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
+    normal_texture_fixture_with_double_sided(texel, scale, false)
+}
+
+fn double_sided_normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
+    normal_texture_fixture_with_double_sided(texel, scale, true)
+}
+
+fn normal_texture_fixture_with_double_sided(
+    texel: [u8; 4],
+    scale: f32,
+    double_sided: bool,
+) -> Vec<u8> {
     let positions = [
         [-0.75_f32, -0.75, 0.0],
         [0.75, -0.75, 0.0],
@@ -1641,8 +1953,13 @@ fn normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
     binary.extend_from_slice(&base_png);
     let normal_image_offset = binary.len();
     binary.extend_from_slice(&normal_png);
+    let double_sided = if double_sided {
+        r#", "doubleSided":true"#
+    } else {
+        ""
+    };
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_image_offset},"byteLength":{base_image_length}}},{{"buffer":0,"byteOffset":{normal_image_offset},"byteLength":{normal_image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5,"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"scale":{scale}}}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_image_offset},"byteLength":{base_image_length}}},{{"buffer":0,"byteOffset":{normal_image_offset},"byteLength":{normal_image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5,"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"scale":{scale}}}{double_sided}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         base_image_length = base_png.len(),
         normal_image_length = normal_png.len(),

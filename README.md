@@ -69,8 +69,10 @@ scene revision that produced it.
 > adds to the bounded surface result when the entity
 > has no explicit scene material. Imported core glTF materials now apply
 > deterministic OPAQUE or cutoff-based MASK coverage; blending and sorting
-> remain excluded, and an explicit scene material retains its existing alpha
-> semantics.
+> remain excluded. Imported materials now follow the glTF single-sided
+> default, while explicit `doubleSided: true` uses bounded two-sided lighting
+> and face-oriented normal observations. An explicit scene material retains
+> its existing alpha and unculled face semantics.
 > The baseline also includes pure seeded cuboid-grid procedures. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, can explicitly evict all CPU/GPU state for one

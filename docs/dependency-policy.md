@@ -43,6 +43,9 @@ dependency graph. CF058 reuses the exact same decoder and bounds for one
 approved sRGB emissive-texture role without changing the dependency graph.
 CF059 adds typed OPAQUE/MASK decode and shader coverage using existing JSON,
 asset, renderer, and WebGPU facilities without changing the dependency graph.
+CF060 adds typed `doubleSided` decode and two fixed renderer pipelines using
+the same existing JSON, asset, renderer, and WebGPU facilities without
+changing the dependency graph.
 `cogniform-renderer` and `cogniform-engine` use it only to generate test
 fixtures. It is dual licensed `MIT OR Apache-2.0`, uses the pure-Rust miniz
 backend with the direct crate's default features disabled, and requires no

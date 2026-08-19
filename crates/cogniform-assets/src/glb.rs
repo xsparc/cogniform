@@ -223,12 +223,7 @@ fn remove_unsupported_material_features(
         let Some(material) = material.as_object_mut() else {
             continue;
         };
-        for (field, expected) in [
-            ("occlusionTexture", JsonKind::Object),
-            ("doubleSided", JsonKind::Bool),
-        ] {
-            remove_typed_unsupported(material, field, expected, unsupported)?;
-        }
+        remove_typed_unsupported(material, "occlusionTexture", JsonKind::Object, unsupported)?;
     }
     Ok(())
 }
@@ -236,7 +231,6 @@ fn remove_unsupported_material_features(
 #[derive(Clone, Copy)]
 enum JsonKind {
     Object,
-    Bool,
 }
 
 fn remove_typed_unsupported(
@@ -250,7 +244,6 @@ fn remove_typed_unsupported(
     };
     let valid = match expected {
         JsonKind::Object => value.is_object(),
-        JsonKind::Bool => value.is_boolean(),
     };
     if !valid {
         return Err(diagnostic(
@@ -2046,6 +2039,7 @@ fn decode_material(
         material_scalar(roughness_value)?,
     )
     .with_emissive(emissive);
+    let material = apply_double_sided(root, material_index, material);
     let material = apply_alpha_coverage(root, material_index, material)?;
     let has_base_color_texture = material_index.is_some_and(|index| {
         root.materials
@@ -2093,6 +2087,25 @@ fn decode_material(
         material = material.with_normal_texture(scale);
     }
     Ok(material)
+}
+
+fn apply_double_sided(
+    root: &Root,
+    material_index: Option<u32>,
+    material: AssetMaterial,
+) -> AssetMaterial {
+    let enabled = material_index
+        .and_then(|index| {
+            root.materials
+                .get(usize::try_from(index).unwrap_or(usize::MAX))
+        })
+        .and_then(|material| material.double_sided)
+        .unwrap_or(false);
+    if enabled {
+        material.with_double_sided()
+    } else {
+        material
+    }
 }
 
 fn apply_alpha_coverage(
@@ -2342,6 +2355,19 @@ struct Material {
         deserialize_with = "deserialize_alpha_cutoff"
     )]
     alpha_cutoff: Option<f32>,
+    #[serde(
+        rename = "doubleSided",
+        default,
+        deserialize_with = "deserialize_double_sided"
+    )]
+    double_sided: Option<bool>,
+}
+
+fn deserialize_double_sided<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    bool::deserialize(deserializer).map(Some)
 }
 
 fn deserialize_alpha_mode<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>

@@ -225,6 +225,90 @@ fn extracted_plane_produces_color_depth_identity_and_plus_z_normal() {
     assert_eq!(frame.normal_at(0, 0), None);
 }
 
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn back_facing_built_in_plane_preserves_unculled_unflipped_behavior() {
+    let camera_id = StableEntityId::new(1).unwrap();
+    let plane_id = StableEntityId::new(2).unwrap();
+    let positive = |value| PositiveF32::new(value).unwrap();
+    let unit = |value| UnitF32::new(value).unwrap();
+    let identity = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ];
+    let mut camera_world = identity;
+    camera_world[14] = 3.0;
+    let camera = RenderEntity::new(
+        camera_id,
+        camera_world,
+        1,
+        RenderComponents {
+            camera: Some(CameraComponent {
+                vertical_fov_radians: positive(core::f32::consts::FRAC_PI_2),
+                near: positive(0.1),
+                far: positive(100.0),
+            }),
+            ..RenderComponents::default()
+        },
+    )
+    .unwrap();
+    let mut back_world = identity;
+    back_world[0] = -1.0;
+    back_world[10] = -1.0;
+    let back_plane = RenderEntity::new(
+        plane_id,
+        back_world,
+        2,
+        RenderComponents {
+            primitive: Some(PrimitiveComponent {
+                shape: PrimitiveShape::Plane,
+                dimensions: PositiveVec3 {
+                    x: positive(1.5),
+                    y: positive(0.75),
+                    z: positive(2.0),
+                },
+            }),
+            material: Some(MaterialComponent {
+                base_color: ColorRgba {
+                    r: unit(0.2),
+                    g: unit(0.6),
+                    b: unit(0.9),
+                    a: unit(1.0),
+                },
+                metallic: unit(0.0),
+                roughness: unit(0.5),
+            }),
+            ..RenderComponents::default()
+        },
+    )
+    .unwrap();
+    let extraction = RenderExtraction::new(
+        NonZeroU64::new(1).unwrap(),
+        SceneRevision::INITIAL,
+        SceneRevision::new(1),
+        vec![
+            RenderChange::upsert(camera),
+            RenderChange::upsert(back_plane),
+        ],
+    )
+    .unwrap();
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer.apply_extraction(&extraction).unwrap();
+    let back_frame = renderer.submit_scene(camera_id).unwrap().read().unwrap();
+    let center = (WIDTH / 2, HEIGHT / 2);
+    assert_eq!(
+        back_frame.stable_entity_id_at(center.0, center.1),
+        Some(plane_id),
+        "built-in planes must preserve legacy unculled rendering"
+    );
+    let back_normal = back_frame.normal_at(center.0, center.1).unwrap();
+    assert!(
+        back_normal[2] <= -0.99,
+        "built-ins must not receive imported face correction: {back_normal:?}"
+    );
+}
+
 fn light_entity(kind: LightKind, world_transform: [f64; 16], generation: u64) -> RenderEntity {
     light_entity_with_id(
         StableEntityId::new(3).unwrap(),
