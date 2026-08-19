@@ -317,9 +317,7 @@ impl RenderScene {
                     roughness,
                     emissive,
                     normal_scale: 1.0,
-                    use_imported_base_color_texture: false,
-                    use_imported_metallic_roughness_texture: false,
-                    use_imported_normal_texture: false,
+                    imported_texture_roles: ImportedTextureRoles::NONE,
                     compact_id: compact_id.get(),
                 }
                 .with_imported_textures(entity.material().is_none(), imported_material),
@@ -438,9 +436,7 @@ pub(crate) struct PreparedDraw {
     pub(crate) roughness: f32,
     pub(crate) emissive: [f32; 3],
     pub(crate) normal_scale: f32,
-    pub(crate) use_imported_base_color_texture: bool,
-    pub(crate) use_imported_metallic_roughness_texture: bool,
-    pub(crate) use_imported_normal_texture: bool,
+    pub(crate) imported_texture_roles: ImportedTextureRoles,
     pub(crate) compact_id: u32,
 }
 
@@ -450,13 +446,37 @@ impl PreparedDraw {
         use_imported_material: bool,
         material: Option<AssetMaterial>,
     ) -> Self {
-        let (base_color, metallic_roughness, normal, normal_scale) =
-            imported_texture_selection(use_imported_material, material);
-        self.use_imported_base_color_texture = base_color;
-        self.use_imported_metallic_roughness_texture = metallic_roughness;
-        self.use_imported_normal_texture = normal;
+        let (roles, normal_scale) = imported_texture_selection(use_imported_material, material);
+        self.imported_texture_roles = roles;
         self.normal_scale = normal_scale;
         self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ImportedTextureRoles(u8);
+
+impl ImportedTextureRoles {
+    pub(crate) const NONE: Self = Self(0);
+    const BASE_COLOR: u8 = 1 << 0;
+    const EMISSIVE: u8 = 1 << 1;
+    const METALLIC_ROUGHNESS: u8 = 1 << 2;
+    const NORMAL: u8 = 1 << 3;
+
+    pub(crate) const fn base_color(self) -> bool {
+        self.0 & Self::BASE_COLOR != 0
+    }
+
+    pub(crate) const fn emissive(self) -> bool {
+        self.0 & Self::EMISSIVE != 0
+    }
+
+    pub(crate) const fn metallic_roughness(self) -> bool {
+        self.0 & Self::METALLIC_ROUGHNESS != 0
+    }
+
+    pub(crate) const fn normal(self) -> bool {
+        self.0 & Self::NORMAL != 0
     }
 }
 
@@ -479,11 +499,13 @@ fn primitive_geometry(shape: cogniform_protocol::PrimitiveShape) -> PreparedGeom
 fn imported_texture_selection(
     use_imported_material: bool,
     material: Option<AssetMaterial>,
-) -> (bool, bool, bool, f32) {
+) -> (ImportedTextureRoles, f32) {
     let use_base_color =
         use_imported_material && material.is_some_and(AssetMaterial::has_base_color_texture);
     let use_normal =
         use_imported_material && material.is_some_and(AssetMaterial::has_normal_texture);
+    let use_emissive =
+        use_imported_material && material.is_some_and(AssetMaterial::has_emissive_texture);
     let use_metallic_roughness = use_imported_material
         && material.is_some_and(AssetMaterial::has_metallic_roughness_texture);
     let normal_scale = if use_normal {
@@ -491,12 +513,12 @@ fn imported_texture_selection(
     } else {
         1.0
     };
-    (
-        use_base_color,
-        use_metallic_roughness,
-        use_normal,
-        normal_scale,
-    )
+    let mut roles = 0;
+    roles |= u8::from(use_base_color) * ImportedTextureRoles::BASE_COLOR;
+    roles |= u8::from(use_emissive) * ImportedTextureRoles::EMISSIVE;
+    roles |= u8::from(use_metallic_roughness) * ImportedTextureRoles::METALLIC_ROUGHNESS;
+    roles |= u8::from(use_normal) * ImportedTextureRoles::NORMAL;
+    (ImportedTextureRoles(roles), normal_scale)
 }
 
 fn color_values(color: ColorRgba) -> [f32; 4] {

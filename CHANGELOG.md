@@ -36,7 +36,7 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 - optional finite same-count f32 `TEXCOORD_0`, including exact out-of-unit and
   indexed retention, a preserved 32-byte position/normal/primary-coordinate
   vertex prefix, zero defaults, and shader input location 2;
-- bounded shared embedded PNG GLB base-color, metallic-roughness, and normal texture roles, with strict static
+- bounded shared embedded PNG GLB base-color, metallic-roughness, normal, and emissive texture roles, with strict static
   8-bit RGB/RGBA decode, independent CPU/GPU accounting, explicit unique
   role upload, fixed repeat/linear sRGB/linear sampling, white/neutral fallbacks,
   factor/override semantics, and controlled orientation plus rehydration evidence;
@@ -53,6 +53,11 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   linear channels, with zero defaults, unchanged asset accounting, explicit
   scene-material suppression, bounded post-response RGB addition, preserved
   alpha/non-color observations, and no light, texture, HDR, or exposure authority;
+- optional core glTF `emissiveTexture` through the existing bounded embedded
+  PNG path, with zero-to-four atomic role reservation, unique-image CPU
+  accounting, sRGB RGB-factor multiplication, ignored alpha, white and
+  zero-factor neutrality, explicit scene-override suppression, exact
+  eviction/rehydration, and no light, strength, HDR, or exposure authority;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
@@ -195,6 +200,14 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF058 adds the additive `AssetMaterial::has_emissive_texture` and
+  `AssetUploadJob::emissive_texture` accessors. Asset/renderer texture counts
+  now admit zero to four role-separated values, shared images still count once
+  in CPU decoded bytes, and the private draw bind group gains one emissive
+  texture binding. No vertex/uniform, logical scene, observation, protocol,
+  dependency, package, version, tag, release-asset, workflow, or release
+  contract changed;
 
 - CF057 adds the additive `AssetMaterial::emissive` accessor and appends one
   private zero-padded emissive vector to the renderer draw uniform, growing it
@@ -413,14 +426,14 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 - renderer materials support base color plus bounded direct metallic-roughness
   response for directional and point lights; configurable point
   range/radius/cutoff, spot lights, ambient/image-based lighting, shadows,
-  emissive textures/strength/cross-surface illumination, HDR/tone mapping,
+  emissive strength/cross-surface illumination, HDR/tone mapping,
   gamma conversion, and lighting configuration are not implemented.
   Normal output is quantized and the imported subset supports numeric base
   color, metallic, roughness, and one source-tangent normal map, but no
-  generated tangents, emissive textures/strength, alpha modes, or other
+  generated tangents, emissive strength, alpha modes, or other
   material texture roles;
   the GLB subset samples at most one shared embedded PNG per base-color,
-  metallic-roughness, or normal role but excludes external/data images, JPEG,
+  metallic-roughness, normal, or emissive role but excludes external/data images, JPEG,
   explicit samplers, compression,
   scene traversal, and most vertex attributes. Normal mapping affects direct
   light only and never replaces the geometric-normal observation.

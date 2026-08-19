@@ -1355,6 +1355,35 @@ image-based lighting, HDR/exposure/tone mapping, bloom, new texture/image
 support, dependencies, transport/recovery changes, or release action. See
 [ADR 0057](../adr/0057-bounded-glb-emissive-factors.md).
 
+### PR 58 - CF058: Bounded core glTF emissive textures
+
+Outcome: approved GLBs can multiply their bounded numeric emissive factor by
+one embedded core emissive texture without gaining light, exposure, or scene
+authority.
+
+Gate: accept one shared-per-role `emissiveTexture` index using omitted/zero
+`texCoord`, explicit `TEXCOORD_0`, and the existing embedded static RGB/RGBA
+PNG subset. Retain at most four root textures/images across base-color,
+metallic-roughness, normal, and emissive roles. Reject malformed/null/type-
+invalid/out-of-range indices, malformed coordinates, missing coordinates,
+invalid images, and limit failures before readiness and without proxy
+substitution. Valid nonzero coordinate sets or unused bounded records retain
+the existing explicit proxy classification. Decode shared source images once
+on CPU while atomically reserving zero to four content-hash-and-role GPU
+resources.
+
+Upload emissive as `Rgba8UnormSrgb`, ignore texture alpha, multiply its
+sRGB-decoded RGB by the linear numeric factor, and add it through the existing
+bounded CF057 surface path. Use the white fallback when absent, keep a zero
+factor neutral, and disable all four imported texture roles plus emission under
+an explicit scene material. Preserve vertex/uniform ABI, depth, identity,
+background, geometric-normal observation, lifecycle causality, revision,
+replay, and world hash. Do not add emissive strength, cross-surface light,
+bloom, HDR/exposure/tone mapping, ambient/IBL, occlusion, alpha modes,
+additional coordinates/samplers/images, generated tangents, protocol,
+recovery, transport, dependencies, or release action. See
+[ADR 0058](../adr/0058-bounded-glb-emissive-textures.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1365,7 +1394,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF030 -> CF031 -> CF032 -> CF033 -> CF034 -> CF035 -> CF036 -> CF037
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
-  -> CF054 -> CF055 -> CF056 -> CF057
+  -> CF054 -> CF055 -> CF056 -> CF057 -> CF058
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1627,6 +1656,12 @@ Validation expands with capability:
   scene-material suppression; bounded unlit/directional/point surface
   addition with alpha and non-color preservation; and unchanged revision,
   logical hash, and idempotent replay.
+- CF058: strict emissive-texture index/coordinate/image validation; exact
+  shared/distinct four-role CPU and role-keyed GPU accounting; atomic
+  reservation, upload, eviction, and rehydration; sRGB RGB-factor
+  multiplication with ignored alpha and white/zero neutrality; scene-material
+  suppression; unchanged non-color observations, revision, logical hash, and
+  replay; and controlled unlit/directional/point evidence.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

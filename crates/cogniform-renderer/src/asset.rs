@@ -79,11 +79,11 @@ pub struct RendererAssetEviction {
     pub removed_resident_meshes: u32,
     /// Exact resident vertex-buffer bytes released from renderer ownership.
     pub released_resident_bytes: u64,
-    /// Unique pending role-texture reservations removed; currently zero to three.
+    /// Unique pending role-texture reservations removed; currently zero to four.
     pub removed_pending_textures: u32,
     /// Exact pending RGBA8 texture bytes released.
     pub released_pending_texture_bytes: u64,
-    /// Unique resident role textures removed; currently zero to three.
+    /// Unique resident role textures removed; currently zero to four.
     pub removed_resident_textures: u32,
     /// Exact resident RGBA8 texture bytes released from renderer ownership.
     pub released_resident_texture_bytes: u64,
@@ -120,6 +120,7 @@ struct GpuAssetTexture {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum AssetTextureRole {
     BaseColor,
+    Emissive,
     MetallicRoughness,
     Normal,
 }
@@ -166,6 +167,10 @@ impl PendingAssetUpload {
         self.job.normal_texture()
     }
 
+    fn emissive_texture(&self) -> Option<&AssetTexture> {
+        self.job.emissive_texture()
+    }
+
     fn metallic_roughness_texture(&self) -> Option<&AssetTexture> {
         self.job.metallic_roughness_texture()
     }
@@ -173,6 +178,7 @@ impl PendingAssetUpload {
     fn texture(&self, role: AssetTextureRole) -> Option<&AssetTexture> {
         match role {
             AssetTextureRole::BaseColor => self.base_color_texture(),
+            AssetTextureRole::Emissive => self.emissive_texture(),
             AssetTextureRole::MetallicRoughness => self.metallic_roughness_texture(),
             AssetTextureRole::Normal => self.normal_texture(),
         }
@@ -245,6 +251,12 @@ impl RendererAssets {
             return Err(RendererError::InvalidAssetMesh {
                 key,
                 reason: "normal-textured material and immutable image must be present together",
+            });
+        }
+        if job.material().has_emissive_texture() != job.emissive_texture().is_some() {
+            return Err(RendererError::InvalidAssetMesh {
+                key,
+                reason: "emissive-textured material and immutable image must be present together",
             });
         }
         if job.material().has_metallic_roughness_texture()
@@ -327,9 +339,10 @@ impl RendererAssets {
         config: &RendererConfig,
     ) -> Result<(), RendererError> {
         let mesh_key = job.key();
-        let mut reservations = Vec::with_capacity(3);
+        let mut reservations = Vec::with_capacity(4);
         for (role, texture) in [
             (AssetTextureRole::BaseColor, job.base_color_texture()),
+            (AssetTextureRole::Emissive, job.emissive_texture()),
             (
                 AssetTextureRole::MetallicRoughness,
                 job.metallic_roughness_texture(),
@@ -417,6 +430,7 @@ impl RendererAssets {
         let mut texture_byte_len = 0_u64;
         for (role, texture) in [
             (AssetTextureRole::BaseColor, job.base_color_texture()),
+            (AssetTextureRole::Emissive, job.emissive_texture()),
             (
                 AssetTextureRole::MetallicRoughness,
                 job.metallic_roughness_texture(),
@@ -486,7 +500,7 @@ impl RendererAssets {
             .filter(|key| key.content_hash == content_hash)
             .collect();
         let removed_pending_textures =
-            u32::try_from(pending_texture_keys.len()).expect("at most three roles are reserved");
+            u32::try_from(pending_texture_keys.len()).expect("at most four roles are reserved");
         let pending_texture_bytes = pending_texture_keys
             .iter()
             .map(|key| {
@@ -553,7 +567,7 @@ impl RendererAssets {
             .filter(|key| key.content_hash == content_hash)
             .collect();
         let removed_resident_textures =
-            u32::try_from(resident_texture_keys.len()).expect("at most three roles are resident");
+            u32::try_from(resident_texture_keys.len()).expect("at most four roles are resident");
         let resident_texture_bytes = resident_texture_keys
             .into_iter()
             .map(|key| {
@@ -686,6 +700,7 @@ fn create_texture(
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(match role {
             AssetTextureRole::BaseColor => "cogniform-asset-base-color",
+            AssetTextureRole::Emissive => "cogniform-asset-emissive",
             AssetTextureRole::MetallicRoughness => "cogniform-asset-metallic-roughness",
             AssetTextureRole::Normal => "cogniform-asset-normal",
         }),
@@ -694,7 +709,9 @@ fn create_texture(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: match role {
-            AssetTextureRole::BaseColor => wgpu::TextureFormat::Rgba8UnormSrgb,
+            AssetTextureRole::BaseColor | AssetTextureRole::Emissive => {
+                wgpu::TextureFormat::Rgba8UnormSrgb
+            }
             AssetTextureRole::MetallicRoughness | AssetTextureRole::Normal => {
                 wgpu::TextureFormat::Rgba8Unorm
             }
@@ -1042,6 +1059,43 @@ mod tests {
     }
 
     #[test]
+    fn four_role_texture_reservations_are_atomic_exact_and_role_keyed() {
+        let upload = four_textured_upload([128, 128, 255, 7]);
+        assert!(upload.base_color_texture().is_some());
+        assert!(upload.emissive_texture().is_some());
+        assert!(upload.metallic_roughness_texture().is_some());
+        assert!(upload.normal_texture().is_some());
+        for config in [
+            RendererConfig::new(64, 64)
+                .with_max_pending_asset_texture_bytes(NonZeroU64::new(15).unwrap()),
+            RendererConfig::new(64, 64)
+                .with_max_resident_asset_textures(NonZeroU32::new(3).unwrap()),
+            RendererConfig::new(64, 64)
+                .with_max_resident_asset_texture_bytes(NonZeroU64::new(15).unwrap()),
+        ] {
+            let mut assets = RendererAssets::new();
+            assert!(assets.enqueue(upload.clone(), &config).is_err());
+            assert_eq!(assets.stats().pending_uploads, 0);
+            assert_eq!(assets.stats().pending_bytes, 0);
+            assert_eq!(assets.stats().pending_textures, 0);
+            assert_eq!(assets.stats().pending_texture_bytes, 0);
+        }
+
+        let mut assets = RendererAssets::new();
+        assets
+            .enqueue(upload.clone(), &RendererConfig::new(64, 64))
+            .unwrap();
+        assert_eq!(assets.stats().pending_uploads, 1);
+        assert_eq!(assets.stats().pending_textures, 4);
+        assert_eq!(assets.stats().pending_texture_bytes, 16);
+        let eviction = assets.evict(upload.key().content_hash);
+        assert_eq!(eviction.removed_pending_uploads, 1);
+        assert_eq!(eviction.removed_pending_textures, 4);
+        assert_eq!(eviction.released_pending_texture_bytes, 16);
+        assert_eq!(assets.stats().pending_textures, 0);
+    }
+
+    #[test]
     fn pending_eviction_releases_exact_reservations_and_preserves_other_fifo_work() {
         let selected = textured_upload([255, 0, 0, 255]);
         let selected_key = selected.key();
@@ -1140,14 +1194,22 @@ mod tests {
     }
 
     fn dual_textured_upload(texel: [u8; 4]) -> AssetUploadJob {
-        multi_textured_upload(texel, false)
+        multi_textured_upload(texel, false, false)
     }
 
     fn triple_textured_upload(texel: [u8; 4]) -> AssetUploadJob {
-        multi_textured_upload(texel, true)
+        multi_textured_upload(texel, true, false)
     }
 
-    fn multi_textured_upload(texel: [u8; 4], include_metallic_roughness: bool) -> AssetUploadJob {
+    fn four_textured_upload(texel: [u8; 4]) -> AssetUploadJob {
+        multi_textured_upload(texel, true, true)
+    }
+
+    fn multi_textured_upload(
+        texel: [u8; 4],
+        include_metallic_roughness: bool,
+        include_emissive: bool,
+    ) -> AssetUploadJob {
         let mut binary = Vec::new();
         for position in [
             [-0.75_f32, -0.75, 0.0],
@@ -1188,8 +1250,13 @@ mod tests {
         } else {
             ""
         };
+        let emissive = if include_emissive {
+            r#", "emissiveTexture":{"index":0}"#
+        } else {
+            ""
+        };
         let json = format!(
-            r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}{metallic_roughness}}},"normalTexture":{{"index":0}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0}}]}}]}}"#,
+            r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}{metallic_roughness}}},"normalTexture":{{"index":0}}{emissive}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0}}]}}]}}"#,
             binary_length = binary.len(),
             image_length = png_bytes.len(),
         );

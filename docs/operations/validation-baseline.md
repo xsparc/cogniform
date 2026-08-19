@@ -128,6 +128,13 @@ surface addition, alpha and non-color preservation, and logical-state neutrality
 were collected on the CPU and validated Windows/Vulkan profile on 2026-08-19.
 No dependency, feature, lockfile, vendor, workflow, permission, package,
 version, texture, tag, asset, or release action changed.
+CF058 bounded core emissive-texture decode, exact four-role CPU/GPU accounting,
+atomic reservation, sRGB RGB-factor multiplication, alpha irrelevance,
+white/zero neutrality, scene-override precedence, non-color preservation, and
+exact eviction/rehydration evidence were collected on the CPU and validated
+Windows/Vulkan profile on 2026-08-19. No dependency, feature, lockfile, vendor,
+workflow, permission, package, version, tag, release-asset, or release action
+changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -137,7 +144,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, bounded sRGB base-color plus linear normal and packed metallic-roughness texture response, three-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -699,6 +706,54 @@ not execute because Windows Application Control blocked it before startup; the
 dependency graph is unchanged, the prior CF056 audit remains applicable, and
 this gate remains required on an environment where the approved binary can
 run.
+
+### CF058 core glTF emissive textures
+
+CF058 accepts one shared-per-role core `emissiveTexture` using primary
+coordinates and the existing static embedded PNG subset. It raises the root
+image/texture bound to four, counts shared decoded images once on CPU, reserves
+each missing content-hash-and-role GPU resource atomically, uploads emissive as
+`Rgba8UnormSrgb`, ignores alpha, and multiplies sampled linear RGB by the CF057
+numeric factor. Absence binds white, zero factor stays neutral, and an explicit
+scene material disables all four imported roles and imported emission. The
+following commands passed on 2026-08-19:
+
+```text
+cargo fmt --all --check
+cargo test -p cogniform-assets -p cogniform-renderer --all-features --locked --offline
+cargo clippy -p cogniform-assets -p cogniform-renderer --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test --release -p cogniform-renderer --test asset_fixture emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture emissive_texture_adds_after_direct_light_and_scene_override_disables_it --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture four_texture_roles_upload_evict_and_rehydrate_exactly --all-features --locked --offline -- --ignored --exact --nocapture
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python tests/release/test_package_policy.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- .github/workflows
+git diff --check
+```
+
+CPU tests prove exact typed role/default retention, malformed null/type/index/
+coordinate/missing-coordinate rejection without proxy, explicit proxy
+classification for valid nonzero coordinate sets and unused records, malformed
+unused image/texture rejection, malformed-role precedence over deferred
+unsupported resources and samplers, four-record bounds, shared/distinct
+unique-image accounting, exact equality and limit-minus-one behavior, role
+consistency, atomic four-role reservation, and exact eviction.
+Controlled optimized tests prove sRGB RGB-factor multiplication, ignored
+alpha, white and zero-factor neutrality, unlit/directional/point composition,
+scene-override suppression, unchanged depth/identity/background/geometric
+normal, unchanged revision/hash/replay, and exact four-role upload, eviction,
+and rehydration. All local links across the fourteen changed public Markdown
+files resolve, and workflow files are byte-unchanged. The installed
+`cargo-deny` binary could not execute because Windows Application Control
+blocked it before startup. The dependency graph, manifests, lockfile, vendor,
+and workflows are unchanged from the prior accepted audit; this remains an
+explicit environment gap until an approved environment can execute the gate.
 
 ## Deterministic source-candidate commands
 

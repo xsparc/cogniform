@@ -63,5 +63,6 @@ earlier one and links the history.
 | [0055](0055-bounded-source-tangent-normal-textures.md) | Accepted | Render one bounded embedded normal texture through an exact source-tangent basis |
 | [0056](0056-bounded-metallic-roughness-textures.md) | Accepted | Multiply direct-light material factors by one bounded linear glTF metallic-roughness texture |
 | [0057](0057-bounded-glb-emissive-factors.md) | Accepted | Add one bounded core glTF emissive factor after the existing surface response |
+| [0058](0058-bounded-glb-emissive-textures.md) | Accepted | Modulate bounded core glTF surface emission with one embedded sRGB texture |
 
 New records use four sections: context, decision, consequences, and status.
