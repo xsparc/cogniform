@@ -225,8 +225,6 @@ fn remove_unsupported_material_features(
         };
         for (field, expected) in [
             ("occlusionTexture", JsonKind::Object),
-            ("alphaMode", JsonKind::String),
-            ("alphaCutoff", JsonKind::Number),
             ("doubleSided", JsonKind::Bool),
         ] {
             remove_typed_unsupported(material, field, expected, unsupported)?;
@@ -238,8 +236,6 @@ fn remove_unsupported_material_features(
 #[derive(Clone, Copy)]
 enum JsonKind {
     Object,
-    String,
-    Number,
     Bool,
 }
 
@@ -254,8 +250,6 @@ fn remove_typed_unsupported(
     };
     let valid = match expected {
         JsonKind::Object => value.is_object(),
-        JsonKind::String => value.is_string(),
-        JsonKind::Number => value.is_number(),
         JsonKind::Bool => value.is_boolean(),
     };
     if !valid {
@@ -319,6 +313,7 @@ fn validate_root(
 ) -> Result<DecodedAsset, AssetDiagnostic> {
     validate_root_header(root, binary, limits)?;
     validate_emissive_factors(root)?;
+    let alpha_unsupported = validate_alpha_coverage(root)?;
     let textures = decode_textures(root, binary, limits)?;
     let mut decoded_bytes = textures.byte_len;
     let mut meshes = Vec::with_capacity(root.meshes.len());
@@ -382,6 +377,9 @@ fn validate_root(
             None,
         ));
     }
+    if let Some(unsupported) = alpha_unsupported {
+        return Err(unsupported);
+    }
     Ok(DecodedAsset {
         meshes,
         base_color_texture: textures.base_color,
@@ -390,6 +388,50 @@ fn validate_root(
         normal_texture: textures.normal,
         byte_len: decoded_bytes,
     })
+}
+
+fn validate_alpha_coverage(root: &Root) -> Result<Option<AssetDiagnostic>, AssetDiagnostic> {
+    let mut unsupported = None;
+    for (material_index, material) in root.materials.iter().enumerate() {
+        let index = Some(stable_index(material_index));
+        if material.alpha_cutoff.is_some() && material.alpha_mode.is_none() {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.materials.alphaCutoff",
+                index,
+            ));
+        }
+        if let Some(cutoff) = material.alpha_cutoff {
+            let cutoff = FiniteF32::new(cutoff).map_err(|_| {
+                diagnostic(
+                    AssetDiagnosticCode::InvalidJson,
+                    "glb.json.materials.alphaCutoff",
+                    index,
+                )
+            })?;
+            if cutoff.get() < 0.0 {
+                return Err(diagnostic(
+                    AssetDiagnosticCode::InvalidJson,
+                    "glb.json.materials.alphaCutoff",
+                    index,
+                ));
+            }
+        }
+        if material
+            .alpha_mode
+            .as_deref()
+            .is_some_and(|mode| !matches!(mode, "OPAQUE" | "MASK"))
+        {
+            unsupported.get_or_insert_with(|| {
+                diagnostic(
+                    AssetDiagnosticCode::UnsupportedFeature,
+                    "glb.json.materials.alphaMode",
+                    index,
+                )
+            });
+        }
+    }
+    Ok(unsupported)
 }
 
 fn validate_emissive_factors(root: &Root) -> Result<(), AssetDiagnostic> {
@@ -2004,6 +2046,7 @@ fn decode_material(
         material_scalar(roughness_value)?,
     )
     .with_emissive(emissive);
+    let material = apply_alpha_coverage(root, material_index, material)?;
     let has_base_color_texture = material_index.is_some_and(|index| {
         root.materials
             .get(usize::try_from(index).unwrap_or(usize::MAX))
@@ -2050,6 +2093,30 @@ fn decode_material(
         material = material.with_normal_texture(scale);
     }
     Ok(material)
+}
+
+fn apply_alpha_coverage(
+    root: &Root,
+    material_index: Option<u32>,
+    material: AssetMaterial,
+) -> Result<AssetMaterial, AssetDiagnostic> {
+    let Some(source) = material_index
+        .and_then(|index| {
+            root.materials
+                .get(usize::try_from(index).unwrap_or(usize::MAX))
+        })
+        .filter(|material| material.alpha_mode.as_deref() == Some("MASK"))
+    else {
+        return Ok(material);
+    };
+    let cutoff = FiniteF32::new(source.alpha_cutoff.unwrap_or(0.5)).map_err(|_| {
+        diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            "glb.json.materials.alphaCutoff",
+            material_index,
+        )
+    })?;
+    Ok(material.with_alpha_mask(cutoff))
 }
 
 pub(crate) fn proxy_asset() -> DecodedAsset {
@@ -2263,6 +2330,32 @@ struct Material {
         deserialize_with = "deserialize_emissive_factor"
     )]
     emissive: Option<[f32; 3]>,
+    #[serde(
+        rename = "alphaMode",
+        default,
+        deserialize_with = "deserialize_alpha_mode"
+    )]
+    alpha_mode: Option<String>,
+    #[serde(
+        rename = "alphaCutoff",
+        default,
+        deserialize_with = "deserialize_alpha_cutoff"
+    )]
+    alpha_cutoff: Option<f32>,
+}
+
+fn deserialize_alpha_mode<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    String::deserialize(deserializer).map(Some)
+}
+
+fn deserialize_alpha_cutoff<'de, D>(deserializer: D) -> Result<Option<f32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    f32::deserialize(deserializer).map(Some)
 }
 
 fn deserialize_emissive_factor<'de, D>(deserializer: D) -> Result<Option<[f32; 3]>, D::Error>

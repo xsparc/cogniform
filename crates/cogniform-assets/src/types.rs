@@ -209,6 +209,16 @@ pub struct AssetMeshKey {
     pub mesh_index: u32,
 }
 
+/// Deterministic alpha coverage retained from one imported glTF material.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AssetAlphaMode {
+    /// Ignore imported factor and texture alpha for coverage.
+    Opaque,
+    /// Discard fragments whose multiplied imported alpha is below the cutoff.
+    Mask,
+}
+
 /// Immutable bounded material values imported with one mesh.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssetMaterial {
@@ -218,6 +228,8 @@ pub struct AssetMaterial {
     emissive: [f32; 3],
     texture_roles: u8,
     normal_scale: f32,
+    alpha_mode: AssetAlphaMode,
+    alpha_cutoff: f32,
 }
 
 impl AssetMaterial {
@@ -236,6 +248,8 @@ impl AssetMaterial {
             emissive: [0.0; 3],
             texture_roles: 0,
             normal_scale: 1.0,
+            alpha_mode: AssetAlphaMode::Opaque,
+            alpha_cutoff: 0.5,
         }
     }
 
@@ -262,6 +276,12 @@ impl AssetMaterial {
     pub(crate) fn with_normal_texture(mut self, scale: FiniteF32) -> Self {
         self.texture_roles |= Self::NORMAL_TEXTURE;
         self.normal_scale = scale.get();
+        self
+    }
+
+    pub(crate) fn with_alpha_mask(mut self, cutoff: FiniteF32) -> Self {
+        self.alpha_mode = AssetAlphaMode::Mask;
+        self.alpha_cutoff = cutoff.get();
         self
     }
 
@@ -318,6 +338,21 @@ impl AssetMaterial {
     #[must_use]
     pub const fn normal_scale(self) -> f32 {
         self.normal_scale
+    }
+
+    /// Returns the imported deterministic alpha-coverage mode.
+    #[must_use]
+    pub const fn alpha_mode(self) -> AssetAlphaMode {
+        self.alpha_mode
+    }
+
+    /// Returns the finite non-negative cutoff for imported mask coverage.
+    #[must_use]
+    pub const fn alpha_cutoff(self) -> Option<f32> {
+        match self.alpha_mode {
+            AssetAlphaMode::Opaque => None,
+            AssetAlphaMode::Mask => Some(self.alpha_cutoff),
+        }
     }
 }
 

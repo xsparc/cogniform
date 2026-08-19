@@ -67,7 +67,10 @@ scene revision that produced it.
 > while metallic-roughness green/blue multiply the numeric direct-light
 > factors and emissive texture RGB multiplies the numeric emission before it
 > adds to the bounded surface result when the entity
-> has no explicit scene material.
+> has no explicit scene material. Imported core glTF materials now apply
+> deterministic OPAQUE or cutoff-based MASK coverage; blending and sorting
+> remain excluded, and an explicit scene material retains its existing alpha
+> semantics.
 > The baseline also includes pure seeded cuboid-grid procedures. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, can explicitly evict all CPU/GPU state for one

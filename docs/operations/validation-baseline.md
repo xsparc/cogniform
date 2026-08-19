@@ -135,6 +135,13 @@ exact eviction/rehydration evidence were collected on the CPU and validated
 Windows/Vulkan profile on 2026-08-19. No dependency, feature, lockfile, vendor,
 workflow, permission, package, version, tag, release-asset, or release action
 changed.
+CF059 strict core OPAQUE/MASK decode, finite non-negative cutoff handling,
+deferred wider-mode proxy classification, exact 496-byte uniform reuse,
+factor/texture/product mask coverage, OPAQUE alpha-one correction, scene-
+material precedence, all-attachment discard, and logical-state neutrality were
+collected on the CPU and validated Windows/Vulkan profile on 2026-08-19. No
+dependency, feature, lockfile, vendor, workflow, permission, package, version,
+texture, bind-group, tag, release-asset, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -144,7 +151,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID, exact unlit and tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, deterministic imported OPAQUE/MASK coverage, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -754,6 +761,54 @@ files resolve, and workflow files are byte-unchanged. The installed
 blocked it before startup. The dependency graph, manifests, lockfile, vendor,
 and workflows are unchanged from the prior accepted audit; this remains an
 explicit environment gap until an approved environment can execute the gate.
+
+### CF059 core glTF alpha coverage
+
+CF059 accepts strict optional `alphaMode` with the glTF OPAQUE default and
+supports deterministic OPAQUE and MASK coverage only. Optional `alphaCutoff`
+requires an explicit mode, must be finite and non-negative, and defaults to
+`0.5` for masks. OPAQUE emits alpha one; MASK discards multiplied factor and
+base-color-texture alpha only when below the cutoff and emits surviving alpha
+one. The private 496-byte uniform reuses existing flag and padding lanes, and
+an explicit scene material disables imported coverage. These commands passed
+on 2026-08-19:
+
+```text
+cargo fmt --all --check
+cargo test -p cogniform-assets -p cogniform-renderer --all-features --locked --offline
+cargo clippy -p cogniform-assets -p cogniform-renderer --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --nocapture
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python tests/release/test_package_policy.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- .github/workflows
+git diff --check
+```
+
+Ordinary tests prove omitted/explicit OPAQUE, MASK default and custom cutoffs,
+cutoff above one, explicit-null/type/non-finite/negative/dependency rejection,
+unused-material validation, unchanged asset/upload accounting, public typed
+retention, deferred BLEND/wider proxy behavior, malformed-peer precedence,
+scene-material disabling, and exact fixed uniform encoding. All fourteen
+optimized asset-render tests pass together. The CF059 cases distinguish
+factor-only, texture-only, and multiplied alpha; prove exact-cutoff survival,
+full discard above one, OPAQUE alpha-one output, and explicit scene alpha;
+verify cleared color/depth/entity-ID/normal across the complete frame (the
+source of structured visibility); and preserve import/upload lifecycle,
+texture eviction/rehydration, revision, logical hash, and idempotent replay.
+Independent specialist review also reproduced all eight optimized headless-
+reference tests. Public safeguards, package policy, workflow validation,
+workflow immutability, diff hygiene, and all relative links across the changed
+Markdown files pass. `cargo deny check advisories bans licenses sources` could
+not execute because Windows Application Control blocked the installed binary
+before startup. Manifests, the lockfile, dependency graph, vendor tree, and
+workflows are unchanged from the prior accepted audit; dependency audit remains
+an explicit environment gap until an approved environment can execute it.
 
 ## Deterministic source-candidate commands
 

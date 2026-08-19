@@ -445,7 +445,12 @@ when the entity has no explicit material. The shader samples base color as
 `Rgba8UnormSrgb`, samples emissive as `Rgba8UnormSrgb`, samples the data roles
 as linear `Rgba8Unorm`, and uses one fixed repeat/linear one-mip sampler.
 Sampled base RGBA multiplies the numeric base-color factor before either
-shading path. The metallic-roughness green and blue channels multiply numeric
+shading path. Imported `OPAQUE` coverage ignores that multiplied alpha and
+emits alpha one. Imported `MASK` coverage discards a fragment when the
+multiplied alpha is below its finite non-negative cutoff (default `0.5`),
+before any color, depth, identity, or normal output; equality survives and
+emits alpha one. An explicit scene material disables imported coverage and
+retains its existing alpha. `BLEND` remains unsupported. The metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source-tangent TBN perturbs only direct-light response. Emissive texture RGB
 is decoded from sRGB, multiplied by the numeric linear emissive factor, added
@@ -459,11 +464,12 @@ asset without a scene material uses its existing fallback color with neutral
 dielectric parameters `metallic = 0`, `roughness = 0.8`. Emissive strength,
 cross-surface emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
-other material texture roles, generated tangents, HDR, and tone mapping are outside this baseline. A
+other material texture roles, blending, sorting, generated tangents, HDR, and tone mapping are outside this baseline. A
 fixed 496-byte per-draw uniform preserves the prior 480-byte model,
 view-projection, material-color, identity, directional, point-light,
-camera-position, and metallic/roughness/normal-scale/normal-enabled prefix and
-appends one zero-padded emissive slot. A fifth definition
+camera-position, and metallic/roughness/normal-scale/material-flag prefix and
+appends one emissive slot whose padding lane carries the imported mask cutoff.
+A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU
 submission.
@@ -484,7 +490,8 @@ MVP accepts primitives first, then a bounded glTF/GLB subset with finite
 positions, optional same-count finite vertex normals, optional same-count
 finite f32 `TEXCOORD_0`, optional same-count finite non-zero f32 `TANGENT`
 `VEC4` with exact handedness, one bounded numeric metallic-roughness material
-plus an optional three-channel unit-bounded core emissive factor per mesh, and
+plus an optional three-channel unit-bounded core emissive factor and bounded
+OPAQUE/MASK alpha coverage per mesh, and
 one shared embedded PNG per base-color, metallic-roughness, normal, or
 emissive role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,

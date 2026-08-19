@@ -326,13 +326,13 @@ fn embedded_base_color_texture_preserves_orientation_factor_override_and_residen
     let overridden = renderer.submit_scene(camera).unwrap().read().unwrap();
 
     let center = (WIDTH / 2, HEIGHT / 2);
-    assert_color_near(&top_left, center, [28, 3, 4, 64]);
-    assert_color_near(&bottom_left, center, [2, 14, 255, 32]);
+    assert_color_near(&top_left, center, [28, 3, 4, 255]);
+    assert_color_near(&bottom_left, center, [2, 14, 255, 255]);
     assert_ne!(
         lit.color_at(center.0, center.1),
         bottom_left.color_at(center.0, center.1)
     );
-    assert_eq!(lit.color_at(center.0, center.1).unwrap()[3], 32);
+    assert_eq!(lit.color_at(center.0, center.1).unwrap()[3], 255);
     assert_color_near(&overridden, center, [38, 22, 14, 255]);
     for frame in [&top_left, &bottom_left, &lit, &overridden] {
         assert_eq!(
@@ -506,7 +506,7 @@ fn emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outpu
     );
     assert_non_color_observations_equal(&unlit_explicit_zero, &unlit_baseline);
     let unlit = material_frame(emissive.clone(), None, false);
-    assert_color_near(&unlit, center, [77, 77, 89, 102]);
+    assert_color_near(&unlit, center, [77, 77, 89, 255]);
     assert_emissive_addition(&unlit, &unlit_baseline, center, [26, 51, 77]);
     assert_non_color_observations_equal(&unlit, &unlit_baseline);
 
@@ -527,7 +527,7 @@ fn emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outpu
     assert_non_color_observations_equal(&overridden, &overridden_baseline);
 
     let saturated = material_frame(emissive_fixture(Some([1.0; 3])), None, false);
-    assert_color_near(&saturated, center, [255, 255, 255, 102]);
+    assert_color_near(&saturated, center, [255, 255, 255, 255]);
 }
 
 #[test]
@@ -619,6 +619,33 @@ fn emissive_texture_adds_after_direct_light_and_scene_override_disables_it() {
         baseline.color_at(center.0, center.1)
     );
     assert_non_color_observations_equal(&textured, &baseline);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn alpha_mask_factor_boundaries_control_every_fragment_output() {
+    let below = alpha_material_frame(alpha_fixture("MASK", 0.25, None, Some(0.5)), None);
+    let equal = alpha_material_frame(alpha_fixture("MASK", 0.5, None, Some(0.5)), None);
+    let above_one = alpha_material_frame(alpha_fixture("MASK", 1.0, None, Some(1.25)), None);
+
+    assert_fully_discarded(&below);
+    assert_fully_discarded(&above_one);
+    assert_opaque_center(&equal, 255);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn alpha_texture_product_opaque_mode_and_scene_override_are_exact() {
+    let texture_only = alpha_material_frame(alpha_fixture("MASK", 1.0, Some(64), Some(0.3)), None);
+    let multiplied = alpha_material_frame(alpha_fixture("MASK", 0.5, Some(128), Some(0.3)), None);
+    let opaque = alpha_material_frame(alpha_fixture("OPAQUE", 0.0, Some(0), None), None);
+    let overridden =
+        alpha_material_frame(alpha_fixture("MASK", 0.0, Some(0), Some(1.0)), Some(0.25));
+
+    assert_fully_discarded(&texture_only);
+    assert_fully_discarded(&multiplied);
+    assert_opaque_center(&opaque, 255);
+    assert_opaque_center(&overridden, 64);
 }
 
 #[test]
@@ -955,6 +982,18 @@ fn material_frame(
     light_kind: Option<LightKind>,
     override_material: bool,
 ) -> RenderedFrame {
+    material_frame_with_override_alpha(bytes, light_kind, override_material.then_some(1.0))
+}
+
+fn alpha_material_frame(bytes: Vec<u8>, override_alpha: Option<f32>) -> RenderedFrame {
+    material_frame_with_override_alpha(bytes, None, override_alpha)
+}
+
+fn material_frame_with_override_alpha(
+    bytes: Vec<u8>,
+    light_kind: Option<LightKind>,
+    override_alpha: Option<f32>,
+) -> RenderedFrame {
     let content_hash = content_hash(&bytes);
     let key = AssetMeshKey {
         content_hash,
@@ -1028,10 +1067,10 @@ fn material_frame(
             .unwrap();
         revision = SceneRevision::new(2);
     }
-    if override_material {
+    if let Some(alpha) = override_alpha {
         world
             .apply_patch(
-                &override_material_patch(revision, triangle),
+                &override_material_patch_with_alpha(revision, triangle, alpha),
                 FrameId::new(3).unwrap(),
             )
             .unwrap();
@@ -1048,6 +1087,33 @@ fn material_frame(
     assert_eq!(world.revision(), revision_before_replay);
     assert_eq!(world.logical_hash().unwrap(), hash_before_replay);
     renderer.submit_scene(camera).unwrap().read().unwrap()
+}
+
+fn assert_fully_discarded(frame: &RenderedFrame) {
+    let background_color = frame.color_at(0, 0);
+    let background_depth = frame.depth_at(0, 0);
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            assert_eq!(frame.color_at(x, y), background_color);
+            assert_eq!(frame.depth_at(x, y), background_depth);
+            assert_eq!(frame.stable_entity_id_at(x, y), None);
+            assert_eq!(frame.normal_at(x, y), None);
+        }
+    }
+}
+
+fn assert_opaque_center(frame: &RenderedFrame, expected_alpha: u8) {
+    let center = (WIDTH / 2, HEIGHT / 2);
+    assert_eq!(
+        frame.stable_entity_id_at(center.0, center.1),
+        Some(StableEntityId::new(2).unwrap())
+    );
+    assert!(frame.depth_at(center.0, center.1).unwrap() < 1.0);
+    assert!(frame.normal_at(center.0, center.1).is_some());
+    assert_eq!(
+        frame.color_at(center.0, center.1).unwrap()[3],
+        expected_alpha
+    );
 }
 
 fn upload_textured_meshes(
@@ -1169,6 +1235,14 @@ fn add_light_patch(
 }
 
 fn override_material_patch(base_revision: SceneRevision, triangle: StableEntityId) -> ScenePatch {
+    override_material_patch_with_alpha(base_revision, triangle, 1.0)
+}
+
+fn override_material_patch_with_alpha(
+    base_revision: SceneRevision,
+    triangle: StableEntityId,
+    alpha: f32,
+) -> ScenePatch {
     ScenePatch {
         schema_version: SchemaVersion::V1,
         transaction_id: TransactionId::new(6).unwrap(),
@@ -1184,7 +1258,7 @@ fn override_material_patch(base_revision: SceneRevision, triangle: StableEntityI
                     r: unit(0.8),
                     g: unit(0.4),
                     b: unit(0.2),
-                    a: unit(1.0),
+                    a: unit(alpha),
                 },
                 metallic: unit(0.0),
                 roughness: unit(0.5),
@@ -1340,6 +1414,52 @@ fn emissive_fixture(emissive: Option<[f32; 3]>) -> Vec<u8> {
     });
     let json = format!(
         r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.2,0.1,0.05,0.4],"metallicFactor":0.0,"roughnessFactor":0.5}}{emissive_field}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":0,"mode":4}}]}}]}}"#,
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn alpha_fixture(
+    alpha_mode: &str,
+    factor_alpha: f32,
+    texture_alpha: Option<u8>,
+    cutoff: Option<f32>,
+) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.5_f32, 0.5]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let (image_view, resources, texture_role) = texture_alpha.map_or_else(
+        || (String::new(), String::new(), String::new()),
+        |alpha| {
+            let png = encode_png(1, 1, &[255, 255, 255, alpha]);
+            let image_offset = binary.len();
+            binary.extend_from_slice(&png);
+            (
+                format!(
+                    r#",{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}"#,
+                    png.len()
+                ),
+                r#", "textures":[{"source":0}],"images":[{"bufferView":2,"mimeType":"image/png"}]"#
+                    .to_owned(),
+                r#", "baseColorTexture":{"index":0}"#.to_owned(),
+            )
+        },
+    );
+    let cutoff = cutoff.map_or_else(String::new, |value| format!(r#", "alphaCutoff":{value}"#));
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}}{image_view}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,{factor_alpha}]{texture_role}}},"alphaMode":"{alpha_mode}"{cutoff}}}]{resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
     );
     glb_with_json(&json, &binary)
 }

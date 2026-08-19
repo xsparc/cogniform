@@ -64,5 +64,6 @@ earlier one and links the history.
 | [0056](0056-bounded-metallic-roughness-textures.md) | Accepted | Multiply direct-light material factors by one bounded linear glTF metallic-roughness texture |
 | [0057](0057-bounded-glb-emissive-factors.md) | Accepted | Add one bounded core glTF emissive factor after the existing surface response |
 | [0058](0058-bounded-glb-emissive-textures.md) | Accepted | Modulate bounded core glTF surface emission with one embedded sRGB texture |
+| [0059](0059-bounded-gltf-alpha-coverage.md) | Accepted | Add deterministic imported OPAQUE and MASK coverage without blending authority |
 
 New records use four sections: context, decision, consequences, and status.
