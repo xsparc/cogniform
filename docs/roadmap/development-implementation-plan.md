@@ -1462,6 +1462,34 @@ extensions, scene-authored unlit authority, samplers, occlusion, BLEND,
 ambient/IBL, dependencies, protocol/recovery/transport changes, or release
 action. See [ADR 0061](../adr/0061-bounded-gltf-unlit-materials.md).
 
+### PR 62 - CF062: Bounded core glTF samplers
+
+Outcome: all four existing imported texture roles follow bounded core glTF
+filtering and independent S/T wrapping without per-asset sampler allocation.
+
+Gate: accept at most four strict sampler objects and only the core optional
+`magFilter`, `minFilter`, `wrapS`, and `wrapT` enums. Reject explicit null,
+wrong types, unknown fields, invalid enums, out-of-range texture sampler
+indices, and a fifth record before any proxy classification, including for
+unused records. Omitted sampler fields and an omitted texture sampler preserve
+the prior linear/repeat output. Retain exact source minification metadata, but
+map nearest-family mip modes to nearest and linear-family mip modes to linear
+because the bounded importer retains one image level.
+
+Carry immutable descriptors independently for base-color, normal,
+metallic-roughness, and emissive roles. Initialize one fixed 36-entry table
+from 3 S wraps by 3 T wraps by 2 magnification by 2 effective minification
+filters. Append three fixed sampler bind entries so four roles can select
+independently, require adapter minima of four sampled textures, four samplers,
+and nine bind-group entries, and bind the linear/repeat entry for inactive
+roles. Preserve four role textures, exact accounting, two pipelines, 48-byte
+vertices, 496-byte uniforms, MASK/OPAQUE, single/double-sided faces, unlit,
+scene override, observations, lifecycle, revision, logical hash, and replay.
+Do not add mip generation/storage, anisotropy, comparison/LOD controls,
+transforms, additional coordinates or roles, JPEG, BLEND, ambient/IBL/
+occlusion, dependencies, protocol/world changes, or release action. See
+[ADR 0062](../adr/0062-bounded-core-gltf-samplers.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1473,6 +1501,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
+  -> CF062
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1761,6 +1790,14 @@ Validation expands with capability:
   emissive roles; scene-material, OPAQUE/MASK, single/double-sided, observation,
   lifecycle, revision, logical hash, and replay compatibility; unchanged
   48-byte vertices, 496-byte uniforms, four texture roles, and two pipelines.
+- CF062: strict zero-to-four selected/unused sampler records and texture
+  indices; exact source/default filtering and wrapping metadata; all 36
+  effective descriptors; nine independent wrap-axis combinations;
+  nearest/linear magnification and one-mip minification families; four
+  independently sampled roles including one shared source image; fixed
+  initialization-owned 36-sampler table and 9-entry bind group; unchanged
+  texture accounting, alpha/unlit/face/override outputs, lifecycle, revision,
+  logical hash, replay, 48-byte vertices, 496-byte uniforms, and two pipelines.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

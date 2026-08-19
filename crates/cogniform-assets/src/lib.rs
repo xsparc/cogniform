@@ -10,9 +10,10 @@ pub use error::AssetError;
 pub use store::AssetStore;
 pub use types::{
     ASSET_VERTEX_BYTES, AssetAdmission, AssetAlphaMode, AssetDiagnostic, AssetDiagnosticCode,
-    AssetLimits, AssetMaterial, AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetShadingModel,
-    AssetState, AssetStoreConfig, AssetStoreEviction, AssetStoreStats, AssetTexture,
-    AssetUploadJob, AssetVertex, UnsupportedAssetPolicy,
+    AssetLimits, AssetMaterial, AssetMeshKey, AssetProcessOutcome, AssetRecord, AssetSampler,
+    AssetSamplerFilter, AssetSamplerMinFilter, AssetSamplerWrap, AssetShadingModel, AssetState,
+    AssetStoreConfig, AssetStoreEviction, AssetStoreStats, AssetTexture, AssetUploadJob,
+    AssetVertex, UnsupportedAssetPolicy,
 };
 
 use cogniform_protocol::ContentHash;

@@ -49,6 +49,11 @@ changing the dependency graph.
 CF061 adds strict `KHR_materials_unlit` declaration/marker preflight and one
 existing-uniform shader flag using the same JSON, asset, renderer, and WebGPU
 facilities without changing the dependency graph.
+CF062 adds strict core sampler records, immutable metadata, fixed bind entries,
+and an initialization-owned 36-sampler WebGPU table using those same existing
+facilities. It adds no package, feature, build script, native code, network,
+telemetry, or paid-service requirement and leaves the dependency graph
+unchanged.
 `cogniform-renderer` and `cogniform-engine` use it only to generate test
 fixtures. It is dual licensed `MIT OR Apache-2.0`, uses the pure-Rust miniz
 backend with the direct crate's default features disabled, and requires no

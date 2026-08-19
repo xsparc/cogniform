@@ -10,7 +10,8 @@ use serde::Deserialize;
 
 use crate::types::{
     ASSET_VERTEX_BYTES, AssetDiagnostic, AssetDiagnosticCode, AssetLimits, AssetMaterial,
-    AssetTexture, AssetVertex, DecodedAsset, DecodedMesh,
+    AssetSampler, AssetSamplerFilter, AssetSamplerMinFilter, AssetSamplerWrap, AssetTexture,
+    AssetVertex, DecodedAsset, DecodedMesh,
 };
 
 const GLB_MAGIC: [u8; 4] = *b"glTF";
@@ -429,6 +430,7 @@ fn validate_root(
     limits: AssetLimits,
     unlit_materials: &[bool],
 ) -> Result<DecodedAsset, AssetDiagnostic> {
+    validate_sampler_resources(root)?;
     validate_root_header(root, binary, limits)?;
     validate_material_values(root)?;
     let alpha_unsupported = validate_alpha_coverage(root)?;
@@ -678,12 +680,18 @@ fn validate_root_header(
             ));
         }
     }
-    if root.images.len() > 4 || root.textures.len() > 4 {
-        return Err(diagnostic(
-            AssetDiagnosticCode::CollectionLimitExceeded,
-            "glb.json.textures",
-            None,
-        ));
+    for (actual, location) in [
+        (root.images.len(), "glb.json.images"),
+        (root.samplers.len(), "glb.json.samplers"),
+        (root.textures.len(), "glb.json.textures"),
+    ] {
+        if actual > 4 {
+            return Err(diagnostic(
+                AssetDiagnosticCode::CollectionLimitExceeded,
+                location,
+                None,
+            ));
+        }
     }
     Ok(())
 }
@@ -837,7 +845,13 @@ fn validate_texture_resources(
     limits: AssetLimits,
 ) -> Result<ValidatedTextureResources, AssetDiagnostic> {
     let mut unsupported = None;
-    if !root.samplers.is_empty() {
+    let texture_sources = validate_texture_sources(root)?;
+    let referenced_samplers = root
+        .textures
+        .iter()
+        .filter_map(|texture| texture.sampler)
+        .collect::<BTreeSet<_>>();
+    if referenced_samplers.len() != root.samplers.len() {
         remember_unsupported(
             &mut unsupported,
             AssetDiagnosticCode::UnsupportedFeature,
@@ -845,7 +859,6 @@ fn validate_texture_resources(
             None,
         );
     }
-    let texture_sources = validate_texture_sources(root, &mut unsupported)?;
     let (decoded_images, byte_len) = validate_root_images(root, binary, limits, &mut unsupported)?;
     Ok(ValidatedTextureResources {
         texture_sources,
@@ -855,10 +868,95 @@ fn validate_texture_resources(
     })
 }
 
-fn validate_texture_sources(
-    root: &Root,
-    unsupported: &mut Option<AssetDiagnostic>,
-) -> Result<BTreeMap<u32, u32>, AssetDiagnostic> {
+fn validate_root_samplers(root: &Root) -> Result<(), AssetDiagnostic> {
+    for (sampler_index, sampler) in root.samplers.iter().enumerate() {
+        decode_sampler(stable_index(sampler_index), sampler)?;
+    }
+    Ok(())
+}
+
+fn validate_sampler_resources(root: &Root) -> Result<(), AssetDiagnostic> {
+    if root.samplers.len() > 4 {
+        return Err(diagnostic(
+            AssetDiagnosticCode::CollectionLimitExceeded,
+            "glb.json.samplers",
+            None,
+        ));
+    }
+    validate_root_samplers(root)?;
+    for (texture_index, texture) in root.textures.iter().enumerate() {
+        if let Some(sampler_index) = texture.sampler {
+            get(&root.samplers, sampler_index, "glb.json.textures[].sampler").map_err(
+                |mut error| {
+                    error.index = Some(stable_index(texture_index));
+                    error
+                },
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn decode_sampler(index: u32, sampler: &Sampler) -> Result<AssetSampler, AssetDiagnostic> {
+    let index = Some(index);
+    let mag_filter = match sampler.mag_filter.unwrap_or(9_729) {
+        9_728 => AssetSamplerFilter::Nearest,
+        9_729 => AssetSamplerFilter::Linear,
+        _ => {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.samplers[].magFilter",
+                index,
+            ));
+        }
+    };
+    let min_filter = match sampler.min_filter.unwrap_or(9_729) {
+        9_728 => AssetSamplerMinFilter::Nearest,
+        9_729 => AssetSamplerMinFilter::Linear,
+        9_984 => AssetSamplerMinFilter::NearestMipmapNearest,
+        9_985 => AssetSamplerMinFilter::LinearMipmapNearest,
+        9_986 => AssetSamplerMinFilter::NearestMipmapLinear,
+        9_987 => AssetSamplerMinFilter::LinearMipmapLinear,
+        _ => {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.samplers[].minFilter",
+                index,
+            ));
+        }
+    };
+    let decode_wrap = |value: Option<u32>, location| match value.unwrap_or(10_497) {
+        33_071 => Ok(AssetSamplerWrap::ClampToEdge),
+        33_648 => Ok(AssetSamplerWrap::MirroredRepeat),
+        10_497 => Ok(AssetSamplerWrap::Repeat),
+        _ => Err(diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            location,
+            index,
+        )),
+    };
+    Ok(AssetSampler::new(
+        mag_filter,
+        min_filter,
+        decode_wrap(sampler.wrap_s, "glb.json.samplers[].wrapS")?,
+        decode_wrap(sampler.wrap_t, "glb.json.samplers[].wrapT")?,
+    ))
+}
+
+fn texture_sampler(root: &Root, texture_index: u32) -> Result<AssetSampler, AssetDiagnostic> {
+    let texture = get(
+        &root.textures,
+        texture_index,
+        "glb.json.materials.texture.index",
+    )?;
+    let Some(sampler_index) = texture.sampler else {
+        return Ok(AssetSampler::LINEAR_REPEAT);
+    };
+    let sampler = get(&root.samplers, sampler_index, "glb.json.textures[].sampler")?;
+    decode_sampler(sampler_index, sampler)
+}
+
+fn validate_texture_sources(root: &Root) -> Result<BTreeMap<u32, u32>, AssetDiagnostic> {
     let mut texture_sources = BTreeMap::new();
     for (texture_index, texture) in root.textures.iter().enumerate() {
         let texture_index = u32::try_from(texture_index).expect("texture count is bounded");
@@ -871,13 +969,8 @@ fn validate_texture_sources(
         })?;
         get(&root.images, source, "glb.json.images")?;
         texture_sources.insert(texture_index, source);
-        if texture.sampler.is_some() {
-            remember_unsupported(
-                unsupported,
-                AssetDiagnosticCode::UnsupportedFeature,
-                "glb.json.textures[].sampler",
-                Some(texture_index),
-            );
+        if let Some(sampler) = texture.sampler {
+            get(&root.samplers, sampler, "glb.json.textures[].sampler")?;
         }
     }
     Ok(texture_sources)
@@ -2206,41 +2299,28 @@ fn decode_material(
     let material = apply_unlit(material_index, unlit_materials, material);
     let material = apply_double_sided(root, material_index, material);
     let material = apply_alpha_coverage(root, material_index, material)?;
-    let has_base_color_texture = material_index.is_some_and(|index| {
+    let source_material = material_index.and_then(|index| {
         root.materials
             .get(usize::try_from(index).unwrap_or(usize::MAX))
-            .and_then(|material| material.pbr_metallic_roughness.as_ref())
-            .and_then(|pbr| pbr.base_color_texture.as_ref())
-            .is_some()
     });
-    let mut material = if has_base_color_texture {
-        material.with_base_color_texture()
-    } else {
-        material
-    };
-    if material_index.is_some_and(|index| {
-        root.materials
-            .get(usize::try_from(index).unwrap_or(usize::MAX))
-            .and_then(|material| material.emissive_texture.as_ref())
-            .is_some()
-    }) {
-        material = material.with_emissive_texture();
+    let mut material = material;
+    if let Some(info) = source_material
+        .and_then(|material| material.pbr_metallic_roughness.as_ref())
+        .and_then(|pbr| pbr.base_color_texture.as_ref())
+    {
+        material = material.with_base_color_texture(texture_sampler(root, info.index)?);
     }
-    if material_index.is_some_and(|index| {
-        root.materials
-            .get(usize::try_from(index).unwrap_or(usize::MAX))
-            .and_then(|material| material.pbr_metallic_roughness.as_ref())
-            .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
-            .is_some()
-    }) {
-        material = material.with_metallic_roughness_texture();
+    if let Some(info) = source_material.and_then(|material| material.emissive_texture.as_ref()) {
+        material = material.with_emissive_texture(texture_sampler(root, info.index)?);
     }
-    if let Some(normal_texture) = material_index
-        .and_then(|index| {
-            root.materials
-                .get(usize::try_from(index).unwrap_or(usize::MAX))
-        })
-        .and_then(|material| material.normal_texture.as_ref())
+    if let Some(info) = source_material
+        .and_then(|material| material.pbr_metallic_roughness.as_ref())
+        .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
+    {
+        material = material.with_metallic_roughness_texture(texture_sampler(root, info.index)?);
+    }
+    if let Some(normal_texture) =
+        source_material.and_then(|material| material.normal_texture.as_ref())
     {
         let scale = FiniteF32::new(normal_texture.scale.unwrap_or(1.0)).map_err(|_| {
             diagnostic(
@@ -2249,7 +2329,8 @@ fn decode_material(
                 material_index,
             )
         })?;
-        material = material.with_normal_texture(scale);
+        material =
+            material.with_normal_texture(scale, texture_sampler(root, normal_texture.index)?);
     }
     Ok(material)
 }
@@ -2440,8 +2521,8 @@ struct Root {
     materials: Vec<Material>,
     #[serde(default)]
     images: Vec<Image>,
-    #[serde(default)]
-    samplers: Vec<serde_json::Value>,
+    #[serde(default, deserialize_with = "deserialize_sampler_records")]
+    samplers: Vec<Sampler>,
     #[serde(default)]
     textures: Vec<Texture>,
 }
@@ -2616,10 +2697,47 @@ struct NormalTextureInfo {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Texture {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_u32")]
     sampler: Option<u32>,
     #[serde(default)]
     source: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Sampler {
+    #[serde(default, deserialize_with = "deserialize_optional_u32")]
+    mag_filter: Option<u32>,
+    #[serde(default, deserialize_with = "deserialize_optional_u32")]
+    min_filter: Option<u32>,
+    #[serde(default, deserialize_with = "deserialize_optional_u32")]
+    wrap_s: Option<u32>,
+    #[serde(default, deserialize_with = "deserialize_optional_u32")]
+    wrap_t: Option<u32>,
+}
+
+fn deserialize_sampler_records<'de, D>(deserializer: D) -> Result<Vec<Sampler>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::<serde_json::Value>::deserialize(deserializer)?
+        .into_iter()
+        .map(|value| {
+            if !value.is_object() {
+                return Err(serde::de::Error::custom(
+                    "each glTF sampler must be an object",
+                ));
+            }
+            serde_json::from_value(value).map_err(serde::de::Error::custom)
+        })
+        .collect()
+}
+
+fn deserialize_optional_u32<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    u32::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Deserialize)]

@@ -443,7 +443,12 @@ textures, an optional emissive texture, metallic, roughness, normal scale, and
 core unit-bounded emissive RGB
 when the entity has no explicit material. The shader samples base color as
 `Rgba8UnormSrgb`, samples emissive as `Rgba8UnormSrgb`, samples the data roles
-as linear `Rgba8Unorm`, and uses one fixed repeat/linear one-mip sampler.
+as linear `Rgba8Unorm`. Each role retains one bounded core glTF sampler
+descriptor independently. Omitted fields use linear/repeat compatibility;
+nearest-family mip modes select nearest and linear-family mip modes select
+linear because only one image level is retained. The renderer indexes one
+fixed initialization-owned 36-sampler table and never allocates a per-asset
+sampler or cache entry.
 Sampled base RGBA multiplies the numeric base-color factor before either
 shading path. Imported `OPAQUE` coverage ignores that multiplied alpha and
 emits alpha one. Imported `MASK` coverage discards a fragment when the
@@ -489,6 +494,12 @@ A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU
 submission.
+
+The fixed imported-material bind group contains four texture views and four
+samplers in nine total entries. Adapter preflight requires at least four
+sampled textures, four samplers per shader stage, and nine bindings per group,
+so an insufficient adapter fails as structured `UnsupportedCapabilities`
+before pipeline construction.
 
 Feature tiers are capability-based:
 
@@ -698,7 +709,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Release integrity and support | The future prerelease contract requires release immutability, draft-first exact two-asset assembly, six separately authorized live gates, release and per-asset attestation checks, independent SHA-256 verification, and a latest-candidate-only support lifetime without claiming that a release exists |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
-| Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, malformed source tangent or texture role, and unsupported features fail with structured diagnostics |
+| Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, malformed source tangent, sampler, or texture role, and unsupported features fail with structured diagnostics |
 | Asset resolution | The local service explicitly imports and uploads bounded content-addressed meshes and role-separated textures; recovered logical references remain unavailable until exact-hash rehydration without another world mutation |
 | Asset eviction | One explicit content-hash operation releases exact queued/CPU/upload/GPU mesh and shared-texture capacity while preserving unrelated order, logical references, revision, replay, hash, frame frontier, and later exact-hash rehydration |
 | Procedure composition | The local service produces deterministic stable IDs, queues an ordinary generated patch without immediate mutation, and preserves query/replay/hash/idempotency behavior across restoration |

@@ -38,7 +38,8 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   vertex prefix, zero defaults, and shader input location 2;
 - bounded shared embedded PNG GLB base-color, metallic-roughness, normal, and emissive texture roles, with strict static
   8-bit RGB/RGBA decode, independent CPU/GPU accounting, explicit unique
-  role upload, fixed repeat/linear sRGB/linear sampling, white/neutral fallbacks,
+  role upload, bounded per-role core filtering/wrapping with sRGB/linear role
+  formats, white/neutral fallbacks,
   factor/override semantics, and controlled orientation plus rehydration evidence;
 - optional finite non-zero same-count f32 `TANGENT` `VEC4`, exact handedness,
   finite normal scale, exact 48-byte expanded vertex accounting, atomic dual-
@@ -71,6 +72,10 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   unique/subset declarations and exact empty markers, typed bounded retention,
   base-color-only no/directional/point/combined-light response, unchanged
   OPAQUE/MASK and face semantics, and no new resource or pipeline authority;
+- bounded core glTF samplers for all four existing imported texture roles,
+  with strict zero-to-four record/index validation, exact source/default
+  metadata, independent repeat/mirrored/clamp axes, nearest/linear filtering,
+  the documented one-mip fallback, and one fixed 36-entry GPU table;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
@@ -213,6 +218,16 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF062 adds public immutable `AssetSampler`, non-exhaustive filter,
+  min-filter, and wrap enums, plus additive per-role `AssetMaterial` sampler
+  accessors. Explicit valid sampler records move into the supported path;
+  malformed selected or unused records and indices fail closed before proxy.
+  The private draw bind group grows from six to nine entries and renderer
+  initialization owns exactly 36 samplers, while texture counts/bytes, two
+  pipelines, 48-byte vertices, 496-byte uniforms, logical scenes,
+  observations, protocols, dependencies, packages, versions, tags,
+  release-assets, workflows, and release contracts remain unchanged;
 
 - CF061 adds non-exhaustive public `AssetShadingModel` and the additive
   `AssetMaterial::shading_model` accessor while preserving the existing
@@ -479,7 +494,7 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   material texture roles;
   the GLB subset samples at most one shared embedded PNG per base-color,
   metallic-roughness, normal, or emissive role but excludes external/data images, JPEG,
-  explicit samplers, compression,
+  non-core sampler controls, generated/stored mipmaps, compression,
   scene traversal, and most vertex attributes. Normal mapping affects direct
   light only and never replaces the geometric-normal observation.
   Built-in geometry supports

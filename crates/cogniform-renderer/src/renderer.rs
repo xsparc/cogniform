@@ -3,7 +3,9 @@ use std::{
     thread,
 };
 
-use cogniform_assets::AssetUploadJob;
+use cogniform_assets::{
+    AssetMaterial, AssetSampler, AssetSamplerFilter, AssetSamplerWrap, AssetUploadJob,
+};
 use cogniform_protocol::{ContentHash, FrameId, RenderExtraction, SceneRevision, StableEntityId};
 
 use crate::{
@@ -11,7 +13,7 @@ use crate::{
     FrameMetadata, MAX_READBACK_CAPACITY, MAX_READBACK_TIMEOUT, MAX_TARGET_DIMENSION,
     MAX_TARGET_PIXELS, PendingFrame, REFERENCE_COLOR, REFERENCE_ENTITY_ID, RenderTargetKind,
     RendererAssetStats, RendererConfig, RendererError, SceneUpdateError, SceneUpdateSummary,
-    asset::{AssetTextureRole, RendererAssets},
+    asset::{AssetTextureRole, GpuAssetMesh, RendererAssets},
     scene::{
         ImportedAlphaCoverage, ImportedFacePolicy, ImportedShadingModel, ImportedTextureRoles,
         MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, PreparedDirectionalLight, PreparedDraw,
@@ -25,6 +27,8 @@ const ENTITY_ID_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 const NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const ASSET_BASE_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const ASSET_NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const ASSET_SAMPLER_COUNT: usize = 36;
+type AssetSamplerTable = [wgpu::Sampler; ASSET_SAMPLER_COUNT];
 const BYTES_PER_PIXEL: u32 = 4;
 const COPY_ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 // The shared ABI constant is fixed at 48 and fits every supported pointer width.
@@ -152,7 +156,7 @@ pub struct HeadlessRenderer {
     neutral_normal_view: wgpu::TextureView,
     _neutral_metallic_roughness_texture: wgpu::Texture,
     neutral_metallic_roughness_view: wgpu::TextureView,
-    asset_texture_sampler: wgpu::Sampler,
+    asset_samplers: AssetSamplerTable,
     cube_vertices: wgpu::Buffer,
     plane_vertices: wgpu::Buffer,
     sphere_vertices: wgpu::Buffer,
@@ -210,7 +214,7 @@ impl HeadlessRenderer {
             neutral_normal_view,
             neutral_metallic_roughness_texture,
             neutral_metallic_roughness_view,
-            asset_texture_sampler,
+            asset_samplers,
         ) = create_asset_texture_resources(&device, &queue);
         let cube_vertices =
             create_builtin_vertex_buffer(&device, "cogniform-cube-vertices", &CUBE_POSITIONS);
@@ -238,7 +242,7 @@ impl HeadlessRenderer {
             neutral_normal_view,
             _neutral_metallic_roughness_texture: neutral_metallic_roughness_texture,
             neutral_metallic_roughness_view,
-            asset_texture_sampler,
+            asset_samplers,
             cube_vertices,
             plane_vertices,
             sphere_vertices,
@@ -422,7 +426,7 @@ impl HeadlessRenderer {
                 white_base_color_view: &self.white_base_color_view,
                 neutral_normal_view: &self.neutral_normal_view,
                 neutral_metallic_roughness_view: &self.neutral_metallic_roughness_view,
-                asset_texture_sampler: &self.asset_texture_sampler,
+                asset_samplers: &self.asset_samplers,
                 cube_vertices: &self.cube_vertices,
                 plane_vertices: &self.plane_vertices,
                 sphere_vertices: &self.sphere_vertices,
@@ -704,6 +708,24 @@ fn create_draw_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
                 },
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 6,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 7,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 8,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
         ],
     })
 }
@@ -790,6 +812,10 @@ fn required_limits(
     required.max_color_attachments = required.max_color_attachments.max(3);
     required.max_color_attachment_bytes_per_sample =
         required.max_color_attachment_bytes_per_sample.max(12);
+    required.max_bindings_per_bind_group = required.max_bindings_per_bind_group.max(9);
+    required.max_sampled_textures_per_shader_stage =
+        required.max_sampled_textures_per_shader_stage.max(4);
+    required.max_samplers_per_shader_stage = required.max_samplers_per_shader_stage.max(4);
     required.max_buffer_size = required.max_buffer_size.max(layout.buffer_size);
     required.max_buffer_size = required
         .max_buffer_size
@@ -1045,7 +1071,7 @@ struct ScenePassResources<'a> {
     white_base_color_view: &'a wgpu::TextureView,
     neutral_normal_view: &'a wgpu::TextureView,
     neutral_metallic_roughness_view: &'a wgpu::TextureView,
-    asset_texture_sampler: &'a wgpu::Sampler,
+    asset_samplers: &'a AssetSamplerTable,
     cube_vertices: &'a wgpu::Buffer,
     plane_vertices: &'a wgpu::Buffer,
     sphere_vertices: &'a wgpu::Buffer,
@@ -1134,6 +1160,7 @@ fn encode_scene_pass(
         resources.queue.write_buffer(&buffer, 0, &bytes);
         let bind_group = create_draw_bind_group(
             resources,
+            draw,
             &buffer,
             base_color_view,
             normal_view,
@@ -1148,12 +1175,19 @@ fn encode_scene_pass(
 
 fn create_draw_bind_group(
     resources: &ScenePassResources<'_>,
+    draw: &PreparedDraw,
     buffer: &wgpu::Buffer,
     base_color_view: &wgpu::TextureView,
     normal_view: &wgpu::TextureView,
     metallic_roughness_view: &wgpu::TextureView,
     emissive_view: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
+    let [
+        base_color_sampler,
+        normal_sampler,
+        metallic_roughness_sampler,
+        emissive_sampler,
+    ] = draw_samplers(draw, resources);
     resources
         .device
         .create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1170,7 +1204,7 @@ fn create_draw_bind_group(
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(resources.asset_texture_sampler),
+                    resource: wgpu::BindingResource::Sampler(base_color_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -1184,8 +1218,56 @@ fn create_draw_bind_group(
                     binding: 5,
                     resource: wgpu::BindingResource::TextureView(emissive_view),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::Sampler(normal_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::Sampler(metallic_roughness_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::Sampler(emissive_sampler),
+                },
             ],
         })
+}
+
+fn draw_samplers<'a>(
+    draw: &PreparedDraw,
+    resources: &'a ScenePassResources<'_>,
+) -> [&'a wgpu::Sampler; 4] {
+    let material = match draw.geometry {
+        PreparedGeometry::Asset(key) => resources.assets.mesh(key).map(GpuAssetMesh::material),
+        PreparedGeometry::Cuboid | PreparedGeometry::Plane | PreparedGeometry::Sphere => None,
+    };
+    let policy = |enabled: bool, sampler: Option<AssetSampler>| {
+        let sampler = if enabled {
+            sampler.unwrap_or_default()
+        } else {
+            AssetSampler::LINEAR_REPEAT
+        };
+        &resources.asset_samplers[asset_sampler_index(sampler)]
+    };
+    [
+        policy(
+            draw.imported_texture_roles.base_color(),
+            material.and_then(AssetMaterial::base_color_sampler),
+        ),
+        policy(
+            draw.imported_texture_roles.normal(),
+            material.and_then(AssetMaterial::normal_sampler),
+        ),
+        policy(
+            draw.imported_texture_roles.metallic_roughness(),
+            material.and_then(AssetMaterial::metallic_roughness_sampler),
+        ),
+        policy(
+            draw.imported_texture_roles.emissive(),
+            material.and_then(AssetMaterial::emissive_sampler),
+        ),
+    ]
 }
 
 fn draw_resources<'a>(
@@ -1285,7 +1367,7 @@ fn create_asset_texture_resources(
     wgpu::TextureView,
     wgpu::Texture,
     wgpu::TextureView,
-    wgpu::Sampler,
+    AssetSamplerTable,
 ) {
     let (base_color_texture, base_color_view) = create_solid_asset_texture(
         device,
@@ -1308,16 +1390,7 @@ fn create_asset_texture_resources(
         ASSET_NORMAL_FORMAT,
         [255; 4],
     );
-    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("cogniform-asset-repeat-linear"),
-        address_mode_u: wgpu::AddressMode::Repeat,
-        address_mode_v: wgpu::AddressMode::Repeat,
-        address_mode_w: wgpu::AddressMode::Repeat,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-        ..wgpu::SamplerDescriptor::default()
-    });
+    let samplers = create_asset_sampler_table(device);
     (
         base_color_texture,
         base_color_view,
@@ -1325,8 +1398,113 @@ fn create_asset_texture_resources(
         normal_view,
         metallic_roughness_texture,
         metallic_roughness_view,
-        sampler,
+        samplers,
     )
+}
+
+fn create_asset_sampler_table(device: &wgpu::Device) -> AssetSamplerTable {
+    std::array::from_fn(|index| {
+        let (mag_filter, min_filter, wrap_s, wrap_t) = asset_sampler_from_index(index);
+        device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("cogniform-asset-sampler"),
+            address_mode_u: sampler_address_mode(wrap_s),
+            address_mode_v: sampler_address_mode(wrap_t),
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: sampler_filter_mode(mag_filter),
+            min_filter: sampler_filter_mode(min_filter),
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..wgpu::SamplerDescriptor::default()
+        })
+    })
+}
+
+fn asset_sampler_index(sampler: AssetSampler) -> usize {
+    effective_asset_sampler_index(
+        sampler.mag_filter(),
+        sampler.effective_min_filter(),
+        sampler.wrap_s(),
+        sampler.wrap_t(),
+    )
+}
+
+fn effective_asset_sampler_index(
+    mag_filter: AssetSamplerFilter,
+    min_filter: AssetSamplerFilter,
+    wrap_s: AssetSamplerWrap,
+    wrap_t: AssetSamplerWrap,
+) -> usize {
+    let wrap_s = sampler_wrap_index(wrap_s);
+    let wrap_t = sampler_wrap_index(wrap_t);
+    let mag = sampler_filter_index(mag_filter);
+    let min = sampler_filter_index(min_filter);
+    (((wrap_s * 3) + wrap_t) * 2 + mag) * 2 + min
+}
+
+fn asset_sampler_from_index(
+    index: usize,
+) -> (
+    AssetSamplerFilter,
+    AssetSamplerFilter,
+    AssetSamplerWrap,
+    AssetSamplerWrap,
+) {
+    debug_assert!(index < ASSET_SAMPLER_COUNT);
+    let min = sampler_filter_from_index(index % 2);
+    let mag = sampler_filter_from_index((index / 2) % 2);
+    let wrap_t = sampler_wrap_from_index((index / 4) % 3);
+    let wrap_s = sampler_wrap_from_index((index / 12) % 3);
+    (mag, min, wrap_s, wrap_t)
+}
+
+fn sampler_filter_index(filter: AssetSamplerFilter) -> usize {
+    match filter {
+        AssetSamplerFilter::Nearest => 0,
+        AssetSamplerFilter::Linear => 1,
+        _ => unreachable!("assets exposes only bounded core sampler filters"),
+    }
+}
+
+fn sampler_filter_from_index(index: usize) -> AssetSamplerFilter {
+    match index {
+        0 => AssetSamplerFilter::Nearest,
+        1 => AssetSamplerFilter::Linear,
+        _ => unreachable!("sampler filter index is modulo two"),
+    }
+}
+
+fn sampler_wrap_index(wrap: AssetSamplerWrap) -> usize {
+    match wrap {
+        AssetSamplerWrap::ClampToEdge => 0,
+        AssetSamplerWrap::MirroredRepeat => 1,
+        AssetSamplerWrap::Repeat => 2,
+        _ => unreachable!("assets exposes only bounded core sampler wrapping"),
+    }
+}
+
+fn sampler_wrap_from_index(index: usize) -> AssetSamplerWrap {
+    match index {
+        0 => AssetSamplerWrap::ClampToEdge,
+        1 => AssetSamplerWrap::MirroredRepeat,
+        2 => AssetSamplerWrap::Repeat,
+        _ => unreachable!("sampler wrap index is modulo three"),
+    }
+}
+
+fn sampler_filter_mode(filter: AssetSamplerFilter) -> wgpu::FilterMode {
+    match filter {
+        AssetSamplerFilter::Nearest => wgpu::FilterMode::Nearest,
+        AssetSamplerFilter::Linear => wgpu::FilterMode::Linear,
+        _ => unreachable!("assets exposes only bounded core sampler filters"),
+    }
+}
+
+fn sampler_address_mode(wrap: AssetSamplerWrap) -> wgpu::AddressMode {
+    match wrap {
+        AssetSamplerWrap::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+        AssetSamplerWrap::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+        AssetSamplerWrap::Repeat => wgpu::AddressMode::Repeat,
+        _ => unreachable!("assets exposes only bounded core sampler wrapping"),
+    }
 }
 
 fn create_solid_asset_texture(
@@ -1679,6 +1857,26 @@ const fn align_up(value: u32, alignment: u32) -> Option<u32> {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn fixed_asset_sampler_table_is_complete_unique_and_reversible() {
+        let mut keys = Vec::new();
+        for index in 0..ASSET_SAMPLER_COUNT {
+            let key = asset_sampler_from_index(index);
+            assert!(
+                !keys.contains(&key),
+                "duplicate sampler key at index {index}"
+            );
+            keys.push(key);
+            assert_eq!(
+                effective_asset_sampler_index(key.0, key.1, key.2, key.3),
+                index
+            );
+        }
+        assert_eq!(keys.len(), 36);
+        assert_eq!(ASSET_SAMPLER_COUNT, 36);
+        assert_eq!(asset_sampler_index(AssetSampler::LINEAR_REPEAT), 35);
+    }
 
     #[test]
     fn target_validation_rejects_unbounded_inputs() {

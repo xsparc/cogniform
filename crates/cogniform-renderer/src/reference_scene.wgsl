@@ -40,6 +40,15 @@ var metallic_roughness_texture: texture_2d<f32>;
 @group(0) @binding(5)
 var emissive_texture: texture_2d<f32>;
 
+@group(0) @binding(6)
+var normal_sampler: sampler;
+
+@group(0) @binding(7)
+var metallic_roughness_sampler: sampler;
+
+@group(0) @binding(8)
+var emissive_sampler: sampler;
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) world_normal: vec3<f32>,
@@ -192,7 +201,7 @@ fn fs_main(
             let world_tangent = tangent_rejected * inverseSqrt(tangent_length_squared);
             let handedness = select(-1.0, 1.0, input.world_tangent.w >= 0.0);
             let world_bitangent = cross(source_geometric_world_normal, world_tangent) * handedness;
-            let sampled = textureSample(normal_texture, base_color_sampler, input.texcoord_0).rgb;
+            let sampled = textureSample(normal_texture, normal_sampler, input.texcoord_0).rgb;
             let tangent_normal = vec3(
                 (sampled.r * 2.0 - 1.0) * draw.material.z,
                 (sampled.g * 2.0 - 1.0) * draw.material.z,
@@ -226,7 +235,7 @@ fn fs_main(
     let shaded_world_normal = source_shaded_world_normal * face_sign;
     let sampled_material = textureSample(
         metallic_roughness_texture,
-        base_color_sampler,
+        metallic_roughness_sampler,
         input.texcoord_0,
     ).gb;
     let roughness = clamp(draw.material.y * sampled_material.x, 0.0, 1.0);
@@ -297,7 +306,7 @@ fn fs_main(
         }
     }
     if !unlit {
-        let emissive = textureSample(emissive_texture, base_color_sampler, input.texcoord_0).rgb
+        let emissive = textureSample(emissive_texture, emissive_sampler, input.texcoord_0).rgb
             * draw.emissive.rgb;
         shaded_color = min(shaded_color + emissive, vec3(1.0));
     }

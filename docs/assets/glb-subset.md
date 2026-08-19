@@ -21,7 +21,9 @@ deterministic imported OPAQUE and MASK coverage without blending or sorting.
 CF060 adds the core single-sided default and bounded explicit double-sided
 rendering without draw sorting or asset-keyed pipeline growth. CF061 admits
 the ratified `KHR_materials_unlit` marker through strict declarations and
-base-color-only shading without new resources or pipelines.
+base-color-only shading without new resources or pipelines. CF062 retains
+bounded core sampler filters and S/T wrapping independently for all four
+existing roles through one fixed renderer-owned table.
 
 ## Ownership and lifecycle
 
@@ -145,8 +147,12 @@ The importer accepts only the following baseline:
 - `emissiveTexture` uses the same primary-coordinate contract, sRGB-decoded
   RGB multiplied by the numeric linear `emissiveFactor`, and ignored alpha;
   omission uses a white fallback;
-- every texture must reference an in-range image with no sampler, every table
-  entry must be referenced, and the root samplers collection must be empty;
+- at most four strict root sampler objects. Each optional `magFilter`,
+  `minFilter`, `wrapS`, and `wrapT` must be one core integer enum; explicit
+  null and every other field or type are invalid. Every texture must reference
+  an in-range image and optional in-range sampler. Omitted filters default to
+  linear and omitted wraps default to repeat. Valid unused sampler records are
+  unsupported/proxy candidates only after all records and references validate;
 - each image must have no URI, use an in-BIN buffer view, declare
   `image/png`, and decode as a static non-interlaced 8-bit RGB or RGBA image;
 - optional non-normalized scalar u16 or u32 indices;
@@ -196,8 +202,8 @@ The strict schema rejects unknown fields after recognized unsupported feature
 declarations are classified. External buffers or images, data URIs, additional
 GLB chunks, sparse accessors, unsupported normal or primary-coordinate
 encodings, additional coordinate sets, colors, morph targets, multiple
-primitives, more than four images/textures, unused image or texture records,
-explicit samplers, JPEG and wider PNG forms, texture transforms,
+primitives, more than four images/textures/samplers, unused image or texture
+records, valid unused sampler records, JPEG and wider PNG forms, texture transforms,
 occlusion texture roles, `BLEND` alpha coverage, nodes, scenes, cameras, animations,
 skins, and all other or wider extensions
 are not supported. There is no compressed geometry, mipmap, anisotropy, or
@@ -223,7 +229,7 @@ ranges or indices, non-finite positions, zero or non-finite normals or
 tangents, invalid tangent handedness, normal/tangent count mismatches,
 non-finite primary coordinates, primary-coordinate count mismatches, malformed
 or out-of-range emissive factors, malformed alpha mode/cutoff values,
-malformed `doubleSided` values,
+malformed `doubleSided` or sampler values and indices,
 malformed, duplicate, empty, or inconsistent extension declarations, malformed
 or undeclared unlit markers,
 malformed emissive texture roles or missing
@@ -246,9 +252,13 @@ base-color, metallic-roughness, tangent-space normal, and emissive textures,
 metallic, roughness, normal scale, and emissive RGB unless the world entity has an explicit material,
 which overrides the imported material as a whole and uses renderer-owned
 white base-color/emissive, factor-one metallic-roughness, and neutral-normal
-fallbacks. The fixed repeat/linear one-mip sampler samples base color and
-emissive as sRGB and the data roles as linear; emissive and normal alpha plus
-metallic-roughness red/alpha are ignored.
+fallbacks. Each role selects its own immutable sampler descriptor. Repeat,
+mirrored-repeat, and clamp apply independently in S and T. Magnification uses
+the authored nearest/linear choice. With one retained image level, source
+`NEAREST`, `NEAREST_MIPMAP_NEAREST`, and `NEAREST_MIPMAP_LINEAR` use nearest;
+source `LINEAR`, `LINEAR_MIPMAP_NEAREST`, and `LINEAR_MIPMAP_LINEAR` use
+linear. Base color and emissive sample as sRGB and the data roles as linear;
+emissive and normal alpha plus metallic-roughness red/alpha are ignored.
 Sampled base RGBA
 multiplies the factor before material response. Imported
 default or explicit `OPAQUE` ignores that alpha and emits one. Imported `MASK`
@@ -279,7 +289,7 @@ that component, preparation fails with `AssetUnavailable`.
 
 `AssetMaterial` carries validated numeric metadata including core emissive
 RGB, typed alpha coverage/cutoff, the retained double-sided value, typed
-shading model, immutable texture-role facts, and finite
+shading model, immutable texture-role and sampler facts, and finite
 normal scale. `AssetUploadJob` exposes that material and
 separate optional base-color, metallic-roughness, normal, and emissive `AssetTexture`
 values; the compatible
@@ -372,6 +382,9 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_back_face_preserves_mask_discard_and_equality
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact unlit_base_texture_is_exact_across_lights_and_scene_override_restores_lighting
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact unlit_double_sided_back_face_preserves_opaque_and_mask_coverage
+cargo test --release -p cogniform-renderer --test asset_fixture core_sampler_wrap_and_magnification_modes_are_pixel_observable --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture mipmapped_minification_modes_use_the_documented_one_mip_fallback --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture four_texture_roles_bind_independent_samplers_for_one_shared_image --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work
 cargo test --release -p cogniform-storage --test asset_file --locked --offline -- --ignored --exact persisted_recovery_and_asset_sources_restore_renderable_state
@@ -413,10 +426,19 @@ claim mirrored-transform support. The unlit checks prove exact sampled base
 color across no, directional, point, and combined lights, visually inert but
 retained fallback texture roles, explicit scene override, OPAQUE/MASK and
 double-sided composition, face-oriented geometric normals, exact four-role
-eviction/rehydration, and unchanged revision/hash/replay. The service/storage checks prove that restored
+eviction/rehydration, and unchanged revision/hash/replay. The sampler checks
+prove independent repeat/mirror/clamp selection on both axes, nearest/linear
+magnification, exact nearest- and linear-family one-mip minification, whole-frame
+equality for omitted, empty, and fully explicit defaults, and both independent
+and one-record-shared bindings across four roles for one shared image while
+preserving the same lifecycle and causality assertions. The service/storage checks prove that restored
 plain and textured asset references require explicit exact-hash CPU/GPU
 rehydration without another logical mutation. The CF019 case
 persists recovery and asset source in separate files, drops the source service,
 restores the logical reference, observes its exact typed absence, and then
 loads/imports/uploads the expected bytes without changing revision, hash, or
 replay.
+
+See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for the strict
+sampler boundary, one-mip fallback, fixed 36-entry table, and compatibility
+decision.
