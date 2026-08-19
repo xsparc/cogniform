@@ -13,8 +13,8 @@ use crate::{
     RendererAssetStats, RendererConfig, RendererError, SceneUpdateError, SceneUpdateSummary,
     asset::{AssetTextureRole, RendererAssets},
     scene::{
-        MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, PreparedDirectionalLight, PreparedDraw,
-        PreparedGeometry, PreparedPointLight, PreparedScene, RenderScene,
+        ImportedTextureRoles, MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, PreparedDirectionalLight,
+        PreparedDraw, PreparedGeometry, PreparedPointLight, PreparedScene, RenderScene,
     },
 };
 
@@ -348,9 +348,7 @@ impl HeadlessRenderer {
                 roughness: 0.8,
                 emissive: [0.0; 3],
                 normal_scale: 1.0,
-                use_imported_base_color_texture: false,
-                use_imported_metallic_roughness_texture: false,
-                use_imported_normal_texture: false,
+                imported_texture_roles: ImportedTextureRoles::NONE,
                 compact_id: REFERENCE_ENTITY_ID,
             }],
             directional_lights: Vec::new(),
@@ -663,6 +661,16 @@ fn create_draw_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 5,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -1077,8 +1085,14 @@ fn encode_scene_pass(
     });
     render_pass.set_pipeline(resources.pipeline);
     for draw in draws {
-        let (vertices, vertex_count, base_color_view, normal_view, metallic_roughness_view) =
-            draw_resources(draw, resources);
+        let (
+            vertices,
+            vertex_count,
+            base_color_view,
+            normal_view,
+            metallic_roughness_view,
+            emissive_view,
+        ) = draw_resources(draw, resources);
         let bytes = encode_draw_uniform(draw, directional_lights, point_lights);
         let buffer = resources.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cogniform-draw-uniform"),
@@ -1087,38 +1101,60 @@ fn encode_scene_pass(
             mapped_at_creation: false,
         });
         resources.queue.write_buffer(&buffer, 0, &bytes);
-        let bind_group = resources
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("cogniform-draw-bind-group"),
-                layout: resources.draw_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(base_color_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Sampler(resources.asset_texture_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::TextureView(normal_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: wgpu::BindingResource::TextureView(metallic_roughness_view),
-                    },
-                ],
-            });
+        let bind_group = create_draw_bind_group(
+            resources,
+            &buffer,
+            base_color_view,
+            normal_view,
+            metallic_roughness_view,
+            emissive_view,
+        );
         render_pass.set_bind_group(0, &bind_group, &[]);
         render_pass.set_vertex_buffer(0, vertices.slice(..));
         render_pass.draw(0..vertex_count, 0..1);
     }
+}
+
+fn create_draw_bind_group(
+    resources: &ScenePassResources<'_>,
+    buffer: &wgpu::Buffer,
+    base_color_view: &wgpu::TextureView,
+    normal_view: &wgpu::TextureView,
+    metallic_roughness_view: &wgpu::TextureView,
+    emissive_view: &wgpu::TextureView,
+) -> wgpu::BindGroup {
+    resources
+        .device
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cogniform-draw-bind-group"),
+            layout: resources.draw_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(base_color_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(resources.asset_texture_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(normal_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(metallic_roughness_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(emissive_view),
+                },
+            ],
+        })
 }
 
 fn draw_resources<'a>(
@@ -1130,6 +1166,7 @@ fn draw_resources<'a>(
     &'a wgpu::TextureView,
     &'a wgpu::TextureView,
     &'a wgpu::TextureView,
+    &'a wgpu::TextureView,
 ) {
     match draw.geometry {
         PreparedGeometry::Cuboid => (
@@ -1138,6 +1175,7 @@ fn draw_resources<'a>(
             resources.white_base_color_view,
             resources.neutral_normal_view,
             resources.neutral_metallic_roughness_view,
+            resources.white_base_color_view,
         ),
         PreparedGeometry::Plane => (
             resources.plane_vertices,
@@ -1145,6 +1183,7 @@ fn draw_resources<'a>(
             resources.white_base_color_view,
             resources.neutral_normal_view,
             resources.neutral_metallic_roughness_view,
+            resources.white_base_color_view,
         ),
         PreparedGeometry::Sphere => (
             resources.sphere_vertices,
@@ -1152,13 +1191,14 @@ fn draw_resources<'a>(
             resources.white_base_color_view,
             resources.neutral_normal_view,
             resources.neutral_metallic_roughness_view,
+            resources.white_base_color_view,
         ),
         PreparedGeometry::Asset(key) => {
             let mesh = resources
                 .assets
                 .mesh(key)
                 .expect("prepared asset geometry remains resident until renderer drop");
-            let base_color_view = if draw.use_imported_base_color_texture {
+            let base_color_view = if draw.imported_texture_roles.base_color() {
                 resources
                     .assets
                     .texture_view(key.content_hash, AssetTextureRole::BaseColor)
@@ -1166,7 +1206,7 @@ fn draw_resources<'a>(
             } else {
                 resources.white_base_color_view
             };
-            let normal_view = if draw.use_imported_normal_texture {
+            let normal_view = if draw.imported_texture_roles.normal() {
                 resources
                     .assets
                     .texture_view(key.content_hash, AssetTextureRole::Normal)
@@ -1174,7 +1214,7 @@ fn draw_resources<'a>(
             } else {
                 resources.neutral_normal_view
             };
-            let metallic_roughness_view = if draw.use_imported_metallic_roughness_texture {
+            let metallic_roughness_view = if draw.imported_texture_roles.metallic_roughness() {
                 resources
                     .assets
                     .texture_view(key.content_hash, AssetTextureRole::MetallicRoughness)
@@ -1184,12 +1224,21 @@ fn draw_resources<'a>(
             } else {
                 resources.neutral_metallic_roughness_view
             };
+            let emissive_view = if draw.imported_texture_roles.emissive() {
+                resources
+                    .assets
+                    .texture_view(key.content_hash, AssetTextureRole::Emissive)
+                    .expect("emissive-textured resident mesh retains its shared GPU texture")
+            } else {
+                resources.white_base_color_view
+            };
             (
                 mesh.buffer(),
                 mesh.vertex_count(),
                 base_color_view,
                 normal_view,
                 metallic_roughness_view,
+                emissive_view,
             )
         }
     }
@@ -1519,7 +1568,7 @@ fn encode_draw_uniform(
     bytes.extend_from_slice(&draw.roughness.to_le_bytes());
     bytes.extend_from_slice(&draw.normal_scale.to_le_bytes());
     bytes.extend_from_slice(
-        &(if draw.use_imported_normal_texture {
+        &(if draw.imported_texture_roles.normal() {
             1.0_f32
         } else {
             0.0_f32
@@ -1796,9 +1845,7 @@ mod tests {
             roughness: 0.2,
             emissive: [0.1, 0.3, 0.7],
             normal_scale: 1.0,
-            use_imported_base_color_texture: false,
-            use_imported_metallic_roughness_texture: false,
-            use_imported_normal_texture: false,
+            imported_texture_roles: ImportedTextureRoles::NONE,
             compact_id: 42,
         };
         let lights = [

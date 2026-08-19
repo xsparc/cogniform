@@ -28,7 +28,7 @@ release publication, or deployment.
 | Fresh-service restoration | Pass on validated profile | Complete replay and frame state restore revision/hash/query/idempotency and continue observation and append causality |
 | Historical recovery fork | Pass on validated profile | An exact retained revision restores into a separate fresh service, preserves the source, resumes from the source frame frontier, and continues query/observe/append causality |
 | Quiescent live revert | Pass on validated profile | A fully restored historical replacement swaps only after success, rejects transient blockers without mutation, clears named cache/asset state, preserves frame/prefix idempotency, and continues a new branch |
-| Headless render | Pass on validated profile | No surface/window; outward-wound Vulkan cuboid, centered plane, fixed sphere, bounded directional/point direct metallic-roughness response including imported numeric GLB materials and core emissive factors, sampled embedded PNG base-color, packed metallic-roughness, and source-tangent normal roles, scene overrides, geometric-normal observation preservation, readback pressure, renderer-drop retirement, and canonical scenario evidence |
+| Headless render | Pass on validated profile | No surface/window; outward-wound Vulkan cuboid, centered plane, fixed sphere, bounded directional/point direct metallic-roughness response including imported numeric GLB materials and core emissive factors, sampled embedded PNG base-color, packed metallic-roughness, source-tangent normal, and sRGB emissive roles, scene overrides, geometric-normal observation preservation, readback pressure, renderer-drop retirement, and canonical scenario evidence |
 | Machine outputs | Pass on validated profile | Exact unlit and tolerant scene/imported/overridden direct-material color and depth, exact stable entity ID, structured visibility, and quantized world-space normals from outward built-ins, source-wound assets, sphere radial directions, or approved imported directions |
 | Observation payload envelope | Pass for declared CPU profile | Fixed version-one all-kind layouts and exact fixture, canonical values and limits, metadata binding, truncation/trailing/corruption rejection, and engine source-compatible re-export without I/O or transport construction |
 | Local stream frame | Pass for declared CPU profile | Fixed version-one header and exact fixture, independent header-first complete/control/bulk limits, canonical observation-envelope composition, short/interrupted I/O, back-to-back framing, and corruption/truncation rejection over caller-owned streams without an endpoint or session |
@@ -40,8 +40,8 @@ release publication, or deployment.
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Pending-work age | Pass on validated profile | Empty and retained command/observation/import/upload status, duplicate retention, supersession reset, rejection/drop neutrality, processing/eviction/delivery cleanup, saturation, and restoration/revert compatibility |
-| Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, finite non-zero same-count normals/tangents with exact handedness, finite same-count primary coordinates with full-source validation, bounded numeric materials, three-channel emissive factor, and normal scale, bounded static embedded RGB/RGBA PNG decode, shared/distinct role accounting, exact decoded/GPU bytes, truncation corpus, typed unsupported/proxy policy |
-| Service asset resolution | Pass on validated profile | Explicit one-item import/upload renders an exact stable ID and optional base-color, metallic-roughness, and normal role textures; recovery retains logical references and exact-hash rehydration resumes rendering without replay mutation |
+| Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, finite non-zero same-count normals/tangents with exact handedness, finite same-count primary coordinates with full-source validation, bounded numeric materials, three-channel emissive factor, and normal scale, bounded static embedded RGB/RGBA PNG decode across four typed roles, shared/distinct role accounting, exact decoded/GPU bytes, truncation corpus, typed unsupported/proxy policy |
+| Service asset resolution | Pass on validated profile | Explicit one-item import/upload renders an exact stable ID and optional base-color, metallic-roughness, normal, and emissive role textures; recovery retains logical references and exact-hash rehydration resumes rendering without replay mutation |
 | Asset lifecycle | Pass on validated profile | Explicit content-hash-wide eviction releases exact queued, decoded, upload, mesh, and content-hash-and-role texture capacity; preserves unrelated FIFO, submitted frames, world/replay/frame state, and persisted sources; and supports exact rehydration |
 | Service procedure composition | Pass on validated profile | A bounded 2x3 built-in procedure follows ordinary queue, idempotency, query, replay/hash, and restored world-idempotency behavior |
 | End to end | Pass on validated profile | Room/table/light/camera create and atomic restyle, exact query, three observations, same replay hash |
@@ -57,10 +57,10 @@ published release.
 
 ## Required evidence and preparation before publication
 
-Checked items below were reproduced through CF057 and are recorded in the
+Checked items below were reproduced through CF058 and are recorded in the
 validation baseline; the package/source identity matrix originated on CF051
 and the executable MCP evidence was revalidated on CF054. The CF055 through
-CF057 controlled GPU paths were reproduced separately on the same validated adapter. Pull-request quality
+CF058 controlled GPU paths were reproduced separately on the same validated adapter. Pull-request quality
 must reproduce the portable subset, and the exact clean merged/tagged commit
 must remain unchanged through the still-open identity, archive, and publication
 gates.
@@ -287,7 +287,7 @@ The GitHub release must be marked prerelease and state:
   unsupported; and
 - built-in rendering supports outward-wound centered unit cuboids, fixed
   centered XY planes, and fixed centered unit-diameter spheres; one documented
-  embedded PNG base-color, metallic-roughness, and normal roles can sample
+  embedded PNG base-color, metallic-roughness, normal, and emissive roles can sample
   imported primary coordinates;
   configurable subdivisions, plane thickness, generated coordinate mappings,
   and two-sided normal policy are not implemented;
@@ -298,9 +298,9 @@ The GitHub release must be marked prerelease and state:
   factors, bounded surface-only core emissive factors, and explicit scene
   override precedence; configurable point
   range/radius/cutoff, spot lights, ambient/image-based lighting, shadows,
-  emissive textures/strength/cross-surface illumination and alpha material
+  emissive strength/cross-surface illumination and alpha material
   modes, HDR/tone mapping, configurable gamma conversion,
-  occlusion/emissive/alpha textures, additional image
+  occlusion/alpha textures, additional image
   formats/samplers/material texture roles, and lighting
   configuration are not implemented; and
 - performance figures are one-machine informational measurements.

@@ -532,8 +532,99 @@ fn emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outpu
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
-fn three_texture_roles_upload_evict_and_rehydrate_exactly() {
-    let bytes = three_role_texture_fixture();
+fn emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback() {
+    let center = (WIDTH / 2, HEIGHT / 2);
+    let baseline = material_frame(emissive_texture_fixture(None, [0.0; 3]), None, false);
+    let zero = material_frame(
+        emissive_texture_fixture(Some([128, 64, 32, 0]), [0.0; 3]),
+        None,
+        false,
+    );
+    assert_eq!(
+        zero.color_at(center.0, center.1),
+        baseline.color_at(center.0, center.1)
+    );
+    assert_non_color_observations_equal(&zero, &baseline);
+
+    let transparent = material_frame(
+        emissive_texture_fixture(Some([128, 64, 32, 0]), [1.0; 3]),
+        None,
+        false,
+    );
+    let opaque = material_frame(
+        emissive_texture_fixture(Some([128, 64, 32, 255]), [1.0; 3]),
+        None,
+        false,
+    );
+    assert_eq!(
+        transparent.color_at(center.0, center.1),
+        opaque.color_at(center.0, center.1)
+    );
+    assert_emissive_addition(&transparent, &baseline, center, [55, 13, 4]);
+    assert_non_color_observations_equal(&transparent, &baseline);
+
+    let multiplied = material_frame(
+        emissive_texture_fixture(Some([128, 64, 32, 7]), [0.5, 0.25, 0.75]),
+        None,
+        false,
+    );
+    assert_emissive_addition(&multiplied, &baseline, center, [28, 3, 3]);
+    assert_non_color_observations_equal(&multiplied, &baseline);
+
+    let factor = [0.1, 0.2, 0.3];
+    let omitted = material_frame(emissive_texture_fixture(None, factor), None, false);
+    let white = material_frame(
+        emissive_texture_fixture(Some([255; 4]), factor),
+        None,
+        false,
+    );
+    assert_eq!(
+        white.color_at(center.0, center.1),
+        omitted.color_at(center.0, center.1)
+    );
+    assert_non_color_observations_equal(&white, &omitted);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn emissive_texture_adds_after_direct_light_and_scene_override_disables_it() {
+    let center = (WIDTH / 2, HEIGHT / 2);
+    for light_kind in [LightKind::Directional, LightKind::Point] {
+        let baseline = material_frame(
+            emissive_texture_fixture(None, [0.0; 3]),
+            Some(light_kind),
+            false,
+        );
+        let textured = material_frame(
+            emissive_texture_fixture(Some([128, 64, 32, 7]), [1.0; 3]),
+            Some(light_kind),
+            false,
+        );
+        assert_emissive_addition(&textured, &baseline, center, [55, 13, 4]);
+        assert_non_color_observations_equal(&textured, &baseline);
+    }
+
+    let textured = material_frame(
+        emissive_texture_fixture(Some([128, 64, 32, 7]), [1.0; 3]),
+        Some(LightKind::Directional),
+        true,
+    );
+    let baseline = material_frame(
+        emissive_texture_fixture(None, [0.0; 3]),
+        Some(LightKind::Directional),
+        true,
+    );
+    assert_eq!(
+        textured.color_at(center.0, center.1),
+        baseline.color_at(center.0, center.1)
+    );
+    assert_non_color_observations_equal(&textured, &baseline);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn four_texture_roles_upload_evict_and_rehydrate_exactly() {
+    let bytes = four_role_texture_fixture();
     let content_hash = content_hash(&bytes);
     let key = AssetMeshKey {
         content_hash,
@@ -542,9 +633,10 @@ fn three_texture_roles_upload_evict_and_rehydrate_exactly() {
     let mut assets = AssetStore::default();
     assets.enqueue(content_hash, bytes).unwrap();
     assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(assets.record(content_hash).unwrap().decoded_bytes, 156);
+    assert_eq!(assets.record(content_hash).unwrap().decoded_bytes, 160);
     let upload = assets.upload_job(key).unwrap();
     assert!(upload.base_color_texture().is_some());
+    assert!(upload.emissive_texture().is_some());
     assert!(upload.metallic_roughness_texture().is_some());
     assert!(upload.normal_texture().is_some());
 
@@ -552,24 +644,24 @@ fn three_texture_roles_upload_evict_and_rehydrate_exactly() {
         pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
             .expect("the declared reference adapter must initialize");
     renderer.enqueue_asset_upload(upload.clone()).unwrap();
-    assert_eq!(renderer.asset_stats().pending_textures, 3);
-    assert_eq!(renderer.asset_stats().pending_texture_bytes, 12);
+    assert_eq!(renderer.asset_stats().pending_textures, 4);
+    assert_eq!(renderer.asset_stats().pending_texture_bytes, 16);
     let uploaded = renderer.process_next_asset_upload().unwrap();
-    assert_eq!(uploaded.texture_byte_len, 12);
-    assert_eq!(renderer.asset_stats().resident_textures, 3);
-    assert_eq!(renderer.asset_stats().resident_texture_bytes, 12);
+    assert_eq!(uploaded.texture_byte_len, 16);
+    assert_eq!(renderer.asset_stats().resident_textures, 4);
+    assert_eq!(renderer.asset_stats().resident_texture_bytes, 16);
     let eviction = renderer.evict_asset(content_hash);
-    assert_eq!(eviction.removed_resident_textures, 3);
-    assert_eq!(eviction.released_resident_texture_bytes, 12);
+    assert_eq!(eviction.removed_resident_textures, 4);
+    assert_eq!(eviction.released_resident_texture_bytes, 16);
     renderer.enqueue_asset_upload(upload).unwrap();
     assert_eq!(
         renderer
             .process_next_asset_upload()
             .unwrap()
             .texture_byte_len,
-        12
+        16
     );
-    assert_eq!(renderer.asset_stats().resident_textures, 3);
+    assert_eq!(renderer.asset_stats().resident_textures, 4);
 }
 
 #[test]
@@ -872,35 +964,43 @@ fn material_frame(
     assets.enqueue(content_hash, bytes).unwrap();
     assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
     let upload = assets.upload_job(key).unwrap();
-    let has_texture = upload.material().has_metallic_roughness_texture();
-    assert_eq!(upload.metallic_roughness_texture().is_some(), has_texture);
+    let texture_count = [
+        upload.base_color_texture(),
+        upload.emissive_texture(),
+        upload.metallic_roughness_texture(),
+        upload.normal_texture(),
+    ]
+    .into_iter()
+    .flatten()
+    .count();
+    let texture_count = u32::try_from(texture_count).unwrap();
     let rehydration_upload = upload.clone();
 
     let mut renderer =
         pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
             .expect("the declared reference adapter must initialize");
     renderer.enqueue_asset_upload(upload).unwrap();
-    assert_eq!(
-        renderer.asset_stats().pending_textures,
-        u32::from(has_texture)
-    );
+    assert_eq!(renderer.asset_stats().pending_textures, texture_count);
     assert_eq!(
         renderer.asset_stats().pending_texture_bytes,
-        u64::from(has_texture) * 4
+        u64::from(texture_count) * 4
     );
     let uploaded = renderer.process_next_asset_upload().unwrap();
-    assert_eq!(uploaded.texture_byte_len, u64::from(has_texture) * 4);
-    if has_texture {
+    assert_eq!(uploaded.texture_byte_len, u64::from(texture_count) * 4);
+    if texture_count > 0 {
         let eviction = renderer.evict_asset(content_hash);
-        assert_eq!(eviction.removed_resident_textures, 1);
-        assert_eq!(eviction.released_resident_texture_bytes, 4);
+        assert_eq!(eviction.removed_resident_textures, texture_count);
+        assert_eq!(
+            eviction.released_resident_texture_bytes,
+            u64::from(texture_count) * 4
+        );
         renderer.enqueue_asset_upload(rehydration_upload).unwrap();
         assert_eq!(
             renderer
                 .process_next_asset_upload()
                 .unwrap()
                 .texture_byte_len,
-            4
+            u64::from(texture_count) * 4
         );
     }
 
@@ -1244,6 +1344,49 @@ fn emissive_fixture(emissive: Option<[f32; 3]>) -> Vec<u8> {
     glb_with_json(&json, &binary)
 }
 
+fn emissive_texture_fixture(texel: Option<[u8; 4]>, factor: [f32; 3]) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.5_f32, 0.5]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let (image_view, resources, emissive_role) = texel.map_or_else(
+        || (String::new(), String::new(), String::new()),
+        |texel| {
+            let png = encode_png(1, 1, &texel);
+            let image_offset = binary.len();
+            binary.extend_from_slice(&png);
+            (
+                format!(
+                    r#",{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}"#,
+                    png.len()
+                ),
+                r#", "textures":[{"source":0}],"images":[{"bufferView":2,"mimeType":"image/png"}]"#
+                    .to_owned(),
+                r#", "emissiveTexture":{"index":0}"#.to_owned(),
+            )
+        },
+    );
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}}{image_view}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.2,0.1,0.05,0.4],"metallicFactor":0.0,"roughnessFactor":0.5}},"emissiveFactor":[{red},{green},{blue}]{emissive_role}}}]{resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        red = factor[0],
+        green = factor[1],
+        blue = factor[2],
+    );
+    glb_with_json(&json, &binary)
+}
+
 fn metallic_roughness_fixture(
     texel: Option<[u8; 4]>,
     metallic_factor: f32,
@@ -1387,7 +1530,7 @@ fn normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
     glb_with_json(&json, &binary)
 }
 
-fn three_role_texture_fixture() -> Vec<u8> {
+fn four_role_texture_fixture() -> Vec<u8> {
     let mut binary = Vec::new();
     for position in [
         [-0.75_f32, -0.75, 0.0],
@@ -1417,6 +1560,7 @@ fn three_role_texture_fixture() -> Vec<u8> {
         encode_png(1, 1, &[255, 255, 255, 255]),
         encode_png(1, 1, &[7, 128, 64, 9]),
         encode_png(1, 1, &[128, 128, 255, 255]),
+        encode_png(1, 1, &[32, 64, 128, 3]),
     ];
     let offsets = images.each_ref().map(|image| {
         let offset = binary.len();
@@ -1424,7 +1568,7 @@ fn three_role_texture_fixture() -> Vec<u8> {
         offset
     });
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{base_length}}},{{"buffer":0,"byteOffset":{material_offset},"byteLength":{material_length}}},{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{normal_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1}}}},"normalTexture":{{"index":2}}}}],"textures":[{{"source":0}},{{"source":1}},{{"source":2}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}},{{"bufferView":6,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{base_length}}},{{"buffer":0,"byteOffset":{material_offset},"byteLength":{material_length}}},{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{normal_length}}},{{"buffer":0,"byteOffset":{emissive_offset},"byteLength":{emissive_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1}}}},"normalTexture":{{"index":2}},"emissiveTexture":{{"index":3}}}}],"textures":[{{"source":0}},{{"source":1}},{{"source":2}},{{"source":3}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}},{{"bufferView":6,"mimeType":"image/png"}},{{"bufferView":7,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         base_offset = offsets[0],
         base_length = images[0].len(),
@@ -1432,6 +1576,8 @@ fn three_role_texture_fixture() -> Vec<u8> {
         material_length = images[1].len(),
         normal_offset = offsets[2],
         normal_length = images[2].len(),
+        emissive_offset = offsets[3],
+        emissive_length = images[3].len(),
     );
     glb_with_json(&json, &binary)
 }

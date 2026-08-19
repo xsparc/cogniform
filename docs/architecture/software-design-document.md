@@ -439,22 +439,25 @@ Zero-intensity definitions count toward their kind's capacity but are inactive.
 Only a scene with no active definition of either kind bypasses lighting and
 preserves exact base RGBA. A resident GLB mesh supplies its imported base
 color, optional base-color, metallic-roughness, and tangent-space normal
-textures, metallic, roughness, normal scale, and core unit-bounded emissive RGB
+textures, an optional emissive texture, metallic, roughness, normal scale, and
+core unit-bounded emissive RGB
 when the entity has no explicit material. The shader samples base color as
-`Rgba8UnormSrgb`, samples the other
-roles as linear `Rgba8Unorm`, and uses one fixed repeat/linear one-mip sampler.
+`Rgba8UnormSrgb`, samples emissive as `Rgba8UnormSrgb`, samples the data roles
+as linear `Rgba8Unorm`, and uses one fixed repeat/linear one-mip sampler.
 Sampled base RGBA multiplies the numeric base-color factor before either
 shading path. The metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
-A source-tangent TBN perturbs only direct-light response. After either the
-unlit or direct-light path, imported emissive RGB is added to that surface and
-clamped to one without changing alpha. Untextured draws use white, factor-one
-metallic-roughness, and neutral-normal fallbacks. A scene `MaterialComponent`
-overrides the whole imported material, disables all three imported texture
-roles, and selects zero imported emission. A built-in or material-free
+A source-tangent TBN perturbs only direct-light response. Emissive texture RGB
+is decoded from sRGB, multiplied by the numeric linear emissive factor, added
+after either the unlit or direct-light path, and clamped to one without
+changing alpha; texture alpha is ignored. Untextured draws use white
+base-color/emissive, factor-one metallic-roughness, and neutral-normal
+fallbacks. A scene `MaterialComponent` overrides the whole imported material,
+disables all four imported texture roles, and selects zero imported emission.
+A built-in or material-free
 asset without a scene material uses its existing fallback color with neutral
-dielectric parameters `metallic = 0`, `roughness = 0.8`. Emissive textures,
-emissive strength, cross-surface emission, ambient, image-based lighting,
+dielectric parameters `metallic = 0`, `roughness = 0.8`. Emissive strength,
+cross-surface emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, generated tangents, HDR, and tone mapping are outside this baseline. A
 fixed 496-byte per-draw uniform preserves the prior 480-byte model,
@@ -482,11 +485,11 @@ positions, optional same-count finite vertex normals, optional same-count
 finite f32 `TEXCOORD_0`, optional same-count finite non-zero f32 `TANGENT`
 `VEC4` with exact handedness, one bounded numeric metallic-roughness material
 plus an optional three-channel unit-bounded core emissive factor per mesh, and
-one shared embedded PNG per base-color, metallic-roughness, or
-normal role. The image subset
+one shared embedded PNG per base-color, metallic-roughness, normal, or
+emissive role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
 retained-byte, decoder-working-byte, per-asset, and aggregate CPU limits into
-at most three immutable RGBA8 role values; a source shared by roles counts once
+at most four immutable RGBA8 role values; a source shared by roles counts once
 on CPU. Decoders verify declared and decoded sizes before allocation; expanded
 upload vertices always reserve exactly 48 bytes for position, unit normal,
 primary coordinate, and unit tangent plus handedness. Missing non-normal-map

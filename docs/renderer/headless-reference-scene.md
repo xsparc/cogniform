@@ -67,12 +67,13 @@ non-normalized finite f32 `TEXCOORD_0` reaches shader location 2 and optional
 finite normalized `TANGENT` plus exact handedness reaches location 3; missing
 asset values, built-ins, and proxy vertices use exact zero coordinates and a
 disabled `[1, 0, 0, 1]` tangent. A mesh may sample one approved embedded PNG
-for each base-color, metallic-roughness, and normal role. The renderer decodes
-base RGB as sRGB and the other roles as linear data, ignores normal alpha and
-metallic-roughness red/alpha, and preserves glTF top-to-bottom rows. One
+for each base-color, metallic-roughness, normal, and emissive role. The renderer
+decodes base and emissive RGB as sRGB and the data roles as linear, ignores
+emissive/normal alpha and metallic-roughness red/alpha, and preserves glTF
+top-to-bottom rows. One
 renderer-owned repeat/linear one-mip sampler applies the omitted-sampler
-policy. White, factor-one metallic-roughness, and neutral-normal fallbacks bind
-on every draw.
+policy. White base-color/emissive, factor-one metallic-roughness, and
+neutral-normal fallbacks bind on every draw.
 External images, generated tangents, custom samplers, transforms, additional
 coordinate sets, mipmaps, and other material texture roles remain unsupported.
 
@@ -104,9 +105,10 @@ distribution to avoid a singular highlight. Each contribution and the shared
 sum are clamped in linear RGB; material alpha is preserved. If neither kind is
 active, the shader bypasses that response and preserves exact base RGBA. A
 resident GLB mesh supplies its imported base color, metallic, roughness, and
-core emissive RGB when the entity has no scene material. Emissive RGB is added
-after either response and clamped to one while preserving alpha; it affects
-only that surface. An explicit `MaterialComponent` overrides all imported
+core emissive RGB when the entity has no scene material. Emissive texture RGB
+is sRGB-decoded, multiplied by the numeric emissive factor, added after either
+response, and clamped to one while preserving material alpha; texture alpha is
+ignored and emission affects only that surface. An explicit `MaterialComponent` overrides all imported
 values together and selects zero imported emission. Built-in and material-free asset fallbacks retain
 the existing color with neutral dielectric `metallic = 0`, `roughness = 0.8`.
 An imported normal texture constructs a source-tangent basis after the model
@@ -115,7 +117,7 @@ direct-light response. Unlit output and the normal observation retain the
 geometric transformed direction. An imported metallic-roughness texture
 multiplies perceptual roughness by green and metallic by blue before both
 directional and point response; red and alpha are ignored. A scene material
-override disables all three imported texture roles.
+override disables all four imported texture roles.
 
 The selected camera's extracted world translation supplies the view direction.
 A zero or derived-overflow view vector suppresses specular without creating a
@@ -127,12 +129,12 @@ The existing bind group carries one fixed 496-byte per-draw uniform. The prior
 480-byte prefix remains model, view-projection, color, compact ID, directional
 count and four directional slots, point count and four point slots, camera
 position, and metallic/roughness plus normal scale/enabled state. One appended
-zero-padded `vec4` contains core emissive RGB. Bindings 1, 3, and 4 select
-the sampled base-color, normal, and metallic-roughness views; binding 2 is the
-fixed sampler. This adds
+zero-padded `vec4` contains core emissive RGB. Bindings 1, 3, 4, and 5 select
+the sampled base-color, normal, metallic-roughness, and emissive views;
+binding 2 is the fixed sampler. This adds
 no light buffer, alternate pipeline, runtime
 configuration, or observation payload. Point range/cutoff/radius, spot lights,
-emissive textures/strength, cross-surface emission, ambient or image-based
+emissive strength, cross-surface emission, ambient or image-based
 lighting, shadows, additional material texture roles,
 HDR, tone mapping, and configurable gamma conversion are unsupported.
 
@@ -200,7 +202,9 @@ cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ig
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact embedded_base_color_texture_preserves_orientation_factor_override_and_residency
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact metallic_roughness_texture_multiplies_factors_for_direct_lights_only
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outputs
-cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact three_texture_roles_upload_evict_and_rehydrate_exactly
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_adds_after_direct_light_and_scene_override_disables_it
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work
 ```
 
@@ -218,6 +222,10 @@ The emissive-factor contract additionally proves bounded addition after unlit,
 directional, and point response, RGB clamping, alpha preservation, explicit
 override suppression, unchanged non-color/background outputs, and unchanged
 world revision, logical hash, and idempotent replay.
+The emissive-texture contract additionally proves sRGB RGB-factor
+multiplication, alpha irrelevance, white and zero-factor neutrality,
+directional/point composition, scene-override suppression, exact four-role GPU
+accounting, eviction/rehydration, and unchanged non-color observations.
 The eviction contract partially uploads a two-mesh textured asset, submits a
 frame, releases the remaining reservation and all logical residency exactly,
 keeps the submitted readback valid, verifies the authored cuboid fallback, and
@@ -261,5 +269,7 @@ See [ADR 0056](../adr/0056-bounded-metallic-roughness-textures.md) for the
 packed-channel, linear-sampling, factor, role-residency, and override rules.
 See [ADR 0057](../adr/0057-bounded-glb-emissive-factors.md) for the core
 emissive-factor, uniform-append, clamp, and authority rules.
+See [ADR 0058](../adr/0058-bounded-glb-emissive-textures.md) for emissive
+texture decode, role-residency, sRGB sampling, fallback, and override rules.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

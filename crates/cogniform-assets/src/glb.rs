@@ -225,7 +225,6 @@ fn remove_unsupported_material_features(
         };
         for (field, expected) in [
             ("occlusionTexture", JsonKind::Object),
-            ("emissiveTexture", JsonKind::Object),
             ("alphaMode", JsonKind::String),
             ("alphaCutoff", JsonKind::Number),
             ("doubleSided", JsonKind::Bool),
@@ -340,6 +339,9 @@ fn validate_root(
             None,
         ));
     }
+    if let Some(unsupported) = textures.unsupported {
+        return Err(unsupported);
+    }
     if textures.base_color.is_some()
         && !meshes
             .iter()
@@ -358,6 +360,17 @@ fn validate_root(
             None,
         ));
     }
+    if textures.emissive.is_some()
+        && !meshes
+            .iter()
+            .any(|mesh| mesh.material.has_emissive_texture())
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.materials.emissiveTexture",
+            None,
+        ));
+    }
     if textures.metallic_roughness.is_some()
         && !meshes
             .iter()
@@ -372,6 +385,7 @@ fn validate_root(
     Ok(DecodedAsset {
         meshes,
         base_color_texture: textures.base_color,
+        emissive_texture: textures.emissive,
         metallic_roughness_texture: textures.metallic_roughness,
         normal_texture: textures.normal,
         byte_len: decoded_bytes,
@@ -467,17 +481,10 @@ fn validate_root_header(
             ));
         }
     }
-    if root.images.len() > 3 || root.textures.len() > 3 {
+    if root.images.len() > 4 || root.textures.len() > 4 {
         return Err(diagnostic(
             AssetDiagnosticCode::CollectionLimitExceeded,
             "glb.json.textures",
-            None,
-        ));
-    }
-    if !root.samplers.is_empty() {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.samplers",
             None,
         ));
     }
@@ -486,9 +493,11 @@ fn validate_root_header(
 
 struct DecodedTextures {
     base_color: Option<AssetTexture>,
+    emissive: Option<AssetTexture>,
     metallic_roughness: Option<AssetTexture>,
     normal: Option<AssetTexture>,
     byte_len: u64,
+    unsupported: Option<AssetDiagnostic>,
 }
 
 fn decode_textures(
@@ -496,6 +505,80 @@ fn decode_textures(
     binary: &[u8],
     limits: AssetLimits,
 ) -> Result<DecodedTextures, AssetDiagnostic> {
+    let resources = validate_texture_resources(root, binary, limits)?;
+    let mut unsupported = resources.unsupported;
+    let [
+        base_color_index,
+        emissive_index,
+        metallic_roughness_index,
+        normal_index,
+    ] = texture_role_indices(root, &mut unsupported)?;
+    let role_indices = [
+        base_color_index,
+        emissive_index,
+        metallic_roughness_index,
+        normal_index,
+    ];
+    if role_indices.iter().all(Option::is_none) {
+        if root.textures.is_empty() && root.images.is_empty() {
+            return Ok(DecodedTextures {
+                base_color: None,
+                emissive: None,
+                metallic_roughness: None,
+                normal: None,
+                byte_len: 0,
+                unsupported,
+            });
+        }
+        remember_unsupported(
+            &mut unsupported,
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.textures",
+            None,
+        );
+    }
+    validate_texture_coordinates(root, &mut unsupported);
+    let referenced_textures: BTreeSet<_> = role_indices.into_iter().flatten().collect();
+    if referenced_textures.len() != root.textures.len() {
+        remember_unsupported(
+            &mut unsupported,
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.textures",
+            None,
+        );
+    }
+    let referenced_images = referenced_textures
+        .iter()
+        .map(|texture_index| resources.texture_sources[texture_index])
+        .collect::<BTreeSet<_>>();
+    if referenced_images.len() != root.images.len() {
+        remember_unsupported(
+            &mut unsupported,
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.images",
+            None,
+        );
+    }
+    let role_texture = |texture_index: Option<u32>| {
+        texture_index
+            .and_then(|texture_index| resources.texture_sources.get(&texture_index))
+            .and_then(|source| resources.decoded_images.get(source))
+            .cloned()
+    };
+    Ok(DecodedTextures {
+        base_color: role_texture(base_color_index),
+        emissive: role_texture(emissive_index),
+        metallic_roughness: role_texture(metallic_roughness_index),
+        normal: role_texture(normal_index),
+        byte_len: resources.byte_len,
+        unsupported,
+    })
+}
+
+fn texture_role_indices(
+    root: &Root,
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<[Option<u32>; 4], AssetDiagnostic> {
     let base_color_index = shared_texture_index(
         root.materials.iter().filter_map(|material| {
             material
@@ -506,6 +589,15 @@ fn decode_textures(
         }),
         root.textures.len(),
         "glb.json.materials.baseColorTexture.index",
+        unsupported,
+    )?;
+    let emissive_index = shared_texture_index(
+        root.materials
+            .iter()
+            .filter_map(|material| material.emissive_texture.as_ref().map(|info| info.index)),
+        root.textures.len(),
+        "glb.json.materials.emissiveTexture.index",
+        unsupported,
     )?;
     let normal_index = shared_texture_index(
         root.materials
@@ -513,6 +605,7 @@ fn decode_textures(
             .filter_map(|material| material.normal_texture.as_ref().map(|info| info.index)),
         root.textures.len(),
         "glb.json.materials.normalTexture.index",
+        unsupported,
     )?;
     let metallic_roughness_index = shared_texture_index(
         root.materials.iter().filter_map(|material| {
@@ -524,64 +617,54 @@ fn decode_textures(
         }),
         root.textures.len(),
         "glb.json.materials.metallicRoughnessTexture.index",
+        unsupported,
     )?;
-    if base_color_index.is_none() && metallic_roughness_index.is_none() && normal_index.is_none() {
-        if root.textures.is_empty() && root.images.is_empty() {
-            return Ok(DecodedTextures {
-                base_color: None,
-                metallic_roughness: None,
-                normal: None,
-                byte_len: 0,
-            });
-        }
-        return Err(diagnostic(
+    Ok([
+        base_color_index,
+        emissive_index,
+        metallic_roughness_index,
+        normal_index,
+    ])
+}
+
+struct ValidatedTextureResources {
+    texture_sources: BTreeMap<u32, u32>,
+    decoded_images: BTreeMap<u32, AssetTexture>,
+    byte_len: u64,
+    unsupported: Option<AssetDiagnostic>,
+}
+
+fn validate_texture_resources(
+    root: &Root,
+    binary: &[u8],
+    limits: AssetLimits,
+) -> Result<ValidatedTextureResources, AssetDiagnostic> {
+    let mut unsupported = None;
+    if !root.samplers.is_empty() {
+        remember_unsupported(
+            &mut unsupported,
             AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.textures",
+            "glb.json.samplers",
             None,
-        ));
+        );
     }
-    validate_texture_coordinates(root)?;
-    let role_indices = [base_color_index, metallic_roughness_index, normal_index];
-    let referenced_textures: BTreeSet<_> = role_indices.into_iter().flatten().collect();
-    if referenced_textures.len() != root.textures.len() {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.textures",
-            None,
-        ));
-    }
-    let (texture_sources, referenced_images) = resolve_texture_sources(root, &referenced_textures)?;
-    let (decoded_images, byte_len) =
-        decode_referenced_images(root, binary, limits, referenced_images)?;
-    let role_texture = |texture_index: Option<u32>| {
-        texture_index.map(|texture_index| {
-            let source = texture_sources[&texture_index];
-            decoded_images[&source].clone()
-        })
-    };
-    Ok(DecodedTextures {
-        base_color: role_texture(base_color_index),
-        metallic_roughness: role_texture(metallic_roughness_index),
-        normal: role_texture(normal_index),
+    let texture_sources = validate_texture_sources(root, &mut unsupported)?;
+    let (decoded_images, byte_len) = validate_root_images(root, binary, limits, &mut unsupported)?;
+    Ok(ValidatedTextureResources {
+        texture_sources,
+        decoded_images,
         byte_len,
+        unsupported,
     })
 }
 
-fn resolve_texture_sources(
+fn validate_texture_sources(
     root: &Root,
-    referenced_textures: &BTreeSet<u32>,
-) -> Result<(BTreeMap<u32, u32>, BTreeSet<u32>), AssetDiagnostic> {
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<BTreeMap<u32, u32>, AssetDiagnostic> {
     let mut texture_sources = BTreeMap::new();
-    let mut referenced_images = BTreeSet::new();
-    for &texture_index in referenced_textures {
-        let texture = get(&root.textures, texture_index, "glb.json.textures")?;
-        if texture.sampler.is_some() {
-            return Err(diagnostic(
-                AssetDiagnosticCode::UnsupportedFeature,
-                "glb.json.textures[].sampler",
-                Some(texture_index),
-            ));
-        }
+    for (texture_index, texture) in root.textures.iter().enumerate() {
+        let texture_index = u32::try_from(texture_index).expect("texture count is bounded");
         let source = texture.source.ok_or_else(|| {
             diagnostic(
                 AssetDiagnosticCode::InvalidJson,
@@ -590,129 +673,62 @@ fn resolve_texture_sources(
             )
         })?;
         get(&root.images, source, "glb.json.images")?;
-        referenced_images.insert(source);
         texture_sources.insert(texture_index, source);
+        if texture.sampler.is_some() {
+            remember_unsupported(
+                unsupported,
+                AssetDiagnosticCode::UnsupportedFeature,
+                "glb.json.textures[].sampler",
+                Some(texture_index),
+            );
+        }
     }
-    if referenced_images.len() != root.images.len() {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.images",
-            None,
-        ));
-    }
-    Ok((texture_sources, referenced_images))
+    Ok(texture_sources)
 }
 
-fn decode_referenced_images(
+fn validate_root_images(
     root: &Root,
     binary: &[u8],
     limits: AssetLimits,
-    referenced_images: BTreeSet<u32>,
+    unsupported: &mut Option<AssetDiagnostic>,
 ) -> Result<(BTreeMap<u32, AssetTexture>, u64), AssetDiagnostic> {
     let mut decoded_images = BTreeMap::new();
     let mut byte_len = 0_u64;
-    for image_index in referenced_images {
-        let decoded = decode_png(
-            embedded_image_bytes(root, binary, image_index)?,
-            limits,
-            image_index,
-        )?;
-        byte_len = byte_len.checked_add(decoded.byte_len()).ok_or_else(|| {
-            diagnostic(
-                AssetDiagnosticCode::ByteLimitExceeded,
-                "glb.decoded.asset_bytes",
-                None,
-            )
-        })?;
-        if byte_len > limits.max_asset_decoded_bytes.get() {
-            return Err(diagnostic(
-                AssetDiagnosticCode::ByteLimitExceeded,
-                "glb.decoded.asset_bytes",
-                None,
-            ));
+    for (image_index, image) in root.images.iter().enumerate() {
+        let image_index = u32::try_from(image_index).expect("image count is bounded");
+        if let Some(decoded) =
+            validate_root_image(root, binary, limits, image_index, image, unsupported)?
+        {
+            byte_len = checked_texture_bytes(byte_len, decoded.byte_len(), limits)?;
+            decoded_images.insert(image_index, decoded);
         }
-        decoded_images.insert(image_index, decoded);
     }
     Ok((decoded_images, byte_len))
 }
 
-fn shared_texture_index(
-    references: impl Iterator<Item = u32>,
-    texture_count: usize,
-    location: &'static str,
-) -> Result<Option<u32>, AssetDiagnostic> {
-    let indices: BTreeSet<_> = references.collect();
-    if let Some(&invalid) = indices
-        .iter()
-        .find(|&&index| usize::try_from(index).map_or(true, |index| index >= texture_count))
-    {
-        return Err(diagnostic(
-            AssetDiagnosticCode::InvalidBufferRange,
-            location,
-            Some(invalid),
-        ));
-    }
-    if indices.len() > 1 {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            location,
-            None,
-        ));
-    }
-    Ok(indices.into_iter().next())
-}
-
-fn validate_texture_coordinates(root: &Root) -> Result<(), AssetDiagnostic> {
-    for material in &root.materials {
-        if let Some(info) = material
-            .pbr_metallic_roughness
-            .as_ref()
-            .and_then(|pbr| pbr.base_color_texture.as_ref())
-            && info.tex_coord.unwrap_or(0) != 0
-        {
-            return Err(diagnostic(
-                AssetDiagnosticCode::UnsupportedFeature,
-                "glb.json.materials.baseColorTexture.texCoord",
-                None,
-            ));
-        }
-        if let Some(info) = material.normal_texture.as_ref()
-            && info.tex_coord.unwrap_or(0) != 0
-        {
-            return Err(diagnostic(
-                AssetDiagnosticCode::UnsupportedFeature,
-                "glb.json.materials.normalTexture.texCoord",
-                None,
-            ));
-        }
-        if let Some(info) = material
-            .pbr_metallic_roughness
-            .as_ref()
-            .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
-            && info.tex_coord.unwrap_or(0) != 0
-        {
-            return Err(diagnostic(
-                AssetDiagnosticCode::UnsupportedFeature,
-                "glb.json.materials.metallicRoughnessTexture.texCoord",
-                None,
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn embedded_image_bytes<'a>(
+fn validate_root_image(
     root: &Root,
-    binary: &'a [u8],
+    binary: &[u8],
+    limits: AssetLimits,
     image_index: u32,
-) -> Result<&'a [u8], AssetDiagnostic> {
-    let image = get(&root.images, image_index, "glb.json.images")?;
-    if image.uri.is_some() || image.mime_type.as_deref() != Some("image/png") {
-        return Err(diagnostic(
+    image: &Image,
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<Option<AssetTexture>, AssetDiagnostic> {
+    if image.uri.is_some() {
+        if image.buffer_view.is_some() {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.images[]",
+                Some(image_index),
+            ));
+        }
+        remember_unsupported(
+            unsupported,
             AssetDiagnosticCode::UnsupportedFeature,
             "glb.json.images[]",
             Some(image_index),
-        ));
+        );
+        return Ok(None);
     }
     let view_index = image.buffer_view.ok_or_else(|| {
         diagnostic(
@@ -721,18 +737,53 @@ fn embedded_image_bytes<'a>(
             Some(image_index),
         )
     })?;
+    let (bytes, has_stride) = image_view_bytes(root, binary, view_index)?;
+    if has_stride {
+        remember_unsupported(
+            unsupported,
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.images[].bufferView.byteStride",
+            Some(view_index),
+        );
+    }
+    let mime_type = image.mime_type.as_deref().ok_or_else(|| {
+        diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            "glb.json.images[].mimeType",
+            Some(image_index),
+        )
+    })?;
+    if mime_type != "image/png" {
+        remember_unsupported(
+            unsupported,
+            AssetDiagnosticCode::UnsupportedFeature,
+            "glb.json.images[]",
+            Some(image_index),
+        );
+        return Ok(None);
+    }
+    match decode_png(bytes, limits, image_index) {
+        Ok(decoded) => Ok(Some(decoded)),
+        Err(diagnostic) if diagnostic.code.permits_proxy() => {
+            if unsupported.is_none() {
+                *unsupported = Some(diagnostic);
+            }
+            Ok(None)
+        }
+        Err(diagnostic) => Err(diagnostic),
+    }
+}
+
+fn image_view_bytes<'a>(
+    root: &Root,
+    binary: &'a [u8],
+    view_index: u32,
+) -> Result<(&'a [u8], bool), AssetDiagnostic> {
     let view = get(&root.buffer_views, view_index, "glb.json.bufferViews")?;
     if view.buffer != 0 {
         return Err(diagnostic(
             AssetDiagnosticCode::InvalidBufferRange,
             "glb.json.images[].bufferView",
-            Some(view_index),
-        ));
-    }
-    if view.byte_stride.is_some() {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.images[].bufferView.byteStride",
             Some(view_index),
         ));
     }
@@ -757,13 +808,126 @@ fn embedded_image_bytes<'a>(
             Some(view_index),
         )
     })?;
-    binary.get(start..end).ok_or_else(|| {
+    let bytes = binary.get(start..end).ok_or_else(|| {
         diagnostic(
             AssetDiagnosticCode::InvalidBufferRange,
             "glb.json.images[].bufferView",
             Some(view_index),
         )
-    })
+    })?;
+    Ok((bytes, view.byte_stride.is_some()))
+}
+
+fn checked_texture_bytes(
+    total: u64,
+    decoded: u64,
+    limits: AssetLimits,
+) -> Result<u64, AssetDiagnostic> {
+    let total = total.checked_add(decoded).ok_or_else(|| {
+        diagnostic(
+            AssetDiagnosticCode::ByteLimitExceeded,
+            "glb.decoded.asset_bytes",
+            None,
+        )
+    })?;
+    if total > limits.max_asset_decoded_bytes.get() {
+        return Err(diagnostic(
+            AssetDiagnosticCode::ByteLimitExceeded,
+            "glb.decoded.asset_bytes",
+            None,
+        ));
+    }
+    Ok(total)
+}
+
+fn remember_unsupported(
+    unsupported: &mut Option<AssetDiagnostic>,
+    code: AssetDiagnosticCode,
+    location: &'static str,
+    index: Option<u32>,
+) {
+    if unsupported.is_none() {
+        *unsupported = Some(diagnostic(code, location, index));
+    }
+}
+
+fn shared_texture_index(
+    references: impl Iterator<Item = u32>,
+    texture_count: usize,
+    location: &'static str,
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<Option<u32>, AssetDiagnostic> {
+    let indices: BTreeSet<_> = references.collect();
+    if let Some(&invalid) = indices
+        .iter()
+        .find(|&&index| usize::try_from(index).map_or(true, |index| index >= texture_count))
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidBufferRange,
+            location,
+            Some(invalid),
+        ));
+    }
+    if indices.len() > 1 {
+        remember_unsupported(
+            unsupported,
+            AssetDiagnosticCode::UnsupportedFeature,
+            location,
+            None,
+        );
+    }
+    Ok(indices.into_iter().next())
+}
+
+fn validate_texture_coordinates(root: &Root, unsupported: &mut Option<AssetDiagnostic>) {
+    for material in &root.materials {
+        if let Some(info) = material
+            .pbr_metallic_roughness
+            .as_ref()
+            .and_then(|pbr| pbr.base_color_texture.as_ref())
+            && info.tex_coord.unwrap_or(0) != 0
+        {
+            remember_unsupported(
+                unsupported,
+                AssetDiagnosticCode::UnsupportedFeature,
+                "glb.json.materials.baseColorTexture.texCoord",
+                None,
+            );
+        }
+        if let Some(info) = material.normal_texture.as_ref()
+            && info.tex_coord.unwrap_or(0) != 0
+        {
+            remember_unsupported(
+                unsupported,
+                AssetDiagnosticCode::UnsupportedFeature,
+                "glb.json.materials.normalTexture.texCoord",
+                None,
+            );
+        }
+        if let Some(info) = material.emissive_texture.as_ref()
+            && info.tex_coord.unwrap_or(0) != 0
+        {
+            remember_unsupported(
+                unsupported,
+                AssetDiagnosticCode::UnsupportedFeature,
+                "glb.json.materials.emissiveTexture.texCoord",
+                None,
+            );
+        }
+        if let Some(info) = material
+            .pbr_metallic_roughness
+            .as_ref()
+            .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
+            && info.tex_coord.unwrap_or(0) != 0
+        {
+            remember_unsupported(
+                unsupported,
+                AssetDiagnosticCode::UnsupportedFeature,
+                "glb.json.materials.metallicRoughnessTexture.texCoord",
+                None,
+            );
+        }
+    }
 }
 
 fn decode_png(
@@ -1047,6 +1211,7 @@ fn decode_mesh(
     )?;
     let material = decode_material(root, primitive.material)?;
     if (material.has_base_color_texture()
+        || material.has_emissive_texture()
         || material.has_metallic_roughness_texture()
         || material.has_normal_texture())
         && texcoords.is_none()
@@ -1854,6 +2019,14 @@ fn decode_material(
     if material_index.is_some_and(|index| {
         root.materials
             .get(usize::try_from(index).unwrap_or(usize::MAX))
+            .and_then(|material| material.emissive_texture.as_ref())
+            .is_some()
+    }) {
+        material = material.with_emissive_texture();
+    }
+    if material_index.is_some_and(|index| {
+        root.materials
+            .get(usize::try_from(index).unwrap_or(usize::MAX))
             .and_then(|material| material.pbr_metallic_roughness.as_ref())
             .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
             .is_some()
@@ -1954,6 +2127,7 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
             ),
         }],
         base_color_texture: None,
+        emissive_texture: None,
         metallic_roughness_texture: None,
         normal_texture: None,
         byte_len: 36 * ASSET_VERTEX_BYTES,
@@ -2078,6 +2252,12 @@ struct Material {
     #[serde(default)]
     normal_texture: Option<NormalTextureInfo>,
     #[serde(
+        rename = "emissiveTexture",
+        default,
+        deserialize_with = "deserialize_texture_info"
+    )]
+    emissive_texture: Option<TextureInfo>,
+    #[serde(
         rename = "emissiveFactor",
         default,
         deserialize_with = "deserialize_emissive_factor"
@@ -2090,6 +2270,13 @@ where
     D: serde::Deserializer<'de>,
 {
     <[f32; 3]>::deserialize(deserializer).map(Some)
+}
+
+fn deserialize_texture_info<'de, D>(deserializer: D) -> Result<Option<TextureInfo>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    TextureInfo::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Deserialize)]

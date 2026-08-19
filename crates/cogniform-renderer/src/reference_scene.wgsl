@@ -37,6 +37,9 @@ var normal_texture: texture_2d<f32>;
 @group(0) @binding(4)
 var metallic_roughness_texture: texture_2d<f32>;
 
+@group(0) @binding(5)
+var emissive_texture: texture_2d<f32>;
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) world_normal: vec3<f32>,
@@ -280,7 +283,9 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
             }
         }
     }
-    output.color = vec4(min(shaded_color + draw.emissive.rgb, vec3(1.0)), base_color.a);
+    let emissive = textureSample(emissive_texture, base_color_sampler, input.texcoord_0).rgb
+        * draw.emissive.rgb;
+    output.color = vec4(min(shaded_color + emissive, vec3(1.0)), base_color.a);
     output.entity_id = draw.entity_id.x;
     output.normal = vec4(geometric_world_normal * 0.5 + vec3(0.5), 1.0);
     return output;

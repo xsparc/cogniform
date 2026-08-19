@@ -216,13 +216,16 @@ pub struct AssetMaterial {
     metallic: UnitF32,
     roughness: UnitF32,
     emissive: [f32; 3],
-    has_base_color_texture: bool,
-    has_metallic_roughness_texture: bool,
-    has_normal_texture: bool,
+    texture_roles: u8,
     normal_scale: f32,
 }
 
 impl AssetMaterial {
+    const BASE_COLOR_TEXTURE: u8 = 1 << 0;
+    const EMISSIVE_TEXTURE: u8 = 1 << 1;
+    const METALLIC_ROUGHNESS_TEXTURE: u8 = 1 << 2;
+    const NORMAL_TEXTURE: u8 = 1 << 3;
+
     /// Creates one validated linear metallic-roughness material with zero emission.
     #[must_use]
     pub const fn new(base_color: [UnitF32; 4], metallic: UnitF32, roughness: UnitF32) -> Self {
@@ -231,20 +234,23 @@ impl AssetMaterial {
             metallic,
             roughness,
             emissive: [0.0; 3],
-            has_base_color_texture: false,
-            has_metallic_roughness_texture: false,
-            has_normal_texture: false,
+            texture_roles: 0,
             normal_scale: 1.0,
         }
     }
 
     pub(crate) const fn with_base_color_texture(mut self) -> Self {
-        self.has_base_color_texture = true;
+        self.texture_roles |= Self::BASE_COLOR_TEXTURE;
         self
     }
 
     pub(crate) const fn with_metallic_roughness_texture(mut self) -> Self {
-        self.has_metallic_roughness_texture = true;
+        self.texture_roles |= Self::METALLIC_ROUGHNESS_TEXTURE;
+        self
+    }
+
+    pub(crate) const fn with_emissive_texture(mut self) -> Self {
+        self.texture_roles |= Self::EMISSIVE_TEXTURE;
         self
     }
 
@@ -254,7 +260,7 @@ impl AssetMaterial {
     }
 
     pub(crate) fn with_normal_texture(mut self, scale: FiniteF32) -> Self {
-        self.has_normal_texture = true;
+        self.texture_roles |= Self::NORMAL_TEXTURE;
         self.normal_scale = scale.get();
         self
     }
@@ -286,20 +292,26 @@ impl AssetMaterial {
     /// Returns whether this material samples the asset's shared base-color texture.
     #[must_use]
     pub const fn has_base_color_texture(self) -> bool {
-        self.has_base_color_texture
+        self.texture_roles & Self::BASE_COLOR_TEXTURE != 0
+    }
+
+    /// Returns whether this material samples the asset's shared emissive texture.
+    #[must_use]
+    pub const fn has_emissive_texture(self) -> bool {
+        self.texture_roles & Self::EMISSIVE_TEXTURE != 0
     }
 
     /// Returns whether this material samples the asset's shared linear
     /// metallic-roughness texture.
     #[must_use]
     pub const fn has_metallic_roughness_texture(self) -> bool {
-        self.has_metallic_roughness_texture
+        self.texture_roles & Self::METALLIC_ROUGHNESS_TEXTURE != 0
     }
 
     /// Returns whether this material samples the asset's shared tangent-space normal texture.
     #[must_use]
     pub const fn has_normal_texture(self) -> bool {
-        self.has_normal_texture
+        self.texture_roles & Self::NORMAL_TEXTURE != 0
     }
 
     /// Returns the finite glTF normal-texture XY scale.
@@ -358,6 +370,7 @@ pub struct AssetUploadJob {
     vertices: Arc<[AssetVertex]>,
     material: AssetMaterial,
     base_color_texture: Option<AssetTexture>,
+    emissive_texture: Option<AssetTexture>,
     metallic_roughness_texture: Option<AssetTexture>,
     normal_texture: Option<AssetTexture>,
 }
@@ -368,6 +381,7 @@ impl AssetUploadJob {
         vertices: Arc<[AssetVertex]>,
         material: AssetMaterial,
         base_color_texture: Option<AssetTexture>,
+        emissive_texture: Option<AssetTexture>,
         metallic_roughness_texture: Option<AssetTexture>,
         normal_texture: Option<AssetTexture>,
     ) -> Self {
@@ -376,6 +390,7 @@ impl AssetUploadJob {
             vertices,
             material,
             base_color_texture,
+            emissive_texture,
             metallic_roughness_texture,
             normal_texture,
         }
@@ -411,6 +426,12 @@ impl AssetUploadJob {
         self.base_color_texture.as_ref()
     }
 
+    /// Returns the immutable shared emissive texture when this mesh's material references it.
+    #[must_use]
+    pub const fn emissive_texture(&self) -> Option<&AssetTexture> {
+        self.emissive_texture.as_ref()
+    }
+
     /// Returns the immutable shared linear metallic-roughness texture when
     /// this mesh's material references it.
     #[must_use]
@@ -443,6 +464,7 @@ pub(crate) struct DecodedMesh {
 pub(crate) struct DecodedAsset {
     pub(crate) meshes: Vec<DecodedMesh>,
     pub(crate) base_color_texture: Option<AssetTexture>,
+    pub(crate) emissive_texture: Option<AssetTexture>,
     pub(crate) metallic_roughness_texture: Option<AssetTexture>,
     pub(crate) normal_texture: Option<AssetTexture>,
     pub(crate) byte_len: u64,
@@ -451,6 +473,7 @@ pub(crate) struct DecodedAsset {
 impl DecodedAsset {
     pub(crate) fn texture_count(&self) -> u32 {
         u32::from(self.base_color_texture.is_some())
+            + u32::from(self.emissive_texture.is_some())
             + u32::from(self.metallic_roughness_texture.is_some())
             + u32::from(self.normal_texture.is_some())
     }
@@ -531,7 +554,7 @@ pub struct AssetStoreEviction {
     pub released_resident_cpu_bytes: u64,
     /// Decoded mesh records released.
     pub removed_meshes: u32,
-    /// Role-separated decoded textures released; currently zero to three.
+    /// Role-separated decoded textures released; currently zero to four.
     pub removed_textures: u32,
 }
 

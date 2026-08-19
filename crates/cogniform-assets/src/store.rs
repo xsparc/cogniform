@@ -245,6 +245,10 @@ impl AssetStore {
                 .then(|| decoded.base_color_texture.clone())
                 .flatten(),
             mesh.material
+                .has_emissive_texture()
+                .then(|| decoded.emissive_texture.clone())
+                .flatten(),
+            mesh.material
                 .has_metallic_roughness_texture()
                 .then(|| decoded.metallic_roughness_texture.clone())
                 .flatten(),
