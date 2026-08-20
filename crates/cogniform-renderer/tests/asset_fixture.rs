@@ -360,7 +360,7 @@ fn unlit_base_texture_is_exact_across_lights_and_scene_override_restores_lightin
     let mut assets = AssetStore::default();
     assets.enqueue(hash, bytes.clone()).unwrap();
     assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(assets.record(hash).unwrap().decoded_bytes, 160);
+    assert_eq!(assets.record(hash).unwrap().decoded_bytes, 208);
     let upload = assets
         .upload_job(AssetMeshKey {
             content_hash: hash,
@@ -981,6 +981,157 @@ fn emissive_texture_adds_after_direct_light_and_scene_override_disables_it() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn vertex_colors_interpolate_and_preserve_non_color_observations() {
+    let gradient = material_frame(
+        vertex_color_fixture(VertexColorFixture::gradient()),
+        None,
+        false,
+    );
+    let white = material_frame(
+        vertex_color_fixture(VertexColorFixture::white()),
+        None,
+        false,
+    );
+    let triangle = StableEntityId::new(2).unwrap();
+    let visible_colors = (0..HEIGHT)
+        .flat_map(|y| (0..WIDTH).map(move |x| (x, y)))
+        .filter(|&(x, y)| gradient.stable_entity_id_at(x, y) == Some(triangle))
+        .map(|(x, y)| gradient.color_at(x, y).unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(
+        visible_colors
+            .iter()
+            .any(|color| color[0] > color[1] + 40 && color[0] > color[2] + 40)
+    );
+    assert!(
+        visible_colors
+            .iter()
+            .any(|color| color[1] > color[0] + 40 && color[1] > color[2] + 40)
+    );
+    assert!(
+        visible_colors
+            .iter()
+            .any(|color| color[2] > color[0] + 40 && color[2] > color[1] + 40)
+    );
+    let center = gradient.color_at(WIDTH / 2, HEIGHT / 2).unwrap();
+    assert!(
+        center[..3]
+            .iter()
+            .all(|channel| (32..=192).contains(channel))
+    );
+    assert_eq!(center[3], 255);
+    assert_eq!(white.color_at(WIDTH / 2, HEIGHT / 2), Some([255; 4]));
+    assert_non_color_observations_equal(&gradient, &white);
+
+    let lit_spec = VertexColorFixture {
+        colors: Some([[0.25, 0.5, 0.75, 1.0]; 3]),
+        unlit: false,
+        ..VertexColorFixture::white()
+    };
+    let lit_color = material_frame(
+        vertex_color_fixture(lit_spec),
+        Some(LightKind::Directional),
+        false,
+    );
+    let lit_white = material_frame(
+        vertex_color_fixture(VertexColorFixture {
+            unlit: false,
+            ..VertexColorFixture::white()
+        }),
+        Some(LightKind::Directional),
+        false,
+    );
+    let colored = lit_color.color_at(WIDTH / 2, HEIGHT / 2).unwrap();
+    let plain = lit_white.color_at(WIDTH / 2, HEIGHT / 2).unwrap();
+    assert_color_near(&lit_color, (WIDTH / 2, HEIGHT / 2), [10, 20, 30, 255]);
+    assert_color_near(&lit_white, (WIDTH / 2, HEIGHT / 2), [40, 40, 40, 255]);
+    assert!(colored[0] < colored[1] && colored[1] < colored[2]);
+    assert!(
+        colored[..3]
+            .iter()
+            .zip(plain)
+            .all(|(color, white)| color < &white)
+    );
+    assert_non_color_observations_equal(&lit_color, &lit_white);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn vertex_color_multiplies_factor_texture_and_scene_override() {
+    let composed_spec = VertexColorFixture {
+        colors: Some([[0.5, 0.25, 0.75, 0.5]; 3]),
+        factor: [0.8, 0.4, 0.2, 0.75],
+        texture: Some([128, 64, 255, 128]),
+        ..VertexColorFixture::white()
+    };
+    let composed = material_frame(vertex_color_fixture(composed_spec), None, false);
+    assert_color_near(&composed, (WIDTH / 2, HEIGHT / 2), [22, 1, 38, 255]);
+
+    let colored_override = material_frame(vertex_color_fixture(composed_spec), None, true);
+    let plain_override = material_frame(
+        vertex_color_fixture(VertexColorFixture::white()),
+        None,
+        true,
+    );
+    assert_frames_equal(&colored_override, &plain_override);
+
+    let emissive_spec = VertexColorFixture {
+        colors: Some([[0.1, 0.2, 0.3, 0.4]; 3]),
+        factor: [0.0, 0.0, 0.0, 1.0],
+        emissive: [0.1, 0.2, 0.3],
+        unlit: false,
+        ..VertexColorFixture::white()
+    };
+    let emissive = material_frame(vertex_color_fixture(emissive_spec), None, false);
+    assert_color_near(&emissive, (WIDTH / 2, HEIGHT / 2), [26, 51, 77, 255]);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn vertex_color_alpha_default_material_and_double_sided_back_face_are_exact() {
+    let masked = |alpha, mode, cutoff, double_sided| VertexColorFixture {
+        colors: Some([[0.8, 0.4, 0.2, alpha]; 3]),
+        alpha_mode: mode,
+        alpha_cutoff: cutoff,
+        double_sided,
+        ..VertexColorFixture::white()
+    };
+    let below = material_frame(
+        vertex_color_fixture(masked(0.49, "MASK", Some(0.5), false)),
+        None,
+        false,
+    );
+    let equal = oriented_material_frame(
+        vertex_color_fixture(masked(0.5, "MASK", Some(0.5), true)),
+        None,
+        None,
+        true,
+    );
+    let opaque = material_frame(
+        vertex_color_fixture(masked(0.0, "OPAQUE", None, false)),
+        None,
+        false,
+    );
+    let no_material = material_frame(
+        vertex_color_fixture(VertexColorFixture {
+            colors: Some([[0.25, 0.5, 0.75, 0.0]; 3]),
+            include_material: false,
+            ..VertexColorFixture::white()
+        }),
+        None,
+        false,
+    );
+
+    assert_fully_discarded(&below);
+    assert_opaque_center(&equal, 255);
+    assert!(equal.normal_at(WIDTH / 2, HEIGHT / 2).unwrap()[2] > 0.99);
+    assert_opaque_center(&opaque, 255);
+    assert_color_near(&no_material, (WIDTH / 2, HEIGHT / 2), [51, 102, 153, 255]);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn alpha_mask_factor_boundaries_control_every_fragment_output() {
     let below = alpha_material_frame(alpha_fixture("MASK", 0.25, None, Some(0.5)), None);
     let equal = alpha_material_frame(alpha_fixture("MASK", 0.5, None, Some(0.5)), None);
@@ -1069,7 +1220,7 @@ fn four_texture_roles_upload_evict_and_rehydrate_exactly() {
     let mut assets = AssetStore::default();
     assets.enqueue(content_hash, bytes).unwrap();
     assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(assets.record(content_hash).unwrap().decoded_bytes, 160);
+    assert_eq!(assets.record(content_hash).unwrap().decoded_bytes, 208);
     let upload = assets.upload_job(key).unwrap();
     assert!(upload.base_color_texture().is_some());
     assert!(upload.emissive_texture().is_some());
@@ -1146,9 +1297,9 @@ fn content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work() 
 
     let eviction = renderer.evict_asset(content_hash);
     assert_eq!(eviction.removed_pending_uploads, 1);
-    assert_eq!(eviction.released_pending_bytes, 144);
+    assert_eq!(eviction.released_pending_bytes, 192);
     assert_eq!(eviction.removed_resident_meshes, 1);
-    assert_eq!(eviction.released_resident_bytes, 144);
+    assert_eq!(eviction.released_resident_bytes, 192);
     assert_eq!(eviction.removed_pending_textures, 0);
     assert_eq!(eviction.released_pending_texture_bytes, 0);
     assert_eq!(eviction.removed_resident_textures, 1);
@@ -2013,6 +2164,166 @@ fn alpha_fixture(
         false,
         false,
     )
+}
+
+#[derive(Clone, Copy)]
+struct VertexColorFixture {
+    colors: Option<[[f32; 4]; 3]>,
+    factor: [f32; 4],
+    texture: Option<[u8; 4]>,
+    emissive: [f32; 3],
+    alpha_mode: &'static str,
+    alpha_cutoff: Option<f32>,
+    double_sided: bool,
+    unlit: bool,
+    include_material: bool,
+}
+
+impl VertexColorFixture {
+    const fn white() -> Self {
+        Self {
+            colors: Some([[1.0; 4]; 3]),
+            factor: [1.0; 4],
+            texture: None,
+            emissive: [0.0; 3],
+            alpha_mode: "OPAQUE",
+            alpha_cutoff: None,
+            double_sided: false,
+            unlit: true,
+            include_material: true,
+        }
+    }
+
+    const fn gradient() -> Self {
+        Self {
+            colors: Some([
+                [1.0, 0.0, 0.0, 0.25],
+                [0.0, 1.0, 0.0, 0.5],
+                [0.0, 0.0, 1.0, 0.75],
+            ]),
+            ..Self::white()
+        }
+    }
+}
+
+fn vertex_color_fixture(fixture: VertexColorFixture) -> Vec<u8> {
+    let mut binary = Vec::new();
+    append_f32_vectors(
+        &mut binary,
+        &[[-0.75, -0.75, 0.0], [0.75, -0.75, 0.0], [0.0, 0.75, 0.0]],
+    );
+    let mut views = vec![r#"{"buffer":0,"byteOffset":0,"byteLength":36}"#.to_owned()];
+    let mut accessors =
+        vec![r#"{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}"#.to_owned()];
+    let mut attributes = vec![r#""POSITION":0"#.to_owned()];
+    if let Some(colors) = fixture.colors {
+        let offset = binary.len();
+        append_f32_vectors(&mut binary, &colors);
+        let view = views.len();
+        views.push(format!(
+            r#"{{"buffer":0,"byteOffset":{offset},"byteLength":48}}"#
+        ));
+        let accessor = accessors.len();
+        accessors.push(format!(
+            r#"{{"bufferView":{view},"componentType":5126,"count":3,"type":"VEC4"}}"#
+        ));
+        attributes.push(format!(r#""COLOR_0":{accessor}"#));
+    }
+    let texture_resources = append_vertex_color_texture(
+        fixture.texture,
+        &mut binary,
+        &mut views,
+        &mut accessors,
+        &mut attributes,
+    );
+    let (materials, material_reference, extensions_used) = vertex_color_material(&fixture);
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}}{extensions_used},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{views}],"accessors":[{accessors}]{texture_resources}{materials},"meshes":[{{"primitives":[{{"attributes":{{{attributes}}}{material_reference},"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        views = views.join(","),
+        accessors = accessors.join(","),
+        attributes = attributes.join(","),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn append_vertex_color_texture(
+    texture: Option<[u8; 4]>,
+    binary: &mut Vec<u8>,
+    views: &mut Vec<String>,
+    accessors: &mut Vec<String>,
+    attributes: &mut Vec<String>,
+) -> String {
+    let Some(texel) = texture else {
+        return String::new();
+    };
+    let texcoord_offset = binary.len();
+    append_f32_vectors(binary, &[[0.5, 0.5]; 3]);
+    let texcoord_view = views.len();
+    views.push(format!(
+        r#"{{"buffer":0,"byteOffset":{texcoord_offset},"byteLength":24}}"#
+    ));
+    let texcoord_accessor = accessors.len();
+    accessors.push(format!(
+        r#"{{"bufferView":{texcoord_view},"componentType":5126,"count":3,"type":"VEC2"}}"#
+    ));
+    attributes.push(format!(r#""TEXCOORD_0":{texcoord_accessor}"#));
+    let png = encode_png(1, 1, &texel);
+    let image_offset = binary.len();
+    binary.extend_from_slice(&png);
+    let image_view = views.len();
+    views.push(format!(
+        r#"{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}"#,
+        png.len()
+    ));
+    format!(
+        r#", "textures":[{{"source":0}}],"images":[{{"bufferView":{image_view},"mimeType":"image/png"}}]"#
+    )
+}
+
+fn vertex_color_material(fixture: &VertexColorFixture) -> (String, &'static str, &'static str) {
+    if !fixture.include_material {
+        return (String::new(), "", "");
+    }
+    let base_color_texture = fixture
+        .texture
+        .map_or("", |_| r#", "baseColorTexture":{"index":0}"#);
+    let alpha_cutoff = fixture
+        .alpha_cutoff
+        .map_or_else(String::new, |value| format!(r#", "alphaCutoff":{value}"#));
+    let double_sided = if fixture.double_sided {
+        r#", "doubleSided":true"#
+    } else {
+        ""
+    };
+    let (extension, extensions_used) = if fixture.unlit {
+        (
+            r#", "extensions":{"KHR_materials_unlit":{}}"#,
+            r#", "extensionsUsed":["KHR_materials_unlit"]"#,
+        )
+    } else {
+        ("", "")
+    };
+    let material = format!(
+        r#", "materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[{},{},{},{}],"metallicFactor":0,"roughnessFactor":0.8{base_color_texture}}},"emissiveFactor":[{},{},{}],"alphaMode":"{}"{alpha_cutoff}{double_sided}{extension}}}]"#,
+        fixture.factor[0],
+        fixture.factor[1],
+        fixture.factor[2],
+        fixture.factor[3],
+        fixture.emissive[0],
+        fixture.emissive[1],
+        fixture.emissive[2],
+        fixture.alpha_mode,
+    );
+    (material, r#", "material":0"#, extensions_used)
+}
+
+fn append_f32_vectors<const WIDTH: usize>(binary: &mut Vec<u8>, values: &[[f32; WIDTH]; 3]) {
+    for vector in values {
+        for value in vector {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
 }
 
 fn double_sided_alpha_fixture(

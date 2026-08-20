@@ -537,6 +537,96 @@ fn indexed_glb_with_texcoords(
     glb_with_json(&json, &binary)
 }
 
+fn indexed_glb_with_color_bytes(
+    color_bytes: &[u8],
+    color_count: u32,
+    component_type: u32,
+    kind: &str,
+    normalized: bool,
+    byte_stride: u32,
+    color_attributes: &str,
+) -> Vec<u8> {
+    indexed_glb_with_color_spec(
+        color_bytes,
+        ColorGlbSpec {
+            color_count,
+            component_type,
+            kind,
+            normalized,
+            byte_stride,
+            color_attributes,
+            primitive_mode: 4,
+            canceling_offsets: false,
+            include_position: true,
+            primitive_count: 1,
+        },
+    )
+}
+
+#[derive(Clone, Copy)]
+struct ColorGlbSpec<'a> {
+    color_count: u32,
+    component_type: u32,
+    kind: &'a str,
+    normalized: bool,
+    byte_stride: u32,
+    color_attributes: &'a str,
+    primitive_mode: u32,
+    canceling_offsets: bool,
+    include_position: bool,
+    primitive_count: usize,
+}
+
+fn indexed_glb_with_color_spec(color_bytes: &[u8], spec: ColorGlbSpec<'_>) -> Vec<u8> {
+    let ColorGlbSpec {
+        color_count,
+        component_type,
+        kind,
+        normalized,
+        byte_stride,
+        color_attributes,
+        primitive_mode,
+        canceling_offsets,
+        include_position,
+        primitive_count,
+    } = spec;
+    let positions = [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+        [0.0, 0.0, 1.0],
+    ];
+    let mut binary = Vec::with_capacity(48 + color_bytes.len() + 6);
+    for position in positions {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    binary.extend_from_slice(color_bytes);
+    let index_offset = binary.len();
+    for index in [2_u16, 0, 1] {
+        binary.extend_from_slice(&index.to_le_bytes());
+    }
+    let (color_view_offset, color_accessor_offset, color_view_length) = if canceling_offsets {
+        (46, 2, color_bytes.len() + 2)
+    } else {
+        (48, 0, color_bytes.len())
+    };
+    let attributes = if include_position {
+        format!(r#""POSITION":0,{color_attributes}"#)
+    } else {
+        color_attributes.to_owned()
+    };
+    let primitive =
+        format!(r#"{{"attributes":{{{attributes}}},"indices":2,"mode":{primitive_mode}}}"#);
+    let primitives = vec![primitive; primitive_count].join(",");
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":48}},{{"buffer":0,"byteOffset":{color_view_offset},"byteLength":{color_view_length},"byteStride":{byte_stride}}},{{"buffer":0,"byteOffset":{index_offset},"byteLength":6}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":4,"type":"VEC3"}},{{"bufferView":1,"byteOffset":{color_accessor_offset},"componentType":{component_type},"count":{color_count},"type":"{kind}","normalized":{normalized}}},{{"bufferView":2,"componentType":5123,"count":3,"type":"SCALAR"}}],"meshes":[{{"primitives":[{primitives}]}}]}}"#,
+        binary_length = binary.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
 fn indexed_glb_with_tangents(tangents: [[f32; 4]; 4]) -> Vec<u8> {
     let positions = [
         [-0.75_f32, -0.75, 0.0],
@@ -590,7 +680,7 @@ fn verified_fixture_decodes_only_when_explicitly_processed() {
     assert_eq!(outcome.mesh_count, 1);
     assert_eq!(store.stats().pending_imports, 0);
     assert_eq!(store.stats().oldest_pending_import_age_micros, None);
-    assert_eq!(store.stats().resident_cpu_bytes, 144);
+    assert_eq!(store.stats().resident_cpu_bytes, 192);
 
     let upload = store
         .upload_job(AssetMeshKey {
@@ -599,10 +689,11 @@ fn verified_fixture_decodes_only_when_explicitly_processed() {
         })
         .expect("decoded fixture should produce an upload job");
     assert_eq!(upload.vertices().len(), 3);
-    assert_eq!(upload.byte_len(), 144);
+    assert_eq!(upload.byte_len(), 192);
     for vertex in upload.vertices() {
         assert_normal(vertex.normal, [0.0, 0.0, 1.0]);
         assert_texcoord(vertex.texcoord_0, [0.0, 0.0]);
+        assert_color(vertex.color_0, [1.0; 4]);
     }
     assert_color(upload.base_color(), [0.2, 0.6, 0.9, 1.0]);
     assert_color(upload.material().base_color(), [0.2, 0.6, 0.9, 1.0]);
@@ -1143,12 +1234,12 @@ fn emissive_texture_is_typed_bounded_and_retained_with_exact_accounting() {
     let bytes = emissive_texture_glb(&png, r#"{"index":0,"texCoord":0}"#, true);
     let hash = content_hash(&bytes);
     let mut config = AssetStoreConfig::default();
-    config.limits.max_asset_decoded_bytes = NonZeroU64::new(148).unwrap();
-    config.limits.max_resident_cpu_bytes = NonZeroU64::new(148).unwrap();
+    config.limits.max_asset_decoded_bytes = NonZeroU64::new(196).unwrap();
+    config.limits.max_resident_cpu_bytes = NonZeroU64::new(196).unwrap();
     let mut store = AssetStore::new(config);
     store.enqueue(hash, bytes).unwrap();
     assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(store.record(hash).unwrap().decoded_bytes, 148);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 196);
     let upload = store
         .upload_job(AssetMeshKey {
             content_hash: hash,
@@ -1163,7 +1254,7 @@ fn emissive_texture_is_typed_bounded_and_retained_with_exact_accounting() {
     assert_eq!(upload.byte_len(), 3 * ASSET_VERTEX_BYTES);
     let eviction = store.evict(hash);
     assert_eq!(eviction.removed_textures, 1);
-    assert_eq!(eviction.released_resident_cpu_bytes, 148);
+    assert_eq!(eviction.released_resident_cpu_bytes, 196);
 }
 
 #[test]
@@ -1362,8 +1453,8 @@ fn embedded_rgba_and_rgb_base_color_textures_are_bounded_and_retained() {
     let mut rgba_store = AssetStore::default();
     rgba_store.enqueue(rgba_hash, rgba).unwrap();
     assert_eq!(rgba_store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(rgba_store.record(rgba_hash).unwrap().decoded_bytes, 160);
-    assert_eq!(rgba_store.stats().resident_cpu_bytes, 160);
+    assert_eq!(rgba_store.record(rgba_hash).unwrap().decoded_bytes, 208);
+    assert_eq!(rgba_store.stats().resident_cpu_bytes, 208);
     let upload = rgba_store
         .upload_job(AssetMeshKey {
             content_hash: rgba_hash,
@@ -1385,7 +1476,7 @@ fn embedded_rgba_and_rgb_base_color_textures_are_bounded_and_retained() {
     let rgba_eviction = rgba_store.evict(rgba_hash);
     assert_eq!(rgba_eviction.removed_meshes, 1);
     assert_eq!(rgba_eviction.removed_textures, 1);
-    assert_eq!(rgba_eviction.released_resident_cpu_bytes, 160);
+    assert_eq!(rgba_eviction.released_resident_cpu_bytes, 208);
     assert_eq!(rgba_store.stats().resident_cpu_bytes, 0);
 
     let rgb_png = encode_png(
@@ -1445,7 +1536,7 @@ fn source_tangent_normal_texture_is_typed_normalized_and_retained() {
     let mut store = AssetStore::default();
     store.enqueue(hash, bytes).unwrap();
     assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(store.record(hash).unwrap().decoded_bytes, 148);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 196);
     let upload = store
         .upload_job(AssetMeshKey {
             content_hash: hash,
@@ -1468,7 +1559,7 @@ fn source_tangent_normal_texture_is_typed_normalized_and_retained() {
     }
     let eviction = store.evict(hash);
     assert_eq!(eviction.removed_textures, 1);
-    assert_eq!(eviction.released_resident_cpu_bytes, 148);
+    assert_eq!(eviction.released_resident_cpu_bytes, 196);
 }
 
 #[test]
@@ -1492,7 +1583,7 @@ fn metallic_roughness_texture_is_linear_role_metadata_with_exact_texels() {
     let mut store = AssetStore::default();
     store.enqueue(hash, bytes).unwrap();
     assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(store.record(hash).unwrap().decoded_bytes, 148);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 196);
     let upload = store
         .upload_job(AssetMeshKey {
             content_hash: hash,
@@ -1532,7 +1623,7 @@ fn dual_texture_roles_account_shared_and_distinct_images_exactly() {
         png::BitDepth::Eight,
         &[128, 128, 255, 255],
     );
-    for (shared_image, expected_bytes) in [(true, 148), (false, 152)] {
+    for (shared_image, expected_bytes) in [(true, 196), (false, 200)] {
         let bytes = dual_textured_triangle_glb(&base_png, &normal_png, shared_image);
         let hash = content_hash(&bytes);
         let mut exact_config = AssetStoreConfig::default();
@@ -1601,7 +1692,7 @@ fn three_texture_roles_count_shared_cpu_images_once_and_roles_exactly() {
         png::BitDepth::Eight,
         &[128, 128, 255, 255],
     );
-    for (shared_image, expected_bytes) in [(true, 148), (false, 156)] {
+    for (shared_image, expected_bytes) in [(true, 196), (false, 204)] {
         let bytes = triple_textured_triangle_glb(
             &base_png,
             &metallic_roughness_png,
@@ -1675,7 +1766,7 @@ fn four_texture_roles_count_shared_cpu_images_once_and_roles_exactly() {
             &[32, 64, 128, 3],
         ),
     ];
-    for (shared_image, expected_bytes) in [(true, 148), (false, 160)] {
+    for (shared_image, expected_bytes) in [(true, 196), (false, 208)] {
         let bytes = four_textured_triangle_glb(images.each_ref().map(Vec::as_slice), shared_image);
         let hash = content_hash(&bytes);
         let mut exact_config = AssetStoreConfig::default();
@@ -1735,8 +1826,8 @@ fn four_texture_roles_retain_independent_samplers_without_accounting_growth() {
     let mut store = AssetStore::default();
     store.enqueue(hash, bytes).unwrap();
     assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(store.record(hash).unwrap().decoded_bytes, 148);
-    assert_eq!(store.stats().resident_cpu_bytes, 148);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 196);
+    assert_eq!(store.stats().resident_cpu_bytes, 196);
 
     let material = store
         .upload_job(AssetMeshKey {
@@ -1797,7 +1888,7 @@ fn four_texture_roles_retain_independent_samplers_without_accounting_growth() {
 
     let eviction = store.evict(hash);
     assert_eq!(eviction.removed_textures, 4);
-    assert_eq!(eviction.released_resident_cpu_bytes, 148);
+    assert_eq!(eviction.released_resident_cpu_bytes, 196);
 
     assert_shared_sampler_accounting(images);
 }
@@ -1811,8 +1902,8 @@ fn assert_shared_sampler_accounting(images: [&[u8]; 4]) {
         shared_store.process_next().unwrap().state,
         AssetState::Ready
     );
-    assert_eq!(shared_store.record(shared_hash).unwrap().decoded_bytes, 148);
-    assert_eq!(shared_store.stats().resident_cpu_bytes, 148);
+    assert_eq!(shared_store.record(shared_hash).unwrap().decoded_bytes, 196);
+    assert_eq!(shared_store.stats().resident_cpu_bytes, 196);
     let shared_material = shared_store
         .upload_job(AssetMeshKey {
             content_hash: shared_hash,
@@ -1831,7 +1922,7 @@ fn assert_shared_sampler_accounting(images: [&[u8]; 4]) {
     );
     let shared_eviction = shared_store.evict(shared_hash);
     assert_eq!(shared_eviction.removed_textures, 4);
-    assert_eq!(shared_eviction.released_resident_cpu_bytes, 148);
+    assert_eq!(shared_eviction.released_resident_cpu_bytes, 196);
 }
 
 #[test]
@@ -2549,7 +2640,7 @@ fn finite_source_normals_are_normalized_and_retained() {
             mesh_index: 0,
         })
         .unwrap();
-    assert_eq!(upload.byte_len(), 144);
+    assert_eq!(upload.byte_len(), 192);
     for vertex in upload.vertices() {
         assert_normal(
             vertex.normal,
@@ -2576,7 +2667,7 @@ fn indexed_positions_and_normals_expand_with_the_same_source_index() {
             mesh_index: 0,
         })
         .unwrap();
-    assert_eq!(upload.byte_len(), 144);
+    assert_eq!(upload.byte_len(), 192);
     for (vertex, expected) in
         upload
             .vertices()
@@ -2616,6 +2707,375 @@ fn indexed_primary_texcoords_expand_with_the_same_source_index() {
     {
         assert_texcoord(vertex.texcoord_0, expected);
     }
+}
+
+#[test]
+fn float_vertex_colors_clamp_expand_and_synthesize_vec3_alpha() {
+    let vec3_source = [
+        [-0.25_f32, 0.25, 1.5, 0.0],
+        [0.5, 0.75, 0.25, 0.0],
+        [1.0, 0.0, 0.5, 0.0],
+        [0.25, 1.0, 0.0, 0.0],
+    ];
+    let vec3_bytes = vec3_source
+        .into_iter()
+        .flat_map(|color| {
+            color[..3]
+                .iter()
+                .copied()
+                .flat_map(f32::to_le_bytes)
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert_indexed_vertex_colors(
+        indexed_glb_with_color_bytes(&vec3_bytes, 4, 5_126, "VEC3", false, 12, r#""COLOR_0":1"#),
+        [
+            [0.0, 0.25, 1.0, 1.0],
+            [0.5, 0.75, 0.25, 1.0],
+            [1.0, 0.0, 0.5, 1.0],
+            [0.25, 1.0, 0.0, 1.0],
+        ],
+    );
+
+    let vec4_source = [
+        [0.0_f32, 0.25, 0.5, 0.75],
+        [1.0, 0.75, 0.5, 0.25],
+        [0.2, 0.4, 0.6, 0.8],
+        [1.25, -0.25, 0.5, 2.0],
+    ];
+    let vec4_bytes = vec4_source
+        .into_iter()
+        .flatten()
+        .flat_map(f32::to_le_bytes)
+        .collect::<Vec<_>>();
+    assert_indexed_vertex_colors(
+        indexed_glb_with_color_bytes(&vec4_bytes, 4, 5_126, "VEC4", false, 16, r#""COLOR_0":1"#),
+        [
+            [0.0, 0.25, 0.5, 0.75],
+            [1.0, 0.75, 0.5, 0.25],
+            [0.2, 0.4, 0.6, 0.8],
+            [1.0, 0.0, 0.5, 1.0],
+        ],
+    );
+}
+
+#[test]
+fn normalized_integer_vertex_colors_decode_all_core_shapes() {
+    let u8_vec3 = [
+        [0_u8, 64, 255, 0],
+        [128, 255, 0, 0],
+        [255, 0, 128, 0],
+        [32, 16, 8, 0],
+    ];
+    assert_indexed_vertex_colors(
+        indexed_glb_with_color_bytes(
+            &u8_vec3.into_iter().flatten().collect::<Vec<_>>(),
+            4,
+            5_121,
+            "VEC3",
+            true,
+            4,
+            r#""COLOR_0":1"#,
+        ),
+        u8_vec3.map(|value| {
+            [
+                f32::from(value[0]) / 255.0,
+                f32::from(value[1]) / 255.0,
+                f32::from(value[2]) / 255.0,
+                1.0,
+            ]
+        }),
+    );
+
+    let u8_vec4 = [
+        [0_u8, 64, 128, 255],
+        [255, 128, 64, 0],
+        [32, 96, 160, 224],
+        [1; 4],
+    ];
+    assert_indexed_vertex_colors(
+        indexed_glb_with_color_bytes(
+            &u8_vec4.into_iter().flatten().collect::<Vec<_>>(),
+            4,
+            5_121,
+            "VEC4",
+            true,
+            4,
+            r#""COLOR_0":1"#,
+        ),
+        u8_vec4.map(|value| value.map(|component| f32::from(component) / 255.0)),
+    );
+
+    assert_normalized_u16_vertex_colors("VEC3");
+    assert_normalized_u16_vertex_colors("VEC4");
+}
+
+#[test]
+fn malformed_vertex_colors_never_receive_a_proxy() {
+    let float_bytes = [0.5_f32; 16]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect::<Vec<_>>();
+    let mut non_finite = float_bytes.clone();
+    non_finite[..4].copy_from_slice(&f32::NAN.to_le_bytes());
+    let cases = [
+        indexed_glb_with_color_bytes(&float_bytes, 4, 5_126, "VEC2", false, 16, r#""COLOR_0":1"#),
+        indexed_glb_with_color_bytes(&[128; 16], 4, 5_121, "VEC4", false, 4, r#""COLOR_0":1"#),
+        indexed_glb_with_color_bytes(&float_bytes, 4, 5_126, "VEC4", true, 16, r#""COLOR_0":1"#),
+        indexed_glb_with_color_bytes(&float_bytes, 3, 5_126, "VEC4", false, 16, r#""COLOR_0":1"#),
+        indexed_glb_with_color_bytes(&[], 0, 5_126, "VEC4", false, 16, r#""COLOR_0":1"#),
+        indexed_glb_with_color_bytes(&non_finite, 4, 5_126, "VEC4", false, 16, r#""COLOR_0":1"#),
+        indexed_glb_with_color_bytes(&[128; 12], 4, 5_121, "VEC3", true, 3, r#""COLOR_0":1"#),
+        indexed_glb_with_color_bytes(&float_bytes, 4, 5_126, "VEC4", false, 16, r#""COLOR_1":1"#),
+        indexed_glb_with_color_bytes(
+            &float_bytes,
+            4,
+            5_126,
+            "VEC4",
+            false,
+            16,
+            r#""COLOR_0":1,"COLOR_1":2"#,
+        ),
+        indexed_glb_with_color_bytes(
+            &float_bytes,
+            4,
+            5_126,
+            "VEC4",
+            false,
+            16,
+            r#""COLOR_0":1,"COLOR_2":1"#,
+        ),
+        indexed_glb_with_color_bytes(&float_bytes, 4, 5_126, "VEC4", false, 16, r#""COLOR_01":1"#),
+    ];
+    for bytes in cases {
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidColor
+        );
+    }
+
+    let truncated =
+        indexed_glb_with_color_bytes(&[128; 8], 4, 5_121, "VEC4", true, 4, r#""COLOR_0":1"#);
+    let (store, hash) = process_with_proxy_policy(truncated);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidBufferRange
+    );
+
+    let invalid_index =
+        indexed_glb_with_color_bytes(&float_bytes, 4, 5_126, "VEC4", false, 16, r#""COLOR_0":99"#);
+    let (store, hash) = process_with_proxy_policy(invalid_index);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidBufferRange
+    );
+
+    let canceling_offsets = indexed_glb_with_color_spec(
+        &float_bytes,
+        ColorGlbSpec {
+            color_count: 4,
+            component_type: 5_126,
+            kind: "VEC4",
+            normalized: false,
+            byte_stride: 16,
+            color_attributes: r#""COLOR_0":1"#,
+            primitive_mode: 4,
+            canceling_offsets: true,
+            include_position: true,
+            primitive_count: 1,
+        },
+    );
+    let (store, hash) = process_with_proxy_policy(canceling_offsets);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidBufferRange
+    );
+}
+
+#[test]
+fn vertex_color_preflight_bounds_attributes_and_never_proxies_invalid_peers() {
+    let mut invalid = [0.5_f32; 16]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect::<Vec<_>>();
+    invalid[..4].copy_from_slice(&f32::NAN.to_le_bytes());
+    let missing_position = indexed_glb_with_color_spec(
+        &invalid,
+        ColorGlbSpec {
+            color_count: 4,
+            component_type: 5_126,
+            kind: "VEC4",
+            normalized: false,
+            byte_stride: 16,
+            color_attributes: r#""COLOR_0":1"#,
+            primitive_mode: 4,
+            canceling_offsets: false,
+            include_position: false,
+            primitive_count: 1,
+        },
+    );
+    let (store, hash) = process_with_proxy_policy(missing_position);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+
+    let multiple_primitives = indexed_glb_with_color_spec(
+        &invalid,
+        ColorGlbSpec {
+            color_count: 4,
+            component_type: 5_126,
+            kind: "VEC4",
+            normalized: false,
+            byte_stride: 16,
+            color_attributes: r#""COLOR_0":1"#,
+            primitive_mode: 4,
+            canceling_offsets: false,
+            include_position: true,
+            primitive_count: 2,
+        },
+    );
+    let (store, hash) = process_with_proxy_policy(multiple_primitives);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::CollectionLimitExceeded
+    );
+
+    let attributes = (0..16)
+        .map(|set| format!(r#""COLOR_{set}":1"#))
+        .collect::<Vec<_>>()
+        .join(",");
+    let too_many_attributes =
+        indexed_glb_with_color_bytes(&[128; 16], 4, 5_121, "VEC4", true, 4, &attributes);
+    let (store, hash) = process_with_proxy_policy(too_many_attributes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::CollectionLimitExceeded
+    );
+}
+
+#[test]
+fn wider_color_sets_proxy_only_after_primary_color_validation() {
+    let valid = [0.5_f32; 16]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect::<Vec<_>>();
+    let wider = indexed_glb_with_color_bytes(
+        &valid,
+        4,
+        5_126,
+        "VEC4",
+        false,
+        16,
+        r#""COLOR_0":1,"COLOR_1":1"#,
+    );
+    let (store, hash) = process_with_proxy_policy(wider);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedFeature
+    );
+
+    let mut invalid = valid;
+    invalid[..4].copy_from_slice(&f32::INFINITY.to_le_bytes());
+    let mixed = indexed_glb_with_color_bytes(
+        &invalid,
+        4,
+        5_126,
+        "VEC4",
+        false,
+        16,
+        r#""COLOR_0":1,"COLOR_1":1,"JOINTS_0":1"#,
+    );
+    let (store, hash) = process_with_proxy_policy(mixed);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidColor
+    );
+
+    let unsupported_mode = indexed_glb_with_color_spec(
+        &invalid,
+        ColorGlbSpec {
+            color_count: 4,
+            component_type: 5_126,
+            kind: "VEC4",
+            normalized: false,
+            byte_stride: 16,
+            color_attributes: r#""COLOR_0":1"#,
+            primitive_mode: 1,
+            canceling_offsets: false,
+            include_position: true,
+            primitive_count: 1,
+        },
+    );
+    let (store, hash) = process_with_proxy_policy(unsupported_mode);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidColor
+    );
+
+    let valid_unsupported_mode = indexed_glb_with_color_spec(
+        &[0.5_f32; 16]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>(),
+        ColorGlbSpec {
+            color_count: 4,
+            component_type: 5_126,
+            kind: "VEC4",
+            normalized: false,
+            byte_stride: 16,
+            color_attributes: r#""COLOR_0":1"#,
+            primitive_mode: 1,
+            canceling_offsets: false,
+            include_position: true,
+            primitive_count: 1,
+        },
+    );
+    let (store, hash) = process_with_proxy_policy(valid_unsupported_mode);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedPrimitiveMode
+    );
+}
+
+#[test]
+fn vertex_color_bytes_hold_exact_decoded_limits() {
+    let colors = [0.5_f32; 16]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect::<Vec<_>>();
+    let bytes =
+        indexed_glb_with_color_bytes(&colors, 4, 5_126, "VEC4", false, 16, r#""COLOR_0":1"#);
+    let hash = content_hash(&bytes);
+    let mut exact_config = AssetStoreConfig::default();
+    exact_config.limits.max_asset_decoded_bytes = NonZeroU64::new(192).unwrap();
+    exact_config.limits.max_resident_cpu_bytes = NonZeroU64::new(192).unwrap();
+    let mut exact = AssetStore::new(exact_config);
+    exact.enqueue(hash, bytes.clone()).unwrap();
+    assert_eq!(exact.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(exact.record(hash).unwrap().decoded_bytes, 192);
+
+    let mut narrow_config = exact_config;
+    narrow_config.limits.max_asset_decoded_bytes = NonZeroU64::new(191).unwrap();
+    let mut narrow = AssetStore::new(narrow_config);
+    narrow.enqueue(hash, bytes).unwrap();
+    assert_eq!(narrow.process_next().unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        narrow.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::ByteLimitExceeded
+    );
 }
 
 #[test]
@@ -2844,11 +3304,14 @@ fn unsupported_extensions_are_typed_and_proxy_policy_is_explicit() {
         AssetDiagnosticCode::UnsupportedExtension
     );
 
-    let mut proxying = AssetStore::new(AssetStoreConfig {
+    let proxy_bytes = 36 * ASSET_VERTEX_BYTES;
+    let mut exact_config = AssetStoreConfig {
         unsupported_policy: UnsupportedAssetPolicy::ProxyCuboid,
         ..AssetStoreConfig::default()
-    });
-    proxying.enqueue(hash, bytes).unwrap();
+    };
+    exact_config.limits.max_asset_decoded_bytes = NonZeroU64::new(proxy_bytes).unwrap();
+    let mut proxying = AssetStore::new(exact_config);
+    proxying.enqueue(hash, bytes.clone()).unwrap();
     assert_eq!(
         proxying.process_next().unwrap().state,
         AssetState::ProxyReady
@@ -2877,6 +3340,18 @@ fn unsupported_extensions_are_typed_and_proxy_policy_is_explicit() {
     assert_eq!(eviction.removed_meshes, 1);
     assert_eq!(eviction.removed_textures, 0);
     assert_eq!(proxying.stats().records, 0);
+
+    let mut narrow_config = exact_config;
+    narrow_config.limits.max_asset_decoded_bytes = NonZeroU64::new(proxy_bytes - 1).unwrap();
+    let mut narrow = AssetStore::new(narrow_config);
+    narrow.enqueue(hash, bytes).unwrap();
+    assert_eq!(narrow.process_next().unwrap().state, AssetState::Rejected);
+    assert_eq!(narrow.record(hash).unwrap().decoded_bytes, 0);
+    assert_eq!(narrow.stats().resident_cpu_bytes, 0);
+    assert_eq!(
+        narrow.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::ByteLimitExceeded
+    );
 }
 
 #[test]
@@ -2962,6 +3437,52 @@ fn decoded_vertex_and_pending_source_limits_fail_closed() {
         store.enqueue(content_hash(&second), second),
         Err(AssetError::PendingSourceBytesExceeded { .. })
     ));
+}
+
+fn assert_indexed_vertex_colors(bytes: Vec<u8>, source_colors: [[f32; 4]; 4]) {
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_eq!(upload.byte_len(), 3 * ASSET_VERTEX_BYTES);
+    for (vertex, source_index) in upload.vertices().iter().zip([2, 0, 1]) {
+        assert_color(vertex.color_0, source_colors[source_index]);
+    }
+}
+
+fn assert_normalized_u16_vertex_colors(kind: &str) {
+    let source = [
+        [0_u16, 16_384, 65_535, 32_768],
+        [65_535, 32_768, 16_384, 0],
+        [8_192, 24_576, 40_960, 57_344],
+        [1, 2, 3, 4],
+    ];
+    let component_count = if kind == "VEC3" { 3 } else { 4 };
+    let mut bytes = Vec::with_capacity(32);
+    for color in source {
+        let start = bytes.len();
+        for component in color.into_iter().take(component_count) {
+            bytes.extend_from_slice(&component.to_le_bytes());
+        }
+        bytes.resize(start + 8, 0);
+    }
+    let expected = source.map(|value| {
+        let mut decoded = value.map(|component| f32::from(component) / 65_535.0);
+        if component_count == 3 {
+            decoded[3] = 1.0;
+        }
+        decoded
+    });
+    assert_indexed_vertex_colors(
+        indexed_glb_with_color_bytes(&bytes, 4, 5_123, kind, true, 8, r#""COLOR_0":1"#),
+        expected,
+    );
 }
 
 fn assert_color(actual: [cogniform_protocol::UnitF32; 4], expected: [f32; 4]) {

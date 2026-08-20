@@ -137,6 +137,8 @@ pub enum AssetDiagnosticCode {
     InvalidTangent,
     /// A decoded primary texture coordinate is non-finite or inconsistent with its positions.
     InvalidTexcoord,
+    /// A decoded vertex color has an invalid accessor, value, set sequence, or source count.
+    InvalidColor,
     /// Embedded image bytes are malformed, truncated, or inconsistent with their PNG header.
     InvalidImage,
     /// A decoded index is outside its position accessor.
@@ -185,9 +187,9 @@ impl AssetDiagnostic {
 }
 
 /// Exact decoded and GPU bytes in one interleaved asset vertex.
-pub const ASSET_VERTEX_BYTES: u64 = 48;
+pub const ASSET_VERTEX_BYTES: u64 = 64;
 
-/// One finite decoded position, unit normal, source tangent, and primary texture coordinate.
+/// One decoded position, unit normal, source tangent, primary texture coordinate, and color.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssetVertex {
     /// XYZ position in mesh-local units.
@@ -198,6 +200,8 @@ pub struct AssetVertex {
     pub tangent: [FiniteF32; 4],
     /// Primary glTF texture coordinates retained without unit clamping.
     pub texcoord_0: [FiniteF32; 2],
+    /// Linear primary glTF vertex color, clamped to the unit interval.
+    pub color_0: [UnitF32; 4],
 }
 
 /// Stable key for one mesh inside immutable source bytes.

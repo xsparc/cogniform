@@ -40,8 +40,13 @@ const SPHERE_LONGITUDE_SECTORS: u16 = 16;
 const SPHERE_LATITUDE_BANDS: u16 = 8;
 const SPHERE_VERTEX_COUNT: u32 = 672;
 const SPHERE_RADIUS: f32 = 0.5;
-const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4];
+const ASSET_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+    0 => Float32x3,
+    1 => Float32x3,
+    2 => Float32x2,
+    3 => Float32x4,
+    4 => Float32x4
+];
 const CUBE_POSITIONS: [[f32; 3]; 36] = [
     [-0.5, -0.5, -0.5],
     [0.5, 0.5, -0.5],
@@ -360,6 +365,7 @@ impl HeadlessRenderer {
                 imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
                 imported_face_policy: ImportedFacePolicy::Disabled,
                 imported_shading_model: ImportedShadingModel::MetallicRoughness,
+                imported_vertex_color: false,
                 compact_id: REFERENCE_ENTITY_ID,
             }],
             directional_lights: Vec::new(),
@@ -816,6 +822,10 @@ fn required_limits(
     required.max_sampled_textures_per_shader_stage =
         required.max_sampled_textures_per_shader_stage.max(4);
     required.max_samplers_per_shader_stage = required.max_samplers_per_shader_stage.max(4);
+    required.max_vertex_attributes = required.max_vertex_attributes.max(5);
+    required.max_vertex_buffer_array_stride = required
+        .max_vertex_buffer_array_stride
+        .max(u32::try_from(cogniform_assets::ASSET_VERTEX_BYTES).expect("vertex stride fits u32"));
     required.max_buffer_size = required.max_buffer_size.max(layout.buffer_size);
     required.max_buffer_size = required
         .max_buffer_size
@@ -1666,6 +1676,7 @@ fn encode_vertex(encoded: &mut Vec<u8>, position: [f32; 3], normal: [f32; 3]) {
         .chain(&normal)
         .chain(&[0.0, 0.0])
         .chain(&[1.0, 0.0, 0.0, 1.0])
+        .chain(&[1.0, 1.0, 1.0, 1.0])
     {
         encoded.extend_from_slice(&value.to_le_bytes());
     }
@@ -1777,10 +1788,12 @@ fn encode_draw_uniform(
     bytes.extend_from_slice(&draw.roughness.to_le_bytes());
     bytes.extend_from_slice(&draw.normal_scale.to_le_bytes());
     let normal_flag = u8::from(draw.imported_texture_roles.normal());
+    let vertex_color_flag = u8::from(draw.imported_vertex_color) << 5;
     let material_flags = normal_flag
         | draw.imported_alpha_coverage.flags()
         | draw.imported_face_policy.flags()
-        | draw.imported_shading_model.flags();
+        | draw.imported_shading_model.flags()
+        | vertex_color_flag;
     bytes.extend_from_slice(&f32::from(material_flags).to_le_bytes());
     for value in draw.emissive {
         bytes.extend_from_slice(&value.to_le_bytes());
@@ -1879,6 +1892,30 @@ mod tests {
     }
 
     #[test]
+    fn asset_vertex_layout_is_exactly_five_attributes_and_sixty_four_bytes() {
+        assert_eq!(cogniform_assets::ASSET_VERTEX_BYTES, 64);
+        assert_eq!(ASSET_VERTEX_ATTRIBUTES.len(), 5);
+        assert_eq!(
+            ASSET_VERTEX_ATTRIBUTES.map(|attribute| attribute.shader_location),
+            [0, 1, 2, 3, 4]
+        );
+        assert_eq!(
+            ASSET_VERTEX_ATTRIBUTES.map(|attribute| attribute.offset),
+            [0, 12, 24, 32, 48]
+        );
+        assert_eq!(
+            ASSET_VERTEX_ATTRIBUTES.map(|attribute| attribute.format),
+            [
+                wgpu::VertexFormat::Float32x3,
+                wgpu::VertexFormat::Float32x3,
+                wgpu::VertexFormat::Float32x2,
+                wgpu::VertexFormat::Float32x4,
+                wgpu::VertexFormat::Float32x4,
+            ]
+        );
+    }
+
+    #[test]
     fn target_validation_rejects_unbounded_inputs() {
         assert!(matches!(
             validate_config(&RendererConfig::new(0, 64)),
@@ -1947,15 +1984,15 @@ mod tests {
             CUBE_POSITIONS.len()
         );
         assert_eq!(CUBE_POSITIONS.len() / 3, 12);
-        assert_eq!(encoded.len(), 1_728);
+        assert_eq!(encoded.len(), 2_304);
         assert_eq!(encoded.len(), CUBE_POSITIONS.len() * VERTEX_BYTES);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
         let vertices = values
-            .chunks_exact(12)
-            .map(|vertex| <[f32; 12]>::try_from(vertex).unwrap())
+            .chunks_exact(16)
+            .map(|vertex| <[f32; 16]>::try_from(vertex).unwrap())
             .collect::<Vec<_>>();
         let mut face_triangle_counts = [0_u8; 6];
 
@@ -1965,7 +2002,10 @@ mod tests {
                     .iter()
                     .all(|value| value.to_bits() & 0x7fff_ffff == 0.5_f32.to_bits())
             );
-            assert_eq!(&vertex[6..], &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
+            assert_eq!(
+                &vertex[6..],
+                &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+            );
         }
 
         for triangle in vertices.chunks_exact(3) {
@@ -2047,16 +2087,19 @@ mod tests {
             usize::try_from(PLANE_VERTEX_COUNT).unwrap(),
             PLANE_POSITIONS.len()
         );
-        assert_eq!(encoded.len(), 288);
+        assert_eq!(encoded.len(), 384);
         assert_eq!(encoded.len(), PLANE_POSITIONS.len() * VERTEX_BYTES);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
-        for (vertex, position) in values.chunks_exact(12).zip(PLANE_POSITIONS) {
+        for (vertex, position) in values.chunks_exact(16).zip(PLANE_POSITIONS) {
             assert_eq!(&vertex[..3], &position);
             assert_eq!(&vertex[3..6], &[0.0, 0.0, 1.0]);
-            assert_eq!(&vertex[6..], &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
+            assert_eq!(
+                &vertex[6..],
+                &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+            );
         }
     }
 
@@ -2076,6 +2119,7 @@ mod tests {
             imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
             imported_face_policy: ImportedFacePolicy::Disabled,
             imported_shading_model: ImportedShadingModel::MetallicRoughness,
+            imported_vertex_color: false,
             compact_id: 42,
         };
         let lights = [
@@ -2161,6 +2205,7 @@ mod tests {
             imported_alpha_coverage: ImportedAlphaCoverage::Mask { cutoff: 1.25 },
             imported_face_policy: ImportedFacePolicy::DoubleSided,
             imported_shading_model: ImportedShadingModel::Unlit,
+            imported_vertex_color: true,
             compact_id: 1,
         };
 
@@ -2168,7 +2213,7 @@ mod tests {
         assert_eq!(bytes.len(), 496);
         let float_at =
             |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
-        assert_eq!(float_at(119).to_bits(), 31.0_f32.to_bits());
+        assert_eq!(float_at(119).to_bits(), 63.0_f32.to_bits());
         assert_eq!(float_at(123).to_bits(), 1.25_f32.to_bits());
     }
 
@@ -2183,15 +2228,15 @@ mod tests {
         let expected_triangles =
             2 * usize::from(SPHERE_LONGITUDE_SECTORS) * usize::from(SPHERE_LATITUDE_BANDS - 1);
         assert_eq!(expected_triangles, 224);
-        assert_eq!(encoded.len(), 32_256);
+        assert_eq!(encoded.len(), 43_008);
         assert_eq!(encoded.len(), expected_vertices * VERTEX_BYTES);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
         let vertices = values
-            .chunks_exact(12)
-            .map(|vertex| <[f32; 12]>::try_from(vertex).unwrap())
+            .chunks_exact(16)
+            .map(|vertex| <[f32; 16]>::try_from(vertex).unwrap())
             .collect::<Vec<_>>();
         assert_eq!(vertices.len(), expected_vertices);
         assert_eq!(vertices.len() / 3, expected_triangles);
@@ -2223,7 +2268,10 @@ mod tests {
                 .zip(normal)
                 .map(|(position, normal)| position * normal)
                 .sum::<f32>();
-            assert_eq!(&vertex[6..], &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
+            assert_eq!(
+                &vertex[6..],
+                &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+            );
             assert!((position_length - SPHERE_RADIUS).abs() <= 1.0e-5);
             assert!((normal_length - 1.0).abs() <= 1.0e-5);
             assert!((radial_alignment - SPHERE_RADIUS).abs() <= 1.0e-5);

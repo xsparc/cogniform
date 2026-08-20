@@ -402,23 +402,24 @@ resynchronization.
 
 ### 4.1 Renderer baseline
 
-Use `wgpu` with built-in WGSL and negotiated adapter features/limits. The baseline is a small forward renderer with primitive meshes, camera, depth, color, entity-ID, and quantized world-space normal output. Position-only triangles remain flat; approved imported vertex normals are inverse-transformed and interpolated. Headless mode renders to textures without constructing a visible window. Optional `winit` integration is isolated from the headless core.
+Use `wgpu` with built-in WGSL and negotiated adapter features/limits. The baseline is a small forward renderer with primitive meshes, camera, depth, color, entity-ID, and quantized world-space normal output. Position-only triangles remain flat; approved imported vertex normals and primary vertex colors are inverse-transformed or linearly interpolated as appropriate. Headless mode renders to textures without constructing a visible window. Optional `winit` integration is isolated from the headless core.
 
 Built-in cuboids, centered unit XY planes, and centered unit-diameter spheres
 use immutable expanded position-plus-normal-plus-primary-coordinate-plus-
-fallback-tangent buffers.
+fallback-tangent-plus-white-color buffers.
 A cuboid is a centered unit box with 12 outward counter-clockwise triangles,
 36 expanded vertices, exact axis-aligned exterior normals, and zero
-coordinates in one fixed 1,728-byte payload. Plane triangles wind
+coordinates in one fixed 2,304-byte payload. Plane triangles wind
 counter-clockwise toward positive Z, remain at local Z = 0, and apply all
 positive XYZ dimensions through the model transform; X/Y set visible extents
 while Z participates in normal transformation without creating thickness.
 The sphere has a positive-Z polar axis, fixed 16-sector by 8-band topology,
 outward counter-clockwise triangles, and unit radial normals. Its XYZ
 dimensions are bounding diameters. The fixed 672-vertex sphere payload is
-32,256 bytes and is generated once at renderer initialization; no frame
-performs tessellation. The plane payload is 288 bytes. All built-ins use exact
-zero primary coordinates and a disabled `[1, 0, 0, 1]` tangent.
+43,008 bytes and is generated once at renderer initialization; no frame
+performs tessellation. The plane payload is 384 bytes. All built-ins use exact
+zero primary coordinates, a disabled `[1, 0, 0, 1]` tangent, and white vertex
+color.
 A missing asset uses its exact explicit built-in fallback, and a resident
 asset retains precedence.
 
@@ -449,8 +450,9 @@ nearest-family mip modes select nearest and linear-family mip modes select
 linear because only one image level is retained. The renderer indexes one
 fixed initialization-owned 36-sampler table and never allocates a per-asset
 sampler or cache entry.
-Sampled base RGBA multiplies the numeric base-color factor before either
-shading path. Imported `OPAQUE` coverage ignores that multiplied alpha and
+Sampled base RGBA multiplies the numeric base-color factor and interpolated
+primary linear vertex RGBA before either shading path. Omitted imported color
+is white. Imported `OPAQUE` coverage ignores that multiplied alpha and
 emits alpha one. Imported `MASK` coverage discards a fragment when the
 multiplied alpha is below its finite non-negative cutoff (default `0.5`),
 before any color, depth, identity, or normal output; equality survives and
@@ -498,8 +500,9 @@ submission.
 The fixed imported-material bind group contains four texture views and four
 samplers in nine total entries. Adapter preflight requires at least four
 sampled textures, four samplers per shader stage, and nine bindings per group,
-so an insufficient adapter fails as structured `UnsupportedCapabilities`
-before pipeline construction.
+five vertex attributes, and a 64-byte vertex-buffer stride, so an insufficient
+adapter fails as structured `UnsupportedCapabilities` before pipeline
+construction.
 
 Feature tiers are capability-based:
 
@@ -517,6 +520,9 @@ MVP accepts primitives first, then a bounded glTF/GLB subset with finite
 positions, optional same-count finite vertex normals, optional same-count
 finite f32 `TEXCOORD_0`, optional same-count finite non-zero f32 `TANGENT`
 `VEC4` with exact handedness, one bounded numeric metallic-roughness material
+and optional same-count primary linear `COLOR_0` as f32 or normalized unsigned
+byte/unsigned short `VEC3`/`VEC4`,
+with at most sixteen attribute semantics per primitive,
 plus an optional three-channel unit-bounded core emissive factor and bounded
 OPAQUE/MASK alpha coverage plus a strict optional boolean `doubleSided` per
 mesh material. The ratified `KHR_materials_unlit` marker is the sole supported
@@ -528,9 +534,10 @@ is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
 retained-byte, decoder-working-byte, per-asset, and aggregate CPU limits into
 at most four immutable RGBA8 role values; a source shared by roles counts once
 on CPU. Decoders verify declared and decoded sizes before allocation; expanded
-upload vertices always reserve exactly 48 bytes for position, unit normal,
-primary coordinate, and unit tangent plus handedness. Missing non-normal-map
-tangents use a fixed disabled fallback. The local service
+upload vertices always reserve exactly 64 bytes for position, unit normal,
+primary coordinate, unit tangent plus handedness, and unit RGBA color. Missing
+non-normal-map tangents use a fixed disabled fallback and missing colors use
+white. The local service
 owns bounded CPU asset state and explicitly forwards immutable upload jobs into
 renderer-owned mesh and unique content-hash-and-role texture residency; neither patches nor frames
 perform implicit asset work. A caller may explicitly evict every CPU record,
@@ -545,7 +552,7 @@ one exact source in a separate immutable bounded file, but it neither maps that
 file to recovery state nor decodes, imports, uploads, or schedules the source.
 Unknown or wider extension payloads and valid out-of-subset image features
 produce structured diagnostics or approved proxies; malformed declaration,
-unlit marker, normal, tangent, primary-coordinate, material, image, or over-
+unlit marker, normal, tangent, primary-coordinate, primary-color, material, image, or over-
 limit data cannot proxy.
 Aggregate asset status includes optional monotonic oldest-import and
 oldest-upload ages without exposing source bytes, mesh keys, texture content,

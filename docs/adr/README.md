@@ -68,5 +68,6 @@ earlier one and links the history.
 | [0060](0060-bounded-gltf-double-sided-materials.md) | Accepted | Correct imported glTF back-face culling and bounded double-sided normals with two fixed pipelines |
 | [0061](0061-bounded-gltf-unlit-materials.md) | Accepted | Render ratified imported unlit materials through bounded base-color-only shading |
 | [0062](0062-bounded-core-gltf-samplers.md) | Accepted | Apply bounded core glTF filtering and S/T wrapping independently to four texture roles |
+| [0063](0063-bounded-core-gltf-vertex-colors.md) | Accepted | Multiply imported base color by one bounded core glTF primary vertex-color set |
 
 New records use four sections: context, decision, consequences, and status.

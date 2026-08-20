@@ -55,6 +55,7 @@ struct VertexOutput {
     @location(1) world_position: vec3<f32>,
     @location(2) texcoord_0: vec2<f32>,
     @location(3) world_tangent: vec4<f32>,
+    @location(4) color_0: vec4<f32>,
 };
 
 struct FragmentOutput {
@@ -134,6 +135,7 @@ fn vs_main(
     @location(1) normal: vec3<f32>,
     @location(2) texcoord_0: vec2<f32>,
     @location(3) tangent: vec4<f32>,
+    @location(4) color_0: vec4<f32>,
 ) -> VertexOutput {
     var output: VertexOutput;
     let world_position = draw.model * vec4(position, 1.0);
@@ -160,6 +162,7 @@ fn vs_main(
     output.world_normal = normal_matrix * normal;
     output.world_position = world_position.xyz;
     output.texcoord_0 = texcoord_0;
+    output.color_0 = color_0;
     let tangent_model_scale = max(scale_x, max(scale_y, scale_z));
     let tangent_matrix = mat3x3<f32>(
         model_linear[0] / tangent_model_scale,
@@ -185,8 +188,10 @@ fn fs_main(
 ) -> FragmentOutput {
     var output: FragmentOutput;
     let material_flags = u32(draw.material.w);
+    let vertex_color = select(vec4(1.0), input.color_0, (material_flags & 32u) != 0u);
     let base_color = textureSample(base_color_texture, base_color_sampler, input.texcoord_0)
-        * draw.color;
+        * draw.color
+        * vertex_color;
     if (material_flags & 4u) != 0u && base_color.a < draw.emissive.w {
         discard;
     }

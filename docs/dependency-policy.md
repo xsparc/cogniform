@@ -54,8 +54,12 @@ and an initialization-owned 36-sampler WebGPU table using those same existing
 facilities. It adds no package, feature, build script, native code, network,
 telemetry, or paid-service requirement and leaves the dependency graph
 unchanged.
-`cogniform-renderer` and `cogniform-engine` use it only to generate test
-fixtures. It is dual licensed `MIT OR Apache-2.0`, uses the pure-Rust miniz
+CF063 adds strict core primary vertex-color decode and one existing-pipeline
+shader attribute using the same JSON, asset, renderer, and WebGPU facilities.
+It adds no package, feature, build script, native code, network, telemetry, or
+paid-service requirement and leaves the dependency graph unchanged.
+`cogniform-renderer` and `cogniform-engine` use the `png` package only to
+generate test fixtures. It is dual licensed `MIT OR Apache-2.0`, uses the pure-Rust miniz
 backend with the direct crate's default features disabled, and requires no
 runtime filesystem, network, telemetry, paid service, native library, or proc
 macro. The locked seven-package addition is `png`, `crc32fast`, `fdeflate`,

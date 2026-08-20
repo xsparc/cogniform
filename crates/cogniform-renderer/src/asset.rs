@@ -749,10 +749,12 @@ fn encode_vertices(vertices: &[cogniform_assets::AssetVertex]) -> Vec<u8> {
             vertex
                 .position
                 .iter()
-                .chain(&vertex.normal)
-                .chain(&vertex.texcoord_0)
-                .chain(&vertex.tangent)
-                .flat_map(|value| value.get().to_le_bytes())
+                .map(|value| value.get())
+                .chain(vertex.normal.iter().map(|value| value.get()))
+                .chain(vertex.texcoord_0.iter().map(|value| value.get()))
+                .chain(vertex.tangent.iter().map(|value| value.get()))
+                .chain(vertex.color_0.iter().map(|value| value.get()))
+                .flat_map(f32::to_le_bytes)
         })
         .collect()
 }
@@ -869,9 +871,10 @@ mod tests {
             normal: [finite(0.0), finite(0.0), finite(1.0)],
             texcoord_0: [finite(-0.25), finite(1.25)],
             tangent: [finite(1.0), finite(0.0), finite(0.0), finite(-1.0)],
+            color_0: [cogniform_protocol::UnitF32::new(0.25).unwrap(); 4],
         };
         let encoded = encode_vertices(&[vertex]);
-        assert_eq!(encoded.len(), 48);
+        assert_eq!(encoded.len(), 64);
         let values = encoded
             .chunks_exact(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
@@ -879,7 +882,8 @@ mod tests {
         assert_eq!(
             values,
             [
-                1.0, 2.0, 3.0, 0.0, 0.0, 1.0, -0.25, 1.25, 1.0, 0.0, 0.0, -1.0
+                1.0, 2.0, 3.0, 0.0, 0.0, 1.0, -0.25, 1.25, 1.0, 0.0, 0.0, -1.0, 0.25, 0.25, 0.25,
+                0.25
             ]
         );
     }
@@ -887,15 +891,15 @@ mod tests {
     #[test]
     fn exact_interleaved_bytes_are_rejected_before_gpu_allocation() {
         let upload = fixture_upload(false);
-        assert_eq!(upload.byte_len(), 144);
+        assert_eq!(upload.byte_len(), 192);
         let config =
-            RendererConfig::new(64, 64).with_max_asset_mesh_bytes(NonZeroU64::new(143).unwrap());
+            RendererConfig::new(64, 64).with_max_asset_mesh_bytes(NonZeroU64::new(191).unwrap());
         let mut assets = RendererAssets::new();
         assert!(matches!(
             assets.enqueue(upload, &config),
             Err(RendererError::AssetMeshBytesExceeded {
-                actual: 144,
-                limit: 143,
+                actual: 192,
+                limit: 191,
                 ..
             })
         ));
@@ -924,7 +928,7 @@ mod tests {
             .enqueue(upload, &RendererConfig::new(64, 64))
             .unwrap();
         assert_eq!(assets.stats().pending_uploads, 1);
-        assert_eq!(assets.stats().pending_bytes, 144);
+        assert_eq!(assets.stats().pending_bytes, 192);
         assert_eq!(assets.stats().pending_textures, 1);
         assert_eq!(assets.stats().pending_texture_bytes, 4);
         assert_eq!(assets.stats().resident_textures, 0);
@@ -1117,7 +1121,7 @@ mod tests {
         assert_eq!(eviction.removed_resident_textures, 0);
         assert_eq!(eviction.released_resident_texture_bytes, 0);
         assert_eq!(assets.stats().pending_uploads, 1);
-        assert_eq!(assets.stats().pending_bytes, 144);
+        assert_eq!(assets.stats().pending_bytes, 192);
         assert_eq!(assets.stats().pending_textures, 0);
         assert_eq!(assets.pending.front().unwrap().key(), retained_key);
 

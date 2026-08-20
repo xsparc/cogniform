@@ -58,7 +58,7 @@ scene revision that produced it.
 > schema crate. The current
 > asset baseline adds content-addressed GLB geometry with optional finite vertex
 > normals, one retained finite primary coordinate set, optional source
-> tangents, and unit-bounded numeric metallic-roughness materials, plus bounded
+> tangents, one bounded primary linear vertex-color set, and unit-bounded numeric metallic-roughness materials, plus bounded
 > embedded PNG base-color, linear packed metallic-roughness, tangent-space
 > normal, and sRGB emissive roles plus bounded core emissive RGB. Exact caller-driven
 > CPU decode and explicit role-separated GPU upload remain separate; sampled
@@ -78,6 +78,9 @@ scene revision that produced it.
 > All four imported texture roles now retain strict core glTF nearest/linear
 > filtering and repeat/mirrored/clamp S/T wrapping independently, backed by a
 > fixed renderer-owned sampler table and a documented one-mip fallback.
+> Primary vertex RGBA multiplies the imported base-color factor and optional
+> sampled base color; omission is white and an explicit scene material disables
+> the imported color with the rest of the imported material.
 > The baseline also includes pure seeded cuboid-grid procedures. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, can explicitly evict all CPU/GPU state for one
