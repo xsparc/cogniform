@@ -182,6 +182,21 @@ impl AssetStore {
             .expect("queued import retains its record");
         match decoded {
             Ok((state, decoded, diagnostic)) => {
+                if decoded.byte_len > self.config.limits.max_asset_decoded_bytes.get() {
+                    reject_record(
+                        stored,
+                        AssetDiagnostic::new(
+                            AssetDiagnosticCode::ByteLimitExceeded,
+                            "asset_store.asset_decoded_bytes",
+                            None,
+                        ),
+                    );
+                    return Some(AssetProcessOutcome {
+                        content_hash: pending.content_hash,
+                        state: stored.record.state,
+                        mesh_count: stored.record.mesh_count,
+                    });
+                }
                 let projected = self.resident_cpu_bytes.saturating_add(decoded.byte_len);
                 if projected > self.config.limits.max_resident_cpu_bytes.get() {
                     reject_record(

@@ -23,7 +23,8 @@ rendering without draw sorting or asset-keyed pipeline growth. CF061 admits
 the ratified `KHR_materials_unlit` marker through strict declarations and
 base-color-only shading without new resources or pipelines. CF062 retains
 bounded core sampler filters and S/T wrapping independently for all four
-existing roles through one fixed renderer-owned table.
+existing roles through one fixed renderer-owned table. CF063 adds one bounded
+primary linear vertex-color set as a base-color multiplier.
 
 ## Ownership and lifecycle
 
@@ -70,7 +71,8 @@ renderer APIs remain available for embedders that own those domains directly.
 Records are retained as `Queued`, `Ready`, `ProxyReady`, or `Rejected`. The
 original source is retained only while queued. Ready records retain expanded
 triangle positions, unit normals, primary coordinates, one typed immutable
-source tangent per vertex, one typed immutable numeric material per mesh, and
+source tangent and unit primary color per vertex, one typed immutable numeric
+material per mesh, and
 at most four role-separated immutable RGBA8 textures. A PNG referenced by
 multiple roles shares its decoded CPU allocation.
 Proxy records have no texture. `AssetStore::evict` removes one hash's queued
@@ -125,7 +127,8 @@ The importer accepts only the following baseline:
 - one embedded buffer with no URI;
 - one or more meshes, with exactly one primitive per mesh;
 - triangle-list mode, either explicit mode `4` or the glTF default;
-- exactly `POSITION`, with optional `NORMAL`, `TANGENT`, and `TEXCOORD_0`;
+- exactly `POSITION`, with optional `NORMAL`, `TANGENT`, `TEXCOORD_0`, and
+  `COLOR_0`, within a fixed maximum of sixteen primitive attribute semantics;
 - finite non-normalized f32 `VEC3` positions;
 - optional non-normalized f32 `VEC3` normals with the same source count as
   positions; each direction must be finite and non-zero;
@@ -134,6 +137,12 @@ The importer accepts only the following baseline:
 - optional non-normalized f32 `VEC4` `TANGENT` with the same source count as
   positions; XYZ must be finite and non-zero, W must be exactly `-1` or `1`,
   and all expanded vertices in one triangle must use the same W sign;
+- optional same-count `COLOR_0` as `VEC3` or `VEC4`. Components may be
+  non-normalized finite f32 or normalized unsigned byte/unsigned short. Finite
+  f32 values are clamped to `[0, 1]`, integers expand into that range, and
+  VEC3 synthesizes alpha one. Every declared color set must be canonical,
+  consecutive from zero, valid, and same-count before a valid `COLOR_1` or
+  later set may receive unsupported/proxy classification;
 - at most four root textures and four referenced root images across one shared
   base-color index, one shared metallic-roughness index, one shared normal
   index, and one shared emissive index. Every referencing material
@@ -183,16 +192,18 @@ The importer accepts only the following baseline:
   malformed markers are invalid.
 
 Indexed geometry is expanded into a triangle vertex stream, using the same
-source index for position, normal, tangent, and primary coordinate. The
-complete source coordinate and tangent accessors are validated before expanded
-allocation, including values not selected by the index stream. Accepted source
+source index for position, normal, tangent, primary coordinate, and primary
+color. The complete source coordinate, tangent, and color accessors are
+validated before expanded allocation, including values not selected by the
+index stream. Accepted source
 normals and tangent XYZ are normalized deterministically. When `NORMAL` is
 absent, each expanded triangle receives one unit cross-product normal following
 its winding; degenerate triangles reject. Every output vertex is interleaved
-position, normal, primary coordinate, and tangent and consumes exactly 48
-decoded and GPU bytes. The prior 32-byte position/normal/coordinate prefix is
-unchanged. Missing coordinates are exact zero; missing tangents use
-`[1, 0, 0, 1]` and never enable normal sampling.
+position, normal, primary coordinate, tangent, and color and consumes exactly
+64 decoded and GPU bytes. The prior 48-byte position/normal/coordinate/tangent
+prefix is unchanged. Missing coordinates are exact zero; missing tangents use
+`[1, 0, 0, 1]` and never enable normal sampling; missing colors are exact
+white.
 Every referenced range and index is checked before use, and the complete
 expanded byte requirement is checked before allocation.
 A primitive without indices must contain a multiple of three positions; an
@@ -201,8 +212,8 @@ indexed primitive must contain a multiple of three indices.
 The strict schema rejects unknown fields after recognized unsupported feature
 declarations are classified. External buffers or images, data URIs, additional
 GLB chunks, sparse accessors, unsupported normal or primary-coordinate
-encodings, additional coordinate sets, colors, morph targets, multiple
-primitives, more than four images/textures/samplers, unused image or texture
+encodings, additional coordinate sets, wider rendered color sets, morph
+targets, more than four images/textures/samplers, unused image or texture
 records, valid unused sampler records, JPEG and wider PNG forms, texture transforms,
 occlusion texture roles, `BLEND` alpha coverage, nodes, scenes, cameras, animations,
 skins, and all other or wider extensions
@@ -228,6 +239,9 @@ Invalid GLB framing or lengths, malformed or type-invalid JSON, invalid buffer
 ranges or indices, non-finite positions, zero or non-finite normals or
 tangents, invalid tangent handedness, normal/tangent count mismatches,
 non-finite primary coordinates, primary-coordinate count mismatches, malformed
+or non-finite primary colors, invalid color normalization/count/ranges or
+malformed/skipped color sets, missing positions, multiple primitives, or
+excess primitive attribute semantics,
 or out-of-range emissive factors, malformed alpha mode/cutoff values,
 malformed `doubleSided` or sampler values and indices,
 malformed, duplicate, empty, or inconsistent extension declarations, malformed
@@ -242,7 +256,7 @@ normal-texture basis, primary-coordinate, image format, texture role, or well-
 formed wider alpha mode, unknown extension, or non-empty unlit payload may
 proxy only under explicit policy and only after malformed peer data is
 excluded. Proxy vertices always contain exact zero
-primary coordinates, the disabled fallback tangent, opaque coverage, zero
+primary coordinates, the disabled fallback tangent, white color, opaque coverage, zero
 emission, no imported texture, and the single-sided material default. The
 generated proxy cube topology is unchanged; its faces therefore follow the
 same hardware back-cull rule as another imported false material.
@@ -259,8 +273,9 @@ the authored nearest/linear choice. With one retained image level, source
 source `LINEAR`, `LINEAR_MIPMAP_NEAREST`, and `LINEAR_MIPMAP_LINEAR` use
 linear. Base color and emissive sample as sRGB and the data roles as linear;
 emissive and normal alpha plus metallic-roughness red/alpha are ignored.
-Sampled base RGBA
-multiplies the factor before material response. Imported
+Sampled base RGBA multiplies the factor and interpolated primary vertex RGBA
+before material response. An explicit scene material disables the imported
+vertex color along with the rest of the imported material. Imported
 default or explicit `OPAQUE` ignores that alpha and emits one. Imported `MASK`
 discards only products below its cutoff before any render attachment output;
 equality survives and cutoff above one discards all bounded alpha. Surviving
@@ -296,7 +311,7 @@ values; the compatible
 `base_color` accessor remains. A source image shared by multiple roles counts once
 in CPU asset residency, while GPU bytes count once per content-hash-and-role
 resource because role semantics differ. All roles are reserved atomically.
-Vertex bytes use the exact 48-byte expanded accounting independently.
+Vertex bytes use the exact 64-byte expanded accounting independently.
 
 ## Default bounds
 
@@ -350,7 +365,7 @@ material and emissive retention/defaults/range/type/texture failures, normal and
 normalization/count/value/range/handedness failures, primary-coordinate exact and indexed
 retention, zero defaults, full-source validation, embedded RGB/RGBA expansion,
 PNG truncation and malformed/reference/format/resource-limit failures,
-unsupported encodings and texture roles, winding fallback, exact 48-byte and
+unsupported encodings and texture roles, winding fallback, exact 64-byte and
 shared/distinct role-texture accounting, atomic reservation, procedure replay,
 world extraction, and
 renderer upload reservation:
@@ -385,6 +400,9 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture core_sampler_wrap_and_magnification_modes_are_pixel_observable --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture mipmapped_minification_modes_use_the_documented_one_mip_fallback --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture four_texture_roles_bind_independent_samplers_for_one_shared_image --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture vertex_colors_interpolate_and_preserve_non_color_observations --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture vertex_color_multiplies_factor_texture_and_scene_override --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture vertex_color_alpha_default_material_and_double_sided_back_face_are_exact --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset
 cargo test --release -p cogniform-engine --test service_assets --locked --offline -- --ignored --exact exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work
 cargo test --release -p cogniform-storage --test asset_file --locked --offline -- --ignored --exact persisted_recovery_and_asset_sources_restore_renderable_state
@@ -431,7 +449,12 @@ prove independent repeat/mirror/clamp selection on both axes, nearest/linear
 magnification, exact nearest- and linear-family one-mip minification, whole-frame
 equality for omitted, empty, and fully explicit defaults, and both independent
 and one-record-shared bindings across four roles for one shared image while
-preserving the same lifecycle and causality assertions. The service/storage checks prove that restored
+preserving the same lifecycle and causality assertions. The vertex-color
+checks prove interpolation, an exact white baseline, factor and
+sRGB texture multiplication, independent emission, complete scene override,
+OPAQUE/MASK alpha behavior, material-free fallback, double-sided back-face
+orientation, stable non-color observations, exact eviction/rehydration, and
+unchanged revision/hash/replay. The service/storage checks prove that restored
 plain and textured asset references require explicit exact-hash CPU/GPU
 rehydration without another logical mutation. The CF019 case
 persists recovery and asset source in separate files, drops the source service,
@@ -442,3 +465,7 @@ replay.
 See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for the strict
 sampler boundary, one-mip fallback, fixed 36-entry table, and compatibility
 decision.
+
+See [ADR 0063](../adr/0063-bounded-core-gltf-vertex-colors.md) for the strict
+primary color formats, 64-byte prefix-compatible vertex ABI, multiplication
+order, and scene-override decision.

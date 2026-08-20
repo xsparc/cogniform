@@ -25,7 +25,8 @@ and filterable sampling for `Rgba8UnormSrgb` asset textures.
 Linear `Rgba8Unorm` asset normal and metallic-roughness textures require the
 same sampled, copy-destination, and filterable usages.
 The fixed imported-material layout also requires at least four sampled
-textures, four samplers per shader stage, and nine bindings per bind group.
+textures, four samplers per shader stage, nine bindings per bind group, five
+vertex attributes, and a 64-byte vertex-buffer stride.
 Narrow adapters fail structured capability preflight before pipeline creation.
 
 No optional or experimental GPU feature is enabled. The adapter summary records
@@ -39,8 +40,8 @@ RGBA color `[51, 153, 230, 255]`, and a fixed orthographic camera with a small
 view shear. The background entity ID is `0`, cleared depth is `1.0`, and
 normal alpha `0` marks background. The centered cube contains 12
 non-degenerate outward counter-clockwise triangles, 36 expanded vertices, and
-exact axis-aligned source normals, zero primary coordinates, and disabled
-fallback tangents in one fixed 1,728-byte payload. The reference
+exact axis-aligned source normals, zero primary coordinates, disabled fallback
+tangents, and white colors in one fixed 2,304-byte payload. The reference
 projection selects its near negative-Z face at the center, so that probe must
 report an outward negative-Z normal.
 
@@ -48,7 +49,7 @@ Extracted built-in geometry supports cuboids, planes, and spheres. A plane is a
 centered unit square at local Z = 0, expanded as two counter-clockwise XY
 triangles with a positive-Z unit normal. Its positive XYZ dimensions scale the
 full model: X and Y control visible size and Z participates in normal
-transformation without creating thickness. One fixed 288-byte plane vertex
+transformation without creating thickness. One fixed 384-byte plane vertex
 payload is allocated at renderer initialization; frames do not tessellate or
 upload it. The unculled pipeline used by built-ins does not cull the back side and does not flip
 its source normal.
@@ -56,20 +57,23 @@ its source normal.
 A sphere is centered, unit diameter, and uses a positive-Z polar axis. Its
 fixed 16 longitude sectors and 8 latitude bands form 224 non-degenerate
 outward counter-clockwise triangles, expanded to 672 vertices with unit radial
-normals, zero primary coordinates, and disabled fallback tangents in the same
-48-byte layout. The exact 32,256-byte payload is generated
+normals, zero primary coordinates, disabled fallback tangents, and white colors
+in the same 64-byte layout. The exact 43,008-byte payload is generated
 once at renderer initialization. XYZ dimensions are bounding diameters, so
 non-uniform values produce an ellipsoid and the existing inverse-transpose
 normal path preserves the smooth direction. Sphere topology supplies exact
 zero primary coordinates, and frames perform no built-in tessellation or
 upload.
 
-Imported vertices use one 48-byte position, normal, primary-coordinate, and
-source-tangent layout. Its prior 32-byte prefix remains unchanged. Optional
+Imported vertices use one 64-byte position, normal, primary-coordinate,
+source-tangent, and primary-color layout. Its prior 48-byte prefix remains
+unchanged. Optional
 non-normalized finite f32 `TEXCOORD_0` reaches shader location 2 and optional
 finite normalized `TANGENT` plus exact handedness reaches location 3; missing
 asset values, built-ins, and proxy vertices use exact zero coordinates and a
-disabled `[1, 0, 0, 1]` tangent. A mesh may sample one approved embedded PNG
+disabled `[1, 0, 0, 1]` tangent. Optional f32 or normalized unsigned-byte/
+unsigned-short `COLOR_0` VEC3/VEC4 reaches location 4 as linear unit RGBA;
+missing asset values, built-ins, and proxies use white. A mesh may sample one approved embedded PNG
 for each base-color, metallic-roughness, normal, and emissive role. The renderer
 decodes base and emissive RGB as sRGB and the data roles as linear, ignores
 emissive/normal alpha and metallic-roughness red/alpha, and preserves glTF
@@ -82,7 +86,7 @@ level. White base-color/emissive, factor-one metallic-roughness, and
 neutral-normal fallbacks bind on every draw.
 External images, generated tangents, non-core sampler features, transforms,
 additional coordinate sets, generated/stored mipmaps, and other material
-texture roles remain unsupported.
+texture roles, wider rendered colors, and morph colors remain unsupported.
 
 `HeadlessRenderer::evict_asset` removes every pending upload and resident mesh
 for one content hash, plus each unique pending or resident role texture at most
@@ -112,7 +116,10 @@ distribution to avoid a singular highlight. Each contribution and the shared
 sum are clamped in linear RGB; material alpha is preserved. If neither kind is
 active, the shader bypasses that response and preserves exact base RGBA. A
 resident GLB mesh supplies its imported base color, metallic, roughness, and
-core emissive RGB when the entity has no scene material. Emissive texture RGB
+core emissive RGB when the entity has no scene material. Its interpolated
+primary vertex RGBA multiplies the base-color factor and optional sampled base
+RGBA before either lit or unlit response and before OPAQUE/MASK handling.
+Emissive texture RGB
 is sRGB-decoded, multiplied by the numeric emissive factor, added after either
 response, and clamped to one while preserving material alpha; texture alpha is
 ignored and emission affects only that surface. An explicit `MaterialComponent` overrides all imported
@@ -160,8 +167,8 @@ The existing bind group carries one fixed 496-byte per-draw uniform. The prior
 count and four directional slots, point count and four point slots, camera
 position, and metallic/roughness plus normal scale/material flags. One appended
 `vec4` contains core emissive RGB and uses its prior padding lane for the mask
-cutoff. Material flag bit 4 selects imported unlit shading without changing
-the uniform size. Bindings 1, 3, 4, and 5 select
+cutoff. Material flag bit 4 selects imported unlit shading and bit 5 selects
+imported vertex color without changing the uniform size. Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 selects base-color sampling and bindings 6, 7, and 8 select normal,
 metallic-roughness, and emissive sampling. Inactive roles bind the
@@ -250,6 +257,9 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture core_sampler_wrap_and_magnification_modes_are_pixel_observable --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture mipmapped_minification_modes_use_the_documented_one_mip_fallback --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture four_texture_roles_bind_independent_samplers_for_one_shared_image --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture vertex_colors_interpolate_and_preserve_non_color_observations --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture vertex_color_multiplies_factor_texture_and_scene_override --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture vertex_color_alpha_default_material_and_double_sided_back_face_are_exact --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work
 ```
 
@@ -270,6 +280,11 @@ and linear-family one-mip minification; whole-frame equality for omitted,
 empty, and fully explicit defaults; and both independent and one-record-shared
 role selection from one shared image. Their shared helper also exercises exact texture
 eviction/rehydration plus unchanged revision, logical hash, and replay.
+The vertex-color probes distinguish linearly interpolated primary colors,
+factor and sRGB texture multiplication, independent emission, imported
+OPAQUE/MASK coverage, material-free fallback, double-sided back-face normals,
+and complete explicit scene-material override while preserving non-color
+observations, eviction/rehydration, revision, logical hash, and replay.
 The emissive-factor contract additionally proves bounded addition after unlit,
 directional, and point response, RGB clamping, alpha preservation, explicit
 override suppression, unchanged non-color/background outputs, and unchanged
@@ -347,5 +362,8 @@ texture decode, role-residency, sRGB sampling, fallback, and override rules.
 See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for strict sampler
 decode, fixed-table indexing, independent role bindings, and the one-mip
 fallback.
+See [ADR 0063](../adr/0063-bounded-core-gltf-vertex-colors.md) for strict
+primary color decoding, the 64-byte vertex ABI, multiplication order, and
+override boundary.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

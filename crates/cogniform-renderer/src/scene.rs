@@ -321,6 +321,7 @@ impl RenderScene {
                     imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
                     imported_face_policy: ImportedFacePolicy::Disabled,
                     imported_shading_model: ImportedShadingModel::MetallicRoughness,
+                    imported_vertex_color: false,
                     compact_id: compact_id.get(),
                 }
                 .with_imported_material(entity.material().is_none(), imported_material),
@@ -443,6 +444,7 @@ pub(crate) struct PreparedDraw {
     pub(crate) imported_alpha_coverage: ImportedAlphaCoverage,
     pub(crate) imported_face_policy: ImportedFacePolicy,
     pub(crate) imported_shading_model: ImportedShadingModel,
+    pub(crate) imported_vertex_color: bool,
     pub(crate) compact_id: u32,
 }
 
@@ -459,6 +461,8 @@ impl PreparedDraw {
         self.imported_alpha_coverage = alpha_coverage;
         self.imported_face_policy = face_policy;
         self.imported_shading_model = shading_model;
+        self.imported_vertex_color =
+            use_imported_material && matches!(self.geometry, PreparedGeometry::Asset(_));
         self
     }
 }
@@ -1523,6 +1527,7 @@ mod tests {
         assert_eq!(fallback.draws[0].metallic.to_bits(), 0.0_f32.to_bits());
         assert_eq!(fallback.draws[0].roughness.to_bits(), 0.8_f32.to_bits());
         assert_eq!(fallback.draws[0].emissive.map(f32::to_bits), [0; 3]);
+        assert!(!fallback.draws[0].imported_vertex_color);
         assert_exact_f32(fallback.draws[0].model[0], 2.0);
         assert_exact_f32(fallback.draws[0].model[5], 3.0);
         assert_exact_f32(fallback.draws[0].model[10], 4.0);
@@ -1533,6 +1538,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(resident.draws[0].geometry, PreparedGeometry::Asset(key));
+        assert!(resident.draws[0].imported_vertex_color);
         assert_exact_f32(resident.draws[0].model[0], 1.0);
         assert_exact_f32(resident.draws[0].model[5], 1.0);
         assert_exact_f32(resident.draws[0].model[10], 1.0);
@@ -1578,6 +1584,7 @@ mod tests {
             prepared.draws[0].imported_face_policy,
             ImportedFacePolicy::SingleSided
         );
+        assert!(prepared.draws[0].imported_vertex_color);
 
         let unit = |value| UnitF32::new(value).unwrap();
         let scene_material = MaterialComponent {
@@ -1623,6 +1630,7 @@ mod tests {
             overridden.draws[0].imported_face_policy,
             ImportedFacePolicy::Disabled
         );
+        assert!(!overridden.draws[0].imported_vertex_color);
     }
 
     #[test]

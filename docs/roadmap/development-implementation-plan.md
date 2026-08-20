@@ -1490,6 +1490,36 @@ transforms, additional coordinates or roles, JPEG, BLEND, ambient/IBL/
 occlusion, dependencies, protocol/world changes, or release action. See
 [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md).
 
+### PR 63 - CF063: Bounded core glTF vertex colors
+
+Outcome: imported meshes may carry one bounded primary linear vertex-color set
+that multiplies the existing imported base-color path.
+
+Gate: accept optional same-count `COLOR_0` only as `VEC3` or `VEC4` f32, or
+normalized unsigned byte/unsigned short. Reject malformed names, missing or
+skipped primary sets, invalid types/normalization/alignment/ranges/counts, and
+non-finite values without proxy, including when a valid wider attribute is
+present. Clamp finite f32 components, normalize integer components, synthesize
+VEC3 alpha one, validate all color sets before proxy classification, and leave
+valid `COLOR_1` or later sets unsupported. Bound each primitive to sixteen
+attribute semantics, deduplicate aliased color validation, and reject missing
+positions, multiple primitives, or excess semantics without proxy.
+Apply the per-asset decoded-byte limit to generated proxy geometry before
+residency as well as to decoded source geometry.
+
+Append unit RGBA to the prefix-compatible imported vertex ABI, growing exact
+decoded/GPU accounting from 48 to 64 bytes. Use white for omitted, built-in,
+and proxy vertices. Add shader location 4 and multiply interpolated vertex
+RGBA with the base-color factor and optional texture before lit/unlit and
+OPAQUE/MASK handling. Explicit scene material disables imported vertex color;
+emissive and geometric-normal observations remain independent. Require five
+vertex attributes and a 64-byte stride while preserving four texture roles,
+nine bindings, 36 samplers, two pipelines, the 496-byte uniform, stable order,
+lifecycle, revision, logical hash, and replay. Do not add wider rendered color
+sets, morph colors, transforms, BLEND, occlusion/ambient/IBL, HDR,
+dependencies, protocol/world changes, or release action. See
+[ADR 0063](../adr/0063-bounded-core-gltf-vertex-colors.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1501,7 +1531,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
-  -> CF062
+  -> CF062 -> CF063
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1798,6 +1828,13 @@ Validation expands with capability:
   initialization-owned 36-sampler table and 9-entry bind group; unchanged
   texture accounting, alpha/unlit/face/override outputs, lifecycle, revision,
   logical hash, replay, 48-byte vertices, 496-byte uniforms, and two pipelines.
+- CF063: strict optional primary vertex colors across f32 and normalized
+  unsigned-byte/unsigned-short VEC3/VEC4 inputs; finite clamping, VEC3 alpha,
+  indexed expansion, malformed/wider-set precedence, and exact 64-byte
+  decoded/GPU accounting; interpolated factor/texture multiplication before
+  lit/unlit and OPAQUE/MASK handling; scene-material white override; unchanged
+  emission, non-color observations, four-role lifecycle, sampler/pipeline/
+  uniform counts, revision, logical hash, and replay.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

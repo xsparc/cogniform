@@ -164,6 +164,14 @@ The private bind group grows from six to nine fixed entries. No dependency,
 feature, lockfile, vendor, workflow, permission, package, version, vertex,
 texture count/bytes, pipeline, uniform-size, tag, release-asset, or release
 action changed.
+CF063 strict primary vertex-color decoding, exact 64-byte prefix-compatible
+CPU/GPU layout, interpolated base-color multiplication, white fallback,
+scene-material override, alpha/face/emission composition, and unchanged non-
+color observations plus logical causality were collected on the CPU and
+validated Windows/Vulkan profile on 2026-08-20. No dependency, feature,
+lockfile, vendor, workflow, permission, package, version, texture, sampler,
+bind-group, pipeline, uniform-size, tag, release-asset, or release action
+changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -173,7 +181,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, independent four-role core wrapping/filtering and one-mip fallback, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, independent four-role core wrapping/filtering and one-mip fallback, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -190,6 +198,8 @@ The normal path requires three color attachments and twelve color-attachment
 bytes per sample.
 Imported texture sampling additionally requires at least four sampled textures,
 four samplers per shader stage, and nine bindings per bind group.
+Imported vertex colors additionally require at least five vertex attributes
+and a 64-byte vertex-buffer stride.
 The validated GPU above is evidence that one adapter meets the contract; it does
 not impose a specific GPU model or driver version on future entries.
 
@@ -1007,6 +1017,74 @@ built-in behavior.
 
 Public safeguards, package policy, workflow validation, workflow/manifest/
 lock/vendor/toolchain immutability, diff hygiene, and 278 relative targets
+across all fourteen changed public Markdown files pass. `cargo deny check
+advisories bans licenses sources` could not execute because Windows Application
+Control blocked the installed binary before startup with OS error 4551. The
+dependency graph and deny policy are unchanged; this remains an explicit
+environment gap until an approved environment can execute the gate. No runtime
+network, secret, deployment, publication, or release action was performed.
+
+### CF063 bounded core glTF vertex colors
+
+CF063 accepts optional same-count primary colors as f32 or normalized unsigned-
+byte/unsigned-short VEC3/VEC4. It bounds each primitive to sixteen attribute
+semantics and validates every declared color set before
+unsupported/proxy classification, clamps finite floats, expands normalized
+integers, synthesizes VEC3 alpha one, and reserves the exact 64-byte expanded
+CPU/GPU stream before allocation. The prior 48-byte vertex prefix remains
+unchanged; location 4 carries linear RGBA. Imported color multiplies factor and
+optional texture before lit/unlit and OPAQUE/MASK behavior, while explicit
+scene material selects white behavior. These commands passed on 2026-08-20
+unless noted:
+
+```text
+cargo build --workspace --locked --offline
+cargo fmt --all --check
+cargo test -p cogniform-assets -p cogniform-renderer --all-features --locked --offline
+cargo clippy -p cogniform-assets -p cogniform-renderer --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --nocapture
+cargo test --release -p cogniform-renderer --test headless_reference --all-features --locked --offline -- --ignored --nocapture
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python tests/release/test_package_policy.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- .github/workflows
+git diff --exit-code -- Cargo.toml Cargo.lock deny.toml vendor rust-toolchain.toml
+git diff --check
+```
+
+The asset suite passes 3 unit and 59 integration tests. The six new CPU
+regressions cover float clamping and VEC3 alpha, all six admitted component/
+shape combinations, indexed expansion, malformed name/type/normalization/
+alignment/range/count/index/value failures under explicit proxy policy,
+primary-before-wider/mode precedence, the sixteen-semantic hard bound,
+missing-position/multiple-primitive rejection, exact proxy per-asset bounds,
+and the exact 192-byte equality versus 191-byte decoded limit. The renderer
+passes 37 unit tests, including exact five-
+attribute offsets and formats, a 64-byte stride, white built-in buffers,
+interleaved GPU bytes, capacity rejection, and imported-versus-override flag
+selection.
+
+All 25 optimized asset-render tests and all 9 optimized headless-reference
+tests pass together on the validated Vulkan adapter. The three CF063 probes
+prove linearly interpolated RGB, directional-lit and unlit vertex response,
+opaque alpha correction, factor and hardware-sRGB texture multiplication,
+independent emission, complete scene-material
+override, MASK below/equality behavior across every attachment, material-free
+fallback, double-sided back-face visibility and geometric normal orientation,
+and stable non-color observations. Their shared lifecycle path proves exact
+texture eviction/rehydration where present, unchanged revision and logical
+hash, and idempotent replay. Renderer initialization on that adapter exercises
+the explicit five-attribute and 64-byte-stride capability preflight. The full
+suites retain prior texture/sampler, lighting, unlit, alpha, face, built-in,
+readback, and eviction behavior.
+
+Public safeguards, package policy, workflow validation, workflow/manifest/
+lock/vendor/toolchain immutability, diff hygiene, and 282 relative targets
 across all fourteen changed public Markdown files pass. `cargo deny check
 advisories bans licenses sources` could not execute because Windows Application
 Control blocked the installed binary before startup with OS error 4551. The

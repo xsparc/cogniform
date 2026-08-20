@@ -76,6 +76,11 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   with strict zero-to-four record/index validation, exact source/default
   metadata, independent repeat/mirrored/clamp axes, nearest/linear filtering,
   the documented one-mip fallback, and one fixed 36-entry GPU table;
+- optional core glTF `COLOR_0` as same-count f32 or normalized unsigned-byte/
+  unsigned-short VEC3/VEC4, with finite clamping, synthesized VEC3 alpha,
+  strict wider-set precedence, exact 64-byte expanded vertex accounting,
+  interpolated base-color multiplication, white fallback, and complete scene-
+  material override;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
   all-axis model scaling, exact primitive fallback selection, stable identity,
   and bounded color/depth/normal readback;
@@ -218,6 +223,19 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF063 adds public `AssetVertex::color_0` and changes
+  `ASSET_VERTEX_BYTES` from 48 to 64 while preserving the prior 48-byte prefix.
+  This is source-breaking for exhaustive public construction/matching and
+  changes decoded/GPU capacity planning. It also adds the non-exhaustive
+  `AssetDiagnosticCode::InvalidColor` variant. Built-in/proxy buffers now carry
+  exact white; adapter preflight requires five attributes and a 64-byte stride.
+  Missing `POSITION`, multiple primitives, and more than sixteen attribute
+  semantics now reject instead of entering explicit proxy substitution, and
+  generated proxies now obey the per-asset decoded-byte limit before residency.
+  No texture, sampler, bind-group, pipeline, uniform, logical scene,
+  observation schema, protocol, dependency, package, version, tag,
+  release-asset, workflow, or release contract changed;
 
 - CF062 adds public immutable `AssetSampler`, non-exhaustive filter,
   min-filter, and wrap enums, plus additive per-role `AssetMaterial` sampler
