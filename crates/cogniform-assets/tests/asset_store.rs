@@ -4,8 +4,8 @@ use core::num::{NonZeroU32, NonZeroU64};
 
 use cogniform_assets::{
     ASSET_VERTEX_BYTES, AssetAlphaMode, AssetDiagnosticCode, AssetError, AssetMeshKey,
-    AssetShadingModel, AssetState, AssetStore, AssetStoreConfig, UnsupportedAssetPolicy,
-    content_hash,
+    AssetSampler, AssetSamplerFilter, AssetSamplerMinFilter, AssetSamplerWrap, AssetShadingModel,
+    AssetState, AssetStore, AssetStoreConfig, UnsupportedAssetPolicy, content_hash,
 };
 use cogniform_protocol::FiniteF32;
 
@@ -366,6 +366,15 @@ fn triple_textured_triangle_glb(
 }
 
 fn four_textured_triangle_glb(images: [&[u8]; 4], shared_image: bool) -> Vec<u8> {
+    four_textured_triangle_glb_with_samplers(images, shared_image, [None; 4], "")
+}
+
+fn four_textured_triangle_glb_with_samplers(
+    images: [&[u8]; 4],
+    shared_image: bool,
+    sampler_indices: [Option<u32>; 4],
+    sampler_records: &str,
+) -> Vec<u8> {
     let mut binary = triangle_binary();
     for normal in [[0.0_f32, 0.0, 1.0]; 3] {
         for value in normal {
@@ -399,10 +408,23 @@ fn four_textured_triangle_glb(images: [&[u8]; 4], shared_image: bool) -> Vec<u8>
     }
     let sources = if shared_image { [0; 4] } else { [0, 1, 2, 3] };
     let textures = sources
-        .map(|source| format!(r#"{{"source":{source}}}"#))
+        .into_iter()
+        .zip(sampler_indices)
+        .map(|(source, sampler)| {
+            sampler.map_or_else(
+                || format!(r#"{{"source":{source}}}"#),
+                |sampler| format!(r#"{{"sampler":{sampler},"source":{source}}}"#),
+            )
+        })
+        .collect::<Vec<_>>()
         .join(",");
+    let samplers = if sampler_records.is_empty() {
+        String::new()
+    } else {
+        format!(r#", "samplers":[{sampler_records}]"#)
+    };
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1}},"metallicFactor":0.75,"roughnessFactor":0.5}},"normalTexture":{{"index":2,"scale":0.5}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":3}}}}],"textures":[{textures}],"images":[{image_defs}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1}},"metallicFactor":0.75,"roughnessFactor":0.5}},"normalTexture":{{"index":2,"scale":0.5}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":3}}}}],"textures":[{textures}],"images":[{image_defs}]{samplers},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         image_views = image_views.join(","),
         image_defs = image_defs.join(","),
@@ -442,6 +464,18 @@ fn process_with_proxy_policy(bytes: Vec<u8>) -> (AssetStore, cogniform_protocol:
     store.enqueue(hash, bytes).unwrap();
     store.process_next().unwrap();
     (store, hash)
+}
+
+fn ready_material(bytes: Vec<u8>) -> cogniform_assets::AssetMaterial {
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Ready);
+    store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap()
+        .material()
 }
 
 fn indexed_glb_with_normals() -> Vec<u8> {
@@ -1682,6 +1716,125 @@ fn four_texture_roles_count_shared_cpu_images_once_and_roles_exactly() {
 }
 
 #[test]
+fn four_texture_roles_retain_independent_samplers_without_accounting_growth() {
+    let image = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let images = [image.as_slice(); 4];
+    let bytes = four_textured_triangle_glb_with_samplers(
+        images,
+        true,
+        [Some(0), Some(1), Some(2), Some(3)],
+        r#"{"magFilter":9728,"minFilter":9728,"wrapS":10497,"wrapT":10497},{"magFilter":9729,"minFilter":9729,"wrapS":33071,"wrapT":10497},{"magFilter":9728,"minFilter":9986,"wrapS":33648,"wrapT":33071},{"magFilter":9729,"minFilter":9987,"wrapS":10497,"wrapT":33648}"#,
+    );
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 148);
+    assert_eq!(store.stats().resident_cpu_bytes, 148);
+
+    let material = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap()
+        .material();
+    let sampler_key = |sampler: AssetSampler| {
+        (
+            sampler.mag_filter(),
+            sampler.min_filter(),
+            sampler.effective_min_filter(),
+            sampler.wrap_s(),
+            sampler.wrap_t(),
+        )
+    };
+    assert_eq!(
+        sampler_key(material.base_color_sampler().unwrap()),
+        (
+            AssetSamplerFilter::Nearest,
+            AssetSamplerMinFilter::Nearest,
+            AssetSamplerFilter::Nearest,
+            AssetSamplerWrap::Repeat,
+            AssetSamplerWrap::Repeat,
+        )
+    );
+    assert_eq!(
+        sampler_key(material.metallic_roughness_sampler().unwrap()),
+        (
+            AssetSamplerFilter::Linear,
+            AssetSamplerMinFilter::Linear,
+            AssetSamplerFilter::Linear,
+            AssetSamplerWrap::ClampToEdge,
+            AssetSamplerWrap::Repeat,
+        )
+    );
+    assert_eq!(
+        sampler_key(material.normal_sampler().unwrap()),
+        (
+            AssetSamplerFilter::Nearest,
+            AssetSamplerMinFilter::NearestMipmapLinear,
+            AssetSamplerFilter::Nearest,
+            AssetSamplerWrap::MirroredRepeat,
+            AssetSamplerWrap::ClampToEdge,
+        )
+    );
+    assert_eq!(
+        sampler_key(material.emissive_sampler().unwrap()),
+        (
+            AssetSamplerFilter::Linear,
+            AssetSamplerMinFilter::LinearMipmapLinear,
+            AssetSamplerFilter::Linear,
+            AssetSamplerWrap::Repeat,
+            AssetSamplerWrap::MirroredRepeat,
+        )
+    );
+
+    let eviction = store.evict(hash);
+    assert_eq!(eviction.removed_textures, 4);
+    assert_eq!(eviction.released_resident_cpu_bytes, 148);
+
+    assert_shared_sampler_accounting(images);
+}
+
+fn assert_shared_sampler_accounting(images: [&[u8]; 4]) {
+    let shared_bytes = four_textured_triangle_glb_with_samplers(images, true, [Some(0); 4], r"{}");
+    let shared_hash = content_hash(&shared_bytes);
+    let mut shared_store = AssetStore::default();
+    shared_store.enqueue(shared_hash, shared_bytes).unwrap();
+    assert_eq!(
+        shared_store.process_next().unwrap().state,
+        AssetState::Ready
+    );
+    assert_eq!(shared_store.record(shared_hash).unwrap().decoded_bytes, 148);
+    assert_eq!(shared_store.stats().resident_cpu_bytes, 148);
+    let shared_material = shared_store
+        .upload_job(AssetMeshKey {
+            content_hash: shared_hash,
+            mesh_index: 0,
+        })
+        .unwrap()
+        .material();
+    assert_eq!(
+        [
+            shared_material.base_color_sampler(),
+            shared_material.metallic_roughness_sampler(),
+            shared_material.normal_sampler(),
+            shared_material.emissive_sampler(),
+        ],
+        [Some(AssetSampler::LINEAR_REPEAT); 4]
+    );
+    let shared_eviction = shared_store.evict(shared_hash);
+    assert_eq!(shared_eviction.removed_textures, 4);
+    assert_eq!(shared_eviction.released_resident_cpu_bytes, 148);
+}
+
+#[test]
 fn invalid_source_tangent_values_fail_closed() {
     let png = encode_png(
         1,
@@ -1819,6 +1972,291 @@ fn unsupported_tangent_encodings_and_normal_texture_roles_fail_closed() {
 }
 
 #[test]
+fn core_sampler_enums_are_retained_with_the_specified_one_mip_fallback() {
+    let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
+    let magnification = [
+        (9_728, AssetSamplerFilter::Nearest, 0_usize),
+        (9_729, AssetSamplerFilter::Linear, 1),
+    ];
+    let minification = [
+        (
+            9_728,
+            AssetSamplerMinFilter::Nearest,
+            AssetSamplerFilter::Nearest,
+            0_usize,
+        ),
+        (
+            9_729,
+            AssetSamplerMinFilter::Linear,
+            AssetSamplerFilter::Linear,
+            1,
+        ),
+        (
+            9_984,
+            AssetSamplerMinFilter::NearestMipmapNearest,
+            AssetSamplerFilter::Nearest,
+            0,
+        ),
+        (
+            9_985,
+            AssetSamplerMinFilter::LinearMipmapNearest,
+            AssetSamplerFilter::Linear,
+            1,
+        ),
+        (
+            9_986,
+            AssetSamplerMinFilter::NearestMipmapLinear,
+            AssetSamplerFilter::Nearest,
+            0,
+        ),
+        (
+            9_987,
+            AssetSamplerMinFilter::LinearMipmapLinear,
+            AssetSamplerFilter::Linear,
+            1,
+        ),
+    ];
+    let wrapping = [
+        (33_071, AssetSamplerWrap::ClampToEdge),
+        (33_648, AssetSamplerWrap::MirroredRepeat),
+        (10_497, AssetSamplerWrap::Repeat),
+    ];
+    let mut effective = std::collections::BTreeSet::new();
+    let mut authored = 0_usize;
+    for &(mag_value, mag_filter, mag_index) in &magnification {
+        for &(min_value, min_filter, effective_min, min_index) in &minification {
+            for (wrap_s_index, &(wrap_s_value, wrap_s)) in wrapping.iter().enumerate() {
+                for (wrap_t_index, &(wrap_t_value, wrap_t)) in wrapping.iter().enumerate() {
+                    let root_fields = format!(
+                        r#","samplers":[{{"magFilter":{mag_value},"minFilter":{min_value},"wrapS":{wrap_s_value},"wrapT":{wrap_t_value}}}]"#,
+                    );
+                    let material = ready_material(textured_triangle_glb(
+                        &png,
+                        r#""baseColorTexture":{"index":0}"#,
+                        r#"{"sampler":0,"source":0}"#,
+                        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+                        &root_fields,
+                        true,
+                    ));
+                    let sampler = material.base_color_sampler().unwrap();
+                    assert_eq!(sampler.mag_filter(), mag_filter);
+                    assert_eq!(sampler.min_filter(), min_filter);
+                    assert_eq!(sampler.effective_min_filter(), effective_min);
+                    assert_eq!(sampler.wrap_s(), wrap_s);
+                    assert_eq!(sampler.wrap_t(), wrap_t);
+                    effective.insert((wrap_s_index, wrap_t_index, mag_index, min_index));
+                    authored += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(authored, 108);
+    assert_eq!(effective.len(), 36);
+}
+
+#[test]
+fn omitted_and_partial_sampler_defaults_preserve_linear_repeat() {
+    let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
+    let omitted = ready_material(textured_triangle_glb(
+        &png,
+        r#""baseColorTexture":{"index":0}"#,
+        r#"{"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        "",
+        true,
+    ));
+    assert_eq!(
+        omitted.base_color_sampler(),
+        Some(AssetSampler::LINEAR_REPEAT)
+    );
+    for sampler_fields in [
+        "",
+        r#""magFilter":9729"#,
+        r#""minFilter":9729"#,
+        r#""wrapS":10497"#,
+        r#""wrapT":10497"#,
+        r#""magFilter":9729,"minFilter":9729,"wrapS":10497,"wrapT":10497"#,
+    ] {
+        let root_fields = format!(r#","samplers":[{{{sampler_fields}}}]"#);
+        let material = ready_material(textured_triangle_glb(
+            &png,
+            r#""baseColorTexture":{"index":0}"#,
+            r#"{"sampler":0,"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"}"#,
+            &root_fields,
+            true,
+        ));
+        assert_eq!(
+            material.base_color_sampler(),
+            Some(AssetSampler::LINEAR_REPEAT)
+        );
+    }
+}
+
+#[test]
+fn malformed_sampler_record_shapes_and_fields_fail_closed_before_proxy() {
+    let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
+    for record in [
+        "null",
+        "true",
+        "0",
+        r#""sampler""#,
+        "[]",
+        r#"{"unknown":0}"#,
+    ] {
+        for records in [record.to_owned(), format!(r"{{}},{record}")] {
+            let root_fields = format!(r#","samplers":[{records}]"#);
+            let bytes = textured_triangle_glb(
+                &png,
+                r#""baseColorTexture":{"index":0}"#,
+                r#"{"sampler":0,"source":0}"#,
+                r#"{"bufferView":2,"mimeType":"image/png"}"#,
+                &root_fields,
+                true,
+            );
+            let (store, hash) = process_with_proxy_policy(bytes);
+            assert_eq!(
+                store.record(hash).unwrap().state,
+                AssetState::Rejected,
+                "sampler records {records}"
+            );
+            assert_eq!(
+                store.record(hash).unwrap().diagnostics[0].code,
+                AssetDiagnosticCode::InvalidJson
+            );
+        }
+    }
+
+    for field in ["magFilter", "minFilter", "wrapS", "wrapT"] {
+        let invalid_enum = if field.starts_with("wrap") {
+            "9728"
+        } else {
+            "33071"
+        };
+        for value in [
+            "null",
+            "true",
+            r#""nearest""#,
+            "{}",
+            "[]",
+            "1.5",
+            "-1",
+            "4294967296",
+            invalid_enum,
+        ] {
+            for records in [
+                format!(r#"{{"{field}":{value}}}"#),
+                format!(r#"{{}},{{"{field}":{value}}}"#),
+            ] {
+                let root_fields = format!(r#","samplers":[{records}]"#);
+                let bytes = textured_triangle_glb(
+                    &png,
+                    r#""baseColorTexture":{"index":0}"#,
+                    r#"{"sampler":0,"source":0}"#,
+                    r#"{"bufferView":2,"mimeType":"image/png"}"#,
+                    &root_fields,
+                    true,
+                );
+                let (store, hash) = process_with_proxy_policy(bytes);
+                assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+                assert_eq!(
+                    store.record(hash).unwrap().diagnostics[0].code,
+                    AssetDiagnosticCode::InvalidJson
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn malformed_sampler_indices_counts_and_precedence_fail_closed() {
+    let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
+    for sampler_value in [
+        "null",
+        "true",
+        r#""0""#,
+        "{}",
+        "[]",
+        "-1",
+        "4294967296",
+        "1.5",
+        "1",
+    ] {
+        for unused in [false, true] {
+            let root_fields = if unused || sampler_value == "1" {
+                r#","samplers":[{}]"#
+            } else {
+                ""
+            };
+            let texture = if unused {
+                format!(r#"{{"sampler":0,"source":0}},{{"sampler":{sampler_value},"source":0}}"#)
+            } else {
+                format!(r#"{{"sampler":{sampler_value},"source":0}}"#)
+            };
+            let bytes = textured_triangle_glb(
+                &png,
+                r#""baseColorTexture":{"index":0}"#,
+                &texture,
+                r#"{"bufferView":2,"mimeType":"image/png"}"#,
+                root_fields,
+                true,
+            );
+            let (store, hash) = process_with_proxy_policy(bytes);
+            assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+            assert!(matches!(
+                store.record(hash).unwrap().diagnostics[0].code,
+                AssetDiagnosticCode::InvalidJson | AssetDiagnosticCode::InvalidBufferRange
+            ));
+        }
+    }
+
+    let five_records = textured_triangle_glb(
+        &png,
+        r#""baseColorTexture":{"index":0}"#,
+        r#"{"sampler":0,"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        r#","samplers":[{},{},{},{},{}]"#,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(five_records);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::CollectionLimitExceeded
+    );
+
+    let valid_unused = textured_triangle_glb(
+        &png,
+        r#""baseColorTexture":{"index":0}"#,
+        r#"{"sampler":0,"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        r#","samplers":[{},{}]"#,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(valid_unused);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedFeature
+    );
+
+    let malformed_before_uri = textured_triangle_glb(
+        &png,
+        r#""baseColorTexture":{"index":0}"#,
+        r#"{"sampler":0,"source":0}"#,
+        r#"{"uri":"external.png","mimeType":"image/png"}"#,
+        r#","samplers":[{"minFilter":null}]"#,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(malformed_before_uri);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+}
+
+#[test]
 fn texture_resource_shape_and_coordinate_contract_is_typed() {
     let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
     let cases = [
@@ -1828,14 +2266,6 @@ fn texture_resource_shape_and_coordinate_contract_is_typed() {
             r#"{"source":0}"#,
             r#"{"bufferView":2,"mimeType":"image/png"}"#,
             "",
-            true,
-        ),
-        textured_triangle_glb(
-            &png,
-            r#""baseColorTexture":{"index":0}"#,
-            r#"{"sampler":0,"source":0}"#,
-            r#"{"bufferView":2,"mimeType":"image/png"}"#,
-            r#","samplers":[{}]"#,
             true,
         ),
         textured_triangle_glb(
@@ -1915,6 +2345,32 @@ fn texture_resource_shape_and_coordinate_contract_is_typed() {
     assert_eq!(
         store.record(hash).unwrap().diagnostics[0].code,
         AssetDiagnosticCode::InvalidBufferRange
+    );
+}
+
+#[test]
+fn explicit_default_sampler_is_supported_and_retained() {
+    let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
+    let bytes = textured_triangle_glb(
+        &png,
+        r#""baseColorTexture":{"index":0}"#,
+        r#"{"sampler":0,"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        r#","samplers":[{}]"#,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Ready);
+    assert_eq!(
+        store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap()
+            .material()
+            .base_color_sampler(),
+        Some(AssetSampler::LINEAR_REPEAT)
     );
 }
 

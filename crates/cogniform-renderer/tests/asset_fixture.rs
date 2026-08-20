@@ -504,6 +504,157 @@ fn embedded_base_color_texture_preserves_orientation_factor_override_and_residen
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn core_sampler_wrap_and_magnification_modes_are_pixel_observable() {
+    let default_pixels = [0, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255];
+    let render_default = |sampler_fields| {
+        material_frame(
+            sampled_unlit_base_fixture(2, 2, &default_pixels, [[0.6, 0.6]; 3], sampler_fields),
+            None,
+            false,
+        )
+    };
+    let omitted_default = render_default(None);
+    for explicit_default in [
+        render_default(Some("")),
+        render_default(Some(
+            r#""magFilter":9729,"minFilter":9729,"wrapS":10497,"wrapT":10497"#,
+        )),
+    ] {
+        assert_frames_equal(&explicit_default, &omitted_default);
+    }
+
+    let mut wrap_pixels = Vec::with_capacity(4 * 4 * 4);
+    for green in [64_u8, 128, 255, 0] {
+        for red in [0_u8, 64, 128, 255] {
+            wrap_pixels.extend_from_slice(&[red, green, 0, 255]);
+        }
+    }
+    let center = (WIDTH / 2, HEIGHT / 2);
+    for (wrap_s, column) in [(10497, 1_usize), (33648, 2), (33071, 3)] {
+        for (wrap_t, row) in [(10497, 2_usize), (33648, 1), (33071, 0)] {
+            let bytes = sampled_unlit_base_fixture(
+                4,
+                4,
+                &wrap_pixels,
+                [[1.375, -0.375]; 3],
+                Some(&format!(
+                    r#""magFilter":9728,"minFilter":9728,"wrapS":{wrap_s},"wrapT":{wrap_t}"#
+                )),
+            );
+            let frame = material_frame(bytes, None, false);
+            assert_color_near(
+                &frame,
+                center,
+                [
+                    [0_u8, 13, 55, 255][column],
+                    [13_u8, 55, 255, 0][row],
+                    0,
+                    255,
+                ],
+            );
+        }
+    }
+
+    let magnification_pixels = [0, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255];
+    let nearest = material_frame(
+        sampled_unlit_base_fixture(
+            2,
+            2,
+            &magnification_pixels,
+            [[0.6, 0.6]; 3],
+            Some(r#""magFilter":9728,"minFilter":9728"#),
+        ),
+        None,
+        false,
+    );
+    let linear = material_frame(
+        sampled_unlit_base_fixture(
+            2,
+            2,
+            &magnification_pixels,
+            [[0.6, 0.6]; 3],
+            Some(r#""magFilter":9729,"minFilter":9728"#),
+        ),
+        None,
+        false,
+    );
+    assert_color_near(&nearest, center, [0, 0, 255, 255]);
+    assert_color_near(&linear, center, [54, 54, 125, 255]);
+    assert_non_color_observations_equal(&nearest, &linear);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn mipmapped_minification_modes_use_the_documented_one_mip_fallback() {
+    let mut checker = Vec::with_capacity(64 * 64 * 4);
+    for row in 0..64 {
+        for column in 0..64 {
+            let value = if (row + column) % 2 == 0 { 0 } else { 255 };
+            checker.extend_from_slice(&[value, value, value, 255]);
+        }
+    }
+    let render = |min_filter| {
+        material_frame(
+            sampled_unlit_base_fixture(
+                64,
+                64,
+                &checker,
+                [[0.0, 0.0], [16.0, 0.0], [0.0, 16.0]],
+                Some(&format!(r#""magFilter":9728,"minFilter":{min_filter}"#)),
+            ),
+            None,
+            false,
+        )
+    };
+    let nearest = render(9728);
+    for frame in [render(9984), render(9986)] {
+        assert_frames_equal(&frame, &nearest);
+    }
+    let linear = render(9729);
+    for frame in [render(9985), render(9987)] {
+        assert_frames_equal(&frame, &linear);
+    }
+    assert!(
+        (0..HEIGHT).any(|y| (0..WIDTH).any(|x| nearest.color_at(x, y) != linear.color_at(x, y))),
+        "nearest and linear minification families must produce different frames"
+    );
+    assert_non_color_observations_equal(&nearest, &linear);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn four_texture_roles_bind_independent_samplers_for_one_shared_image() {
+    let shared = material_frame(
+        four_role_sampler_fixture(true, false),
+        Some(LightKind::Directional),
+        false,
+    );
+    let one_texel_references = material_frame(
+        four_role_sampler_fixture(false, false),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_frames_equal(&shared, &one_texel_references);
+    assert_eq!(
+        shared.stable_entity_id_at(WIDTH / 2, HEIGHT / 2),
+        Some(StableEntityId::new(2).unwrap())
+    );
+
+    let shared_sampler_and_image = material_frame(
+        four_role_sampler_fixture(true, true),
+        Some(LightKind::Directional),
+        false,
+    );
+    let shared_sampler_distinct_images = material_frame(
+        four_role_sampler_fixture(false, true),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_frames_equal(&shared_sampler_and_image, &shared_sampler_distinct_images);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn normal_texture_changes_direct_lighting_not_geometric_normal_observation() {
     let neutral = lit_normal_textured_frame(normal_texture_fixture([128, 128, 255, 0], 1.0), false);
     let tilted =
@@ -1301,6 +1452,16 @@ fn oriented_material_frame_with_lights(
     .flatten()
     .count();
     let texture_count = u32::try_from(texture_count).unwrap();
+    let texture_bytes = [
+        upload.base_color_texture(),
+        upload.emissive_texture(),
+        upload.metallic_roughness_texture(),
+        upload.normal_texture(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(cogniform_assets::AssetTexture::byte_len)
+    .sum::<u64>();
     let rehydration_upload = upload.clone();
 
     let mut renderer =
@@ -1308,26 +1469,20 @@ fn oriented_material_frame_with_lights(
             .expect("the declared reference adapter must initialize");
     renderer.enqueue_asset_upload(upload).unwrap();
     assert_eq!(renderer.asset_stats().pending_textures, texture_count);
-    assert_eq!(
-        renderer.asset_stats().pending_texture_bytes,
-        u64::from(texture_count) * 4
-    );
+    assert_eq!(renderer.asset_stats().pending_texture_bytes, texture_bytes);
     let uploaded = renderer.process_next_asset_upload().unwrap();
-    assert_eq!(uploaded.texture_byte_len, u64::from(texture_count) * 4);
+    assert_eq!(uploaded.texture_byte_len, texture_bytes);
     if texture_count > 0 {
         let eviction = renderer.evict_asset(content_hash);
         assert_eq!(eviction.removed_resident_textures, texture_count);
-        assert_eq!(
-            eviction.released_resident_texture_bytes,
-            u64::from(texture_count) * 4
-        );
+        assert_eq!(eviction.released_resident_texture_bytes, texture_bytes);
         renderer.enqueue_asset_upload(rehydration_upload).unwrap();
         assert_eq!(
             renderer
                 .process_next_asset_upload()
                 .unwrap()
                 .texture_byte_len,
-            u64::from(texture_count) * 4
+            texture_bytes
         );
     }
 
@@ -1495,6 +1650,20 @@ fn assert_non_color_observations_equal(actual: &RenderedFrame, expected: &Render
             if actual.stable_entity_id_at(x, y).is_none() {
                 assert_eq!(actual.color_at(x, y), expected.color_at(x, y));
             }
+        }
+    }
+}
+
+fn assert_frames_equal(actual: &RenderedFrame, expected: &RenderedFrame) {
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            assert_eq!(actual.color_at(x, y), expected.color_at(x, y));
+            assert_eq!(actual.depth_at(x, y), expected.depth_at(x, y));
+            assert_eq!(
+                actual.stable_entity_id_at(x, y),
+                expected.stable_entity_id_at(x, y)
+            );
+            assert_eq!(actual.normal_at(x, y), expected.normal_at(x, y));
         }
     }
 }
@@ -2134,6 +2303,168 @@ fn four_role_texture_fixture() -> Vec<u8> {
 
 fn unlit_four_role_texture_fixture() -> Vec<u8> {
     four_role_texture_fixture_with_unlit(true)
+}
+
+fn sampled_unlit_base_fixture(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    texcoords: [[f32; 2]; 3],
+    sampler_fields: Option<&str>,
+) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in texcoords {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let png = encode_png(width, height, pixels);
+    let image_offset = binary.len();
+    binary.extend_from_slice(&png);
+    let (samplers, texture_sampler) = sampler_fields.map_or_else(
+        || (String::new(), String::new()),
+        |fields| {
+            (
+                format!(r#", "samplers":[{{{fields}}}]"#),
+                r#""sampler":0,"#.to_owned(),
+            )
+        },
+    );
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_unlit"],"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}]{samplers},"textures":[{{{texture_sampler}"source":0}}],"images":[{{"bufferView":2,"mimeType":"image/png"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}}},"extensions":{{"KHR_materials_unlit":{{}}}}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        image_length = png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn four_role_sampler_fixture(shared_image: bool, shared_sampler: bool) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[1.375_f32, -0.375]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let selected = if shared_sampler {
+        [[128_u8, 128, 255, 255]; 4]
+    } else {
+        [
+            [128_u8, 64, 32, 255],
+            [0, 128, 64, 255],
+            [128, 128, 255, 255],
+            [32, 64, 128, 255],
+        ]
+    };
+    let images = if shared_image {
+        let mut pixels = vec![255_u8; 4 * 4 * 4];
+        for (column, row, texel) in [
+            (1_usize, 2_usize, selected[0]),
+            (3, 2, selected[1]),
+            (2, 2, selected[2]),
+            (1, 0, selected[3]),
+        ] {
+            let offset = (row * 4 + column) * 4;
+            pixels[offset..offset + 4].copy_from_slice(&texel);
+        }
+        vec![encode_png(4, 4, &pixels)]
+    } else {
+        selected
+            .into_iter()
+            .map(|texel| encode_png(1, 1, &texel))
+            .collect()
+    };
+    let offsets = images
+        .iter()
+        .map(|image| {
+            let offset = binary.len();
+            binary.extend_from_slice(image);
+            offset
+        })
+        .collect::<Vec<_>>();
+    let image_views = images
+        .iter()
+        .zip(&offsets)
+        .map(|(image, offset)| {
+            format!(
+                r#"{{"buffer":0,"byteOffset":{offset},"byteLength":{}}}"#,
+                image.len()
+            )
+        })
+        .collect::<Vec<_>>();
+    let image_records = images
+        .iter()
+        .enumerate()
+        .map(|(index, _)| format!(r#"{{"bufferView":{},"mimeType":"image/png"}}"#, index + 4))
+        .collect::<Vec<_>>();
+    let (samplers, textures) = four_role_sampler_records(shared_image, shared_sampler);
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.5,0.25,0.75,1.0],"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1}},"metallicFactor":0.75,"roughnessFactor":0.5}},"normalTexture":{{"index":2,"scale":0.5}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":3}}}}],"textures":[{textures}],"images":[{image_records}]{samplers},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        image_views = image_views.join(","),
+        image_records = image_records.join(","),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn four_role_sampler_records(shared_image: bool, shared_sampler: bool) -> (String, String) {
+    if shared_sampler {
+        (
+            r#", "samplers":[{"magFilter":9728,"minFilter":9728,"wrapS":10497,"wrapT":10497}]"#
+                .to_owned(),
+            (0..4)
+                .map(|source| {
+                    let source = if shared_image { 0 } else { source };
+                    format!(r#"{{"sampler":0,"source":{source}}}"#)
+                })
+                .collect::<Vec<_>>()
+                .join(","),
+        )
+    } else if shared_image {
+        (
+            r#", "samplers":[{"magFilter":9728,"minFilter":9728,"wrapS":10497,"wrapT":10497},{"magFilter":9728,"minFilter":9728,"wrapS":33071,"wrapT":10497},{"magFilter":9728,"minFilter":9728,"wrapS":33648,"wrapT":10497},{"magFilter":9728,"minFilter":9728,"wrapS":10497,"wrapT":33071}]"#.to_owned(),
+            (0..4)
+                .map(|sampler| format!(r#"{{"sampler":{sampler},"source":0}}"#))
+                .collect::<Vec<_>>()
+                .join(","),
+        )
+    } else {
+        (
+            String::new(),
+            (0..4)
+                .map(|source| format!(r#"{{"source":{source}}}"#))
+                .collect::<Vec<_>>()
+                .join(","),
+        )
+    }
 }
 
 fn four_role_texture_fixture_with_unlit(unlit: bool) -> Vec<u8> {

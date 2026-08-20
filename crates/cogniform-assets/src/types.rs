@@ -229,6 +229,130 @@ pub enum AssetShadingModel {
     Unlit,
 }
 
+/// Effective nearest-or-linear filtering retained for one imported sampler axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AssetSamplerFilter {
+    /// Select the nearest texel.
+    Nearest,
+    /// Linearly interpolate adjacent texels.
+    Linear,
+}
+
+/// Exact core glTF minification mode retained from one imported sampler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AssetSamplerMinFilter {
+    /// Select the nearest texel from the source image.
+    Nearest,
+    /// Linearly interpolate adjacent source-image texels.
+    Linear,
+    /// Authored nearest-mipmap-nearest, using the specified one-mip nearest fallback.
+    NearestMipmapNearest,
+    /// Authored linear-mipmap-nearest, using the specified one-mip linear fallback.
+    LinearMipmapNearest,
+    /// Authored nearest-mipmap-linear, using the specified one-mip nearest fallback.
+    NearestMipmapLinear,
+    /// Authored linear-mipmap-linear, using the specified one-mip linear fallback.
+    LinearMipmapLinear,
+}
+
+impl AssetSamplerMinFilter {
+    /// Returns the deterministic filter applied to Cogniform's one retained mip.
+    #[must_use]
+    pub const fn effective_filter(self) -> AssetSamplerFilter {
+        match self {
+            Self::Nearest | Self::NearestMipmapNearest | Self::NearestMipmapLinear => {
+                AssetSamplerFilter::Nearest
+            }
+            Self::Linear | Self::LinearMipmapNearest | Self::LinearMipmapLinear => {
+                AssetSamplerFilter::Linear
+            }
+        }
+    }
+}
+
+/// Core glTF wrapping retained for one imported sampler axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AssetSamplerWrap {
+    /// Clamp coordinates to the closest edge texel.
+    ClampToEdge,
+    /// Repeat while reversing every odd coordinate interval.
+    MirroredRepeat,
+    /// Repeat the texture for every integer coordinate interval.
+    Repeat,
+}
+
+/// Immutable bounded core glTF sampling policy for one texture role.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AssetSampler {
+    mag_filter: AssetSamplerFilter,
+    min_filter: AssetSamplerMinFilter,
+    wrap_s: AssetSamplerWrap,
+    wrap_t: AssetSamplerWrap,
+}
+
+impl AssetSampler {
+    /// Compatibility policy for an omitted glTF sampler: linear filtering and repeat wrapping.
+    pub const LINEAR_REPEAT: Self = Self {
+        mag_filter: AssetSamplerFilter::Linear,
+        min_filter: AssetSamplerMinFilter::Linear,
+        wrap_s: AssetSamplerWrap::Repeat,
+        wrap_t: AssetSamplerWrap::Repeat,
+    };
+
+    pub(crate) const fn new(
+        mag_filter: AssetSamplerFilter,
+        min_filter: AssetSamplerMinFilter,
+        wrap_s: AssetSamplerWrap,
+        wrap_t: AssetSamplerWrap,
+    ) -> Self {
+        Self {
+            mag_filter,
+            min_filter,
+            wrap_s,
+            wrap_t,
+        }
+    }
+
+    /// Returns the authored magnification filter, or Cogniform's linear default.
+    #[must_use]
+    pub const fn mag_filter(self) -> AssetSamplerFilter {
+        self.mag_filter
+    }
+
+    /// Returns the exact authored minification mode, or Cogniform's linear default.
+    #[must_use]
+    pub const fn min_filter(self) -> AssetSamplerMinFilter {
+        self.min_filter
+    }
+
+    /// Returns the effective one-mip minification filter.
+    #[must_use]
+    pub const fn effective_min_filter(self) -> AssetSamplerFilter {
+        self.min_filter.effective_filter()
+    }
+
+    /// Returns wrapping along the glTF S (texture U) axis.
+    #[must_use]
+    pub const fn wrap_s(self) -> AssetSamplerWrap {
+        self.wrap_s
+    }
+
+    /// Returns wrapping along the glTF T (texture V) axis.
+    #[must_use]
+    pub const fn wrap_t(self) -> AssetSamplerWrap {
+        self.wrap_t
+    }
+}
+
+impl Default for AssetSampler {
+    fn default() -> Self {
+        Self::LINEAR_REPEAT
+    }
+}
+
 /// Immutable bounded material values imported with one mesh.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssetMaterial {
@@ -237,6 +361,7 @@ pub struct AssetMaterial {
     roughness: UnitF32,
     emissive: [f32; 3],
     texture_roles: u8,
+    texture_samplers: [AssetSampler; 4],
     normal_scale: f32,
     alpha_mode: AssetAlphaMode,
     alpha_cutoff: f32,
@@ -249,6 +374,10 @@ impl AssetMaterial {
     const EMISSIVE_TEXTURE: u8 = 1 << 1;
     const METALLIC_ROUGHNESS_TEXTURE: u8 = 1 << 2;
     const NORMAL_TEXTURE: u8 = 1 << 3;
+    const BASE_COLOR_SAMPLER: usize = 0;
+    const EMISSIVE_SAMPLER: usize = 1;
+    const METALLIC_ROUGHNESS_SAMPLER: usize = 2;
+    const NORMAL_SAMPLER: usize = 3;
 
     /// Creates one validated linear metallic-roughness material with zero emission.
     #[must_use]
@@ -259,6 +388,7 @@ impl AssetMaterial {
             roughness,
             emissive: [0.0; 3],
             texture_roles: 0,
+            texture_samplers: [AssetSampler::LINEAR_REPEAT; 4],
             normal_scale: 1.0,
             alpha_mode: AssetAlphaMode::Opaque,
             alpha_cutoff: 0.5,
@@ -267,18 +397,21 @@ impl AssetMaterial {
         }
     }
 
-    pub(crate) const fn with_base_color_texture(mut self) -> Self {
+    pub(crate) const fn with_base_color_texture(mut self, sampler: AssetSampler) -> Self {
         self.texture_roles |= Self::BASE_COLOR_TEXTURE;
+        self.texture_samplers[Self::BASE_COLOR_SAMPLER] = sampler;
         self
     }
 
-    pub(crate) const fn with_metallic_roughness_texture(mut self) -> Self {
+    pub(crate) const fn with_metallic_roughness_texture(mut self, sampler: AssetSampler) -> Self {
         self.texture_roles |= Self::METALLIC_ROUGHNESS_TEXTURE;
+        self.texture_samplers[Self::METALLIC_ROUGHNESS_SAMPLER] = sampler;
         self
     }
 
-    pub(crate) const fn with_emissive_texture(mut self) -> Self {
+    pub(crate) const fn with_emissive_texture(mut self, sampler: AssetSampler) -> Self {
         self.texture_roles |= Self::EMISSIVE_TEXTURE;
+        self.texture_samplers[Self::EMISSIVE_SAMPLER] = sampler;
         self
     }
 
@@ -287,8 +420,9 @@ impl AssetMaterial {
         self
     }
 
-    pub(crate) fn with_normal_texture(mut self, scale: FiniteF32) -> Self {
+    pub(crate) fn with_normal_texture(mut self, scale: FiniteF32, sampler: AssetSampler) -> Self {
         self.texture_roles |= Self::NORMAL_TEXTURE;
+        self.texture_samplers[Self::NORMAL_SAMPLER] = sampler;
         self.normal_scale = scale.get();
         self
     }
@@ -356,6 +490,46 @@ impl AssetMaterial {
     #[must_use]
     pub const fn has_normal_texture(self) -> bool {
         self.texture_roles & Self::NORMAL_TEXTURE != 0
+    }
+
+    /// Returns the retained base-color sampler when that role is present.
+    #[must_use]
+    pub const fn base_color_sampler(self) -> Option<AssetSampler> {
+        if self.has_base_color_texture() {
+            Some(self.texture_samplers[Self::BASE_COLOR_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained emissive sampler when that role is present.
+    #[must_use]
+    pub const fn emissive_sampler(self) -> Option<AssetSampler> {
+        if self.has_emissive_texture() {
+            Some(self.texture_samplers[Self::EMISSIVE_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained metallic-roughness sampler when that role is present.
+    #[must_use]
+    pub const fn metallic_roughness_sampler(self) -> Option<AssetSampler> {
+        if self.has_metallic_roughness_texture() {
+            Some(self.texture_samplers[Self::METALLIC_ROUGHNESS_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained normal sampler when that role is present.
+    #[must_use]
+    pub const fn normal_sampler(self) -> Option<AssetSampler> {
+        if self.has_normal_texture() {
+            Some(self.texture_samplers[Self::NORMAL_SAMPLER])
+        } else {
+            None
+        }
     }
 
     /// Returns the finite glTF normal-texture XY scale.

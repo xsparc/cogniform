@@ -24,6 +24,9 @@ linear `Rgba8Unorm` color, `R32Uint` identity, `Rgba8Unorm` normal, and
 and filterable sampling for `Rgba8UnormSrgb` asset textures.
 Linear `Rgba8Unorm` asset normal and metallic-roughness textures require the
 same sampled, copy-destination, and filterable usages.
+The fixed imported-material layout also requires at least four sampled
+textures, four samplers per shader stage, and nine bindings per bind group.
+Narrow adapters fail structured capability preflight before pipeline creation.
 
 No optional or experimental GPU feature is enabled. The adapter summary records
 the adapter name, backend, device class, and WebGPU-compliance flag for
@@ -70,12 +73,16 @@ disabled `[1, 0, 0, 1]` tangent. A mesh may sample one approved embedded PNG
 for each base-color, metallic-roughness, normal, and emissive role. The renderer
 decodes base and emissive RGB as sRGB and the data roles as linear, ignores
 emissive/normal alpha and metallic-roughness red/alpha, and preserves glTF
-top-to-bottom rows. One
-renderer-owned repeat/linear one-mip sampler applies the omitted-sampler
-policy. White base-color/emissive, factor-one metallic-roughness, and
+top-to-bottom rows. Each role independently indexes one renderer-owned table
+of exactly 36 initialization-created samplers: three U wraps by three V wraps
+by two magnification filters by two effective one-mip minification filters.
+Omitted sampling remains linear/repeat. Nearest-family mip filters use nearest
+and linear-family mip filters use linear without generating another image
+level. White base-color/emissive, factor-one metallic-roughness, and
 neutral-normal fallbacks bind on every draw.
-External images, generated tangents, custom samplers, transforms, additional
-coordinate sets, mipmaps, and other material texture roles remain unsupported.
+External images, generated tangents, non-core sampler features, transforms,
+additional coordinate sets, generated/stored mipmaps, and other material
+texture roles remain unsupported.
 
 `HeadlessRenderer::evict_asset` removes every pending upload and resident mesh
 for one content hash, plus each unique pending or resident role texture at most
@@ -156,7 +163,9 @@ position, and metallic/roughness plus normal scale/material flags. One appended
 cutoff. Material flag bit 4 selects imported unlit shading without changing
 the uniform size. Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
-binding 2 is the fixed sampler. This adds
+binding 2 selects base-color sampling and bindings 6, 7, and 8 select normal,
+metallic-roughness, and emissive sampling. Inactive roles bind the
+linear/repeat table entry. This adds
 no light buffer, runtime-selected pipeline creation, runtime
 configuration, or observation payload. Point range/cutoff/radius, spot lights,
 emissive strength, cross-surface emission, ambient or image-based
@@ -238,6 +247,9 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_back_face_preserves_mask_discard_and_equality
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact unlit_base_texture_is_exact_across_lights_and_scene_override_restores_lighting
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact unlit_double_sided_back_face_preserves_opaque_and_mask_coverage
+cargo test --release -p cogniform-renderer --test asset_fixture core_sampler_wrap_and_magnification_modes_are_pixel_observable --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture mipmapped_minification_modes_use_the_documented_one_mip_fallback --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture four_texture_roles_bind_independent_samplers_for_one_shared_image --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work
 ```
 
@@ -252,6 +264,12 @@ identity/depth/normals. They also compare every output sample between matching
 GLBs with missing versus retained primary coordinates, then pin texture
 orientation, sRGB/RGB-factor response, OPAQUE alpha-one output, scene override,
 and shared residency.
+The sampler probes distinguish repeat, mirrored-repeat, and clamp independently
+on both axes; nearest and linear magnification; byte-identical nearest-family
+and linear-family one-mip minification; whole-frame equality for omitted,
+empty, and fully explicit defaults; and both independent and one-record-shared
+role selection from one shared image. Their shared helper also exercises exact texture
+eviction/rehydration plus unchanged revision, logical hash, and replay.
 The emissive-factor contract additionally proves bounded addition after unlit,
 directional, and point response, RGB clamping, alpha preservation, explicit
 override suppression, unchanged non-color/background outputs, and unchanged
@@ -326,5 +344,8 @@ See [ADR 0057](../adr/0057-bounded-glb-emissive-factors.md) for the core
 emissive-factor, uniform-append, clamp, and authority rules.
 See [ADR 0058](../adr/0058-bounded-glb-emissive-textures.md) for emissive
 texture decode, role-residency, sRGB sampling, fallback, and override rules.
+See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for strict sampler
+decode, fixed-table indexing, independent role bindings, and the one-mip
+fallback.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

@@ -75,6 +75,9 @@ scene revision that produced it.
 > its existing alpha and unculled face semantics. Strictly declared exact
 > `KHR_materials_unlit` materials preserve sampled base color independently of
 > direct lights while retaining the same bounded fallback-resource lifecycle.
+> All four imported texture roles now retain strict core glTF nearest/linear
+> filtering and repeat/mirrored/clamp S/T wrapping independently, backed by a
+> fixed renderer-owned sampler table and a documented one-mip fallback.
 > The baseline also includes pure seeded cuboid-grid procedures. The local
 > service now owns that bounded asset lifecycle, requires exact-hash
 > rehydration after recovery, can explicitly evict all CPU/GPU state for one
