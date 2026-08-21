@@ -11,6 +11,18 @@ The exact child command is:
 cogniform-cli serve-stdio
 ```
 
+That omission selects `default-local-64x64`. A trusted parent may select one
+larger immutable launch profile instead:
+
+```text
+cogniform-cli serve-stdio --profile local-256x256
+cogniform-cli serve-stdio --profile local-480x270
+```
+
+No other name, flag, ordering, duplication, or positional argument is
+accepted. Select the profile before launching the child; the binary session
+does not negotiate or change dimensions.
+
 When running from a source checkout, the executable can be built offline with:
 
 ```text
@@ -44,10 +56,14 @@ socket, listener, shared memory, or daemon.
 6. Close or reap the child process. A successful run has empty stderr and stdout
    that decodes completely as CF039 frames.
 
-The command always creates one `default-local-64x64` service. Each live
+Continuously drain stdout while the child runs. The 480x270 EntityId result
+contains a 2,203,260-byte envelope; waiting for process exit before reading can
+fill an operating-system pipe and block both processes.
+
+The command creates one service with the selected profile. Each live
 operation has a fixed 15 second completion-polling deadline and polls no more
 often than every 2 milliseconds after its immediate advance. Neither value is
-configurable in this fixed profile.
+configurable by any profile.
 
 Immediate EOF before the first frame exits successfully without selecting an
 adapter. Once a frame has started, truncation or corruption is fatal. EOF after

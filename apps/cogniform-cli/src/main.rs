@@ -7,9 +7,12 @@ const LOCAL_PROFILE_HEIGHT: u32 = 64;
 
 mod asset;
 mod measure;
+mod profile;
 mod recovery;
 mod scenario;
 mod serve_stdio;
+
+use profile::LocalProfile;
 
 fn main() -> ExitCode {
     match run() {
@@ -120,21 +123,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_binary_stdio(arguments: &mut env::ArgsOs) -> Result<(), Box<dyn std::error::Error>> {
-    if arguments.next().is_some() {
-        return Err(invalid_input("serve-stdio accepts no arguments"));
-    }
-    serve_stdio::run()?;
+    let profile = LocalProfile::parse(arguments, "serve-stdio")?;
+    serve_stdio::run(profile)?;
     Ok(())
 }
 
 fn run_mcp_stdio(arguments: &mut env::ArgsOs) -> Result<(), Box<dyn std::error::Error>> {
-    if arguments.next().is_some() {
-        return Err(invalid_input("serve-mcp-stdio accepts no arguments"));
-    }
-    cogniform_mcp::run_stdio(cogniform_mcp::McpServerConfig::local_profile(
-        LOCAL_PROFILE_WIDTH,
-        LOCAL_PROFILE_HEIGHT,
-    ))?;
+    let profile = LocalProfile::parse(arguments, "serve-mcp-stdio")?;
+    let (width, height) = profile.dimensions();
+    cogniform_mcp::run_stdio(cogniform_mcp::McpServerConfig::local_profile(width, height))?;
     Ok(())
 }
 
@@ -148,9 +145,23 @@ fn print_usage() {
     println!(
         "  cogniform-cli inspect-asset [--json] <content-hash> <path>  Verify an immutable asset source file"
     );
-    println!("  cogniform-cli serve-stdio  Run one bounded binary session over redirected stdio");
-    println!("  cogniform-cli serve-mcp-stdio  Run one bounded MCP session over redirected stdio");
+    println!(
+        "  cogniform-cli serve-stdio [--profile <name>]  Run one bounded binary session over redirected stdio"
+    );
+    println!(
+        "  cogniform-cli serve-mcp-stdio [--profile <name>]  Run one bounded MCP session over redirected stdio"
+    );
     println!("  cogniform-cli --help    Show this help");
+    println!();
+    println!("Profiles:");
+    for profile in LocalProfile::ALL {
+        let default = if profile == LocalProfile::DEFAULT {
+            " (default)"
+        } else {
+            ""
+        };
+        println!("  {}{default}", profile.name());
+    }
 }
 
 fn invalid_input(message: impl Into<String>) -> Box<dyn std::error::Error> {

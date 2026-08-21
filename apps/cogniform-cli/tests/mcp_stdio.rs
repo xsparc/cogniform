@@ -17,14 +17,44 @@ fn arguments_are_exact_before_protocol_mode() {
         &["serve-mcp-stdio", "unexpected"][..],
         &["serve-mcp-stdio", "--help"][..],
         &["serve-mcp-stdio", "--"][..],
+        &["serve-mcp-stdio", "--profile"][..],
+        &["serve-mcp-stdio", "--profile", "unknown"][..],
+        &["serve-mcp-stdio", "--profile", "local-256x256", "extra"][..],
+        &[
+            "serve-mcp-stdio",
+            "--profile",
+            "local-256x256",
+            "--profile",
+            "local-480x270",
+        ][..],
     ] {
         let output = command().args(arguments).output().unwrap();
         assert!(!output.status.success());
         assert!(output.stdout.is_empty());
         assert_eq!(
             normalize(&output.stderr),
-            "error: serve-mcp-stdio accepts no arguments\n"
+            "error: serve-mcp-stdio accepts only optional --profile <default-local-64x64|local-256x256|local-480x270>\n"
         );
+    }
+}
+
+#[test]
+fn every_named_profile_enters_protocol_mode_without_initializing_the_service() {
+    for profile in ["default-local-64x64", "local-256x256", "local-480x270"] {
+        let output = run_batch_with_arguments(
+            &[
+                initialize(1),
+                json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+                json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+            ],
+            &["--profile", profile],
+        );
+        assert!(output.status.success(), "{}", normalize(&output.stderr));
+        assert!(output.stderr.is_empty());
+        let responses = json_lines(&output.stdout);
+        assert_eq!(responses.len(), 2);
+        assert_eq!(responses[0]["result"]["protocolVersion"], "2025-11-25");
+        assert_eq!(responses[1]["result"]["tools"].as_array().unwrap().len(), 4);
     }
 }
 
@@ -243,6 +273,49 @@ fn controlled_modern_child_applies_patch_and_imagination_replays_and_closes_clea
     session.finish();
 }
 
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn controlled_wide_profile_emits_exact_entity_id_resource() {
+    let mut session = Session::start_with_profile("local-480x270");
+    let patch_applied = session.call(2, "cogniform.apply_patch", &camera_patch());
+    assert_eq!(
+        patch_applied["result"]["structuredContent"]["receipt"]["new_revision"],
+        1
+    );
+    let observed = session.call(
+        3,
+        "cogniform.observe_scene",
+        &observation_request_kind(0x45, 1, "entity_id"),
+    );
+    assert_eq!(observed["result"]["isError"], false);
+    let output = &observed["result"]["structuredContent"];
+    assert_eq!(output["metadata"]["dimensions"]["width"], 480);
+    assert_eq!(output["metadata"]["dimensions"]["height"], 270);
+    assert_eq!(output["metadata"]["kind"], "entity_id");
+    assert_eq!(output["resource_size"], 2_203_260);
+
+    let uri = output["resource_uri"].as_str().unwrap();
+    let read = session.send(&json!({
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "resources/read",
+        "params": {"uri": uri}
+    }));
+    let blob = read["result"]["contents"][0]["blob"].as_str().unwrap();
+    assert_eq!(blob.len(), 2_937_680);
+    let envelope = decode_base64(blob).unwrap();
+    let metadata: ObservationMetadata = serde_json::from_value(output["metadata"].clone()).unwrap();
+    let payload = decode_payload(
+        &metadata,
+        &envelope,
+        &RuntimeLimits::default(),
+        ObservationPayloadLimits::default(),
+    )
+    .unwrap();
+    assert!(matches!(payload, ObservationPayload::EntityId(values) if values.len() == 129_600));
+    session.finish();
+}
+
 fn assert_controlled_workflow(session: &mut Session) {
     let initial = session.call(
         2,
@@ -390,12 +463,16 @@ fn assert_observation_resource(session: &mut Session) {
 }
 
 fn observation_request(observation_id: u128, scene_revision: u64) -> Value {
+    observation_request_kind(observation_id, scene_revision, "visibility")
+}
+
+fn observation_request_kind(observation_id: u128, scene_revision: u64, kind: &str) -> Value {
     json!({
         "schema_version": 1,
         "observation_id": format!("{observation_id:032x}"),
         "scene_revision": scene_revision,
         "camera_id": "00000000000000000000000000000031",
-        "kind": "visibility",
+        "kind": kind,
         "quality": "low"
     })
 }
@@ -482,9 +559,25 @@ impl Session {
         session
     }
 
+    fn start_with_profile(profile: &str) -> Self {
+        let mut session = Self::launch_with_arguments(SessionEra::Legacy, &["--profile", profile]);
+        let response = session.send(&initialize(1));
+        assert_eq!(response["result"]["protocolVersion"], "2025-11-25");
+        session.notify(&json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        }));
+        session
+    }
+
     fn launch(era: SessionEra) -> Self {
+        Self::launch_with_arguments(era, &[])
+    }
+
+    fn launch_with_arguments(era: SessionEra, arguments: &[&str]) -> Self {
         let mut child = command()
             .arg("serve-mcp-stdio")
+            .args(arguments)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -651,8 +744,13 @@ fn camera_patch() -> Value {
 }
 
 fn run_batch(messages: &[Value]) -> Output {
+    run_batch_with_arguments(messages, &[])
+}
+
+fn run_batch_with_arguments(messages: &[Value], arguments: &[&str]) -> Output {
     let mut child = command()
         .arg("serve-mcp-stdio")
+        .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

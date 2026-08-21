@@ -4,20 +4,25 @@ CF042 composes the [bounded local frame](local-stream-framing.md),
 [local-session messages](local-session-messages.md), and
 [caller-driven executor](local-session-executor.md) into one executable
 `cogniform-cli serve-stdio` command. It is a fixed local child-process
-composition root, not a listener, daemon, remote protocol, or process
+composition root. CF064 adds a closed launch-time profile allowlist without
+changing the stream protocol. It is not a listener, daemon, remote protocol, or process
 supervisor.
 
 ## Invocation and stream ownership
 
-The exact invocation is:
+The invocation grammar is:
 
 ```text
-cogniform-cli serve-stdio
+cogniform-cli serve-stdio [--profile <default-local-64x64|local-256x256|local-480x270>]
 ```
 
-No option or positional argument is accepted. Help is available only through
+Omission selects `default-local-64x64`. The flag, one exact Unicode allowlist
+name, and no following value are the only accepted arguments. Missing,
+unknown, non-Unicode, reordered, duplicate, or extra values reject with a
+stable allowlist error that does not echo input. Help is available only through
 the ordinary top-level `cogniform-cli --help` command. Argument validation
-finishes before standard-stream inspection or adapter selection.
+finishes before standard-stream inspection, runtime creation, or adapter
+selection.
 
 The command owns only its inherited stdin and stdout for the session lifetime.
 Both must be redirected or piped; if either is an interactive terminal, the
@@ -31,8 +36,8 @@ adapter identity, path, payload, or log line to stdout.
 2. Read one frame with `LocalFrameConfig::default()`.
 3. If EOF occurs before any header byte, exit successfully without constructing
    a service or selecting an adapter.
-4. Otherwise create exactly one `LocalService` with the
-   `default-local-64x64` profile and wrap it in one `LocalSessionExecutor`.
+4. Otherwise create exactly one `LocalService` with the selected immutable
+   profile dimensions and wrap it in one `LocalSessionExecutor`.
 5. Pass the already-decoded frame to the executor. Exactly one valid hello must
    precede ordinary work.
 6. After a successful hello, install
@@ -116,10 +121,11 @@ the existing deterministic compiler and gateway; the stream driver does not
 compile, apply, replay, or schedule independently. Procedures, asset,
 recovery, administrative operations, remote
 transport, authentication, confidentiality, tenancy, network rate policy,
-deployment, stable versioning, and release publication are outside this fixed
-profile.
+deployment, stable versioning, and release publication are outside these
+bounded profiles.
 
-See [ADR 0042](../adr/0042-bounded-fixed-profile-stdio-session.md), the
+See [ADR 0042](../adr/0042-bounded-fixed-profile-stdio-session.md),
+[ADR 0064](../adr/0064-bounded-named-stdio-profiles.md), the
 [version-two mapping decision](../adr/0044-versioned-local-imagination-session-mapping.md), the
 [getting-started guide](../getting-started/local-stdio-session.md), the
 [failure guide](../operations/failure-and-recovery.md), and the

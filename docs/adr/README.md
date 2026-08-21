@@ -69,5 +69,6 @@ earlier one and links the history.
 | [0061](0061-bounded-gltf-unlit-materials.md) | Accepted | Render ratified imported unlit materials through bounded base-color-only shading |
 | [0062](0062-bounded-core-gltf-samplers.md) | Accepted | Apply bounded core glTF filtering and S/T wrapping independently to four texture roles |
 | [0063](0063-bounded-core-gltf-vertex-colors.md) | Accepted | Multiply imported base color by one bounded core glTF primary vertex-color set |
+| [0064](0064-bounded-named-stdio-profiles.md) | Accepted | Select one of three immutable bounded local stdio profiles at child launch |
 
 New records use four sections: context, decision, consequences, and status.

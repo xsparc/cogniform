@@ -1536,6 +1536,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn official_client_reads_the_exact_wide_profile_entity_id_resource() {
+        let backend = FakeObservationBackend::with_dimensions(
+            [FakeObservationOutcome::Completed(
+                ObservationPayload::EntityId(vec![None; 480 * 270]),
+            )],
+            (480, 270),
+        );
+        let (client, server) = client_and_server_with_observation_backend_and_policy(
+            Box::new(backend),
+            480,
+            270,
+            Duration::from_millis(2),
+            Duration::from_secs(15),
+        )
+        .await;
+
+        let result = call_observation(&client, 0x46, ObservationKind::EntityId).await;
+        assert_eq!(result.is_error, Some(false));
+        let output = result.structured_content.unwrap();
+        assert_eq!(output["metadata"]["dimensions"]["width"], 480);
+        assert_eq!(output["metadata"]["dimensions"]["height"], 270);
+        assert_eq!(output["metadata"]["kind"], "entity_id");
+        assert_eq!(output["resource_size"], 2_203_260);
+
+        let uri = output["resource_uri"].as_str().unwrap();
+        let resources = client.peer().list_all_resources().await.unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].uri, uri);
+        assert_eq!(resources[0].size, Some(2_203_260));
+        let read = client
+            .peer()
+            .read_resource(ReadResourceRequestParams::new(uri))
+            .await
+            .unwrap();
+        let blob = resource_blob(&read);
+        assert_eq!(blob.len(), 2_937_680);
+        let envelope = decode_base64(&blob).unwrap();
+        assert_eq!(envelope.len(), 2_203_260);
+        let metadata: ObservationMetadata =
+            serde_json::from_value(output["metadata"].clone()).unwrap();
+        let payload = decode_payload(
+            &metadata,
+            &envelope,
+            &RuntimeLimits::default(),
+            ObservationPayloadLimits::default(),
+        )
+        .unwrap();
+        assert!(matches!(
+            payload,
+            ObservationPayload::EntityId(values) if values.len() == 129_600
+        ));
+        close(client, server).await;
+    }
+
+    #[tokio::test]
     async fn rejected_and_over_limit_observations_preserve_the_exact_resource() {
         assert_scripted_failure_preserves_resource(
             FakeObservationBackend::new([

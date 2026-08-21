@@ -7,9 +7,16 @@ launch:
 cogniform-cli serve-mcp-stdio
 ```
 
+Omission selects `default-local-64x64`. A trusted parent may append exactly
+`--profile local-256x256` or `--profile local-480x270`. No other argument is
+accepted, and the selected dimensions are immutable for the child lifetime;
+MCP does not advertise or negotiate profile authority.
+
 Both stdin and stdout must be redirected pipes. Do not run the command in an
 interactive terminal. Stdout is newline-delimited MCP JSON-RPC and must not be
 mixed with application logs; stable payload-redacted failures use stderr.
+Continuously drain complete response lines while the child runs: the widest
+EntityId resource read contains 2,937,680 base64 bytes before its JSON wrapper.
 
 Choose either exact lifecycle:
 
@@ -75,7 +82,7 @@ with the version-one `COGOBS01`
 The server advertises no resource templates, subscriptions, list-change
 notifications, history, or persistence.
 
-This profile is local and single-user. The parent must protect scene,
+Every named profile is local and single-user. The parent must protect scene,
 compilation, observation, and resource values as sensitive data and supply
 identity, authorization, confidentiality, freshness, rate limits, and process
 supervision before any broader exposure. The adapter supplies no general

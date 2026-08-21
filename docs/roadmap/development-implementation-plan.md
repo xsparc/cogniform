@@ -1520,6 +1520,31 @@ sets, morph colors, transforms, BLEND, occlusion/ambient/IBL, HDR,
 dependencies, protocol/world changes, or release action. See
 [ADR 0063](../adr/0063-bounded-core-gltf-vertex-colors.md).
 
+### PR 64 - CF064: Bounded named stdio profiles
+
+Outcome: a trusted local parent can choose one of three immutable launch-time
+observation dimensions for either inherited-stream composition root while all
+zero-argument behavior remains exactly 64x64.
+
+Gate: accept only omission or exactly `--profile` followed by
+`default-local-64x64`, `local-256x256`, or `local-480x270`, with no other
+argument. Reject missing, unknown, non-Unicode, reordered, duplicate, and extra
+values before stream inspection, runtime creation, adapter selection, or
+service construction through one stable input-redacted allowlist diagnostic.
+Map each name directly to immutable constructor dimensions shared by
+`serve-stdio` and `serve-mcp-stdio`; expose no protocol field or per-request
+authority.
+
+Prove every profile fits existing renderer/runtime pixel limits, the 4 MiB
+observation envelope and binary bulk bounds, and the 8 MiB MCP output limit.
+For the worst current EntityId payload at 480x270, prove exact 2,203,260-byte
+binary and 2,937,680-byte base64 results in unit, official-client, and
+optimized real-service child tests. Re-run the zero-argument controlled
+binary and both MCP-era flows. Do not add arbitrary dimensions, environment or
+file configuration, protocol negotiation, dependencies, package/version/
+workflow changes, or release action. See
+[ADR 0064](../adr/0064-bounded-named-stdio-profiles.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1531,7 +1556,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
-  -> CF062 -> CF063
+  -> CF062 -> CF063 -> CF064
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1835,12 +1860,18 @@ Validation expands with capability:
   lit/unlit and OPAQUE/MASK handling; scene-material white override; unchanged
   emission, non-color observations, four-role lifecycle, sampler/pipeline/
   uniform counts, revision, logical hash, and replay.
+- CF064: exact omission-or-one-name CLI grammar shared by both stdio roots;
+  immutable 64x64, 256x256, and 480x270 mappings; rejection before stream,
+  runtime, adapter, or service effects; cross-layer payload/output bound proof;
+  exact wide EntityId binary, base64, metadata, and official-client resource
+  readback; unchanged zero-argument binary and dual-era MCP controlled flows.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
 ## 6. Deferred roadmap
 
-After the MVP and only with evidence: configurable stdio profiles, MCP resource
+After the MVP and only with evidence: arbitrary or externally configurable
+stdio dimensions, MCP resource
 templates, subscriptions, list-change notifications, resource history and
 persistence, MCP multi-round-trip results, prompts, tasks, sampling, models,
 named-pipe or socket creation,

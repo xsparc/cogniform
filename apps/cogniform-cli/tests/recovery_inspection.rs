@@ -236,9 +236,13 @@ fn inspection_arguments_and_help_are_exact() {
             "  cogniform-cli measure-world [--json]  Measure the controlled CPU world fixture\n",
             "  cogniform-cli inspect-recovery [--json] <path>  Verify an immutable recovery file\n",
             "  cogniform-cli inspect-asset [--json] <content-hash> <path>  Verify an immutable asset source file\n",
-            "  cogniform-cli serve-stdio  Run one bounded binary session over redirected stdio\n",
-            "  cogniform-cli serve-mcp-stdio  Run one bounded MCP session over redirected stdio\n",
+            "  cogniform-cli serve-stdio [--profile <name>]  Run one bounded binary session over redirected stdio\n",
+            "  cogniform-cli serve-mcp-stdio [--profile <name>]  Run one bounded MCP session over redirected stdio\n",
             "  cogniform-cli --help    Show this help\n",
+            "\nProfiles:\n",
+            "  default-local-64x64 (default)\n",
+            "  local-256x256\n",
+            "  local-480x270\n",
         )
     );
 }
