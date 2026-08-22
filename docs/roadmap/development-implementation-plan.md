@@ -1571,6 +1571,31 @@ coordinates, primitive modes, topology changes, material roles, protocols,
 persistence, release, or deployment. See
 [ADR 0065](../adr/0065-bounded-generated-mikktspace-tangents.md).
 
+### PR 66 - CF066: Bounded glTF texture transforms
+
+Outcome: the four existing imported texture roles apply independent ratified
+`KHR_texture_transform` affine mappings without adding coordinates, textures,
+or pipelines.
+
+Gate: recognize exact declared texture-transform markers on base-color,
+metallic-roughness, normal, and emissive texture infos. Retain finite offset,
+rotation, and scale under the Khronos translation-rotation-scale order with
+exact defaults; accept only omitted/zero core and extension coordinate
+selectors. Reject malformed, undeclared, or non-finite payloads before proxy;
+keep valid nonzero coordinate overrides and wider properties under explicit
+unsupported-extension policy after malformed peer validation. Reject any
+non-finite expanded-coordinate affine result before immutable adoption.
+
+Carry two precomputed padded affine rows per role and append all eight rows
+after the exact prior 496-byte draw-uniform prefix for a fixed 624-byte layout.
+Transform all four shader samples independently. Generated MikkTSpace tangents
+use transformed normal-role coordinates and work keys; retained primary
+coordinates and explicit source tangents remain exact. Preserve 64-byte
+vertices, role/resource accounting, the nine-entry bind group, 36 samplers,
+two pipelines, lifecycle, observations, logical state, replay, protocols,
+persistence, and release authority. See
+[ADR 0066](../adr/0066-bounded-gltf-texture-transforms.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1582,7 +1607,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
-  -> CF062 -> CF063 -> CF064 -> CF065
+  -> CF062 -> CF063 -> CF064 -> CF065 -> CF066
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1899,6 +1924,14 @@ Validation expands with capability:
   corner acceptance and overlapping pre-library rejection; exact one-package
   dependency/vendor/license/feature audit; equal controlled Vulkan output for
   explicit and generated bases; unchanged 64-byte ABI, material/shader,
+  lifecycle, observation, revision, logical hash, and replay behavior.
+- CF066: strict exact `KHR_texture_transform` declarations and four-role
+  payload/default retention; malformed/undeclared/non-finite rejection before
+  wider extension proxy classification; finite affine-result validation;
+  independent base-color, metallic-roughness, normal, and emissive sampling;
+  transformed normal-coordinate MikkTSpace generation with exact source UV and
+  explicit-tangent retention; exact 496-byte uniform prefix in a fixed
+  624-byte layout; unchanged vertex, texture, sampler, bind-group, pipeline,
   lifecycle, observation, revision, logical hash, and replay behavior.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.

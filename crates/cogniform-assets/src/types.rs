@@ -357,6 +357,60 @@ impl Default for AssetSampler {
     }
 }
 
+/// Immutable affine UV transform retained for one imported texture role.
+///
+/// The two rows encode the Khronos `translation * rotation * scale` transform
+/// as `[u, v, 1, padding]` dot products. Keeping the rows precomputed avoids
+/// per-frame trigonometry while preserving one fixed renderer uniform layout.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AssetTextureTransform {
+    affine_rows: [[f32; 4]; 2],
+}
+
+impl AssetTextureTransform {
+    /// Identity transform used by omitted extensions and inactive texture roles.
+    pub const IDENTITY: Self = Self {
+        affine_rows: [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],
+    };
+
+    pub(crate) fn new(offset: [FiniteF32; 2], rotation: FiniteF32, scale: [FiniteF32; 2]) -> Self {
+        let (sin, cos) = rotation.get().sin_cos();
+        let scale = scale.map(FiniteF32::get);
+        let offset = offset.map(FiniteF32::get);
+        Self {
+            affine_rows: [
+                [cos * scale[0], -sin * scale[1], offset[0], 0.0],
+                [sin * scale[0], cos * scale[1], offset[1], 0.0],
+            ],
+        }
+    }
+
+    /// Returns the two padded affine rows consumed by the renderer.
+    #[must_use]
+    pub const fn affine_rows(self) -> [[f32; 4]; 2] {
+        self.affine_rows
+    }
+
+    pub(crate) fn transform(self, coordinate: [f32; 2]) -> Option<[f32; 2]> {
+        let transform_row = |row: [f32; 4]| {
+            let u = row[0] * coordinate[0];
+            let v = row[1] * coordinate[1];
+            let value = (u + v) + row[2];
+            (u.is_finite() && v.is_finite() && value.is_finite()).then_some(value)
+        };
+        Some([
+            transform_row(self.affine_rows[0])?,
+            transform_row(self.affine_rows[1])?,
+        ])
+    }
+}
+
+impl Default for AssetTextureTransform {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
 /// Immutable bounded material values imported with one mesh.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssetMaterial {
@@ -366,6 +420,7 @@ pub struct AssetMaterial {
     emissive: [f32; 3],
     texture_roles: u8,
     texture_samplers: [AssetSampler; 4],
+    texture_transforms: [AssetTextureTransform; 4],
     normal_scale: f32,
     alpha_mode: AssetAlphaMode,
     alpha_cutoff: f32,
@@ -393,6 +448,7 @@ impl AssetMaterial {
             emissive: [0.0; 3],
             texture_roles: 0,
             texture_samplers: [AssetSampler::LINEAR_REPEAT; 4],
+            texture_transforms: [AssetTextureTransform::IDENTITY; 4],
             normal_scale: 1.0,
             alpha_mode: AssetAlphaMode::Opaque,
             alpha_cutoff: 0.5,
@@ -401,21 +457,36 @@ impl AssetMaterial {
         }
     }
 
-    pub(crate) const fn with_base_color_texture(mut self, sampler: AssetSampler) -> Self {
+    pub(crate) const fn with_base_color_texture(
+        mut self,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+    ) -> Self {
         self.texture_roles |= Self::BASE_COLOR_TEXTURE;
         self.texture_samplers[Self::BASE_COLOR_SAMPLER] = sampler;
+        self.texture_transforms[Self::BASE_COLOR_SAMPLER] = transform;
         self
     }
 
-    pub(crate) const fn with_metallic_roughness_texture(mut self, sampler: AssetSampler) -> Self {
+    pub(crate) const fn with_metallic_roughness_texture(
+        mut self,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+    ) -> Self {
         self.texture_roles |= Self::METALLIC_ROUGHNESS_TEXTURE;
         self.texture_samplers[Self::METALLIC_ROUGHNESS_SAMPLER] = sampler;
+        self.texture_transforms[Self::METALLIC_ROUGHNESS_SAMPLER] = transform;
         self
     }
 
-    pub(crate) const fn with_emissive_texture(mut self, sampler: AssetSampler) -> Self {
+    pub(crate) const fn with_emissive_texture(
+        mut self,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+    ) -> Self {
         self.texture_roles |= Self::EMISSIVE_TEXTURE;
         self.texture_samplers[Self::EMISSIVE_SAMPLER] = sampler;
+        self.texture_transforms[Self::EMISSIVE_SAMPLER] = transform;
         self
     }
 
@@ -424,9 +495,15 @@ impl AssetMaterial {
         self
     }
 
-    pub(crate) fn with_normal_texture(mut self, scale: FiniteF32, sampler: AssetSampler) -> Self {
+    pub(crate) fn with_normal_texture(
+        mut self,
+        scale: FiniteF32,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+    ) -> Self {
         self.texture_roles |= Self::NORMAL_TEXTURE;
         self.texture_samplers[Self::NORMAL_SAMPLER] = sampler;
+        self.texture_transforms[Self::NORMAL_SAMPLER] = transform;
         self.normal_scale = scale.get();
         self
     }
@@ -531,6 +608,46 @@ impl AssetMaterial {
     pub const fn normal_sampler(self) -> Option<AssetSampler> {
         if self.has_normal_texture() {
             Some(self.texture_samplers[Self::NORMAL_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained base-color UV transform when that role is present.
+    #[must_use]
+    pub const fn base_color_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_base_color_texture() {
+            Some(self.texture_transforms[Self::BASE_COLOR_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained emissive UV transform when that role is present.
+    #[must_use]
+    pub const fn emissive_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_emissive_texture() {
+            Some(self.texture_transforms[Self::EMISSIVE_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained metallic-roughness UV transform when that role is present.
+    #[must_use]
+    pub const fn metallic_roughness_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_metallic_roughness_texture() {
+            Some(self.texture_transforms[Self::METALLIC_ROUGHNESS_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained normal-map UV transform when that role is present.
+    #[must_use]
+    pub const fn normal_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_normal_texture() {
+            Some(self.texture_transforms[Self::NORMAL_SAMPLER])
         } else {
             None
         }

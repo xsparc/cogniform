@@ -81,6 +81,11 @@ scene revision that produced it.
 > All four imported texture roles now retain strict core glTF nearest/linear
 > filtering and repeat/mirrored/clamp S/T wrapping independently, backed by a
 > fixed renderer-owned sampler table and a documented one-mip fallback.
+> Ratified `KHR_texture_transform` offset, rotation, and scale now apply
+> independently to those same four roles under strict finite validation and
+> one fixed prefix-compatible draw uniform. Generated normal-map tangents use
+> the transformed normal coordinates; retained coordinates and explicit
+> tangents remain unchanged.
 > Primary vertex RGBA multiplies the imported base-color factor and optional
 > sampled base color; omission is white and an explicit scene material disables
 > the imported color with the rest of the imported material.
@@ -135,7 +140,7 @@ implementations arrive:
 | `cogniform-mcp` | Bounded stable MCP stdio query/imagination/patch/observation translation and one retained canonical observation resource over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/primary-coordinate/material/emissive/embedded-PNG decoding, immutable role-textured upload jobs, and explicit CPU-state eviction |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/primary-coordinate/texture-transform/material/emissive/embedded-PNG decoding, immutable role-textured upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |

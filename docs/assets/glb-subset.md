@@ -26,7 +26,9 @@ bounded core sampler filters and S/T wrapping independently for all four
 existing roles through one fixed renderer-owned table. CF063 adds one bounded
 primary linear vertex-color set as a base-color multiplier. CF065 generates
 default MikkTSpace tangents for an otherwise supported normal-textured
-triangle primitive under fixed pre-library work guards.
+triangle primitive under fixed pre-library work guards. CF066 applies bounded
+ratified `KHR_texture_transform` affine mappings independently to all four
+existing texture roles and uses the normal-role mapping for generated tangents.
 
 ## Ownership and lifecycle
 
@@ -148,12 +150,17 @@ The importer accepts only the following baseline:
 - at most four root textures and four referenced root images across one shared
   base-color index, one shared metallic-roughness index, one shared normal
   index, and one shared emissive index. Every referencing material
-  must use omitted or zero `texCoord`, and each referencing primitive must
-  provide `TEXCOORD_0`;
+  must use omitted or zero core `texCoord`, and each referencing primitive must
+  provide `TEXCOORD_0`. Each texture info may carry a declared
+  `KHR_texture_transform` object with omitted or finite two-component `offset`,
+  finite `rotation`, and finite two-component `scale`, using exact defaults and
+  Khronos translation-rotation-scale order. Its coordinate override must be
+  omitted or zero. Each active role's complete affine result must stay finite
+  for every expanded primary coordinate;
 - `normalTexture` additionally requires `TEXCOORD_0`; its optional `scale` must
   be finite and defaults to one. When `TANGENT` is absent, default MikkTSpace
-  tangents are generated from the expanded position, normal, and primary
-  coordinate stream. When `NORMAL` is absent, the existing flat normals are
+  tangents are generated from the expanded position, normal, and transformed
+  normal-role primary-coordinate stream. When `NORMAL` is absent, the existing flat normals are
   generated and any completely validated source tangent is ignored and
   replaced as required by glTF;
 - `pbrMetallicRoughness.metallicRoughnessTexture` uses the same primary
@@ -172,8 +179,8 @@ The importer accepts only the following baseline:
   `image/png`, and decode as a static non-interlaced 8-bit RGB or RGBA image;
 - optional non-normalized scalar u16 or u32 indices;
 - optional non-empty unique-string `extensionsUsed` and
-  `extensionsRequired`, with required a subset of used. The sole recognized
-  name is `KHR_materials_unlit`; every actual supported or unknown extension
+  `extensionsRequired`, with required a subset of used. The recognized names
+  are `KHR_materials_unlit` and `KHR_texture_transform`; every actual supported or unknown extension
   member must be declared in used;
 - tightly packed or valid component-aligned buffer-view strides up to 252
   bytes; and
@@ -197,6 +204,12 @@ The importer accepts only the following baseline:
   retains `MetallicRoughness`; null, scalar, array, undeclared, or otherwise
   malformed markers are invalid.
 
+A valid nonzero texture-transform coordinate override or otherwise
+well-formed wider transform property remains an unsupported-extension/proxy
+candidate. It is never treated as identity. A malformed payload, undeclared
+marker, non-finite component, or non-finite expanded affine result rejects
+before that classification.
+
 Indexed geometry is expanded into a triangle vertex stream, using the same
 source index for position, normal, tangent, primary coordinate, and primary
 color. The complete source coordinate, tangent, and color accessors are
@@ -207,7 +220,7 @@ absent, each expanded triangle receives one unit cross-product normal following
 its winding; degenerate triangles reject before tangent generation. A normal-
 textured primitive generates tangents whenever `TANGENT` or `NORMAL` is absent.
 Before library entry, a checked ordered-map preflight requires the sum of cubed
-exact position/normal/coordinate key multiplicities to be at most `268435456`,
+exact position/normal/transformed-normal-coordinate key multiplicities to be at most `268435456`,
 and a library-equivalent repeated-position classification, including f32
 signed-zero equality, requires
 `9 * degenerate_faces * good_faces` to be at most `16777216`. Either exceeded
@@ -232,7 +245,7 @@ declarations are classified. External buffers or images, data URIs, additional
 GLB chunks, sparse accessors, unsupported normal or primary-coordinate
 encodings, additional coordinate sets, wider rendered color sets, morph
 targets, more than four images/textures/samplers, unused image or texture
-records, valid unused sampler records, JPEG and wider PNG forms, texture transforms,
+records, valid unused sampler records, JPEG and wider PNG forms, nonzero or additional texture-coordinate sets,
 occlusion texture roles, `BLEND` alpha coverage, nodes, scenes, cameras, animations,
 skins, and all other or wider extensions
 are not supported. There is no compressed geometry, mipmap, anisotropy, or
@@ -263,7 +276,8 @@ excess primitive attribute semantics,
 or out-of-range emissive factors, malformed alpha mode/cutoff values,
 malformed `doubleSided` or sampler values and indices,
 malformed, duplicate, empty, or inconsistent extension declarations, malformed
-or undeclared unlit markers,
+or undeclared unlit or texture-transform markers, non-finite
+texture-transform inputs or expanded results,
 malformed emissive texture roles or missing
 coordinates, malformed or truncated PNG data, invalid
 image ranges, degenerate
@@ -271,7 +285,8 @@ fallback triangles, and collection or byte-limit failures always produce
 `Rejected`. A proxy therefore never masks malformed or over-limit input. A
 syntactically valid but unsupported normal, tangent accessor,
 primary-coordinate, image format, texture role, or well-
-formed wider alpha mode, unknown extension, or non-empty unlit payload may
+formed wider alpha mode, unknown extension, non-empty unlit payload, nonzero
+texture-transform coordinate override, or future transform property may
 proxy only under explicit policy and only after malformed peer data is
 excluded. Generated-tangent work-limit and unsuitable-result failures always
 reject and never proxy. Proxy vertices always contain exact zero
@@ -285,7 +300,8 @@ base-color, metallic-roughness, tangent-space normal, and emissive textures,
 metallic, roughness, normal scale, and emissive RGB unless the world entity has an explicit material,
 which overrides the imported material as a whole and uses renderer-owned
 white base-color/emissive, factor-one metallic-roughness, and neutral-normal
-fallbacks. Each role selects its own immutable sampler descriptor. Repeat,
+fallbacks. Each role applies its own retained affine transform to the primary
+coordinate, then selects its own immutable sampler descriptor. Repeat,
 mirrored-repeat, and clamp apply independently in S and T. Magnification uses
 the authored nearest/linear choice. With one retained image level, source
 `NEAREST`, `NEAREST_MIPMAP_NEAREST`, and `NEAREST_MIPMAP_LINEAR` use nearest;
@@ -323,7 +339,7 @@ that component, preparation fails with `AssetUnavailable`.
 
 `AssetMaterial` carries validated numeric metadata including core emissive
 RGB, typed alpha coverage/cutoff, the retained double-sided value, typed
-shading model, immutable texture-role and sampler facts, and finite
+shading model, immutable texture-role, sampler, and per-role affine-transform facts, and finite
 normal scale. `AssetUploadJob` exposes that material and
 separate optional base-color, metallic-roughness, normal, and emissive `AssetTexture`
 values; the compatible
@@ -429,6 +445,7 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture core_sampler_wrap_and_magnification_modes_are_pixel_observable --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture mipmapped_minification_modes_use_the_documented_one_mip_fallback --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture four_texture_roles_bind_independent_samplers_for_one_shared_image --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture texture_transforms_apply_independently_to_all_four_roles --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture vertex_colors_interpolate_and_preserve_non_color_observations --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture vertex_color_multiplies_factor_texture_and_scene_override --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture vertex_color_alpha_default_material_and_double_sided_back_face_are_exact --all-features --locked --offline -- --ignored --exact --nocapture
@@ -483,7 +500,13 @@ prove independent repeat/mirror/clamp selection on both axes, nearest/linear
 magnification, exact nearest- and linear-family one-mip minification, whole-frame
 equality for omitted, empty, and fully explicit defaults, and both independent
 and one-record-shared bindings across four roles for one shared image while
-preserving the same lifecycle and causality assertions. The vertex-color
+preserving the same lifecycle and causality assertions. The texture-transform
+comparison applies independent translation, rotation, and scale combinations
+to the four roles of one shared 4-by-4 image and exactly matches four one-texel
+references. CPU tests separately prove exact defaults and affine rows,
+malformed and wider precedence, finite-result rejection, generated normal-
+coordinate tangent behavior, retained source coordinates, and exact explicit
+tangents without resource-accounting growth. The vertex-color
 checks prove interpolation, an exact white baseline, factor and
 sRGB texture multiplication, independent emission, complete scene override,
 OPAQUE/MASK alpha behavior, material-free fallback, double-sided back-face
@@ -509,3 +532,7 @@ order, and scene-override decision.
 See [ADR 0065](../adr/0065-bounded-generated-mikktspace-tangents.md) for the
 exact generator dependency, corrected algorithms, fixed work guards, output
 validation, and deterministic compatibility boundary.
+
+See [ADR 0066](../adr/0066-bounded-gltf-texture-transforms.md) for the strict
+transform payload, affine order, finite-result validation, generated-tangent
+coordinate rule, uniform append, and compatibility boundary.

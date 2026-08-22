@@ -187,6 +187,14 @@ graph adds only dependency-free `bevy_mikktspace` 1.0.0 with its two corrected
 algorithms and `std`; no vertex/GPU ABI, shader, material, lifecycle,
 observation, protocol, persistence, package version, workflow, tag, release-
 asset, or release action changed.
+CF066 strict texture-transform declaration/payload/affine validation,
+independent four-role retention and Vulkan sampling, transformed normal-
+coordinate MikkTSpace generation, exact source-coordinate/tangent retention,
+and 624-byte prefix-compatible uniform evidence were collected on the CPU and
+validated Windows/Vulkan profile on 2026-08-22. No vertex, texture, sampler,
+bind-group, pipeline, lifecycle, logical, observation, protocol, persistence,
+dependency, package, version, workflow, tag, release-asset, or release action
+changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -1195,6 +1203,55 @@ script, forbids unsafe code, declares Rust 1.85.0, and carries
 Corrected edge sorting can differ on the last triangle from the broken
 reference implementation, so this evidence does not claim cross-architecture
 or reference-byte identity.
+
+### CF066 bounded glTF texture transforms
+
+CF066 recognizes ratified `KHR_texture_transform` only on the four existing
+texture-info roles. Importer tests prove exact identity defaults, independent
+translation-rotation-scale affine rows, required declarations, unchanged
+shared-image and role accounting, malformed/undeclared/non-finite rejection,
+wider coordinate/property proxy classification after malformed peers, and
+non-finite expanded-result rejection at `glb.decoded.texture_transform`.
+Generated MikkTSpace work keys and input use the transformed normal-role
+coordinates; retained `TEXCOORD_0` and valid explicit source tangents remain
+exact.
+
+The renderer appends eight padded affine rows after the exact prior 496-byte
+uniform prefix for a fixed 624-byte layout. One optimized Vulkan comparison
+applies distinct scale, rotation, and translation combinations to base-color,
+metallic-roughness, normal, and emissive roles in one shared 4-by-4 image and
+matches four one-texel reference images exactly. All 27 optimized asset-render
+tests and all nine optimized headless-reference tests pass together, covering
+every older draw through the expanded shared shader ABI.
+
+These commands passed on 2026-08-22:
+
+```text
+cargo fmt --all --check
+cargo test --workspace --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --nocapture
+cargo test --release -p cogniform-renderer --test headless_reference --all-features --locked --offline -- --ignored --nocapture
+cargo test --release -p cogniform-engine --test service_assets exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-engine --test service_assets local_service_imports_renders_and_explicitly_rehydrates_one_glb_asset --all-features --locked --offline -- --ignored --exact --nocapture
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python tests/release/test_package_policy.py
+uv run --no-project python tests/release/test_source_candidate.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+cargo deny check advisories bans licenses sources
+```
+
+The broader three-test optimized `service_assets` invocation is not recorded
+as passing. Its pre-existing
+`explicit_eviction_is_capacity_exact_and_logically_neutral_before_rehydration`
+case still hard-codes two 96-byte release expectations even though the accepted
+CF063 64-byte vertex ABI makes each three-vertex mesh exactly 192 bytes. CF066
+changes neither that test nor `ASSET_VERTEX_BYTES` or renderer accounting; the
+two relevant import/rehydration cases pass independently above. The stale
+baseline assertion requires a separate bounded correction and keeps the full
+ignored engine matrix open. No check is claimed as passed when it did not pass.
 
 ## Deterministic source-candidate commands
 

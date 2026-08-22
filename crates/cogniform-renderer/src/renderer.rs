@@ -16,8 +16,9 @@ use crate::{
     asset::{AssetTextureRole, GpuAssetMesh, RendererAssets},
     scene::{
         ImportedAlphaCoverage, ImportedFacePolicy, ImportedShadingModel, ImportedTextureRoles,
-        MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, PreparedDirectionalLight, PreparedDraw,
-        PreparedGeometry, PreparedPointLight, PreparedScene, RenderScene,
+        ImportedTextureTransforms, MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS,
+        PreparedDirectionalLight, PreparedDraw, PreparedGeometry, PreparedPointLight,
+        PreparedScene, RenderScene,
     },
 };
 
@@ -31,7 +32,7 @@ const ASSET_SAMPLER_COUNT: usize = 36;
 type AssetSamplerTable = [wgpu::Sampler; ASSET_SAMPLER_COUNT];
 const BYTES_PER_PIXEL: u32 = 4;
 const COPY_ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-// The shared ABI constant is fixed at 48 and fits every supported pointer width.
+// The shared ABI constant is fixed at 64 and fits every supported pointer width.
 #[allow(clippy::cast_possible_truncation)]
 const VERTEX_BYTES: usize = cogniform_assets::ASSET_VERTEX_BYTES as usize;
 const CUBE_VERTEX_COUNT: u32 = 36;
@@ -362,6 +363,7 @@ impl HeadlessRenderer {
                 emissive: [0.0; 3],
                 normal_scale: 1.0,
                 imported_texture_roles: ImportedTextureRoles::NONE,
+                imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
                 imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
                 imported_face_policy: ImportedFacePolicy::Disabled,
                 imported_shading_model: ImportedShadingModel::MetallicRoughness,
@@ -1706,11 +1708,13 @@ fn encode_draw_uniform(
     const POINT_COUNT_FLOATS: usize = 4;
     const FLOATS_PER_POINT_LIGHT: usize = 8;
     const MATERIAL_VIEW_EMISSIVE_FLOATS: usize = 12;
+    const TEXTURE_TRANSFORM_FLOATS: usize = 4 * 2 * 4;
     const UNIFORM_BYTES: usize = (BASE_FLOATS
         + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT
         + POINT_COUNT_FLOATS
         + MAX_POINT_LIGHTS * FLOATS_PER_POINT_LIGHT
-        + MATERIAL_VIEW_EMISSIVE_FLOATS)
+        + MATERIAL_VIEW_EMISSIVE_FLOATS
+        + TEXTURE_TRANSFORM_FLOATS)
         * 4;
     debug_assert!(directional_lights.len() <= MAX_DIRECTIONAL_LIGHTS);
     debug_assert!(point_lights.len() <= MAX_POINT_LIGHTS);
@@ -1780,6 +1784,12 @@ fn encode_draw_uniform(
         }
         bytes.extend_from_slice(&light.intensity.to_le_bytes());
     }
+    append_material_uniform(&mut bytes, draw);
+    debug_assert_eq!(bytes.len(), UNIFORM_BYTES);
+    bytes
+}
+
+fn append_material_uniform(bytes: &mut Vec<u8>, draw: &PreparedDraw) {
     for value in draw.camera_position {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
@@ -1799,8 +1809,18 @@ fn encode_draw_uniform(
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.extend_from_slice(&draw.imported_alpha_coverage.cutoff().to_le_bytes());
-    debug_assert_eq!(bytes.len(), UNIFORM_BYTES);
-    bytes
+    for transform in [
+        draw.imported_texture_transforms.base_color,
+        draw.imported_texture_transforms.normal,
+        draw.imported_texture_transforms.metallic_roughness,
+        draw.imported_texture_transforms.emissive,
+    ] {
+        for row in transform.affine_rows() {
+            for value in row {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+    }
 }
 
 fn create_target_texture(
@@ -2116,6 +2136,7 @@ mod tests {
             emissive: [0.1, 0.3, 0.7],
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NONE,
+            imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
             imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
             imported_face_policy: ImportedFacePolicy::Disabled,
             imported_shading_model: ImportedShadingModel::MetallicRoughness,
@@ -2141,7 +2162,7 @@ mod tests {
         }];
 
         let bytes = encode_draw_uniform(&draw, &lights, &point_lights);
-        assert_eq!(bytes.len(), 496);
+        assert_eq!(bytes.len(), 624);
         let words = bytes
             .chunks_exact(4)
             .map(|word| <[u8; 4]>::try_from(word).unwrap())
@@ -2187,6 +2208,10 @@ mod tests {
             (120..124).map(float).collect::<Vec<_>>(),
             vec![0.1, 0.3, 0.7, 0.0]
         );
+        assert_eq!(
+            (124..156).map(float).collect::<Vec<_>>(),
+            [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0].repeat(4)
+        );
     }
 
     #[test]
@@ -2202,6 +2227,7 @@ mod tests {
             emissive: [0.0; 3],
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NORMAL_ONLY,
+            imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
             imported_alpha_coverage: ImportedAlphaCoverage::Mask { cutoff: 1.25 },
             imported_face_policy: ImportedFacePolicy::DoubleSided,
             imported_shading_model: ImportedShadingModel::Unlit,
@@ -2210,7 +2236,7 @@ mod tests {
         };
 
         let bytes = encode_draw_uniform(&draw, &[], &[]);
-        assert_eq!(bytes.len(), 496);
+        assert_eq!(bytes.len(), 624);
         let float_at =
             |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
         assert_eq!(float_at(119).to_bits(), 63.0_f32.to_bits());

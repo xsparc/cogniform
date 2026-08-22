@@ -5,7 +5,8 @@ use core::num::{NonZeroU32, NonZeroU64};
 use cogniform_assets::{
     ASSET_VERTEX_BYTES, AssetAlphaMode, AssetDiagnosticCode, AssetError, AssetMeshKey,
     AssetSampler, AssetSamplerFilter, AssetSamplerMinFilter, AssetSamplerWrap, AssetShadingModel,
-    AssetState, AssetStore, AssetStoreConfig, UnsupportedAssetPolicy, content_hash,
+    AssetState, AssetStore, AssetStoreConfig, AssetTextureTransform, UnsupportedAssetPolicy,
+    content_hash,
 };
 use cogniform_protocol::FiniteF32;
 
@@ -194,6 +195,7 @@ struct NormalTexturedFixture<'a> {
     include_tangents: bool,
     texcoord_attribute: &'a str,
     normal_texture_fields: &'a str,
+    root_fields: &'a str,
 }
 
 impl Default for NormalTexturedFixture<'_> {
@@ -209,6 +211,7 @@ impl Default for NormalTexturedFixture<'_> {
             include_tangents: true,
             texcoord_attribute: r#""TEXCOORD_0":3"#,
             normal_texture_fields: r#""index":0"#,
+            root_fields: "",
         }
     }
 }
@@ -225,6 +228,7 @@ fn normal_textured_triangle_glb(png: &[u8], fixture: NormalTexturedFixture<'_>) 
         include_tangents,
         texcoord_attribute,
         normal_texture_fields,
+        root_fields,
     } = fixture;
     let mut binary = Vec::with_capacity(144 + png.len());
     for position in positions {
@@ -261,7 +265,7 @@ fn normal_textured_triangle_glb(png: &[u8], fixture: NormalTexturedFixture<'_>) 
     }
     let attributes = attributes.join(",");
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":{tangent_count},"type":"{tangent_kind}","normalized":{tangent_normalized}}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"normalTexture":{{{normal_texture_fields}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{{attributes}}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}}{root_fields},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":{tangent_count},"type":"{tangent_kind}","normalized":{tangent_normalized}}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"normalTexture":{{{normal_texture_fields}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{{attributes}}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         image_length = png.len(),
     );
@@ -274,6 +278,20 @@ fn generated_normal_textured_glb(
     normals: &[[f32; 3]],
     texcoords: &[[f32; 2]],
     indices: Option<&[u32]>,
+) -> Vec<u8> {
+    generated_normal_textured_glb_with_transform(
+        png, positions, normals, texcoords, indices, "", "",
+    )
+}
+
+fn generated_normal_textured_glb_with_transform(
+    png: &[u8],
+    positions: &[[f32; 3]],
+    normals: &[[f32; 3]],
+    texcoords: &[[f32; 2]],
+    indices: Option<&[u32]>,
+    root_fields: &str,
+    normal_texture_extension: &str,
 ) -> Vec<u8> {
     assert_eq!(positions.len(), normals.len());
     assert_eq!(positions.len(), texcoords.len());
@@ -339,7 +357,7 @@ fn generated_normal_textured_glb(
         ));
     }
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{}}}],"bufferViews":[{}],"accessors":[{}],"materials":[{{"normalTexture":{{"index":0}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":{image_view},"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2}}{indices_field},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}}{root_fields},"buffers":[{{"byteLength":{}}}],"bufferViews":[{}],"accessors":[{}],"materials":[{{"normalTexture":{{"index":0{normal_texture_extension}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":{image_view},"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2}}{indices_field},"material":0,"mode":4}}]}}]}}"#,
         binary.len(),
         views.join(","),
         accessors.join(","),
@@ -465,6 +483,24 @@ fn four_textured_triangle_glb_with_samplers(
     sampler_indices: [Option<u32>; 4],
     sampler_records: &str,
 ) -> Vec<u8> {
+    four_textured_triangle_glb_with_options(
+        images,
+        shared_image,
+        sampler_indices,
+        sampler_records,
+        [""; 4],
+        "",
+    )
+}
+
+fn four_textured_triangle_glb_with_options(
+    images: [&[u8]; 4],
+    shared_image: bool,
+    sampler_indices: [Option<u32>; 4],
+    sampler_records: &str,
+    texture_info_extensions: [&str; 4],
+    root_fields: &str,
+) -> Vec<u8> {
     let mut binary = triangle_binary();
     for normal in [[0.0_f32, 0.0, 1.0]; 3] {
         for value in normal {
@@ -514,10 +550,14 @@ fn four_textured_triangle_glb_with_samplers(
         format!(r#", "samplers":[{sampler_records}]"#)
     };
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1}},"metallicFactor":0.75,"roughnessFactor":0.5}},"normalTexture":{{"index":2,"scale":0.5}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":3}}}}],"textures":[{textures}],"images":[{image_defs}]{samplers},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}}{root_fields},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0{base_extension}}},"metallicRoughnessTexture":{{"index":1{metallic_roughness_extension}}},"metallicFactor":0.75,"roughnessFactor":0.5}},"normalTexture":{{"index":2,"scale":0.5{normal_extension}}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":3{emissive_extension}}}}}],"textures":[{textures}],"images":[{image_defs}]{samplers},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         image_views = image_views.join(","),
         image_defs = image_defs.join(","),
+        base_extension = texture_info_extensions[0],
+        normal_extension = texture_info_extensions[1],
+        metallic_roughness_extension = texture_info_extensions[2],
+        emissive_extension = texture_info_extensions[3],
     );
     glb_with_json(&json, &binary)
 }
@@ -1893,6 +1933,278 @@ fn four_texture_roles_count_shared_cpu_images_once_and_roles_exactly() {
         narrow.enqueue(hash, bytes).unwrap();
         assert_eq!(narrow.process_next().unwrap().state, AssetState::Rejected);
         assert_eq!(narrow.stats().resident_cpu_bytes, 0);
+    }
+}
+
+#[test]
+fn texture_transforms_retain_exact_defaults_and_independent_affine_rows() {
+    let image = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let images = [image.as_slice(); 4];
+    let bytes = four_textured_triangle_glb_with_options(
+        images,
+        true,
+        [None; 4],
+        "",
+        [
+            r#", "extensions":{"KHR_texture_transform":{}}"#,
+            r#", "extensions":{"KHR_texture_transform":{"offset":[0.25,-0.5],"rotation":1.5707963267948966,"scale":[2.0,3.0]}}"#,
+            r#", "extensions":{"KHR_texture_transform":{"scale":[2.0,-3.0]}}"#,
+            r#", "extensions":{"KHR_texture_transform":{"offset":[-0.25,0.75]}}"#,
+        ],
+        r#", "extensionsUsed":["KHR_texture_transform"],"extensionsRequired":["KHR_texture_transform"]"#,
+    );
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 196);
+    let material = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap()
+        .material();
+
+    assert_eq!(
+        material.base_color_texture_transform(),
+        Some(AssetTextureTransform::IDENTITY)
+    );
+    assert_eq!(
+        material
+            .metallic_roughness_texture_transform()
+            .unwrap()
+            .affine_rows(),
+        [[2.0, 0.0, 0.0, 0.0], [0.0, -3.0, 0.0, 0.0]]
+    );
+    assert_eq!(
+        material.emissive_texture_transform().unwrap().affine_rows(),
+        [[1.0, 0.0, -0.25, 0.0], [0.0, 1.0, 0.75, 0.0]]
+    );
+    let normal = material.normal_texture_transform().unwrap().affine_rows();
+    for (actual, expected) in normal
+        .into_iter()
+        .flatten()
+        .zip([0.0, -3.0, 0.25, 0.0, 2.0, 0.0, -0.5, 0.0])
+    {
+        assert!((actual - expected).abs() <= 1e-6, "{actual} != {expected}");
+    }
+}
+
+#[test]
+fn texture_transform_malformed_paths_fail_closed() {
+    let image = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let images = [image.as_slice(); 4];
+    let declared = r#", "extensionsUsed":["KHR_texture_transform"]"#;
+    for payload in [
+        "null",
+        "[]",
+        r#"{"offset":[0.0]}"#,
+        r#"{"offset":[0.0,1.0,2.0]}"#,
+        r#"{"offset":[0.0,"one"]}"#,
+        r#"{"rotation":"zero"}"#,
+        r#"{"scale":[1.0]}"#,
+        r#"{"texCoord":null}"#,
+        r#"{"texCoord":-1}"#,
+    ] {
+        let extension = format!(r#", "extensions":{{"KHR_texture_transform":{payload}}}"#);
+        let bytes = four_textured_triangle_glb_with_options(
+            images,
+            true,
+            [None; 4],
+            "",
+            [extension.as_str(), "", "", ""],
+            declared,
+        );
+        let (store, hash) = process_with_proxy_policy(bytes);
+        let record = store.record(hash).unwrap();
+        assert_eq!(record.state, AssetState::Rejected, "{payload}");
+        assert_eq!(
+            record.diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson,
+            "{payload}"
+        );
+    }
+
+    let undeclared = r#", "extensions":{"KHR_texture_transform":{}}"#;
+    let (store, hash) = process_with_proxy_policy(four_textured_triangle_glb_with_options(
+        images,
+        true,
+        [None; 4],
+        "",
+        [undeclared, "", "", ""],
+        "",
+    ));
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+}
+
+#[test]
+fn texture_transform_wider_and_overflow_paths_fail_closed() {
+    let image = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let images = [image.as_slice(); 4];
+    let declared = r#", "extensionsUsed":["KHR_texture_transform"]"#;
+
+    for payload in [r#"{"texCoord":1}"#, r#"{"future":true}"#] {
+        let extension = format!(r#", "extensions":{{"KHR_texture_transform":{payload}}}"#);
+        let (store, hash) = process_with_proxy_policy(four_textured_triangle_glb_with_options(
+            images,
+            true,
+            [None; 4],
+            "",
+            [extension.as_str(), "", "", ""],
+            declared,
+        ));
+        let record = store.record(hash).unwrap();
+        assert_eq!(record.state, AssetState::ProxyReady, "{payload}");
+        assert_eq!(
+            record.diagnostics[0].code,
+            AssetDiagnosticCode::UnsupportedExtension,
+            "{payload}"
+        );
+    }
+
+    let wider = r#", "extensions":{"KHR_texture_transform":{"future":true}}"#;
+    let (store, hash) = process_with_proxy_policy(four_textured_triangle_glb_with_options(
+        images,
+        true,
+        [Some(999), None, None, None],
+        r"{}",
+        [wider, "", "", ""],
+        declared,
+    ));
+    let record = store.record(hash).unwrap();
+    assert_eq!(record.state, AssetState::Rejected);
+    assert_eq!(
+        record.diagnostics[0].code,
+        AssetDiagnosticCode::InvalidBufferRange
+    );
+
+    let overflow = r#", "extensions":{"KHR_texture_transform":{"offset":[3.4028235e38,0.0],"scale":[3.4028235e38,1.0]}}"#;
+    let (store, hash) = process_with_proxy_policy(four_textured_triangle_glb_with_options(
+        images,
+        true,
+        [None; 4],
+        "",
+        [overflow, "", "", ""],
+        declared,
+    ));
+    let record = store.record(hash).unwrap();
+    assert_eq!(record.state, AssetState::Rejected);
+    assert_eq!(
+        record.diagnostics[0].code,
+        AssetDiagnosticCode::InvalidTexcoord
+    );
+    assert_eq!(
+        record.diagnostics[0].location,
+        "glb.decoded.texture_transform"
+    );
+}
+
+#[test]
+fn generated_tangents_use_transformed_normal_coordinates_without_mutating_uvs() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[255, 128, 128, 255],
+    );
+    let positions = [[-0.75, -0.75, 0.0], [0.75, -0.75, 0.0], [0.0, 0.75, 0.0]];
+    let normals = [[0.0, 0.0, 1.0]; 3];
+    let texcoords = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+    let load = |extension: &str, root_fields: &str| {
+        let bytes = generated_normal_textured_glb_with_transform(
+            &png,
+            &positions,
+            &normals,
+            &texcoords,
+            None,
+            root_fields,
+            extension,
+        );
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap()
+            .vertices()
+            .to_vec()
+    };
+    let identity = load("", "");
+    let root = r#", "extensionsUsed":["KHR_texture_transform"],"extensionsRequired":["KHR_texture_transform"]"#;
+    let rotated = load(
+        r#", "extensions":{"KHR_texture_transform":{"rotation":1.5707963267948966}}"#,
+        root,
+    );
+    let mirrored = load(
+        r#", "extensions":{"KHR_texture_transform":{"scale":[-1.0,1.0]}}"#,
+        root,
+    );
+
+    for ((source, rotated), mirrored) in identity.iter().zip(&rotated).zip(&mirrored) {
+        assert_eq!(source.texcoord_0, rotated.texcoord_0);
+        assert_eq!(source.texcoord_0, mirrored.texcoord_0);
+        assert!((source.tangent[0].get() - 1.0).abs() <= 1e-6);
+        assert!((rotated.tangent[0].get() + 0.447_213_6).abs() <= 1e-5);
+        assert!((rotated.tangent[1].get() + 0.894_427_2).abs() <= 1e-5);
+        assert_eq!(source.tangent[3].get().to_bits(), 1.0_f32.to_bits());
+        assert_eq!(rotated.tangent[3].get().to_bits(), 1.0_f32.to_bits());
+        assert!((mirrored.tangent[0].get() + 1.0).abs() <= 1e-6);
+        assert_eq!(mirrored.tangent[3].get().to_bits(), (-1.0_f32).to_bits());
+    }
+
+    let explicit_source = [[0.0, 1.0, 0.0, -1.0]; 3];
+    let explicit = normal_textured_triangle_glb(
+        &png,
+        NormalTexturedFixture {
+            tangents: explicit_source,
+            normal_texture_fields: r#""index":0,"extensions":{"KHR_texture_transform":{"rotation":1.5707963267948966}}"#,
+            root_fields: root,
+            ..NormalTexturedFixture::default()
+        },
+    );
+    let hash = content_hash(&explicit);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, explicit).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    for (vertex, expected) in upload.vertices().iter().zip(explicit_source) {
+        assert_eq!(
+            vertex.tangent.map(|value| value.get().to_bits()),
+            expected.map(f32::to_bits)
+        );
     }
 }
 

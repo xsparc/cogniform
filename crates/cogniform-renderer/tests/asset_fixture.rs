@@ -655,6 +655,27 @@ fn four_texture_roles_bind_independent_samplers_for_one_shared_image() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn texture_transforms_apply_independently_to_all_four_roles() {
+    let transformed = material_frame(
+        transformed_four_role_fixture(true),
+        Some(LightKind::Directional),
+        false,
+    );
+    let one_texel_references = material_frame(
+        transformed_four_role_fixture(false),
+        Some(LightKind::Directional),
+        false,
+    );
+
+    assert_frames_equal(&transformed, &one_texel_references);
+    assert_eq!(
+        transformed.stable_entity_id_at(WIDTH / 2, HEIGHT / 2),
+        Some(StableEntityId::new(2).unwrap())
+    );
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn normal_texture_changes_direct_lighting_not_geometric_normal_observation() {
     let neutral = lit_normal_textured_frame(normal_texture_fixture([128, 128, 255, 0], 1.0), false);
     let tilted =
@@ -2679,6 +2700,18 @@ fn sampled_unlit_base_fixture(
 }
 
 fn four_role_sampler_fixture(shared_image: bool, shared_sampler: bool) -> Vec<u8> {
+    four_role_sampler_fixture_with_transforms(shared_image, shared_sampler, false)
+}
+
+fn transformed_four_role_fixture(shared_image: bool) -> Vec<u8> {
+    four_role_sampler_fixture_with_transforms(shared_image, true, true)
+}
+
+fn four_role_sampler_fixture_with_transforms(
+    shared_image: bool,
+    shared_sampler: bool,
+    texture_transforms: bool,
+) -> Vec<u8> {
     let mut binary = Vec::new();
     for position in [
         [-0.75_f32, -0.75, 0.0],
@@ -2699,13 +2732,71 @@ fn four_role_sampler_fixture(shared_image: bool, shared_sampler: bool) -> Vec<u8
             binary.extend_from_slice(&value.to_le_bytes());
         }
     }
-    for texcoord in [[1.375_f32, -0.375]; 3] {
+    let texcoord = if texture_transforms {
+        [0.125_f32, 0.125]
+    } else {
+        [1.375_f32, -0.375]
+    };
+    for texcoord in [texcoord; 3] {
         for value in texcoord {
             binary.extend_from_slice(&value.to_le_bytes());
         }
     }
 
-    let selected = if shared_sampler {
+    let (image_views, image_records) = append_four_role_fixture_images(
+        &mut binary,
+        shared_image,
+        shared_sampler,
+        texture_transforms,
+    );
+    let (samplers, textures) = if texture_transforms {
+        (
+            r#", "samplers":[{"magFilter":9728,"minFilter":9728,"wrapS":33071,"wrapT":33071}]"#
+                .to_owned(),
+            (0..4)
+                .map(|source| {
+                    let source = if shared_image { 0 } else { source };
+                    format!(r#"{{"sampler":0,"source":{source}}}"#)
+                })
+                .collect::<Vec<_>>()
+                .join(","),
+        )
+    } else {
+        four_role_sampler_records(shared_image, shared_sampler)
+    };
+    let (extension_declaration, transforms) = if texture_transforms {
+        (
+            r#", "extensionsUsed":["KHR_texture_transform"]"#,
+            [
+                r#", "extensions":{"KHR_texture_transform":{"offset":[0.3125,0.375],"scale":[0.5,2.0]}}"#,
+                r#", "extensions":{"KHR_texture_transform":{"offset":[0.8125,0.875],"rotation":-1.5707963267948966,"scale":[2.0,0.5]}}"#,
+                r#", "extensions":{"KHR_texture_transform":{"offset":[0.75,0.5],"rotation":1.5707963267948966}}"#,
+                r#", "extensions":{"KHR_texture_transform":{"offset":[0.25,0.0]}}"#,
+            ],
+        )
+    } else {
+        ("", [""; 4])
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}}{extension_declaration},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.5,0.25,0.75,1.0],"baseColorTexture":{{"index":0{base_color_transform}}},"metallicRoughnessTexture":{{"index":1{metallic_roughness_transform}}},"metallicFactor":0.75,"roughnessFactor":0.5}},"normalTexture":{{"index":2,"scale":0.5{normal_transform}}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":3{emissive_transform}}}}}],"textures":[{textures}],"images":[{image_records}]{samplers},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        image_views = image_views.join(","),
+        image_records = image_records.join(","),
+        base_color_transform = transforms[0],
+        metallic_roughness_transform = transforms[1],
+        normal_transform = transforms[2],
+        emissive_transform = transforms[3],
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn append_four_role_fixture_images(
+    binary: &mut Vec<u8>,
+    shared_image: bool,
+    shared_sampler: bool,
+    texture_transforms: bool,
+) -> (Vec<String>, Vec<String>) {
+    let selected = if shared_sampler && !texture_transforms {
         [[128_u8, 128, 255, 255]; 4]
     } else {
         [
@@ -2741,7 +2832,7 @@ fn four_role_sampler_fixture(shared_image: bool, shared_sampler: bool) -> Vec<u8
             offset
         })
         .collect::<Vec<_>>();
-    let image_views = images
+    let views = images
         .iter()
         .zip(&offsets)
         .map(|(image, offset)| {
@@ -2750,20 +2841,13 @@ fn four_role_sampler_fixture(shared_image: bool, shared_sampler: bool) -> Vec<u8
                 image.len()
             )
         })
-        .collect::<Vec<_>>();
-    let image_records = images
+        .collect();
+    let records = images
         .iter()
         .enumerate()
         .map(|(index, _)| format!(r#"{{"bufferView":{},"mimeType":"image/png"}}"#, index + 4))
-        .collect::<Vec<_>>();
-    let (samplers, textures) = four_role_sampler_records(shared_image, shared_sampler);
-    let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.5,0.25,0.75,1.0],"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1}},"metallicFactor":0.75,"roughnessFactor":0.5}},"normalTexture":{{"index":2,"scale":0.5}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":3}}}}],"textures":[{textures}],"images":[{image_records}]{samplers},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
-        binary_length = binary.len(),
-        image_views = image_views.join(","),
-        image_records = image_records.join(","),
-    );
-    glb_with_json(&json, &binary)
+        .collect();
+    (views, records)
 }
 
 fn four_role_sampler_records(shared_image: bool, shared_sampler: bool) -> (String, String) {

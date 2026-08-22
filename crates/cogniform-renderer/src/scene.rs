@@ -1,7 +1,9 @@
 use core::num::{NonZeroU32, NonZeroU64};
 use std::collections::{BTreeMap, BTreeSet};
 
-use cogniform_assets::{AssetAlphaMode, AssetMaterial, AssetMeshKey, AssetShadingModel};
+use cogniform_assets::{
+    AssetAlphaMode, AssetMaterial, AssetMeshKey, AssetShadingModel, AssetTextureTransform,
+};
 use cogniform_protocol::{
     CameraComponent, ColorRgba, LightKind, MaterialComponent, RenderChange, RenderEntity,
     RenderExtraction, SceneRevision, StableEntityId,
@@ -318,6 +320,7 @@ impl RenderScene {
                     emissive,
                     normal_scale: 1.0,
                     imported_texture_roles: ImportedTextureRoles::NONE,
+                    imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
                     imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
                     imported_face_policy: ImportedFacePolicy::Disabled,
                     imported_shading_model: ImportedShadingModel::MetallicRoughness,
@@ -441,6 +444,7 @@ pub(crate) struct PreparedDraw {
     pub(crate) emissive: [f32; 3],
     pub(crate) normal_scale: f32,
     pub(crate) imported_texture_roles: ImportedTextureRoles,
+    pub(crate) imported_texture_transforms: ImportedTextureTransforms,
     pub(crate) imported_alpha_coverage: ImportedAlphaCoverage,
     pub(crate) imported_face_policy: ImportedFacePolicy,
     pub(crate) imported_shading_model: ImportedShadingModel,
@@ -454,9 +458,10 @@ impl PreparedDraw {
         use_imported_material: bool,
         material: Option<AssetMaterial>,
     ) -> Self {
-        let (roles, normal_scale, alpha_coverage, face_policy, shading_model) =
+        let (roles, transforms, normal_scale, alpha_coverage, face_policy, shading_model) =
             imported_material_selection(use_imported_material, material);
         self.imported_texture_roles = roles;
+        self.imported_texture_transforms = transforms;
         self.normal_scale = normal_scale;
         self.imported_alpha_coverage = alpha_coverage;
         self.imported_face_policy = face_policy;
@@ -465,6 +470,23 @@ impl PreparedDraw {
             use_imported_material && matches!(self.geometry, PreparedGeometry::Asset(_));
         self
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ImportedTextureTransforms {
+    pub(crate) base_color: AssetTextureTransform,
+    pub(crate) normal: AssetTextureTransform,
+    pub(crate) metallic_roughness: AssetTextureTransform,
+    pub(crate) emissive: AssetTextureTransform,
+}
+
+impl ImportedTextureTransforms {
+    pub(crate) const IDENTITY: Self = Self {
+        base_color: AssetTextureTransform::IDENTITY,
+        normal: AssetTextureTransform::IDENTITY,
+        metallic_roughness: AssetTextureTransform::IDENTITY,
+        emissive: AssetTextureTransform::IDENTITY,
+    };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -583,6 +605,7 @@ fn imported_material_selection(
     material: Option<AssetMaterial>,
 ) -> (
     ImportedTextureRoles,
+    ImportedTextureTransforms,
     f32,
     ImportedAlphaCoverage,
     ImportedFacePolicy,
@@ -618,6 +641,36 @@ fn imported_material_selection(
     roles |= u8::from(use_emissive) * ImportedTextureRoles::EMISSIVE;
     roles |= u8::from(use_metallic_roughness) * ImportedTextureRoles::METALLIC_ROUGHNESS;
     roles |= u8::from(use_normal) * ImportedTextureRoles::NORMAL;
+    let transforms = ImportedTextureTransforms {
+        base_color: if use_base_color {
+            material
+                .and_then(AssetMaterial::base_color_texture_transform)
+                .expect("selected base-color role retains a transform")
+        } else {
+            AssetTextureTransform::IDENTITY
+        },
+        normal: if use_normal {
+            material
+                .and_then(AssetMaterial::normal_texture_transform)
+                .expect("selected normal role retains a transform")
+        } else {
+            AssetTextureTransform::IDENTITY
+        },
+        metallic_roughness: if use_metallic_roughness {
+            material
+                .and_then(AssetMaterial::metallic_roughness_texture_transform)
+                .expect("selected metallic-roughness role retains a transform")
+        } else {
+            AssetTextureTransform::IDENTITY
+        },
+        emissive: if use_emissive {
+            material
+                .and_then(AssetMaterial::emissive_texture_transform)
+                .expect("selected emissive role retains a transform")
+        } else {
+            AssetTextureTransform::IDENTITY
+        },
+    };
     let alpha_coverage = if use_imported_material {
         material.map_or(ImportedAlphaCoverage::Disabled, |material| {
             match material.alpha_mode() {
@@ -645,6 +698,7 @@ fn imported_material_selection(
     };
     (
         ImportedTextureRoles(roles),
+        transforms,
         normal_scale,
         alpha_coverage,
         face_policy,
@@ -1644,25 +1698,25 @@ mod tests {
 
         let material = asset_material([0.1, 0.2, 0.3, 1.0], 0.0, 0.8);
         assert_eq!(
-            imported_material_selection(true, Some(material)).3,
+            imported_material_selection(true, Some(material)).4,
             ImportedFacePolicy::SingleSided
         );
         assert_eq!(
-            imported_material_selection(false, Some(material)).3,
+            imported_material_selection(false, Some(material)).4,
             ImportedFacePolicy::Disabled
         );
         assert_eq!(
-            imported_material_selection(true, None).3,
+            imported_material_selection(true, None).4,
             ImportedFacePolicy::Disabled
         );
         assert_eq!(ImportedShadingModel::MetallicRoughness.flags(), 0);
         assert_eq!(ImportedShadingModel::Unlit.flags(), 16);
         assert_eq!(
-            imported_material_selection(true, Some(material)).4,
+            imported_material_selection(true, Some(material)).5,
             ImportedShadingModel::MetallicRoughness
         );
         assert_eq!(
-            imported_material_selection(false, Some(material)).4,
+            imported_material_selection(false, Some(material)).5,
             ImportedShadingModel::MetallicRoughness
         );
     }
