@@ -66,12 +66,14 @@ zero primary coordinates, and frames perform no built-in tessellation or
 upload.
 
 Imported vertices use one 64-byte position, normal, primary-coordinate,
-source-tangent, and primary-color layout. Its prior 48-byte prefix remains
+tangent, and primary-color layout. Its prior 48-byte prefix remains
 unchanged. Optional
 non-normalized finite f32 `TEXCOORD_0` reaches shader location 2 and optional
 finite normalized `TANGENT` plus exact handedness reaches location 3; missing
-asset values, built-ins, and proxy vertices use exact zero coordinates and a
-disabled `[1, 0, 0, 1]` tangent. Optional f32 or normalized unsigned-byte/
+non-normal-mapped asset values, built-ins, and proxy vertices use exact zero
+coordinates and a disabled `[1, 0, 0, 1]` tangent. A normal-textured primitive
+with missing source tangents receives bounded validated default MikkTSpace
+values before upload. Optional f32 or normalized unsigned-byte/
 unsigned-short `COLOR_0` VEC3/VEC4 reaches location 4 as linear unit RGBA;
 missing asset values, built-ins, and proxies use white. A mesh may sample one approved embedded PNG
 for each base-color, metallic-roughness, normal, and emissive role. The renderer
@@ -84,7 +86,7 @@ Omitted sampling remains linear/repeat. Nearest-family mip filters use nearest
 and linear-family mip filters use linear without generating another image
 level. White base-color/emissive, factor-one metallic-roughness, and
 neutral-normal fallbacks bind on every draw.
-External images, generated tangents, non-core sampler features, transforms,
+External images, generated coordinates, non-core sampler features, transforms,
 additional coordinate sets, generated/stored mipmaps, and other material
 texture roles, wider rendered colors, and morph colors remain unsupported.
 
@@ -130,7 +132,7 @@ color multiplied by its numeric factor regardless of active directional or
 point lights. Its normal, metallic-roughness, and emissive fallback data remain
 resident and bounded but have no color effect. A scene material disables this
 imported unlit selection and restores the ordinary direct response.
-An imported normal texture constructs a source-tangent basis after the model
+An imported normal texture constructs a retained tangent basis after the model
 transform, applies finite normal scale to sampled XY, and perturbs only this
 direct-light response. No-active-light output, imported unlit output, and the
 normal observation retain the
@@ -242,6 +244,7 @@ cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ig
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact imported_material_factors_drive_direct_light_and_scene_override
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact primary_texcoords_are_retained_without_changing_rendered_observations
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact embedded_base_color_texture_preserves_orientation_factor_override_and_residency
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact generated_tangent_normal_texture_matches_explicit_render_output
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact metallic_roughness_texture_multiplies_factors_for_direct_lights_only
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outputs
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback
@@ -353,6 +356,9 @@ See [ADR 0030](../adr/0030-explicit-content-hash-asset-eviction.md) for the
 content-hash eviction boundary, accounting, and submitted-work rule.
 See [ADR 0055](../adr/0055-bounded-source-tangent-normal-textures.md) for the
 normal-texture tangent-space, scale, role-residency, and geometric-normal rules.
+See [ADR 0065](../adr/0065-bounded-generated-mikktspace-tangents.md) for
+missing-tangent generation, its fixed CPU work guards, and the unchanged
+renderer ABI.
 See [ADR 0056](../adr/0056-bounded-metallic-roughness-textures.md) for the
 packed-channel, linear-sampling, factor, role-residency, and override rules.
 See [ADR 0057](../adr/0057-bounded-glb-emissive-factors.md) for the core

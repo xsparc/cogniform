@@ -133,7 +133,7 @@ pub enum AssetDiagnosticCode {
     NonFiniteVertex,
     /// A decoded normal is non-finite, zero-length, or inconsistent with its positions.
     InvalidNormal,
-    /// A decoded source tangent is non-finite, zero-length, has invalid handedness, or is inconsistent.
+    /// A decoded or generated tangent is non-finite, zero-length, has invalid handedness, or is inconsistent.
     InvalidTangent,
     /// A decoded primary texture coordinate is non-finite or inconsistent with its positions.
     InvalidTexcoord,
@@ -143,7 +143,7 @@ pub enum AssetDiagnosticCode {
     InvalidImage,
     /// A decoded index is outside its position accessor.
     InvalidIndex,
-    /// A configured mesh, primitive, vertex, or index count was exceeded.
+    /// A configured collection or fixed importer-work limit was exceeded.
     CollectionLimitExceeded,
     /// A configured source, chunk, decoded-asset, or CPU-residency byte limit was exceeded.
     ByteLimitExceeded,
@@ -189,14 +189,14 @@ impl AssetDiagnostic {
 /// Exact decoded and GPU bytes in one interleaved asset vertex.
 pub const ASSET_VERTEX_BYTES: u64 = 64;
 
-/// One decoded position, unit normal, source tangent, primary texture coordinate, and color.
+/// One decoded position, unit normal, tangent, primary texture coordinate, and color.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssetVertex {
     /// XYZ position in mesh-local units.
     pub position: [FiniteF32; 3],
     /// Normalized XYZ normal in mesh-local units.
     pub normal: [FiniteF32; 3],
-    /// Normalized source tangent XYZ and exact handedness in `w`.
+    /// Normalized source or generated tangent XYZ and exact handedness in `w`.
     pub tangent: [FiniteF32; 4],
     /// Primary glTF texture coordinates retained without unit clamping.
     pub texcoord_0: [FiniteF32; 2],

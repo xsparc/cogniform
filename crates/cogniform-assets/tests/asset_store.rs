@@ -184,7 +184,9 @@ fn emissive_texture_glb(png: &[u8], emissive_texture: &str, include_texcoords: b
 
 #[derive(Clone, Copy)]
 struct NormalTexturedFixture<'a> {
+    positions: [[f32; 3]; 3],
     tangents: [[f32; 4]; 3],
+    texcoords: [[f32; 2]; 3],
     tangent_count: u32,
     tangent_kind: &'a str,
     tangent_normalized: bool,
@@ -197,7 +199,9 @@ struct NormalTexturedFixture<'a> {
 impl Default for NormalTexturedFixture<'_> {
     fn default() -> Self {
         Self {
+            positions: [[-0.75, -0.75, 0.0], [0.75, -0.75, 0.0], [0.0, 0.75, 0.0]],
             tangents: [[1.0, 0.0, 0.0, 1.0]; 3],
+            texcoords: [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
             tangent_count: 3,
             tangent_kind: "VEC4",
             tangent_normalized: false,
@@ -211,7 +215,9 @@ impl Default for NormalTexturedFixture<'_> {
 
 fn normal_textured_triangle_glb(png: &[u8], fixture: NormalTexturedFixture<'_>) -> Vec<u8> {
     let NormalTexturedFixture {
+        positions,
         tangents,
+        texcoords,
         tangent_count,
         tangent_kind,
         tangent_normalized,
@@ -220,7 +226,12 @@ fn normal_textured_triangle_glb(png: &[u8], fixture: NormalTexturedFixture<'_>) 
         texcoord_attribute,
         normal_texture_fields,
     } = fixture;
-    let mut binary = triangle_binary();
+    let mut binary = Vec::with_capacity(144 + png.len());
+    for position in positions {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
     for normal in [[0.0_f32, 0.0, 1.0]; 3] {
         for value in normal {
             binary.extend_from_slice(&value.to_le_bytes());
@@ -231,7 +242,7 @@ fn normal_textured_triangle_glb(png: &[u8], fixture: NormalTexturedFixture<'_>) 
             binary.extend_from_slice(&value.to_le_bytes());
         }
     }
-    for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+    for texcoord in texcoords {
         for value in texcoord {
             binary.extend_from_slice(&value.to_le_bytes());
         }
@@ -253,6 +264,85 @@ fn normal_textured_triangle_glb(png: &[u8], fixture: NormalTexturedFixture<'_>) 
         r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":{tangent_count},"type":"{tangent_kind}","normalized":{tangent_normalized}}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"normalTexture":{{{normal_texture_fields}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{{attributes}}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         image_length = png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn generated_normal_textured_glb(
+    png: &[u8],
+    positions: &[[f32; 3]],
+    normals: &[[f32; 3]],
+    texcoords: &[[f32; 2]],
+    indices: Option<&[u32]>,
+) -> Vec<u8> {
+    assert_eq!(positions.len(), normals.len());
+    assert_eq!(positions.len(), texcoords.len());
+    let mut binary = Vec::new();
+    for position in positions {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let normal_offset = binary.len();
+    for normal in normals {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let texcoord_offset = binary.len();
+    for texcoord in texcoords {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let index_offset = binary.len();
+    if let Some(indices) = indices {
+        for index in indices {
+            binary.extend_from_slice(&index.to_le_bytes());
+        }
+    }
+    let image_offset = binary.len();
+    binary.extend_from_slice(png);
+
+    let position_bytes = positions.len() * 12;
+    let normal_bytes = normals.len() * 12;
+    let texcoord_bytes = texcoords.len() * 8;
+    let mut views = vec![
+        format!(r#"{{"buffer":0,"byteOffset":0,"byteLength":{position_bytes}}}"#),
+        format!(r#"{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{normal_bytes}}}"#),
+        format!(r#"{{"buffer":0,"byteOffset":{texcoord_offset},"byteLength":{texcoord_bytes}}}"#),
+    ];
+    let indices_field = if let Some(indices) = indices {
+        let index_bytes = indices.len() * 4;
+        views.push(format!(
+            r#"{{"buffer":0,"byteOffset":{index_offset},"byteLength":{index_bytes}}}"#
+        ));
+        r#","indices":3"#
+    } else {
+        ""
+    };
+    let image_view = views.len();
+    views.push(format!(
+        r#"{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}"#,
+        png.len()
+    ));
+    let count = positions.len();
+    let mut accessors = vec![
+        format!(r#"{{"bufferView":0,"componentType":5126,"count":{count},"type":"VEC3"}}"#),
+        format!(r#"{{"bufferView":1,"componentType":5126,"count":{count},"type":"VEC3"}}"#),
+        format!(r#"{{"bufferView":2,"componentType":5126,"count":{count},"type":"VEC2"}}"#),
+    ];
+    if let Some(indices) = indices {
+        let index_count = indices.len();
+        accessors.push(format!(
+            r#"{{"bufferView":3,"componentType":5125,"count":{index_count},"type":"SCALAR"}}"#
+        ));
+    }
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{}}}],"bufferViews":[{}],"accessors":[{}],"materials":[{{"normalTexture":{{"index":0}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":{image_view},"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2}}{indices_field},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+        views.join(","),
+        accessors.join(","),
     );
     glb_with_json(&json, &binary)
 }
@@ -1945,24 +2035,307 @@ fn invalid_source_tangent_values_fail_closed() {
         ],
     ];
     for tangents in invalid_tangents {
-        let bytes = normal_textured_triangle_glb(
-            &png,
-            NormalTexturedFixture {
-                tangents,
-                ..NormalTexturedFixture::default()
-            },
-        );
-        let (store, hash) = process_with_proxy_policy(bytes);
-        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
-        assert_eq!(
-            store.record(hash).unwrap().diagnostics[0].code,
-            AssetDiagnosticCode::InvalidTangent
-        );
+        for include_normals in [true, false] {
+            let bytes = normal_textured_triangle_glb(
+                &png,
+                NormalTexturedFixture {
+                    tangents,
+                    include_normals,
+                    ..NormalTexturedFixture::default()
+                },
+            );
+            let (store, hash) = process_with_proxy_policy(bytes);
+            assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+            assert_eq!(
+                store.record(hash).unwrap().diagnostics[0].code,
+                AssetDiagnosticCode::InvalidTangent
+            );
+        }
     }
 }
 
 #[test]
-fn unsupported_tangent_encodings_and_normal_texture_roles_fail_closed() {
+fn missing_normal_or_tangent_generates_default_mikktspace_values() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    for fixture in [
+        NormalTexturedFixture {
+            include_tangents: false,
+            ..NormalTexturedFixture::default()
+        },
+        NormalTexturedFixture {
+            tangents: [[0.0, 1.0, 0.0, -1.0]; 3],
+            include_normals: false,
+            ..NormalTexturedFixture::default()
+        },
+        NormalTexturedFixture {
+            include_normals: false,
+            include_tangents: false,
+            ..NormalTexturedFixture::default()
+        },
+    ] {
+        let bytes = normal_textured_triangle_glb(&png, fixture);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Ready);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        for vertex in upload.vertices() {
+            assert_eq!(
+                vertex.tangent.map(|value| value.get().to_bits()),
+                [1.0_f32, 0.0, 0.0, 1.0].map(f32::to_bits)
+            );
+        }
+    }
+}
+
+#[test]
+fn indexed_missing_tangents_expand_and_generate_per_corner() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let positions = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [9.0, 9.0, 9.0],
+    ];
+    let normals = [[0.0, 0.0, 1.0]; 4];
+    let texcoords = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.5, 0.5]];
+    let bytes =
+        generated_normal_textured_glb(&png, &positions, &normals, &texcoords, Some(&[0, 1, 2]));
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    let expected = [1.0_f32, 0.0, 0.0, 1.0].map(f32::to_bits);
+    assert_eq!(upload.vertices().len(), 3);
+    assert!(
+        upload
+            .vertices()
+            .iter()
+            .all(|vertex| { vertex.tangent.map(|value| value.get().to_bits()) == expected })
+    );
+}
+
+#[test]
+fn generated_tangent_work_guard_accepts_447_overlaps_and_rejects_448() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    for (faces, expected_state) in [(447, AssetState::Ready), (448, AssetState::Rejected)] {
+        let mut positions = Vec::with_capacity(faces * 3);
+        let mut normals = Vec::with_capacity(faces * 3);
+        let mut texcoords = Vec::with_capacity(faces * 3);
+        for _ in 0..faces {
+            positions.extend([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
+            normals.extend([[0.0, 0.0, 1.0]; 3]);
+            texcoords.extend([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]);
+        }
+        let bytes = generated_normal_textured_glb(&png, &positions, &normals, &texcoords, None);
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, expected_state);
+        if expected_state == AssetState::Rejected {
+            let diagnostic = &store.record(hash).unwrap().diagnostics[0];
+            assert_eq!(
+                diagnostic.code,
+                AssetDiagnosticCode::CollectionLimitExceeded
+            );
+            assert_eq!(diagnostic.location, "glb.decoded.generated_tangent_work");
+            assert_eq!(diagnostic.index, Some(0));
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn unique_weld_keys_do_not_bypass_the_degenerate_search_guard() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let mut positions = Vec::with_capacity((1_365 + 1_366) * 3);
+    let mut normals = Vec::with_capacity(positions.capacity());
+    let mut texcoords = Vec::with_capacity(positions.capacity());
+    for face in 0..1_365 {
+        let coordinate = (face * 2) as f32;
+        for corner in 0..3 {
+            positions.push([coordinate, 0.0, 0.0]);
+            normals.push([0.0, 0.0, 1.0]);
+            let key = (face * 3 + corner) as f32;
+            texcoords.push([key, key]);
+        }
+    }
+    for face in 0..1_366 {
+        let coordinate = ((1_365 + face) * 2) as f32;
+        positions.extend([
+            [coordinate, 0.0, 0.0],
+            [coordinate + 1.0, 0.0, 0.0],
+            [coordinate, 1.0, 0.0],
+        ]);
+        normals.extend([[0.0, 0.0, 1.0]; 3]);
+        let key = ((1_365 + face) * 3) as f32;
+        texcoords.extend([[key, 0.0], [key + 1.0, 0.0], [key, 1.0]]);
+    }
+    let bytes = generated_normal_textured_glb(&png, &positions, &normals, &texcoords, None);
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Rejected);
+    let diagnostic = &store.record(hash).unwrap().diagnostics[0];
+    assert_eq!(
+        diagnostic.code,
+        AssetDiagnosticCode::CollectionLimitExceeded
+    );
+    assert_eq!(diagnostic.location, "glb.decoded.generated_tangent_work");
+    assert_eq!(diagnostic.index, Some(0));
+}
+
+#[test]
+fn isolated_degenerate_generated_tangent_rejects_without_partial_admission() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let bytes = normal_textured_triangle_glb(
+        &png,
+        NormalTexturedFixture {
+            positions: [[0.0, 0.0, 0.0]; 3],
+            include_tangents: false,
+            ..NormalTexturedFixture::default()
+        },
+    );
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Rejected);
+    assert!(matches!(
+        store.upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0
+        }),
+        Err(AssetError::AssetNotReady { .. })
+    ));
+    let diagnostic = &store.record(hash).unwrap().diagnostics[0];
+    assert_eq!(diagnostic.code, AssetDiagnosticCode::InvalidTangent);
+    assert_eq!(diagnostic.location, "glb.decoded.generated_tangents");
+}
+
+#[test]
+#[ignore = "resource-bound whole-import measurement"]
+#[allow(clippy::cast_precision_loss)]
+fn generated_tangent_maximum_resource_boundaries() {
+    const CORNERS: usize = 262_143;
+    const FACES: usize = CORNERS / 3;
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let mut config = AssetStoreConfig::default();
+    config.limits.max_asset_decoded_bytes =
+        NonZeroU64::new(ASSET_VERTEX_BYTES * u64::try_from(CORNERS).unwrap() + 4).unwrap();
+
+    for shared_positions in [false, true] {
+        let mut positions = Vec::with_capacity(CORNERS);
+        let mut normals = Vec::with_capacity(CORNERS);
+        let mut texcoords = Vec::with_capacity(CORNERS);
+        for face in 0..FACES {
+            let position_offset = if shared_positions {
+                0.0
+            } else {
+                (face * 2) as f32
+            };
+            let texcoord_offset = if shared_positions {
+                (face * 2) as f32
+            } else {
+                0.0
+            };
+            positions.extend([
+                [position_offset, 0.0, 0.0],
+                [position_offset + 1.0, 0.0, 0.0],
+                [position_offset, 1.0, 0.0],
+            ]);
+            normals.extend([[0.0, 0.0, 1.0]; 3]);
+            texcoords.extend([
+                [texcoord_offset, 0.0],
+                [texcoord_offset + 1.0, 0.0],
+                [texcoord_offset, 1.0],
+            ]);
+        }
+        let bytes = generated_normal_textured_glb(&png, &positions, &normals, &texcoords, None);
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::new(config);
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        assert_eq!(
+            store
+                .upload_job(AssetMeshKey {
+                    content_hash: hash,
+                    mesh_index: 0
+                })
+                .unwrap()
+                .vertices()
+                .len(),
+            CORNERS
+        );
+    }
+
+    let mut positions = Vec::with_capacity(CORNERS);
+    let mut normals = Vec::with_capacity(CORNERS);
+    let mut texcoords = Vec::with_capacity(CORNERS);
+    for _ in 0..FACES {
+        positions.extend([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
+        normals.extend([[0.0, 0.0, 1.0]; 3]);
+        texcoords.extend([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]);
+    }
+    let bytes = generated_normal_textured_glb(&png, &positions, &normals, &texcoords, None);
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::new(config);
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Rejected);
+    let diagnostic = &store.record(hash).unwrap().diagnostics[0];
+    assert_eq!(
+        diagnostic.code,
+        AssetDiagnosticCode::CollectionLimitExceeded
+    );
+    assert_eq!(diagnostic.location, "glb.decoded.generated_tangent_work");
+}
+
+#[test]
+fn unsupported_tangent_encodings_fail_closed_before_generated_fallback() {
     let png = encode_png(
         1,
         1,
@@ -2002,23 +2375,6 @@ fn unsupported_tangent_encodings_and_normal_texture_roles_fail_closed() {
             store.record(hash).unwrap().diagnostics[0].code,
             AssetDiagnosticCode::InvalidTangent | AssetDiagnosticCode::UnsupportedAccessor
         ));
-    }
-
-    for (include_normals, include_tangents) in [(false, true), (true, false)] {
-        let bytes = normal_textured_triangle_glb(
-            &png,
-            NormalTexturedFixture {
-                include_normals,
-                include_tangents,
-                ..NormalTexturedFixture::default()
-            },
-        );
-        let (store, hash) = process_with_proxy_policy(bytes);
-        assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
-        assert_eq!(
-            store.record(hash).unwrap().diagnostics[0].code,
-            AssetDiagnosticCode::UnsupportedFeature
-        );
     }
 
     for fields in [r#""index":0,"texCoord":1"#, r#""index":0,"scale":1e999"#] {

@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use bevy_mikktspace::{Geometry, TangentSpace, generate_tangents};
 use cogniform_protocol::{FiniteF32, UnitF32};
 use serde::Deserialize;
 
@@ -30,6 +31,8 @@ const PNG_IEND: [u8; 12] = [0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xae, 0x42, 0x60
 const PNG_RGB: u8 = 2;
 const PNG_RGBA: u8 = 6;
 const KHR_MATERIALS_UNLIT: &str = "KHR_materials_unlit";
+const GENERATED_TANGENT_GROUP_WORK_LIMIT: u64 = 268_435_456;
+const GENERATED_TANGENT_DEGENERATE_SEARCH_LIMIT: u64 = 16_777_216;
 
 struct ExtensionPreflight {
     unsupported: Option<AssetDiagnostic>,
@@ -1500,7 +1503,7 @@ fn decode_mesh(
     if let Some(tangents) = layouts.tangents {
         validate_tangents(binary, tangents)?;
     }
-    let vertices = decode_vertices(binary, &layouts, indices, output_count)?;
+    let mut vertices = decode_vertices(binary, &layouts, indices, output_count)?;
     let material = decode_material(root, primitive.material, unlit_materials)?;
     if (material.has_base_color_texture()
         || material.has_emissive_texture()
@@ -1514,19 +1517,15 @@ fn decode_mesh(
             Some(mesh_index),
         ));
     }
-    if material.has_normal_texture() && (layouts.normals.is_none() || layouts.tangents.is_none()) {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.meshes[].primitives[].attributes.TANGENT",
-            Some(mesh_index),
-        ));
-    }
     if layouts.has_unsupported_attributes {
         return Err(diagnostic(
             AssetDiagnosticCode::UnsupportedFeature,
             "glb.json.meshes[].primitives[].attributes",
             Some(mesh_index),
         ));
+    }
+    if material.has_normal_texture() && (layouts.normals.is_none() || layouts.tangents.is_none()) {
+        generate_missing_tangents(&mut vertices, mesh_index)?;
     }
     Ok(DecodedMesh {
         vertices: Arc::from(vertices),
@@ -2096,21 +2095,204 @@ fn decode_vertices(
         }
     }
     if layouts.tangents.is_some() {
-        for (triangle_index, triangle) in vertices.chunks_exact(3).enumerate() {
-            let handedness = triangle[0].tangent[3].get();
-            if triangle[1..]
-                .iter()
-                .any(|vertex| vertex.tangent[3].get().to_bits() != handedness.to_bits())
-            {
-                return Err(diagnostic(
-                    AssetDiagnosticCode::InvalidTangent,
-                    "glb.decoded.triangle_tangent_handedness",
-                    Some(stable_index(triangle_index)),
-                ));
-            }
-        }
+        validate_triangle_tangent_handedness(&vertices, "glb.decoded.triangle_tangent_handedness")?;
     }
     Ok(vertices)
+}
+
+fn generate_missing_tangents(
+    vertices: &mut [AssetVertex],
+    mesh_index: u32,
+) -> Result<(), AssetDiagnostic> {
+    preflight_generated_tangent_work(vertices, mesh_index)?;
+
+    let zero = FiniteF32::new(0.0).expect("zero is finite");
+    for vertex in &mut *vertices {
+        vertex.tangent = [zero; 4];
+    }
+
+    generate_tangents(&mut GeneratedTangentGeometry { vertices }).map_err(|_| {
+        diagnostic(
+            AssetDiagnosticCode::InvalidTangent,
+            "glb.decoded.generated_tangents",
+            Some(mesh_index),
+        )
+    })?;
+
+    for (corner_index, vertex) in vertices.iter_mut().enumerate() {
+        if !matches!(vertex.tangent[3].get(), -1.0 | 1.0) {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidTangent,
+                "glb.decoded.generated_tangents",
+                Some(stable_index(corner_index)),
+            ));
+        }
+        let xyz = normalize_tangent_vector(
+            [vertex.tangent[0], vertex.tangent[1], vertex.tangent[2]],
+            "glb.decoded.generated_tangents",
+            Some(stable_index(corner_index)),
+        )?;
+        vertex.tangent[..3].copy_from_slice(&xyz);
+    }
+    validate_triangle_tangent_handedness(vertices, "glb.decoded.generated_tangents")
+}
+
+fn preflight_generated_tangent_work(
+    vertices: &[AssetVertex],
+    mesh_index: u32,
+) -> Result<(), AssetDiagnostic> {
+    {
+        let mut multiplicities = BTreeMap::<[u32; 8], u64>::new();
+        let mut group_work = 0_u64;
+        for vertex in vertices {
+            let key = generated_tangent_weld_key(vertex);
+            let count = multiplicities.entry(key).or_default();
+            let next = count
+                .checked_add(1)
+                .ok_or_else(|| generated_tangent_work_diagnostic(mesh_index))?;
+            let previous_cube = count
+                .checked_mul(*count)
+                .and_then(|square| square.checked_mul(*count))
+                .ok_or_else(|| generated_tangent_work_diagnostic(mesh_index))?;
+            let next_cube = next
+                .checked_mul(next)
+                .and_then(|square| square.checked_mul(next))
+                .ok_or_else(|| generated_tangent_work_diagnostic(mesh_index))?;
+            group_work = group_work
+                .checked_add(next_cube - previous_cube)
+                .ok_or_else(|| generated_tangent_work_diagnostic(mesh_index))?;
+            if group_work > GENERATED_TANGENT_GROUP_WORK_LIMIT {
+                return Err(generated_tangent_work_diagnostic(mesh_index));
+            }
+            *count = next;
+        }
+    }
+
+    let mut degenerate_faces = 0_u64;
+    let mut good_faces = 0_u64;
+    for triangle in vertices.chunks_exact(3) {
+        let first = generated_tangent_position_key(&triangle[0]);
+        let second = generated_tangent_position_key(&triangle[1]);
+        let third = generated_tangent_position_key(&triangle[2]);
+        if first == second || second == third || third == first {
+            degenerate_faces = degenerate_faces
+                .checked_add(1)
+                .ok_or_else(|| generated_tangent_work_diagnostic(mesh_index))?;
+        } else {
+            good_faces = good_faces
+                .checked_add(1)
+                .ok_or_else(|| generated_tangent_work_diagnostic(mesh_index))?;
+        }
+    }
+    let degenerate_search_work = degenerate_faces
+        .checked_mul(good_faces)
+        .and_then(|pairs| pairs.checked_mul(9))
+        .ok_or_else(|| generated_tangent_work_diagnostic(mesh_index))?;
+    if degenerate_search_work > GENERATED_TANGENT_DEGENERATE_SEARCH_LIMIT {
+        return Err(generated_tangent_work_diagnostic(mesh_index));
+    }
+    Ok(())
+}
+
+fn generated_tangent_weld_key(vertex: &AssetVertex) -> [u32; 8] {
+    [
+        vertex.position[0].get().to_bits(),
+        vertex.position[1].get().to_bits(),
+        vertex.position[2].get().to_bits(),
+        vertex.normal[0].get().to_bits(),
+        vertex.normal[1].get().to_bits(),
+        vertex.normal[2].get().to_bits(),
+        vertex.texcoord_0[0].get().to_bits(),
+        vertex.texcoord_0[1].get().to_bits(),
+    ]
+}
+
+fn generated_tangent_position_key(vertex: &AssetVertex) -> [u32; 3] {
+    vertex.position.map(|value| {
+        let value = value.get();
+        if value == 0.0 {
+            0.0_f32.to_bits()
+        } else {
+            value.to_bits()
+        }
+    })
+}
+
+const fn generated_tangent_work_diagnostic(mesh_index: u32) -> AssetDiagnostic {
+    diagnostic(
+        AssetDiagnosticCode::CollectionLimitExceeded,
+        "glb.decoded.generated_tangent_work",
+        Some(mesh_index),
+    )
+}
+
+fn validate_triangle_tangent_handedness(
+    vertices: &[AssetVertex],
+    location: &'static str,
+) -> Result<(), AssetDiagnostic> {
+    for (triangle_index, triangle) in vertices.chunks_exact(3).enumerate() {
+        let handedness = triangle[0].tangent[3].get();
+        if triangle[1..]
+            .iter()
+            .any(|vertex| vertex.tangent[3].get().to_bits() != handedness.to_bits())
+        {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidTangent,
+                location,
+                Some(stable_index(triangle_index)),
+            ));
+        }
+    }
+    Ok(())
+}
+
+struct GeneratedTangentGeometry<'a> {
+    vertices: &'a mut [AssetVertex],
+}
+
+impl Geometry for GeneratedTangentGeometry<'_> {
+    fn num_faces(&self) -> usize {
+        self.vertices.len() / 3
+    }
+
+    fn num_vertices_of_face(&self, _face: usize) -> usize {
+        3
+    }
+
+    fn position(&self, face: usize, vert: usize) -> [f32; 3] {
+        self.vertex(face, vert).position.map(FiniteF32::get)
+    }
+
+    fn normal(&self, face: usize, vert: usize) -> [f32; 3] {
+        self.vertex(face, vert).normal.map(FiniteF32::get)
+    }
+
+    fn tex_coord(&self, face: usize, vert: usize) -> [f32; 2] {
+        self.vertex(face, vert).texcoord_0.map(FiniteF32::get)
+    }
+
+    fn set_tangent(&mut self, tangent_space: Option<TangentSpace>, face: usize, vert: usize) {
+        let Some(tangent_space) = tangent_space else {
+            return;
+        };
+        let tangent = tangent_space
+            .tangent_encoded()
+            .map(|value| FiniteF32::new(value).ok());
+        let [Some(x), Some(y), Some(z), Some(w)] = tangent else {
+            return;
+        };
+        self.vertex_mut(face, vert).tangent = [x, y, z, w];
+    }
+}
+
+impl GeneratedTangentGeometry<'_> {
+    fn vertex(&self, face: usize, vert: usize) -> &AssetVertex {
+        &self.vertices[face * 3 + vert]
+    }
+
+    fn vertex_mut(&mut self, face: usize, vert: usize) -> &mut AssetVertex {
+        &mut self.vertices[face * 3 + vert]
+    }
 }
 
 fn validate_texcoords(binary: &[u8], layout: AccessorLayout) -> Result<(), AssetDiagnostic> {
@@ -2995,6 +3177,39 @@ struct Image {
 mod tests {
     use super::*;
 
+    fn test_vertex(position: [f32; 3], texcoord_0: [f32; 2]) -> AssetVertex {
+        AssetVertex {
+            position: position.map(|value| FiniteF32::new(value).unwrap()),
+            normal: [0.0, 0.0, 1.0].map(|value| FiniteF32::new(value).unwrap()),
+            tangent: [1.0, 0.0, 0.0, 1.0].map(|value| FiniteF32::new(value).unwrap()),
+            texcoord_0: texcoord_0.map(|value| FiniteF32::new(value).unwrap()),
+            color_0: [UnitF32::new(1.0).unwrap(); 4],
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn exact_budget_vertices(degenerate_faces: usize, good_faces: usize) -> Vec<AssetVertex> {
+        let mut vertices = Vec::with_capacity((degenerate_faces + good_faces) * 3);
+        for face in 0..degenerate_faces {
+            let coordinate = (face * 2) as f32;
+            for corner in 0..3 {
+                vertices.push(test_vertex(
+                    [coordinate, 0.0, 0.0],
+                    [corner as f32, coordinate + corner as f32],
+                ));
+            }
+        }
+        for face in 0..good_faces {
+            let coordinate = ((degenerate_faces + face) * 2) as f32;
+            vertices.extend([
+                test_vertex([coordinate, 0.0, 0.0], [0.0, coordinate]),
+                test_vertex([coordinate + 1.0, 0.0, 0.0], [1.0, coordinate]),
+                test_vertex([coordinate, 1.0, 0.0], [0.0, coordinate + 1.0]),
+            ]);
+        }
+        vertices
+    }
+
     #[test]
     fn material_preflight_rejects_non_finite_unused_normal_scale() {
         for scale in [f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
@@ -3028,5 +3243,98 @@ mod tests {
             assert_eq!(error.code, AssetDiagnosticCode::InvalidJson);
             assert_eq!(error.index, Some(0));
         }
+    }
+
+    #[test]
+    fn generated_tangent_weld_budget_accepts_exact_limit_and_rejects_one_more() {
+        let first = test_vertex([0.0, 0.0, 0.0], [0.0, 0.0]);
+        let second = test_vertex([0.0, 0.0, 0.0], [1.0, 0.0]);
+        let third = test_vertex([0.0, 0.0, 0.0], [2.0, 0.0]);
+        let mut vertices = vec![first; 512];
+        vertices.extend(vec![second; 512]);
+
+        preflight_generated_tangent_work(&vertices, 7).unwrap();
+        vertices.push(third);
+        let error = preflight_generated_tangent_work(&vertices, 7).unwrap_err();
+        assert_eq!(error.code, AssetDiagnosticCode::CollectionLimitExceeded);
+        assert_eq!(error.location, "glb.decoded.generated_tangent_work");
+        assert_eq!(error.index, Some(7));
+    }
+
+    #[test]
+    fn generated_tangent_degenerate_search_budget_has_exact_boundary() {
+        preflight_generated_tangent_work(&exact_budget_vertices(1_365, 1_365), 3).unwrap();
+        let error =
+            preflight_generated_tangent_work(&exact_budget_vertices(1_365, 1_366), 3).unwrap_err();
+        assert_eq!(error.code, AssetDiagnosticCode::CollectionLimitExceeded);
+        assert_eq!(error.location, "glb.decoded.generated_tangent_work");
+        assert_eq!(error.index, Some(3));
+    }
+
+    #[test]
+    fn generated_tangent_degenerate_budget_matches_signed_zero_equality() {
+        let mut vertices = exact_budget_vertices(0, 1_365);
+        for face in 0_u16..1_366 {
+            let coordinate = f32::from(face + 3_000);
+            vertices.extend([
+                test_vertex([-0.0, coordinate, 0.0], [0.0, coordinate]),
+                test_vertex([0.0, coordinate, 0.0], [1.0, coordinate]),
+                test_vertex([1.0, coordinate, 0.0], [2.0, coordinate]),
+            ]);
+        }
+
+        let error = preflight_generated_tangent_work(&vertices, 5).unwrap_err();
+        assert_eq!(error.code, AssetDiagnosticCode::CollectionLimitExceeded);
+        assert_eq!(error.location, "glb.decoded.generated_tangent_work");
+        assert_eq!(error.index, Some(5));
+    }
+
+    #[test]
+    fn generated_tangents_cover_mirrors_seams_and_neighboring_degenerates() {
+        let mut mirrored_seam = vec![
+            test_vertex([0.0, 0.0, 0.0], [0.0, 0.0]),
+            test_vertex([1.0, 0.0, 0.0], [1.0, 0.0]),
+            test_vertex([0.0, 1.0, 0.0], [0.0, 1.0]),
+            test_vertex([0.0, 0.0, 0.0], [0.0, 0.0]),
+            test_vertex([1.0, 0.0, 0.0], [0.0, 1.0]),
+            test_vertex([0.0, 1.0, 0.0], [1.0, 0.0]),
+        ];
+        generate_missing_tangents(&mut mirrored_seam, 0).unwrap();
+        assert!(
+            mirrored_seam[..3]
+                .iter()
+                .all(|vertex| vertex.tangent[3].get().to_bits() == 1.0_f32.to_bits())
+        );
+        assert!(
+            mirrored_seam[3..]
+                .iter()
+                .all(|vertex| vertex.tangent[3].get().to_bits() == (-1.0_f32).to_bits())
+        );
+
+        let shared = test_vertex([0.0, 0.0, 0.0], [0.0, 0.0]);
+        let mut neighboring_degenerate = vec![
+            shared,
+            test_vertex([1.0, 0.0, 0.0], [1.0, 0.0]),
+            test_vertex([0.0, 1.0, 0.0], [0.0, 1.0]),
+            shared,
+            shared,
+            shared,
+        ];
+        generate_missing_tangents(&mut neighboring_degenerate, 0).unwrap();
+        let expected = [1.0_f32, 0.0, 0.0, 1.0].map(f32::to_bits);
+        assert!(
+            neighboring_degenerate
+                .iter()
+                .all(|vertex| { vertex.tangent.map(|value| value.get().to_bits()) == expected })
+        );
+    }
+
+    #[test]
+    fn isolated_degenerate_generated_tangent_fails_without_a_default() {
+        let mut vertices = vec![test_vertex([0.0, 0.0, 0.0], [0.0, 0.0]); 3];
+        let error = generate_missing_tangents(&mut vertices, 11).unwrap_err();
+        assert_eq!(error.code, AssetDiagnosticCode::InvalidTangent);
+        assert_eq!(error.location, "glb.decoded.generated_tangents");
+        assert_eq!(error.index, Some(0));
     }
 }

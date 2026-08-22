@@ -494,7 +494,7 @@ asset without a scene material uses its existing fallback color with neutral
 dielectric parameters `metallic = 0`, `roughness = 0.8`. Emissive strength,
 cross-surface emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
-other material texture roles, blending, sorting, generated tangents, HDR, and tone mapping are outside this baseline. A
+other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
 fixed 496-byte per-draw uniform preserves the prior 480-byte model,
 view-projection, material-color, identity, directional, point-light,
 camera-position, and metallic/roughness/normal-scale/material-flag prefix and
@@ -544,7 +544,14 @@ on CPU. Decoders verify declared and decoded sizes before allocation; expanded
 upload vertices always reserve exactly 64 bytes for position, unit normal,
 primary coordinate, unit tangent plus handedness, and unit RGBA color. Missing
 non-normal-map tangents use a fixed disabled fallback and missing colors use
-white. The local service
+white. For a normal-textured primitive, absent source tangents are generated
+per expanded corner through exact-pinned corrected MikkTSpace after complete
+source and material validation. Absent source normals use the existing flat
+normal and cause any validated source tangent to be overwritten. Two checked
+pre-library guards cap the sum of cubed exact welded-key multiplicities at
+268,435,456 and nine times degenerate-face count times good-face count at
+16,777,216. Missing or unsuitable generated output rejects before immutable
+adoption. The local service
 owns bounded CPU asset state and explicitly forwards immutable upload jobs into
 renderer-owned mesh and unique content-hash-and-role texture residency; neither patches nor frames
 perform implicit asset work. A caller may explicitly evict every CPU record,
@@ -581,7 +588,8 @@ USD remains an offline authoring boundary. KTX2, mesh optimization, spatial acce
 All agent data, labels, assets, procedures, and transport messages are untrusted. The security baseline includes:
 
 - pre-decode byte caps, bounded collections/nesting, entity/operation/pixel quotas;
-- strict asset decoded-size, vertex/index, texture, and GPU-residency limits;
+- strict asset decoded-size, vertex/index, texture, generated-tangent work,
+  and GPU-residency limits;
 - explicit content-hash-wide asset reclamation with exact released-resource
   accounting and no hidden retry or pressure policy;
 - no arbitrary native shaders or plugins;
@@ -725,7 +733,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Release integrity and support | The future prerelease contract requires release immutability, draft-first exact two-asset assembly, six separately authorized live gates, release and per-asset attestation checks, independent SHA-256 verification, and a latest-candidate-only support lifetime without claiming that a release exists |
 | Overload | Queue capacity stays bounded and each delivery semantic behaves as documented |
 | Pending-work age | Empty command/observation/import/upload lifecycles report no age; admitted work reports deterministic monotonic oldest age, and replacement, duplicate, rejection, processing, eviction, error, and delivery preserve exact lifecycle semantics without entering durable state |
-| Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, malformed source tangent, sampler, or texture role, and unsupported features fail with structured diagnostics |
+| Asset safety | Hash mismatch, oversized geometry/image decode, malformed PNG, malformed source tangent, exceeded generated-tangent work, unsuitable generated output, sampler or texture-role failure, and unsupported features fail with structured diagnostics |
 | Asset resolution | The local service explicitly imports and uploads bounded content-addressed meshes and role-separated textures; recovered logical references remain unavailable until exact-hash rehydration without another world mutation |
 | Asset eviction | One explicit content-hash operation releases exact queued/CPU/upload/GPU mesh and shared-texture capacity while preserving unrelated order, logical references, revision, replay, hash, frame frontier, and later exact-hash rehydration |
 | Procedure composition | The local service produces deterministic stable IDs, queues an ordinary generated patch without immediate mutation, and preserves query/replay/hash/idempotency behavior across restoration |
@@ -747,7 +755,7 @@ latest-candidate support lifetime in
 Repository-setting mutation, annotated tagging, real archive generation,
 draft creation, upload, and publication remain separately approved. Wider
 GPU/driver support, prebuilt
-artifacts, generated tangents and additional material texture roles or the remaining visual-quality surface, remote
+artifacts, additional material texture roles or the remaining visual-quality surface, remote
 protocol/authentication, configurable or multi-client endpoint lifecycle, tenancy, durable or multi-value observation retention, automatic startup,
 recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic
@@ -773,3 +781,7 @@ planning assumptions, not production commitments.
   <https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/verify-release-integrity>
 - OpenSSF OSPS Baseline 2026.02.19 release-integrity and support controls:
   <https://baseline.openssf.org/versions/2026-02-19>
+- glTF 2.0.1 default tangent generation guidance:
+  <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html>
+- `bevy_mikktspace` 1.0.0:
+  <https://github.com/bevyengine/bevy_mikktspace>

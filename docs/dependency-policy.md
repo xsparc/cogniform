@@ -86,6 +86,36 @@ working-memory, decoded-byte, and residency limits constrain the parser. The
 optional `zlib-rs` feature is not enabled. Wider image formats, decoder
 features, or backend changes require a new review.
 
+## Approved MikkTSpace tangent generator
+
+CF065 admits exact-pinned `bevy_mikktspace` 1.0.0 only inside
+`cogniform-assets`, with default features disabled and exactly `std`,
+`corrected-edge-sorting`, and `corrected-vertex-welding` enabled. `Cargo.lock`
+adds one package with registry checksum
+`bff34eb29ff4b8a8688bc7299f14fb6b597461ca80fec03ed7d22939ab33e48f`;
+the vendored `.cargo_vcs_info.json` binds source commit
+`9de78a281bca0505142da521eb5152146da28656`. The package has no runtime
+dependency or build script, forbids unsafe code, and performs no filesystem,
+network, telemetry, paid-service, or runtime-download operation.
+
+The normalized package manifest declares Rust 1.85.0; Cogniform's pinned
+workspace toolchain remains Rust 1.97.1. The package license expression is
+`Zlib AND (MIT OR Apache-2.0)`: its MIT and Apache-2.0 files and the documented
+Zlib-covered original portions are committed with the exact registry source
+and remain inside the existing deny allowlist. Repository Git attributes keep
+vendor files byte-exact while making diff whitespace checks aware of registry
+CRLF and final-blank-line bytes instead of normalizing checksum-covered files.
+
+Both corrected features are mandatory. Corrected vertex welding replaces the
+legacy equal-position scan; corrected edge sorting removes a recursive legacy
+quicksort path and repairs the reference implementation's last-triangle
+off-by-one. The corrected result can differ from the broken reference on that
+last triangle, so ADR 0065 promises deterministic behavior only for
+Cogniform's declared toolchain and platform class. First-party checked work
+guards bound exact welded-key grouping and degenerate-to-good inheritance
+before library entry. A feature, version, source, license, algorithm, or bound
+change requires renewed review.
+
 ## Existing serialization reuse
 
 CF033 adds direct `cogniform-cli` edges to the workspace's existing

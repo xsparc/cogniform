@@ -70,5 +70,6 @@ earlier one and links the history.
 | [0062](0062-bounded-core-gltf-samplers.md) | Accepted | Apply bounded core glTF filtering and S/T wrapping independently to four texture roles |
 | [0063](0063-bounded-core-gltf-vertex-colors.md) | Accepted | Multiply imported base color by one bounded core glTF primary vertex-color set |
 | [0064](0064-bounded-named-stdio-profiles.md) | Accepted | Select one of three immutable bounded local stdio profiles at child launch |
+| [0065](0065-bounded-generated-mikktspace-tangents.md) | Accepted | Generate missing normal-map tangents under two fixed pre-library work guards |
 
 New records use four sections: context, decision, consequences, and status.

@@ -45,6 +45,11 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   finite normal scale, exact 48-byte expanded vertex accounting, atomic dual-
   role GPU reservation, transform-safe TBN direct-light shading, and unchanged
   geometric-normal observations;
+- bounded default MikkTSpace tangent generation when a supported normal-
+  textured triangle omits `TANGENT` or `NORMAL`, with complete source
+  validation before fallback, two fixed checked pre-library CPU work guards,
+  complete finite/non-zero/handedness output validation, indexed/mirrored/
+  degenerate coverage, and no 64-byte vertex or renderer ABI change;
 - optional packed glTF `metallicRoughnessTexture` through the existing bounded
   embedded PNG path, with unique-image CPU accounting, atomic zero-to-three
   role GPU reservation, linear green/blue factor multiplication for
@@ -223,6 +228,15 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF065 adds exact-pinned vendored `bevy_mikktspace` 1.0.0 with only `std`,
+  corrected edge sorting, and corrected vertex welding. The dependency is one
+  pure-Rust, dependency-free, build-script-free, unsafe-forbidden package
+  under `Zlib AND (MIT OR Apache-2.0)`. Missing normal-map tangents now enter
+  the supported path under exact cubic-key and degenerate-search bounds;
+  explicit source tangents, shaders, materials, textures, 64-byte vertices,
+  lifecycle, observations, protocols, persistence, package version, workflow,
+  and release authority remain unchanged;
 
 - CF064 lets both inherited-stdio composition roots select exactly one
   immutable launch profile from `default-local-64x64`, `local-256x256`, or
@@ -518,8 +532,9 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   emissive strength/cross-surface illumination, HDR/tone mapping,
   gamma conversion, and lighting configuration are not implemented.
   Normal output is quantized and the imported subset supports numeric base
-  color, metallic, roughness, and one source-tangent normal map, but no
-  generated tangents, emissive strength, alpha blending/sorting, or other
+  color, metallic, roughness, and one explicit or bounded generated-tangent
+  normal map, but no generated coordinates, emissive strength, alpha
+  blending/sorting, or other
   material texture roles;
   the GLB subset samples at most one shared embedded PNG per base-color,
   metallic-roughness, normal, or emissive role but excludes external/data images, JPEG,

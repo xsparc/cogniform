@@ -1545,6 +1545,32 @@ file configuration, protocol negotiation, dependencies, package/version/
 workflow changes, or release action. See
 [ADR 0064](../adr/0064-bounded-named-stdio-profiles.md).
 
+### PR 65 - CF065: Bounded generated MikkTSpace tangents
+
+Outcome: supported normal-textured triangle GLBs may omit source tangents
+without changing the renderer ABI or explicit source-tangent behavior.
+
+Gate: preserve complete source accessor and material/coordinate/unsupported-
+attribute validation before fallback. When `TANGENT` is absent, generate
+default MikkTSpace values from expanded position, normal, and `TEXCOORD_0`.
+When `NORMAL` is absent, use existing flat normals and overwrite any completely
+validated source tangent. Preserve exact explicit `NORMAL` plus `TANGENT`
+values and diagnostics.
+
+Use exact-pinned `bevy_mikktspace` 1.0.0 with only `std`, corrected edge
+sorting, and corrected vertex welding. Before library entry, require the sum
+of cubed exact welded-key multiplicities to be at most 268,435,456 and nine
+times degenerate-face count times good-face count to be at most 16,777,216.
+Reject checked overflow or an exceeded work guard at
+`glb.decoded.generated_tangent_work`; reject a library error, absent callback,
+non-finite/zero result, invalid handedness, or per-triangle sign inconsistency
+at `glb.decoded.generated_tangents`. Adopt no partial asset. Preserve the exact
+64-byte vertex/GPU ABI, shader/material behavior, texture accounting,
+eviction/rehydration, hashing, revision, replay, and observations. Do not add
+coordinates, primitive modes, topology changes, material roles, protocols,
+persistence, release, or deployment. See
+[ADR 0065](../adr/0065-bounded-generated-mikktspace-tangents.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1556,7 +1582,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
-  -> CF062 -> CF063 -> CF064
+  -> CF062 -> CF063 -> CF064 -> CF065
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1865,6 +1891,15 @@ Validation expands with capability:
   runtime, adapter, or service effects; cross-layer payload/output bound proof;
   exact wide EntityId binary, base64, metadata, and official-client resource
   readback; unchanged zero-argument binary and dual-era MCP controlled flows.
+- CF065: exact explicit-tangent compatibility and malformed-source precedence;
+  indexed/non-indexed generated tangents; flat-normal overwrite; mirrored UV
+  seams and neighboring/isolated degenerates; exact cubic-key and degenerate-
+  search boundaries including all-unique and signed-zero adversarial input;
+  maximum expanded-
+  corner acceptance and overlapping pre-library rejection; exact one-package
+  dependency/vendor/license/feature audit; equal controlled Vulkan output for
+  explicit and generated bases; unchanged 64-byte ABI, material/shader,
+  lifecycle, observation, revision, logical hash, and replay behavior.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

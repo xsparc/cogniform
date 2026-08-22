@@ -5,4 +5,5 @@
 *.ps1 text eol=crlf
 
 # Cargo verifies vendored package files byte-for-byte against these sources.
-/vendor/** -text
+# Registry archives may retain CRLF, which is part of those verified bytes.
+/vendor/** -text whitespace=cr-at-eol,-blank-at-eof
