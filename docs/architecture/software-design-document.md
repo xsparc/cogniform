@@ -482,7 +482,11 @@ remain strictly validated and lifecycle-accounted but visually inert. An
 explicit scene material disables the imported unlit selection. The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
-A source-tangent TBN perturbs only direct-light response. Emissive texture RGB
+A source or bounded generated-tangent TBN perturbs only direct-light response.
+Each of the four texture roles independently applies its retained finite
+`KHR_texture_transform` affine rows to `TEXCOORD_0`; generated tangents use the
+transformed normal-role coordinates while explicit tangents and retained
+coordinates remain authored values. Emissive texture RGB
 is decoded from sRGB, multiplied by the numeric linear emissive factor, added
 after the ordinary metallic-roughness response, and clamped to one without
 changing alpha; texture alpha is ignored. Untextured draws use white
@@ -495,10 +499,13 @@ dielectric parameters `metallic = 0`, `roughness = 0.8`. Emissive strength,
 cross-surface emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
-fixed 496-byte per-draw uniform preserves the prior 480-byte model,
+fixed 624-byte per-draw uniform preserves the complete prior 496-byte prefix,
+which in turn preserves the 480-byte model,
 view-projection, material-color, identity, directional, point-light,
 camera-position, and metallic/roughness/normal-scale/material-flag prefix and
-appends one emissive slot whose padding lane carries the imported mask cutoff.
+appends one emissive slot whose padding lane carries the imported mask cutoff,
+then appends eight padded affine rows in base-color, normal,
+metallic-roughness, and emissive order.
 A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU
@@ -532,9 +539,13 @@ byte/unsigned short `VEC3`/`VEC4`,
 with at most sixteen attribute semantics per primitive,
 plus an optional three-channel unit-bounded core emissive factor and bounded
 OPAQUE/MASK alpha coverage plus a strict optional boolean `doubleSided` per
-mesh material. The ratified `KHR_materials_unlit` marker is the sole supported
-extension and retains one typed shading model only after strict declaration,
-selected/unused material, and fallback-resource validation. The subset also retains
+mesh material. The ratified `KHR_materials_unlit` and
+`KHR_texture_transform` extensions are the sole supported extensions. Unlit
+retains one typed shading model only after strict declaration,
+selected/unused material, and fallback-resource validation. Texture transform
+retains finite offset, rotation, and scale with exact defaults and Khronos
+translation-rotation-scale order for the four existing texture-info roles;
+only omitted/zero core and extension coordinate selectors are supported. The subset also retains
 one shared embedded PNG per base-color, metallic-roughness, normal, or
 emissive role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
@@ -551,7 +562,11 @@ normal and cause any validated source tangent to be overwritten. Two checked
 pre-library guards cap the sum of cubed exact welded-key multiplicities at
 268,435,456 and nine times degenerate-face count times good-face count at
 16,777,216. Missing or unsuitable generated output rejects before immutable
-adoption. The local service
+adoption. Generated tangent work keys and MikkTSpace input use the transformed
+normal-role coordinates, while the stored primary coordinates and explicit
+source tangents stay unchanged. Every active role's affine evaluation is
+checked over all expanded coordinates; a non-finite product or sum rejects
+before immutable adoption. The local service
 owns bounded CPU asset state and explicitly forwards immutable upload jobs into
 renderer-owned mesh and unique content-hash-and-role texture residency; neither patches nor frames
 perform implicit asset work. A caller may explicitly evict every CPU record,
@@ -564,9 +579,10 @@ state empty, so callers must rehydrate exact matching bytes before dependent
 rendering resumes. An opt-in storage adapter can retain
 one exact source in a separate immutable bounded file, but it neither maps that
 file to recovery state nor decodes, imports, uploads, or schedules the source.
-Unknown or wider extension payloads and valid out-of-subset image features
+Unknown or wider extension payloads, including nonzero texture-transform
+coordinate overrides or future transform properties, and valid out-of-subset image features
 produce structured diagnostics or approved proxies; malformed declaration,
-unlit marker, normal, tangent, primary-coordinate, primary-color, material, image, or over-
+unlit or texture-transform marker, normal, tangent, primary-coordinate, primary-color, material, image, or over-
 limit data cannot proxy.
 Aggregate asset status includes optional monotonic oldest-import and
 oldest-upload ages without exposing source bytes, mesh keys, texture content,
