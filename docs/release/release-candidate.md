@@ -34,8 +34,8 @@ release publication, or deployment.
 | Local stream frame | Pass for declared CPU profile | Fixed version-one header and exact fixture, independent header-first complete/control/bulk limits, canonical observation-envelope composition, short/interrupted I/O, back-to-back framing, and corruption/truncation rejection over caller-owned streams without an endpoint or session |
 | Local-session messages | Pass for declared CPU profile | Exact unchanged schema-v1 client/server LF fixtures plus exact schema-v2 hello/imagination/completion/replay fixtures; outer-only correlation; negotiated frame/result bytes and nesting; direction/version/unknown/canonical/substitution/nested identity, revision, receipt, and role validation; no executor or endpoint authority; exhaustive message construction and `LocalSessionValidationKind` matching remain pre-stable in the unpublished source-candidate API |
 | Local-session executor | Pass for declared CPU profile | One version-locked hello; field-wise peer/local/service frame and compilation limits installed before semantic work; every patch/imagination admission; both cross-kind supersession directions; deterministic one-command advancement; exact terminal command/observation correlation; compiled/unresolved/replay/service-invalid outcomes; one-time pending; two-frame output cap; redacted failures; and quiescent close |
-| Local stdio session | Pass for declared CPU and controlled Windows profile | Exact pre-adapter argument/terminal/first-frame behavior, half-duplex no-read-while-live scheduling, asymmetric version-two result-limit adoption, positive-cadence fixed completion deadline, partial-output/flush/fatal handling, stable diagnostics, and passing controlled child-process v1 patch plus v2 imagination/patch/query/observation/replay/close exchanges |
-| MCP stdio adapter | Pass for declared CPU and controlled Windows profile | Byte-compatible exact `2025-11-25` initialization beside exact `2026-07-28` discovery or direct requests; one pinned connection era and independent modern protocol/capability validation; a 508-byte workflow instruction; no advertised extensions or inherited discovery authority; complete modern result discrimination, informational server identity, and zero-TTL private discovery/list/read cache roles; explicit Tasks and unsupported-method rejection; exactly four ordered tools with closed mutually exclusive success/error schemas and stable vocabularies, plus resources without subscriptions/list-change; incremental input byte/nesting bounds; one active request plus one decoded pending message, with exact matching cancellation delivered before response writing and terminal no-response/no-later-dispatch behavior; wrong/missing/late cancellation remains response-through-flush; bounded encode-before-write output; typed validation before lazy service creation; serialized exact-revision query, one-command imagination, direct atomic patch application, and cooperative bounded observation; exact retained replay without duplicate compile/mutation; one exact-URI latest-value canonical resource with atomic replacement and cancellation/failure preservation; stable invalid/stale/conflict/busy/output roles; official-client, raw-wire, cancellation, stalled-writer, and controlled child-process evidence in both eras; no listener or remote authority |
+| Local stdio session | Pass for declared CPU and controlled Windows profile | Exact omission-or-one-name launch grammar for immutable 64x64, 256x256, and 480x270 profiles; pre-adapter argument/terminal/first-frame behavior; half-duplex no-read-while-live scheduling; asymmetric version-two result-limit adoption; positive-cadence fixed completion deadline; partial-output/flush/fatal handling; stable diagnostics; exact wide EntityId payload; and passing controlled child-process v1 patch plus v2 imagination/patch/query/observation/replay/close exchanges |
+| MCP stdio adapter | Pass for declared CPU and controlled Windows profile | The same bounded launch profiles with exact 2,203,260-byte wide EntityId resource and official-client readback; byte-compatible exact `2025-11-25` initialization beside exact `2026-07-28` discovery or direct requests; one pinned connection era and independent modern protocol/capability validation; a 508-byte workflow instruction; no advertised extensions or inherited discovery authority; complete modern result discrimination, informational server identity, and zero-TTL private discovery/list/read cache roles; explicit Tasks and unsupported-method rejection; exactly four ordered tools with closed mutually exclusive success/error schemas and stable vocabularies, plus resources without subscriptions/list-change; incremental input byte/nesting bounds; one active request plus one decoded pending message, with exact matching cancellation delivered before response writing and terminal no-response/no-later-dispatch behavior; wrong/missing/late cancellation remains response-through-flush; bounded encode-before-write output; typed validation before lazy service creation; serialized exact-revision query, one-command imagination, direct atomic patch application, and cooperative bounded observation; exact retained replay without duplicate compile/mutation; one exact-URI latest-value canonical resource with atomic replacement and cancellation/failure preservation; stable invalid/stale/conflict/busy/output roles; official-client, raw-wire, cancellation, stalled-writer, and controlled child-process evidence in both eras; no listener or remote authority |
 | Compilation result contract | Pass for declared CPU profile | Exact compiled/unresolved schema-v1 LF fixtures, bounded canonical round trips, malformed/substituted/order/duplicate/outcome/revision rejection, nested patch validation, compiler pre-return encoded/nesting enforcement, source-path compiler re-exports, and unchanged normalization/IDs/patch bytes without session or I/O authority; exhaustive result/config construction and `CompileError` matching remain pre-stable in the unpublished source-candidate API |
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
@@ -57,10 +57,10 @@ published release.
 
 ## Required evidence and preparation before publication
 
-Checked items below were reproduced through CF063 and are recorded in the
+Checked items below were reproduced through CF064 and are recorded in the
 validation baseline; the package/source identity matrix originated on CF051
-and the executable MCP evidence was revalidated on CF054. The CF055 through
-CF063 controlled GPU paths were reproduced separately on the same validated adapter. Pull-request quality
+and the executable MCP evidence was revalidated on CF064. The CF055 through
+CF064 controlled GPU paths were reproduced separately on the same validated adapter. Pull-request quality
 must reproduce the portable subset, and the exact clean merged/tagged commit
 must remain unchanged through the still-open identity, archive, and publication
 gates.
@@ -246,8 +246,9 @@ The GitHub release must be marked prerelease and state:
   mutate, authenticate, persist, or transport them. Local-session schema
   version two can carry the values under explicit negotiated limits through
   the existing executor and stdio profile; version one cannot;
-- `cogniform-cli serve-stdio` supplies one fixed inherited redirected-stream
-  owner and one 64x64 local service. It is half-duplex, flushes every frame,
+- `cogniform-cli serve-stdio` supplies one inherited redirected-stream owner
+  and one immutable allowlisted 64x64, 256x256, or 480x270 local service; omission
+  remains 64x64. It is half-duplex, flushes every frame,
   supports patch and version-two imagination commands, polls live completion
   every 2 ms under a 15-second deadline, and terminates
   on truncation, corruption, incomplete session EOF, fatal service/executor
@@ -255,11 +256,12 @@ The GitHub release must be marked prerelease and state:
   partial write, preempt a blocked synchronous operation, create a pipe,
   listener, socket, or process, authenticate or authorize a peer, add
   confidentiality/freshness/replay/rate/tenancy policy, supervise/restart the
-  child, or support configurable, multi-client, full-duplex, or remote use;
-- `cogniform-cli serve-mcp-stdio` supplies one fixed inherited redirected-stream
+  child, or support arbitrary dimensions, external configuration,
+  multi-client, full-duplex, or remote use;
+- `cogniform-cli serve-mcp-stdio` supplies one bounded-profile inherited redirected-stream
   owner, byte-compatible exact MCP `2025-11-25` plus exact MCP `2026-07-28`
   discovery/direct-request lifecycles, four fixed tools, one in-memory latest-
-  value observation resource, and one lazily initialized 64x64 local service.
+  value observation resource, and one lazily initialized allowlisted local service.
   A connection pins one era; every modern request repeats exact protocol and
   client-capability metadata. Discovery and informational server identity grant
   no extension or authentication authority. It

@@ -8,13 +8,21 @@ tool result shape and adds bounded workflow instructions for agent clients.
 CF053 makes one exact matching active-request cancellation observable while
 keeping the child process terminal and the request pipeline bounded. CF054
 adds exact MCP `2026-07-28` discovery and self-contained requests beside the
-unchanged legacy lifecycle.
+unchanged legacy lifecycle. CF064 gives the CLI composition root the same
+closed launch-time profile allowlist as the binary stdio command without
+changing MCP discovery or messages.
 
 `cogniform-cli serve-mcp-stdio` serves exact MCP `2025-11-25` legacy sessions
 and exact MCP `2026-07-28` stateless requests over inherited redirected
 stdin/stdout. It is a local child-process adapter, not a listener or remote
 security boundary. A parent owns pipe creation, child lifetime, peer identity,
 authorization, confidentiality, freshness, rate policy, and supervision.
+
+The CLI grammar is
+`serve-mcp-stdio [--profile <default-local-64x64|local-256x256|local-480x270>]`.
+Omission selects 64x64. Exactly one known name is accepted before runtime or
+service effects; the selected dimensions remain immutable and are not exposed
+as MCP negotiation or per-request authority.
 
 ## Protocol profile
 
@@ -123,6 +131,9 @@ cooperative and observe the active RMCP request token. A completion must match
 the observation ID, exact revision, camera, kind, quality, dimensions, metadata,
 and zero-staleness roles. Its owned payload is encoded with the existing
 version-one `COGOBS01` codec under the default 4 MiB complete-envelope bound.
+The widest named profile remains inside that bound: an all-absent 480x270
+EntityId observation is exactly 2,203,260 envelope bytes and 2,937,680 base64
+bytes, below the fixed 8 MiB output-line limit.
 
 On success, the tool returns a link to exactly one retained resource named by
 `cogniform://observations/{observation-id}` with media type
@@ -218,6 +229,7 @@ See [ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md),
 [ADR 0048](../adr/0048-pin-current-rust-mcp-sdk-without-protocol-expansion.md),
 [ADR 0049](../adr/0049-conformant-mcp-discovery-contract.md),
 [ADR 0053](../adr/0053-bounded-terminal-mcp-cancellation.md),
-[ADR 0054](../adr/0054-bounded-dual-era-mcp-stdio-lifecycle.md), the
+[ADR 0054](../adr/0054-bounded-dual-era-mcp-stdio-lifecycle.md),
+[ADR 0064](../adr/0064-bounded-named-stdio-profiles.md), the
 [quickstart](../getting-started/mcp-stdio-adapter.md), and the
 [threat model](../threat-model/mvp.md).

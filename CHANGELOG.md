@@ -176,7 +176,7 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   work with exact bounded correlation and deterministic one-command advance;
   returns at most two validated frames per call; and creates no endpoint,
   thread, timer, process, or automatic polling loop;
-- `cogniform-cli serve-stdio`, a fixed `default-local-64x64` half-duplex binary
+- `cogniform-cli serve-stdio`, a bounded-profile half-duplex binary
   composition root over inherited redirected stdin/stdout, with pre-adapter
   argument/terminal/first-EOF handling, immediate post-hello negotiated frame
   policy, individual frame flush, 2 millisecond capped polling, a 15 second
@@ -223,6 +223,16 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF064 lets both inherited-stdio composition roots select exactly one
+  immutable launch profile from `default-local-64x64`, `local-256x256`, or
+  `local-480x270`; omission preserves the exact 64x64 default. Every other
+  argument shape rejects before stream/runtime/adapter/service effects with a
+  stable payload-redacted allowlist error. The widest EntityId observation is
+  proven at exactly 2,203,260 envelope bytes and 2,937,680 base64 bytes through
+  the existing binary and MCP bounds. No public Rust, session, observation,
+  MCP, world, persistence, dependency, package, version, workflow, or release
+  contract changed;
 
 - CF063 adds public `AssetVertex::color_0` and changes
   `ASSET_VERTEX_BYTES` from 48 to 64 while preserving the prior 48-byte prefix.
@@ -484,8 +494,9 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 - no supported release, stable crates.io API, remote transport, authentication,
   automatic persistence/startup, snapshot retention, shared memory, model
   integration, deployment, or production SLA;
-- `serve-stdio` supports one inherited-stream client, one fixed 64x64 local
-  service, half-duplex patch/imagination/query/observation work, fixed
+- `serve-stdio` supports one inherited-stream client, one immutable allowlisted
+  64x64, 256x256, or 480x270 local service, half-duplex patch/imagination/
+  query/observation work, fixed
   polling/deadline, and
   negotiated close only. It creates no process or endpoint and supplies no
   confidentiality, authorization, freshness, replay policy, cancellation,
@@ -493,7 +504,7 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 - `serve-mcp-stdio` supports one parent-owned inherited-stream client pinned to
   exact MCP `2025-11-25` or exact MCP `2026-07-28`, four fixed tools, one
   in-memory latest-value observation resource, serialized calls, and one lazy
-  64x64 local service. Its observation
+  allowlisted local service. Its observation
   poll has a fixed 15 second deadline and exact matching active cancellation is
   process-terminal before response writing, but it supplies no general
   operation deadline, rollback, effect receipt, reusable cancellation,

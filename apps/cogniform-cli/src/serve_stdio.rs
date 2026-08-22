@@ -17,13 +17,13 @@ use cogniform_local_session::{
 };
 use cogniform_local_transport::{LocalFrame, LocalFrameConfig, read_frame, write_frame};
 
-use crate::{LOCAL_PROFILE_HEIGHT, LOCAL_PROFILE_WIDTH};
+use crate::profile::LocalProfile;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(2);
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Runs one binary half-duplex session over inherited standard input and output.
-pub(crate) fn run() -> Result<(), ServeStdioError> {
+pub(crate) fn run(profile: LocalProfile) -> Result<(), ServeStdioError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     validate_standard_streams(stdin.is_terminal(), stdout.is_terminal())?;
@@ -36,16 +36,14 @@ pub(crate) fn run() -> Result<(), ServeStdioError> {
         &mut writer,
         &mut clock,
         SessionPolicy::FIXED,
-        build_executor,
+        move || build_executor(profile),
     )
 }
 
-fn build_executor() -> Result<LocalSessionExecutor, ServeStdioError> {
-    let service = pollster::block_on(LocalService::new(LocalServiceConfig::new(
-        LOCAL_PROFILE_WIDTH,
-        LOCAL_PROFILE_HEIGHT,
-    )))
-    .map_err(|_| ServeStdioError::ServiceUnavailable)?;
+fn build_executor(profile: LocalProfile) -> Result<LocalSessionExecutor, ServeStdioError> {
+    let (width, height) = profile.dimensions();
+    let service = pollster::block_on(LocalService::new(LocalServiceConfig::new(width, height)))
+        .map_err(|_| ServeStdioError::ServiceUnavailable)?;
     LocalSessionExecutor::new(service, LocalExecutorConfig::default())
         .map_err(|_| ServeStdioError::ExecutorFailed)
 }

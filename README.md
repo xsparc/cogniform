@@ -25,7 +25,7 @@ scene revision that produced it.
 > Schema version two now also carries bounded semantic imagination,
 > deterministic compilation outcomes, optional applied receipts, and exact retained
 > replay while version-one bytes remain fixed.
-> The CLI now composes those boundaries as one fixed-profile, half-duplex
+> The CLI now composes those boundaries as one bounded-profile, half-duplex
 > `serve-stdio` child-process command over inherited redirected streams, with
 > negotiated limits, per-frame flush, capped polling, and stable redacted
 > failures. It creates no pipe, listener, daemon, or remote security boundary.
@@ -41,7 +41,9 @@ scene revision that produced it.
 > pre-response cancellation bypass response-flush backpressure. Cancellation
 > suppresses that response and terminates the child without later dispatch;
 > observation polling cooperates while preserving the prior completed
-> resource. The adapter creates the fixed local
+> resource. Both inherited-stream commands accept only an optional immutable
+> launch profile from `default-local-64x64`, `local-256x256`, or
+> `local-480x270`; omission preserves the 64x64 default. The adapter creates the selected local
 > service lazily, serializes calls, and adds no HTTP, socket, OAuth, model,
 > prompt, resource-template, subscription, history, task, or remote-security
 > surface.
@@ -246,7 +248,9 @@ For a local agent loop, a parent process can launch the exact child command
 `cogniform-cli serve-stdio` with both stdin and stdout piped. Do not run it
 interactively or treat stdout as text: stdout contains only binary CF039 frames,
 and the command rejects terminal stdin or stdout before adapter creation. It
-uses one fixed `default-local-64x64` service, reads no next request until the
+defaults to `default-local-64x64`; a trusted parent may instead append
+`--profile local-256x256` or `--profile local-480x270`. The selected profile is
+immutable for the child lifetime. The command reads no next request until the
 current correlation is terminal, polls at a capped 2 millisecond interval, and
 applies a fixed 15 second live-operation deadline. The parent owns process and
 pipe creation, identity, authorization, confidentiality, freshness, and
@@ -260,7 +264,8 @@ cargo test --release -p cogniform-cli --test stdio_session --all-features --lock
 ```
 
 For an MCP parent, launch `cogniform-cli serve-mcp-stdio` with both standard
-streams piped. Use exact `2025-11-25` initialization or exact `2026-07-28`
+streams piped. The same optional named profile grammar applies before protocol
+startup. Use exact `2025-11-25` initialization or exact `2026-07-28`
 discovery/self-contained request metadata. Stdout contains only newline-
 delimited MCP JSON-RPC. The parent owns child supervision, identity,
 authorization, confidentiality, freshness, and rate policy. See the

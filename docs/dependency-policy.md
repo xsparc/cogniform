@@ -58,6 +58,10 @@ CF063 adds strict core primary vertex-color decode and one existing-pipeline
 shader attribute using the same JSON, asset, renderer, and WebGPU facilities.
 It adds no package, feature, build script, native code, network, telemetry, or
 paid-service requirement and leaves the dependency graph unchanged.
+CF064 adds a CLI-private three-name parser and composes existing constructor
+arguments, limits, codecs, and transports. It adds no package, feature, build
+script, native code, network, telemetry, or paid-service requirement and
+leaves the dependency graph unchanged.
 `cogniform-renderer` and `cogniform-engine` use the `png` package only to
 generate test fixtures. It is dual licensed `MIT OR Apache-2.0`, uses the pure-Rust miniz
 backend with the direct crate's default features disabled, and requires no

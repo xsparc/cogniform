@@ -91,12 +91,14 @@ does not select a path, address, endpoint, peer, or session. The separate
 local-session codec opens no I/O and executes no decoded request. The separate
 executor owns one supplied service and advances only when its caller invokes a
 method; it opens no endpoint and starts no thread, timer, or runtime loop. The
-CLI's fixed `serve-stdio` composition locks one inherited redirected stream
-pair, drives the executor half-duplex, flushes each frame, and enforces a
+CLI's bounded `serve-stdio` composition locks one inherited redirected stream
+pair and one immutable allowlisted launch profile, drives the executor half-duplex,
+flushes each frame, and enforces a
 completion-poll deadline. It creates no pipe, listener, socket, child process,
 daemon, identity boundary, or remote-security policy. The separate
-`serve-mcp-stdio` composition owns one inherited redirected stream pair and a
-current-thread async runtime, pins each connection to exact `2025-11-25` or
+`serve-mcp-stdio` composition owns one inherited redirected stream pair, the
+same immutable allowlisted launch profile, and a current-thread async runtime,
+pins each connection to exact `2025-11-25` or
 exact `2026-07-28`, exposes only four fixed tools plus one latest-value
 observation resource, and creates its one `LocalService` lazily after typed
 argument validation. Modern requests repeat independently validated protocol
@@ -205,6 +207,8 @@ transport, or production use.
   freshness/replay, rate/tenancy control, preemptive cancellation, or remote
   safety.
 - Launch `serve-stdio` only with parent-owned redirected binary stdin/stdout.
+  Choose only the smallest named profile needed for the child; do not derive
+  the flag from an untrusted session peer. The protocol cannot change it.
   Keep stdout separate from diagnostics, protect observation and scene bytes as
   sensitive, and discard the child/stream after any failure. A partial output
   prefix may remain; never retry a whole frame or attempt resynchronization.
@@ -222,6 +226,8 @@ transport, or production use.
   process-terminal rather than reusable and provides no rollback or effect
   receipt; its encode-before-write policy cannot retract a physical
   prefix after an inherited-stream write failure.
+  Profile selection is parent-owned launch policy, not an MCP capability;
+  prefer the 64x64 default unless the larger bounded output is required.
   Only the observation poll has a fixed 15 second deadline. Resource URIs are
   references inside the same child session, not bearer authorization or
   freshness tokens; read only the currently listed URI and validate the

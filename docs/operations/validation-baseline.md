@@ -172,6 +172,13 @@ validated Windows/Vulkan profile on 2026-08-20. No dependency, feature,
 lockfile, vendor, workflow, permission, package, version, texture, sampler,
 bind-group, pipeline, uniform-size, tag, release-asset, or release action
 changed.
+CF064 exact three-name launch parsing, immutable dimension composition,
+cross-layer worst-payload bounds, official-client resource readback, and
+optimized 480x270 binary/MCP child evidence were collected on the CPU and
+validated Windows/Vulkan profile on 2026-08-22. All prior zero-argument
+controlled binary and dual-era MCP flows passed unchanged. No dependency,
+feature, lockfile, vendor, workflow, permission, package, version, public Rust,
+protocol, persistence, tag, release-asset, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -180,7 +187,7 @@ untested hardware.
 
 | Environment | Evidence | Classification |
 |---|---|---|
-| Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, and canonical scenario tests passed | Validated local source profile |
+| Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, canonical scenario, and bounded 64x64/480x270 stdio child tests passed | Validated local source profile |
 | NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, independent four-role core wrapping/filtering and one-mip fallback, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
@@ -1092,6 +1099,45 @@ dependency graph and deny policy are unchanged; this remains an explicit
 environment gap until an approved environment can execute the gate. No runtime
 network, secret, deployment, publication, or release action was performed.
 
+### CF064 bounded named stdio profiles
+
+CF064 shares one CLI-private allowlist across both inherited-stream commands.
+Omission maps to 64x64; the only explicit names map to 64x64, 256x256, and
+480x270. Parser tests cover missing, unknown, non-Unicode, reordered,
+duplicate, and extra values without echoing input. Cross-layer tests prove
+every selection fits renderer/runtime dimensions, the observation envelope,
+binary bulk frames, and MCP output. For an all-absent wide EntityId result,
+the canonical envelope is exactly 2,203,260 bytes, base64 is exactly 2,937,680
+bytes, and the decoded payload has exactly 129,600 items.
+
+These focused commands passed on 2026-08-22:
+
+```text
+cargo fmt --all -- --check
+cargo test -p cogniform-mcp --all-features --locked --offline
+cargo test -p cogniform-cli --all-features --locked --offline
+cargo test --release -p cogniform-cli --test stdio_session --all-features --locked --offline -- --ignored --nocapture
+cargo test --release -p cogniform-cli --test mcp_stdio --all-features --locked --offline -- --ignored --nocapture
+```
+
+The ordinary MCP suite includes an official `rmcp` client that performs the
+wide observation, lists and reads the resource, decodes base64 and the
+canonical envelope, and checks metadata plus exact sizes. The optimized child
+suites use the real local service on the validated Vulkan adapter and prove
+wide results through both stream formats. They also repeat the prior
+zero-argument binary, legacy MCP, and modern MCP flows. The binary test parent
+drains both output pipes concurrently so its bounded wait cannot deadlock on a
+valid multi-megabyte response.
+
+The complete offline quality matrix also passed: workspace warning-denied
+Clippy, tests, and rustdoc; public-tree and package-policy tests plus live
+checks; workflow validation; all relative links across the fifteen changed
+public Markdown files; diff hygiene; and workflow/manifest/lock/vendor/
+toolchain immutability. `cargo deny check advisories bans licenses sources`
+passed with only the two accepted duplicate-version warnings for `hashbrown`
+and `syn`. No network runtime, secret, deployment, publication, or release
+action was performed.
+
 ## Deterministic source-candidate commands
 
 CF050 adds no tag, version, dependency, runtime, network, upload, or publication
@@ -1267,7 +1313,7 @@ confidentiality, freshness and remote replay policy, rate/tenancy controls,
 preemptive cancellation, process supervision, configurable scheduling, and
 remote safety remain outside that profile.
 
-## Controlled fixed-profile stdio-session commands
+## Controlled bounded-profile stdio-session commands
 
 CF042 ran the CLI adapter, fake stream/scheduler boundary, and argument/help
 contract in the ordinary CPU profile:
@@ -1295,7 +1341,8 @@ Windows profile on 2026-08-09:
 cargo test --release -p cogniform-cli --test stdio_session --all-features --locked --offline -- --ignored --nocapture
 ```
 
-The parent test owns the pipes and a 30-second kill/reap guard. It drives
+The parent test owns and concurrently drains the pipes under a 30-second
+kill/reap guard. It drives
 hello, one applied patch, an exact-revision query, one visibility observation,
 and quiescent close through the real 64x64 service, proving exact correlations,
 revision-one evidence, at most one pending response, and no trailing output.
@@ -1306,7 +1353,7 @@ The command's 15-second deadline bounds repeated live-operation completion
 polling at a 2 ms cadence. It does not preempt a blocked input read, output
 write/flush, adapter/service initialization, executor call, or renderer call.
 The command creates no named pipe, listener, socket, process, daemon, shared
-memory lease, configuration profile, remote authentication boundary, or
+memory lease, external configuration source, remote authentication boundary, or
 automatic restart policy.
 
 ## Controlled vertex-normal commands

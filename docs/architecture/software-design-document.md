@@ -165,6 +165,13 @@ modern method set to discovery plus existing tool/resource calls, and adds
 complete result, server-identity, and zero-lifetime private-cache roles. It
 does not add a tool, resource, extension, Task, dependency, endpoint, client,
 or runtime authority.
+CF064 extends only the CLI composition policy for both inherited-stream roots.
+Omission retains CF042/CF045's exact 64x64 service; otherwise one exact
+launch-time name selects immutable 256x256 or 480x270 constructor dimensions.
+The three-entry allowlist rejects every other argument before stream, runtime,
+adapter, or service effects. It adds no per-request or protocol authority, and
+the widest current EntityId envelope remains within the existing runtime,
+binary bulk, and MCP output bounds.
 CF050 adds a separate standard-library-only release-preparation boundary. It
 accepts only a clean `HEAD` exactly named by a direct annotated tag, creates one
 bounded uncompressed Git tar and exact SHA-256 sidecar outside repository state,
@@ -388,7 +395,7 @@ executor creates no endpoint, runtime loop, thread, timer, retry, deadline, or
 authorization boundary.
 
 The CLI's `serve-stdio` command supplies that missing local runtime policy for
-one deliberately narrow profile. It validates exact arguments and redirected
+one deliberately narrow named profile. It validates exact arguments and redirected
 standard streams before adapter selection, treats only immediate frame-boundary
 EOF as a clean no-op, negotiates hello limits before subsequent frames, flushes
 each server frame, and drives every admitted patch, imagination, or observation to a terminal
@@ -669,7 +676,9 @@ CF048 refreshes its SDK while keeping the accepted 2025 wire and lifecycle
 fixed. CF049 makes every tool's discovery output schema conform to its actual
 structured results and adds bounded workflow instructions. CF054 activates
 only the SDK's exact 2026-07-28 discovery/per-request lifecycle while retaining
-the same surface, bounds, and authority.
+the same surface, bounds, and authority. CF064 adds only three immutable CLI
+launch profiles shared by both stdio roots; omission remains 64x64 and no
+profile field enters either protocol.
 Protobuf/gRPC, MCP HTTP/authentication, resource templates, subscriptions,
 notifications, history, model features, local shared memory, and QUIC remain
 separate future adapters.

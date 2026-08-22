@@ -2,7 +2,7 @@
 
 use core::num::{NonZeroU32, NonZeroU64};
 use std::{
-    io::Write,
+    io::{Read as _, Write},
     process::{Child, Command, Output, Stdio},
     thread,
     time::{Duration, Instant},
@@ -18,6 +18,7 @@ use cogniform_local_session::{
     decode_server_control_frame, decode_server_control_frame_with_limits,
 };
 use cogniform_local_transport::{LocalFrame, LocalFrameConfig, encode_frame, read_frame};
+use cogniform_observation::encode_payload;
 use cogniform_protocol::{
     ApplyStatus, CameraComponent, ComponentValue, ConflictPolicy, CreateEntity, DeliverySemantic,
     FiniteF32, IdempotencyKey, ImaginationBudget, ImaginationEnvelope, ImaginationId,
@@ -36,14 +37,37 @@ fn arguments_are_exact_and_help_does_not_enter_protocol_mode() {
         &["serve-stdio", "--help"][..],
         &["serve-stdio", "--"][..],
         &["serve-stdio", "serve-stdio"][..],
+        &["serve-stdio", "--profile"][..],
+        &["serve-stdio", "--profile", "unknown"][..],
+        &["serve-stdio", "--profile", "local-256x256", "extra"][..],
+        &[
+            "serve-stdio",
+            "--profile",
+            "local-256x256",
+            "--profile",
+            "local-480x270",
+        ][..],
     ] {
         let output = command().args(arguments).output().unwrap();
         assert!(!output.status.success());
         assert!(output.stdout.is_empty());
         assert_eq!(
             normalize(output.stderr),
-            "error: serve-stdio accepts no arguments\n"
+            "error: serve-stdio accepts only optional --profile <default-local-64x64|local-256x256|local-480x270>\n"
         );
+    }
+}
+
+#[test]
+fn every_named_profile_preserves_clean_prehello_eof_without_adapter_selection() {
+    for profile in ["default-local-64x64", "local-256x256", "local-480x270"] {
+        let output = command()
+            .args(["serve-stdio", "--profile", profile])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
     }
 }
 
@@ -91,6 +115,40 @@ fn controlled_child_completes_hello_patch_query_observation_and_close() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn controlled_wide_profile_emits_exact_entity_id_observation() {
+    let config = LocalFrameConfig::default();
+    let ids = SessionIds {
+        entity: StableEntityId::new(15).unwrap(),
+        camera: StableEntityId::new(16).unwrap(),
+        observation: ObservationId::new(17).unwrap(),
+    };
+    let input = encode_session_input_with_kind(&config, ids, ObservationKind::EntityId);
+    let output =
+        run_with_input_and_arguments(&input, CHILD_TIMEOUT, &["--profile", "local-480x270"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        normalize(output.stderr.clone())
+    );
+    assert!(output.stderr.is_empty());
+
+    let mut bytes = output.stdout.as_slice();
+    let effective_config = assert_hello(&mut bytes, &config);
+    assert_patch(&mut bytes, &effective_config);
+    assert_query(&mut bytes, &effective_config, ids.entity);
+    assert_observation(
+        &mut bytes,
+        &effective_config,
+        ids,
+        ObservationKind::EntityId,
+        Some((480, 270)),
+    );
+    assert_close(&mut bytes, &effective_config);
+    assert!(read_frame(&mut bytes, &effective_config).unwrap().is_none());
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn controlled_child_completes_v2_imagination_query_observation_replay_and_close() {
     let config = LocalFrameConfig::default();
     let ids = SessionIds {
@@ -118,6 +176,14 @@ struct SessionIds {
 }
 
 fn encode_session_input(config: &LocalFrameConfig, ids: SessionIds) -> Vec<u8> {
+    encode_session_input_with_kind(config, ids, ObservationKind::Visibility)
+}
+
+fn encode_session_input_with_kind(
+    config: &LocalFrameConfig,
+    ids: SessionIds,
+    observation_kind: ObservationKind,
+) -> Vec<u8> {
     let frames = [
         client(
             1,
@@ -155,7 +221,7 @@ fn encode_session_input(config: &LocalFrameConfig, ids: SessionIds) -> Vec<u8> {
                     observation_id: ids.observation,
                     scene_revision: SceneRevision::new(1),
                     camera_id: ids.camera,
-                    kind: ObservationKind::Visibility,
+                    kind: observation_kind,
                     quality: ObservationQuality::Low,
                 },
             }),
@@ -398,7 +464,13 @@ fn assert_session_output(output: &[u8], config: &LocalFrameConfig, ids: SessionI
     let effective_config = assert_hello(&mut bytes, config);
     assert_patch(&mut bytes, &effective_config);
     assert_query(&mut bytes, &effective_config, ids.entity);
-    assert_observation(&mut bytes, &effective_config, ids);
+    assert_observation(
+        &mut bytes,
+        &effective_config,
+        ids,
+        ObservationKind::Visibility,
+        None,
+    );
     assert_close(&mut bytes, &effective_config);
     assert!(read_frame(&mut bytes, &effective_config).unwrap().is_none());
 }
@@ -447,7 +519,13 @@ fn assert_query(bytes: &mut &[u8], config: &LocalFrameConfig, entity_id: StableE
     ));
 }
 
-fn assert_observation(bytes: &mut &[u8], config: &LocalFrameConfig, ids: SessionIds) {
+fn assert_observation(
+    bytes: &mut &[u8],
+    config: &LocalFrameConfig,
+    ids: SessionIds,
+    expected_kind: ObservationKind,
+    expected_dimensions: Option<(u32, u32)>,
+) {
     let accepted_frame = read_frame(bytes, config).unwrap().unwrap();
     assert_eq!(accepted_frame.correlation_id().get(), 4);
     let (_, accepted) = decode_server_control_frame(&accepted_frame, config).unwrap();
@@ -482,8 +560,29 @@ fn assert_observation(bytes: &mut &[u8], config: &LocalFrameConfig, ids: Session
     assert_eq!(observation.0.observation_id, ids.observation);
     assert_eq!(observation.0.scene_revision, SceneRevision::new(1));
     assert_eq!(observation.0.camera_id, ids.camera);
-    assert_eq!(observation.0.kind, ObservationKind::Visibility);
-    assert!(matches!(observation.1, ObservationPayload::Visibility(_)));
+    assert_eq!(observation.0.kind, expected_kind);
+    assert_eq!(
+        observation
+            .0
+            .dimensions
+            .map(|dimensions| (dimensions.width.get(), dimensions.height.get())),
+        expected_dimensions
+    );
+    let envelope = encode_payload(
+        &observation.0,
+        &observation.1,
+        &config.runtime_limits,
+        config.payload_limits,
+    )
+    .unwrap();
+    match (expected_kind, observation.1) {
+        (ObservationKind::Visibility, ObservationPayload::Visibility(_)) => {}
+        (ObservationKind::EntityId, ObservationPayload::EntityId(values)) => {
+            assert_eq!(values.len(), 129_600);
+            assert_eq!(envelope.len(), 2_203_260);
+        }
+        (expected, actual) => panic!("expected {expected:?}, found {:?}", actual.kind()),
+    }
 }
 
 fn assert_close(bytes: &mut &[u8], config: &LocalFrameConfig) {
@@ -494,8 +593,13 @@ fn assert_close(bytes: &mut &[u8], config: &LocalFrameConfig) {
 }
 
 fn run_with_input(input: &[u8], timeout: Duration) -> Output {
+    run_with_input_and_arguments(input, timeout, &[])
+}
+
+fn run_with_input_and_arguments(input: &[u8], timeout: Duration, arguments: &[&str]) -> Output {
     let mut child = command()
         .arg("serve-stdio")
+        .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -506,14 +610,34 @@ fn run_with_input(input: &[u8], timeout: Duration) -> Output {
 }
 
 fn wait_with_timeout(mut child: Child, timeout: Duration) -> Output {
+    let mut stdout = child.stdout.take().unwrap();
+    let mut stderr = child.stderr.take().unwrap();
+    let stdout_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).unwrap();
+        bytes
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stderr.read_to_end(&mut bytes).unwrap();
+        bytes
+    });
     let deadline = Instant::now() + timeout;
     loop {
-        if child.try_wait().unwrap().is_some() {
-            return child.wait_with_output().unwrap();
+        if let Some(status) = child.try_wait().unwrap() {
+            return Output {
+                status,
+                stdout: stdout_reader.join().unwrap(),
+                stderr: stderr_reader.join().unwrap(),
+            };
         }
         if Instant::now() >= deadline {
             child.kill().unwrap();
-            let output = child.wait_with_output().unwrap();
+            let output = Output {
+                status: child.wait().unwrap(),
+                stdout: stdout_reader.join().unwrap(),
+                stderr: stderr_reader.join().unwrap(),
+            };
             panic!("serve-stdio child timed out: {}", normalize(output.stderr));
         }
         thread::sleep(Duration::from_millis(5));
