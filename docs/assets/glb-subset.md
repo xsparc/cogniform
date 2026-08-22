@@ -24,7 +24,9 @@ the ratified `KHR_materials_unlit` marker through strict declarations and
 base-color-only shading without new resources or pipelines. CF062 retains
 bounded core sampler filters and S/T wrapping independently for all four
 existing roles through one fixed renderer-owned table. CF063 adds one bounded
-primary linear vertex-color set as a base-color multiplier.
+primary linear vertex-color set as a base-color multiplier. CF065 generates
+default MikkTSpace tangents for an otherwise supported normal-textured
+triangle primitive under fixed pre-library work guards.
 
 ## Ownership and lifecycle
 
@@ -71,7 +73,7 @@ renderer APIs remain available for embedders that own those domains directly.
 Records are retained as `Queued`, `Ready`, `ProxyReady`, or `Rejected`. The
 original source is retained only while queued. Ready records retain expanded
 triangle positions, unit normals, primary coordinates, one typed immutable
-source tangent and unit primary color per vertex, one typed immutable numeric
+source or generated tangent and unit primary color per vertex, one typed immutable numeric
 material per mesh, and
 at most four role-separated immutable RGBA8 textures. A PNG referenced by
 multiple roles shares its decoded CPU allocation.
@@ -148,8 +150,12 @@ The importer accepts only the following baseline:
   index, and one shared emissive index. Every referencing material
   must use omitted or zero `texCoord`, and each referencing primitive must
   provide `TEXCOORD_0`;
-- `normalTexture` additionally requires explicit source `NORMAL` and
-  `TANGENT`; its optional `scale` must be finite and defaults to one;
+- `normalTexture` additionally requires `TEXCOORD_0`; its optional `scale` must
+  be finite and defaults to one. When `TANGENT` is absent, default MikkTSpace
+  tangents are generated from the expanded position, normal, and primary
+  coordinate stream. When `NORMAL` is absent, the existing flat normals are
+  generated and any completely validated source tangent is ignored and
+  replaced as required by glTF;
 - `pbrMetallicRoughness.metallicRoughnessTexture` uses the same primary
   coordinate contract, linear texels, green perceptual roughness, and blue
   metallic; red and alpha are retained but have no material effect;
@@ -198,7 +204,19 @@ validated before expanded allocation, including values not selected by the
 index stream. Accepted source
 normals and tangent XYZ are normalized deterministically. When `NORMAL` is
 absent, each expanded triangle receives one unit cross-product normal following
-its winding; degenerate triangles reject. Every output vertex is interleaved
+its winding; degenerate triangles reject before tangent generation. A normal-
+textured primitive generates tangents whenever `TANGENT` or `NORMAL` is absent.
+Before library entry, a checked ordered-map preflight requires the sum of cubed
+exact position/normal/coordinate key multiplicities to be at most `268435456`,
+and a library-equivalent repeated-position classification, including f32
+signed-zero equality, requires
+`9 * degenerate_faces * good_faces` to be at most `16777216`. Either exceeded
+guard rejects at `glb.decoded.generated_tangent_work`. Generation uses the
+exact-pinned corrected `bevy_mikktspace` path and must write every expanded
+corner with finite non-zero deterministically renormalized XYZ, W exactly
+`-1` or `1`, and one W sign per triangle. An absent or unsuitable result
+rejects at `glb.decoded.generated_tangents`; no partial asset is adopted.
+Every output vertex is interleaved
 position, normal, primary coordinate, tangent, and color and consumes exactly
 64 decoded and GPU bytes. The prior 48-byte position/normal/coordinate/tangent
 prefix is unchanged. Missing coordinates are exact zero; missing tangents use
@@ -251,11 +269,12 @@ coordinates, malformed or truncated PNG data, invalid
 image ranges, degenerate
 fallback triangles, and collection or byte-limit failures always produce
 `Rejected`. A proxy therefore never masks malformed or over-limit input. A
-syntactically valid but unsupported normal, tangent accessor, missing
-normal-texture basis, primary-coordinate, image format, texture role, or well-
+syntactically valid but unsupported normal, tangent accessor,
+primary-coordinate, image format, texture role, or well-
 formed wider alpha mode, unknown extension, or non-empty unlit payload may
 proxy only under explicit policy and only after malformed peer data is
-excluded. Proxy vertices always contain exact zero
+excluded. Generated-tangent work-limit and unsuitable-result failures always
+reject and never proxy. Proxy vertices always contain exact zero
 primary coordinates, the disabled fallback tangent, white color, opaque coverage, zero
 emission, no imported texture, and the single-sided material default. The
 generated proxy cube topology is unchanged; its faces therefore follow the
@@ -294,7 +313,7 @@ An explicit scene material disables imported unlit and uses ordinary direct
 lighting. The
 metallic-roughness green and blue channels multiply the numeric roughness and
 metallic factors only for the direct-light response. The
-source-tangent basis perturbs ordinary direct lighting only; depth, identity, and the
+retained tangent basis perturbs ordinary direct lighting only; depth, identity, and the
 normal observation retain the geometric direction. Emissive texture RGB
 multiplies the numeric factor before it is added after the ordinary no-light or
 direct-light metallic-roughness response and clamped to one while alpha stays
@@ -337,6 +356,14 @@ Vertex bytes use the exact 64-byte expanded accounting independently.
 | Decoded bytes per asset | 16 MiB |
 | Aggregate resident CPU mesh and texture bytes | 64 MiB |
 
+Normal-textured tangent generation also uses two non-configurable CPU work
+guards before the generator runs:
+
+| Generated-tangent work | Fixed maximum |
+|---|---:|
+| Sum of cubed exact welded-key multiplicities | 268,435,456 |
+| Nine times degenerate-face count times good-face count | 16,777,216 |
+
 `RendererConfig::new` independently applies these GPU-side reservations:
 
 | Resource | Default |
@@ -373,6 +400,7 @@ renderer upload reservation:
 ```text
 cargo test -p cogniform-assets -p cogniform-procedural --locked --offline
 cargo test --workspace --all-features --locked --offline
+cargo test --release -p cogniform-assets --test asset_store generated_tangent_maximum_resource_boundaries --locked --offline -- --ignored --exact
 ```
 
 The checked text fixture under `tests/assets/triangle.glb.hex` can be exercised
@@ -385,6 +413,7 @@ cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ig
 cargo test -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact primary_texcoords_are_retained_without_changing_rendered_observations
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact embedded_base_color_texture_preserves_orientation_factor_override_and_residency
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact normal_texture_changes_direct_lighting_not_geometric_normal_observation
+cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact generated_tangent_normal_texture_matches_explicit_render_output
 cargo test --release -p cogniform-renderer --test asset_fixture --locked --offline -- --ignored --exact metallic_roughness_texture_multiplies_factors_for_direct_lights_only
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outputs
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback
@@ -421,7 +450,12 @@ scene override, and one shared 16-byte GPU texture without changing depth,
 identity, normal, or background. The normal-texture check pins linear sampling,
 finite scale, source-tangent shading, alpha irrelevance, and direct-light color
 change while depth, identity, background, and geometric-normal observations
-remain unchanged. The metallic-roughness check proves linear green/blue factor multiplication
+remain unchanged. The generated-tangent comparison uses proper UVs and proves
+the missing-tangent importer produces exactly the same controlled frame as the
+explicit reference basis through the unchanged renderer, lifecycle, and
+observation path. The maximum-bound CPU case accepts both separated corners
+and same-position/distinct-UV corners at 262,143 expanded vertices and rejects
+maximum overlap before library entry. The metallic-roughness check proves linear green/blue factor multiplication
 for directional and point lights, red/alpha irrelevance, exact unlit and
 scene-override behavior and unchanged non-color observations. The emissive
 check proves bounded addition after unlit, directional, and point response,
@@ -456,7 +490,9 @@ OPAQUE/MASK alpha behavior, material-free fallback, double-sided back-face
 orientation, stable non-color observations, exact eviction/rehydration, and
 unchanged revision/hash/replay. The service/storage checks prove that restored
 plain and textured asset references require explicit exact-hash CPU/GPU
-rehydration without another logical mutation. The CF019 case
+rehydration without another logical mutation. The textured service case covers
+both a base-only source and a missing-tangent normal-textured source while
+preserving revision, logical hash, and replay. The CF019 case
 persists recovery and asset source in separate files, drops the source service,
 restores the logical reference, observes its exact typed absence, and then
 loads/imports/uploads the expected bytes without changing revision, hash, or
@@ -469,3 +505,7 @@ decision.
 See [ADR 0063](../adr/0063-bounded-core-gltf-vertex-colors.md) for the strict
 primary color formats, 64-byte prefix-compatible vertex ABI, multiplication
 order, and scene-override decision.
+
+See [ADR 0065](../adr/0065-bounded-generated-mikktspace-tangents.md) for the
+exact generator dependency, corrected algorithms, fixed work guards, output
+validation, and deterministic compatibility boundary.

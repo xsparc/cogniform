@@ -27,6 +27,11 @@ license = "Apache-2.0"
 repository = "https://github.com/xsparc/cogniform"
 
 [workspace.dependencies]
+bevy_mikktspace = { version = "=1.0.0", default-features = false, features = [
+    "corrected-edge-sorting",
+    "corrected-vertex-welding",
+    "std",
+] }
 cogniform-assets = { version = "=0.1.0-rc.1", path = "crates/cogniform-assets" }
 cogniform-compilation = { version = "=0.1.0-rc.1", path = "crates/cogniform-compilation" }
 cogniform-compiler = { version = "=0.1.0-rc.1", path = "crates/cogniform-compiler" }

@@ -59,8 +59,9 @@ scene revision that produced it.
 > validates and carries those values without moving compiler execution into the
 > schema crate. The current
 > asset baseline adds content-addressed GLB geometry with optional finite vertex
-> normals, one retained finite primary coordinate set, optional source
-> tangents, one bounded primary linear vertex-color set, and unit-bounded numeric metallic-roughness materials, plus bounded
+> normals, one retained finite primary coordinate set, optional source or
+> bounded generated default MikkTSpace tangents, one bounded primary linear
+> vertex-color set, and unit-bounded numeric metallic-roughness materials, plus bounded
 > embedded PNG base-color, linear packed metallic-roughness, tangent-space
 > normal, and sRGB emissive roles plus bounded core emissive RGB. Exact caller-driven
 > CPU decode and explicit role-separated GPU upload remain separate; sampled
@@ -134,7 +135,7 @@ implementations arrive:
 | `cogniform-mcp` | Bounded stable MCP stdio query/imagination/patch/observation translation and one retained canonical observation resource over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent/primary-coordinate/material/emissive/embedded-PNG decoding, immutable role-textured upload jobs, and explicit CPU-state eviction |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/primary-coordinate/material/emissive/embedded-PNG decoding, immutable role-textured upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |

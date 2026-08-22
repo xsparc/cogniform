@@ -722,6 +722,16 @@ fn normal_texture_changes_direct_lighting_not_geometric_normal_observation() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn generated_tangent_normal_texture_matches_explicit_render_output() {
+    let texel = [255, 128, 128, 255];
+    let explicit = lit_normal_textured_frame(normal_texture_fixture(texel, 1.0), false);
+    let generated = lit_normal_textured_frame(generated_normal_texture_fixture(texel, 1.0), false);
+
+    assert_frames_equal(&explicit, &generated);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn double_sided_back_face_composes_with_normal_maps_and_scene_override() {
     let neutral = oriented_material_frame(
         double_sided_normal_texture_fixture([128, 128, 255, 0], 1.0),
@@ -2550,17 +2560,22 @@ fn textured_two_mesh_fixture() -> Vec<u8> {
 }
 
 fn normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
-    normal_texture_fixture_with_double_sided(texel, scale, false)
+    normal_texture_fixture_with_options(texel, scale, false, true)
+}
+
+fn generated_normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
+    normal_texture_fixture_with_options(texel, scale, false, false)
 }
 
 fn double_sided_normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
-    normal_texture_fixture_with_double_sided(texel, scale, true)
+    normal_texture_fixture_with_options(texel, scale, true, true)
 }
 
-fn normal_texture_fixture_with_double_sided(
+fn normal_texture_fixture_with_options(
     texel: [u8; 4],
     scale: f32,
     double_sided: bool,
+    include_tangents: bool,
 ) -> Vec<u8> {
     let positions = [
         [-0.75_f32, -0.75, 0.0],
@@ -2583,7 +2598,7 @@ fn normal_texture_fixture_with_double_sided(
             binary.extend_from_slice(&value.to_le_bytes());
         }
     }
-    for texcoord in [[0.5_f32, 0.5]; 3] {
+    for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
         for value in texcoord {
             binary.extend_from_slice(&value.to_le_bytes());
         }
@@ -2599,8 +2614,13 @@ fn normal_texture_fixture_with_double_sided(
     } else {
         ""
     };
+    let tangent_attribute = if include_tangents {
+        r#","TANGENT":2"#
+    } else {
+        ""
+    };
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_image_offset},"byteLength":{base_image_length}}},{{"buffer":0,"byteOffset":{normal_image_offset},"byteLength":{normal_image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5,"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"scale":{scale}}}{double_sided}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_image_offset},"byteLength":{base_image_length}}},{{"buffer":0,"byteOffset":{normal_image_offset},"byteLength":{normal_image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5,"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"scale":{scale}}}{double_sided}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1{tangent_attribute},"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         base_image_length = base_png.len(),
         normal_image_length = normal_png.len(),

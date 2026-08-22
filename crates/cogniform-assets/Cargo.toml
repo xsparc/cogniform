@@ -12,6 +12,7 @@ publish = false
 workspace = true
 
 [dependencies]
+bevy_mikktspace.workspace = true
 cogniform-protocol.workspace = true
 png.workspace = true
 serde.workspace = true

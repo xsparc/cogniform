@@ -179,6 +179,14 @@ validated Windows/Vulkan profile on 2026-08-22. All prior zero-argument
 controlled binary and dual-era MCP flows passed unchanged. No dependency,
 feature, lockfile, vendor, workflow, permission, package, version, public Rust,
 protocol, persistence, tag, release-asset, or release action changed.
+CF065 exact source-tangent compatibility, bounded generated MikkTSpace
+tangents, work-guard boundary and adversarial cases, maximum-resource import,
+and explicit-versus-generated Vulkan equivalence were collected on the CPU and
+validated Windows/Vulkan profile on 2026-08-22. The exact-pinned vendor/lock
+graph adds only dependency-free `bevy_mikktspace` 1.0.0 with its two corrected
+algorithms and `std`; no vertex/GPU ABI, shader, material, lifecycle,
+observation, protocol, persistence, package version, workflow, tag, release-
+asset, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -1137,6 +1145,56 @@ toolchain immutability. `cargo deny check advisories bans licenses sources`
 passed with only the two accepted duplicate-version warnings for `hashbrown`
 and `syn`. No network runtime, secret, deployment, publication, or release
 action was performed.
+
+### CF065 bounded generated MikkTSpace tangents
+
+CF065 preserves complete source tangent validation and exact explicit tangent
+values, then generates only for an otherwise supported normal-textured
+triangle primitive with missing `TANGENT` or `NORMAL`. CPU tests cover indexed
+and non-indexed generation, flat-normal overwrite of a valid source tangent,
+invalid-source-before-fallback precedence, proper and mirrored UV seams,
+neighboring degenerate inheritance, isolated absent-output rejection, and no
+partial upload job.
+
+Pure and importer tests prove both fixed checked pre-library guards: two exact
+key multiplicities of 512 pass at `268435456` while one additional contribution
+rejects; 447 repeated overlapping faces pass and 448 reject; 1,365 degenerate
+by 1,365 good faces pass while 1,365 by 1,366 reject; and the latter rejection
+still occurs when every welded key is unique. A separate limit-crossing case
+proves the classifier mirrors the library's signed-zero position equality. The
+release-mode resource case
+accepts both separated positions and same-position/distinct-UV input at
+262,143 expanded corners, then rejects maximum overlap before the library.
+It completed in 0.32 seconds. Polling that complete test process every 5 ms
+observed a peak working set of 82,296,832 bytes (78.48 MiB). The timing and
+memory value are one-machine informational observations, not portable limits
+or merge thresholds.
+
+These focused commands passed on 2026-08-22:
+
+```text
+cargo test -p cogniform-assets --locked --offline
+cargo clippy -p cogniform-assets --all-targets --locked --offline -- -D warnings
+cargo test --release -p cogniform-assets --test asset_store generated_tangent_maximum_resource_boundaries --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture generated_tangent_normal_texture_matches_explicit_render_output --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-engine --test service_assets exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work --locked --offline -- --ignored --exact --nocapture
+```
+
+The Vulkan comparison produces an exact equal frame from proper-UV explicit
+and generated tangent fixtures while reusing the existing upload, eviction,
+rehydration, lighting, and geometric-normal observation path. The controlled
+service case runs both base-only and missing-tangent normal-
+textured sources through exact-hash import, GPU upload, recovery with empty
+residency, explicit rehydration, unchanged revision/hash/replay, and restored
+observation. The dependency
+audit binds exactly one new locked/vendored package to registry checksum
+`bff34eb29ff4b8a8688bc7299f14fb6b597461ca80fec03ed7d22939ab33e48f`
+and source commit `9de78a281bca0505142da521eb5152146da28656`; it has no dependency or build
+script, forbids unsafe code, declares Rust 1.85.0, and carries
+`Zlib AND (MIT OR Apache-2.0)`. Cogniform continues to use pinned Rust 1.97.1.
+Corrected edge sorting can differ on the last triangle from the broken
+reference implementation, so this evidence does not claim cross-architecture
+or reference-byte identity.
 
 ## Deterministic source-candidate commands
 

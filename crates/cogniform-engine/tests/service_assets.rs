@@ -187,59 +187,74 @@ fn import_and_upload(
 fn exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work() {
     pollster::block_on(async {
         let config = LocalServiceConfig::new(WIDTH, HEIGHT);
-        let bytes = textured_fixture();
-        let hash = content_hash(&bytes);
-        let key = AssetMeshKey {
-            content_hash: hash,
-            mesh_index: 0,
-        };
-        let camera = StableEntityId::new(1).unwrap();
-        let triangle = StableEntityId::new(2).unwrap();
-        let mut service = LocalService::new(config.clone()).await.unwrap();
-        service.enqueue_asset_source(hash, bytes.clone()).unwrap();
-        assert_eq!(
-            service.process_next_asset_import().unwrap().state,
-            AssetState::Ready
-        );
-        service.enqueue_asset_upload(key).unwrap();
-        let uploaded = service.process_next_asset_upload().unwrap();
-        assert!(uploaded.texture_uploaded);
-        assert_eq!(uploaded.texture_byte_len, 4);
-        assert_eq!(service.asset_status().renderer.resident_textures, 1);
-        assert_eq!(service.asset_status().renderer.resident_texture_bytes, 4);
-        service
-            .submit_patch(scene_patch(camera, triangle, hash))
-            .unwrap();
-        service.process_next().unwrap().unwrap();
-        let expected_hash = service.logical_hash().unwrap();
-        let expected_replay = service.replay_bytes();
-        let recovery = service.recovery_point().unwrap();
-        drop(service);
+        for (bytes, expected_texture_count, expected_texture_bytes) in [
+            (textured_fixture(), 1, 4),
+            (generated_normal_textured_fixture(), 2, 8),
+        ] {
+            let hash = content_hash(&bytes);
+            let key = AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            };
+            let camera = StableEntityId::new(1).unwrap();
+            let triangle = StableEntityId::new(2).unwrap();
+            let mut service = LocalService::new(config.clone()).await.unwrap();
+            service.enqueue_asset_source(hash, bytes.clone()).unwrap();
+            assert_eq!(
+                service.process_next_asset_import().unwrap().state,
+                AssetState::Ready
+            );
+            service.enqueue_asset_upload(key).unwrap();
+            let uploaded = service.process_next_asset_upload().unwrap();
+            assert!(uploaded.texture_uploaded);
+            assert_eq!(uploaded.texture_byte_len, expected_texture_bytes);
+            assert_eq!(
+                service.asset_status().renderer.resident_textures,
+                expected_texture_count
+            );
+            assert_eq!(
+                service.asset_status().renderer.resident_texture_bytes,
+                expected_texture_bytes
+            );
+            service
+                .submit_patch(scene_patch(camera, triangle, hash))
+                .unwrap();
+            service.process_next().unwrap().unwrap();
+            let expected_hash = service.logical_hash().unwrap();
+            let expected_replay = service.replay_bytes();
+            let recovery = service.recovery_point().unwrap();
+            drop(service);
 
-        let mut restored = LocalService::restore(config, &recovery).await.unwrap();
-        assert_empty_asset_status(&restored);
-        assert!(matches!(
-            restored.request_observation(request(10, camera)),
-            Err(LocalServiceError::Engine(error))
-                if matches!(
-                    error.as_ref(),
-                    EngineError::Renderer(RendererError::AssetUnavailable { key: missing, .. })
-                        if *missing == key
-                )
-        ));
-        restored.enqueue_asset_source(hash, bytes).unwrap();
-        assert_eq!(
-            restored.process_next_asset_import().unwrap().state,
-            AssetState::Ready
-        );
-        restored.enqueue_asset_upload(key).unwrap();
-        let rehydrated_upload = restored.process_next_asset_upload().unwrap();
-        assert!(rehydrated_upload.texture_uploaded);
-        assert_eq!(restored.asset_status().renderer.resident_textures, 1);
-        assert_eq!(restored.logical_hash().unwrap(), expected_hash);
-        assert_eq!(restored.replay_bytes(), expected_replay);
-        restored.request_observation(request(11, camera)).unwrap();
-        assert_center_entity(&wait_for_observation(&restored), triangle);
+            let mut restored = LocalService::restore(config.clone(), &recovery)
+                .await
+                .unwrap();
+            assert_empty_asset_status(&restored);
+            assert!(matches!(
+                restored.request_observation(request(10, camera)),
+                Err(LocalServiceError::Engine(error))
+                    if matches!(
+                        error.as_ref(),
+                        EngineError::Renderer(RendererError::AssetUnavailable { key: missing, .. })
+                            if *missing == key
+                    )
+            ));
+            restored.enqueue_asset_source(hash, bytes).unwrap();
+            assert_eq!(
+                restored.process_next_asset_import().unwrap().state,
+                AssetState::Ready
+            );
+            restored.enqueue_asset_upload(key).unwrap();
+            let rehydrated_upload = restored.process_next_asset_upload().unwrap();
+            assert!(rehydrated_upload.texture_uploaded);
+            assert_eq!(
+                restored.asset_status().renderer.resident_textures,
+                expected_texture_count
+            );
+            assert_eq!(restored.logical_hash().unwrap(), expected_hash);
+            assert_eq!(restored.replay_bytes(), expected_replay);
+            restored.request_observation(request(11, camera)).unwrap();
+            assert_center_entity(&wait_for_observation(&restored), triangle);
+        }
     });
 }
 
@@ -540,6 +555,54 @@ fn textured_fixture() -> Vec<u8> {
         image_length = png_bytes.len(),
     );
     glb_with_json(&json, &binary)
+}
+
+fn generated_normal_textured_fixture() -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let base_png = one_pixel_png([128, 64, 32, 255]);
+    let normal_png = one_pixel_png([128, 128, 255, 255]);
+    let base_offset = binary.len();
+    binary.extend_from_slice(&base_png);
+    let normal_offset = binary.len();
+    binary.extend_from_slice(&normal_png);
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":24}},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{}}},{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1}}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":3,"mimeType":"image/png"}},{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2}},"material":0}}]}}]}}"#,
+        binary.len(),
+        base_png.len(),
+        normal_png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn one_pixel_png(texel: [u8; 4]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&texel).unwrap();
+    }
+    bytes
 }
 
 fn two_mesh_fixture() -> Vec<u8> {
