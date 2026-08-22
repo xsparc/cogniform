@@ -20,6 +20,14 @@ struct DrawUniform {
     camera_position: vec4<f32>,
     material: vec4<f32>,
     emissive: vec4<f32>,
+    base_color_uv_row_0: vec4<f32>,
+    base_color_uv_row_1: vec4<f32>,
+    normal_uv_row_0: vec4<f32>,
+    normal_uv_row_1: vec4<f32>,
+    metallic_roughness_uv_row_0: vec4<f32>,
+    metallic_roughness_uv_row_1: vec4<f32>,
+    emissive_uv_row_0: vec4<f32>,
+    emissive_uv_row_1: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -66,6 +74,11 @@ struct FragmentOutput {
 
 const PI: f32 = 3.141592653589793;
 const MINIMUM_ROUGHNESS: f32 = 0.05;
+
+fn transform_uv(uv: vec2<f32>, row_0: vec4<f32>, row_1: vec4<f32>) -> vec2<f32> {
+    let homogeneous = vec3(uv, 1.0);
+    return vec2(dot(row_0.xyz, homogeneous), dot(row_1.xyz, homogeneous));
+}
 
 fn fresnel_schlick(view_half: f32, reflectance_at_normal: vec3<f32>) -> vec3<f32> {
     let grazing = pow(1.0 - clamp(view_half, 0.0, 1.0), 5.0);
@@ -189,7 +202,12 @@ fn fs_main(
     var output: FragmentOutput;
     let material_flags = u32(draw.material.w);
     let vertex_color = select(vec4(1.0), input.color_0, (material_flags & 32u) != 0u);
-    let base_color = textureSample(base_color_texture, base_color_sampler, input.texcoord_0)
+    let base_color_uv = transform_uv(
+        input.texcoord_0,
+        draw.base_color_uv_row_0,
+        draw.base_color_uv_row_1,
+    );
+    let base_color = textureSample(base_color_texture, base_color_sampler, base_color_uv)
         * draw.color
         * vertex_color;
     if (material_flags & 4u) != 0u && base_color.a < draw.emissive.w {
@@ -206,7 +224,12 @@ fn fs_main(
             let world_tangent = tangent_rejected * inverseSqrt(tangent_length_squared);
             let handedness = select(-1.0, 1.0, input.world_tangent.w >= 0.0);
             let world_bitangent = cross(source_geometric_world_normal, world_tangent) * handedness;
-            let sampled = textureSample(normal_texture, normal_sampler, input.texcoord_0).rgb;
+            let normal_uv = transform_uv(
+                input.texcoord_0,
+                draw.normal_uv_row_0,
+                draw.normal_uv_row_1,
+            );
+            let sampled = textureSample(normal_texture, normal_sampler, normal_uv).rgb;
             let tangent_normal = vec3(
                 (sampled.r * 2.0 - 1.0) * draw.material.z,
                 (sampled.g * 2.0 - 1.0) * draw.material.z,
@@ -241,7 +264,11 @@ fn fs_main(
     let sampled_material = textureSample(
         metallic_roughness_texture,
         metallic_roughness_sampler,
-        input.texcoord_0,
+        transform_uv(
+            input.texcoord_0,
+            draw.metallic_roughness_uv_row_0,
+            draw.metallic_roughness_uv_row_1,
+        ),
     ).gb;
     let roughness = clamp(draw.material.y * sampled_material.x, 0.0, 1.0);
     let metallic = clamp(draw.material.x * sampled_material.y, 0.0, 1.0);
@@ -311,7 +338,15 @@ fn fs_main(
         }
     }
     if !unlit {
-        let emissive = textureSample(emissive_texture, emissive_sampler, input.texcoord_0).rgb
+        let emissive = textureSample(
+            emissive_texture,
+            emissive_sampler,
+            transform_uv(
+                input.texcoord_0,
+                draw.emissive_uv_row_0,
+                draw.emissive_uv_row_1,
+            ),
+        ).rgb
             * draw.emissive.rgb;
         shaded_color = min(shaded_color + emissive, vec3(1.0));
     }

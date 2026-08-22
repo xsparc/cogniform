@@ -81,6 +81,11 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   with strict zero-to-four record/index validation, exact source/default
   metadata, independent repeat/mirrored/clamp axes, nearest/linear filtering,
   the documented one-mip fallback, and one fixed 36-entry GPU table;
+- ratified `KHR_texture_transform` offset, rotation, and scale for those four
+  roles, with exact defaults/order, strict finite-result validation,
+  independent immutable affine rows, transformed normal-coordinate
+  MikkTSpace generation, and a fixed 624-byte draw uniform that preserves the
+  complete prior 496-byte prefix;
 - optional core glTF `COLOR_0` as same-count f32 or normalized unsigned-byte/
   unsigned-short VEC3/VEC4, with finite clamping, synthesized VEC3 alpha,
   strict wider-set precedence, exact 64-byte expanded vertex accounting,
@@ -103,8 +108,8 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   evidence;
 - bounded direct Cook-Torrance metallic-roughness response for the existing
   directional and point lights, with GGX/Smith/Schlick terms, finite camera
-  view input, exact unlit compatibility, a fixed 496-byte draw uniform with a
-  prefix-compatible emissive append, and
+  view input, exact unlit compatibility, a fixed 624-byte draw uniform with a
+  preserved 496-byte material/light prefix and appended role transforms, and
   controlled dielectric/metal/roughness evidence;
 - immutable imported GLB base-color, metallic, and roughness metadata through
   existing upload/residency, with glTF factor defaults, scene-material
@@ -228,6 +233,16 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   archive, immutable-release, upload, and publication gates.
 
 ### Changed
+
+- CF066 adds public immutable `AssetTextureTransform` plus additive per-role
+  `AssetMaterial` transform accessors. Exact declared transform markers move
+  from unsupported/proxy handling into the supported path; malformed,
+  undeclared, non-finite, and non-finite-result forms fail closed, while valid
+  nonzero coordinate overrides and wider properties retain explicit proxy
+  policy. The private draw uniform grows from 496 to 624 bytes with the old
+  prefix exact. Vertices, textures, samplers, bind groups, pipelines, logical
+  scenes, observations, protocols, dependencies, packages, versions, tags,
+  release assets, workflows, and release authority remain unchanged;
 
 - CF065 adds exact-pinned vendored `bevy_mikktspace` 1.0.0 with only `std`,
   corrected edge sorting, and corrected vertex welding. The dependency is one
@@ -537,9 +552,10 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   blending/sorting, or other
   material texture roles;
   the GLB subset samples at most one shared embedded PNG per base-color,
-  metallic-roughness, normal, or emissive role but excludes external/data images, JPEG,
+  metallic-roughness, normal, or emissive role, with bounded independent
+  offset/rotation/scale transforms, but excludes external/data images, JPEG,
   non-core sampler controls, generated/stored mipmaps, compression,
-  scene traversal, and most vertex attributes. Normal mapping affects direct
+  additional coordinate sets, scene traversal, and most vertex attributes. Normal mapping affects direct
   light only and never replaces the geometric-normal observation.
   Built-in geometry supports
   cuboids, fixed centered XY planes, and fixed centered unit-diameter spheres;

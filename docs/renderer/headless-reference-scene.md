@@ -73,7 +73,8 @@ finite normalized `TANGENT` plus exact handedness reaches location 3; missing
 non-normal-mapped asset values, built-ins, and proxy vertices use exact zero
 coordinates and a disabled `[1, 0, 0, 1]` tangent. A normal-textured primitive
 with missing source tangents receives bounded validated default MikkTSpace
-values before upload. Optional f32 or normalized unsigned-byte/
+values before upload, using the normal role's transformed primary coordinates
+while retaining the source coordinates unchanged. Optional f32 or normalized unsigned-byte/
 unsigned-short `COLOR_0` VEC3/VEC4 reaches location 4 as linear unit RGBA;
 missing asset values, built-ins, and proxies use white. A mesh may sample one approved embedded PNG
 for each base-color, metallic-roughness, normal, and emissive role. The renderer
@@ -86,7 +87,9 @@ Omitted sampling remains linear/repeat. Nearest-family mip filters use nearest
 and linear-family mip filters use linear without generating another image
 level. White base-color/emissive, factor-one metallic-roughness, and
 neutral-normal fallbacks bind on every draw.
-External images, generated coordinates, non-core sampler features, transforms,
+Each active role independently applies its retained finite
+`KHR_texture_transform` offset/rotation/scale affine rows before sampling.
+External images, generated coordinates, non-core sampler features,
 additional coordinate sets, generated/stored mipmaps, and other material
 texture roles, wider rendered colors, and morph colors remain unsupported.
 
@@ -164,13 +167,15 @@ non-finite value. A fifth definition of either kind, a degenerate active
 directional positive-Z axis, or an active point or selected camera translation
 outside finite GPU f32 returns a typed error before submission.
 
-The existing bind group carries one fixed 496-byte per-draw uniform. The prior
-480-byte prefix remains model, view-projection, color, compact ID, directional
+The existing bind group carries one fixed 624-byte per-draw uniform. The prior
+496-byte prefix remains exact; its first 480 bytes remain model,
+view-projection, color, compact ID, directional
 count and four directional slots, point count and four point slots, camera
 position, and metallic/roughness plus normal scale/material flags. One appended
 `vec4` contains core emissive RGB and uses its prior padding lane for the mask
-cutoff. Material flag bit 4 selects imported unlit shading and bit 5 selects
-imported vertex color without changing the uniform size. Bindings 1, 3, 4, and 5 select
+cutoff. Eight appended `vec4` rows carry base-color, normal,
+metallic-roughness, and emissive affine transforms. Material flag bit 4 selects
+imported unlit shading and bit 5 selects imported vertex color. Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 selects base-color sampling and bindings 6, 7, and 8 select normal,
 metallic-roughness, and emissive sampling. Inactive roles bind the
@@ -260,6 +265,7 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture core_sampler_wrap_and_magnification_modes_are_pixel_observable --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture mipmapped_minification_modes_use_the_documented_one_mip_fallback --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture four_texture_roles_bind_independent_samplers_for_one_shared_image --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture texture_transforms_apply_independently_to_all_four_roles --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture vertex_colors_interpolate_and_preserve_non_color_observations --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture vertex_color_multiplies_factor_texture_and_scene_override --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture vertex_color_alpha_default_material_and_double_sided_back_face_are_exact --all-features --locked --offline -- --ignored --exact --nocapture
@@ -283,6 +289,9 @@ and linear-family one-mip minification; whole-frame equality for omitted,
 empty, and fully explicit defaults; and both independent and one-record-shared
 role selection from one shared image. Their shared helper also exercises exact texture
 eviction/rehydration plus unchanged revision, logical hash, and replay.
+The texture-transform comparison uses one shared 4-by-4 image and independent
+translation, rotation, and scale combinations for all four roles, then proves
+whole-frame equality with four one-texel references.
 The vertex-color probes distinguish linearly interpolated primary colors,
 factor and sRGB texture multiplication, independent emission, imported
 OPAQUE/MASK coverage, material-free fallback, double-sided back-face normals,
@@ -371,5 +380,8 @@ fallback.
 See [ADR 0063](../adr/0063-bounded-core-gltf-vertex-colors.md) for strict
 primary color decoding, the 64-byte vertex ABI, multiplication order, and
 override boundary.
+See [ADR 0066](../adr/0066-bounded-gltf-texture-transforms.md) for strict
+transform decoding, independent role sampling, generated-tangent coordinates,
+and the 624-byte prefix-compatible uniform.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.
