@@ -1621,6 +1621,33 @@ compression, packed GPU residency, protocol, persistence, release, and
 deployment. See
 [ADR 0068](../adr/0068-bounded-gltf-mesh-quantization.md).
 
+### PR 69 - CF069: Bounded secondary glTF texture coordinates
+
+Outcome: one optional consecutive secondary coordinate set supports exact
+per-role core and ratified texture-transform selection without expanding the
+renderer resource topology.
+
+Gate: admit `TEXCOORD_1` only after `TEXCOORD_0`, with the same position count
+and the exact core/required-mesh-quantization format matrix. Validate canonical
+consecutive names, complete bounded sources, accessor ranges and bounds,
+finiteness, counts, and limits for every declared set before wider-feature
+classification. Missing, skipped, mismatched, over-limit, or non-finite data
+must reject without proxy. `TEXCOORD_2` and later remain unsupported only after
+complete validation.
+
+Retain effective zero/one selectors independently for base-color, metallic-
+roughness, normal, and emissive roles; extension `texCoord` overrides core
+`texCoord`, and each selected set must exist. Apply each role's affine transform
+to its selected set and use selected transformed normal coordinates for bounded
+MikkTSpace generation. Append secondary float2 data after the exact accepted
+64-byte vertex prefix for a 72-byte decoded/GPU ABI. Omission, built-ins, and
+proxies use zero. Add shader location five and four selector bits to the
+existing exactly represented material-flag value while preserving the
+624-byte uniform, nine-entry bind group, 36 samplers, two pipelines, lifecycle,
+observations, revision, logical hash, replay, protocol, persistence, dependency,
+workflow, release, and deployment boundaries. See
+[ADR 0069](../adr/0069-bounded-secondary-texture-coordinates.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1632,7 +1659,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
-  -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068
+  -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1958,6 +1985,18 @@ Validation expands with capability:
   explicit-tangent retention; exact 496-byte uniform prefix in a fixed
   624-byte layout; unchanged vertex, texture, sampler, bind-group, pipeline,
   lifecycle, observation, revision, logical hash, and replay behavior.
+- CF068: exact core and required `KHR_mesh_quantization` attribute matrices;
+  declaration, alignment, raw-bound, complete-source, and count validation;
+  deterministic integer expansion through the existing f32 ABI; unchanged
+  renderer, lifecycle, observation, revision, logical hash, and replay paths.
+- CF069: canonical consecutive secondary-coordinate admission with the full
+  core/quantized format matrix; strict malformed/wider-set precedence; exact
+  core and extension override selectors for four independently transformed
+  roles; selected transformed normal coordinates for MikkTSpace; an appended
+  72-byte vertex ABI and sixth attribute; four selector bits in the unchanged
+  624-byte uniform; zero built-in/proxy/omission fallback; unchanged bind group,
+  sampler table, pipeline count, lifecycle, observation, revision, logical
+  hash, replay, and exact-hash rehydration behavior.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

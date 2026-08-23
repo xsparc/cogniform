@@ -413,20 +413,20 @@ Use `wgpu` with built-in WGSL and negotiated adapter features/limits. The baseli
 
 Built-in cuboids, centered unit XY planes, and centered unit-diameter spheres
 use immutable expanded position-plus-normal-plus-primary-coordinate-plus-
-fallback-tangent-plus-white-color buffers.
+fallback-tangent-plus-white-color-plus-zero-secondary-coordinate buffers.
 A cuboid is a centered unit box with 12 outward counter-clockwise triangles,
 36 expanded vertices, exact axis-aligned exterior normals, and zero
-coordinates in one fixed 2,304-byte payload. Plane triangles wind
+coordinates in one fixed 2,592-byte payload. Plane triangles wind
 counter-clockwise toward positive Z, remain at local Z = 0, and apply all
 positive XYZ dimensions through the model transform; X/Y set visible extents
 while Z participates in normal transformation without creating thickness.
 The sphere has a positive-Z polar axis, fixed 16-sector by 8-band topology,
 outward counter-clockwise triangles, and unit radial normals. Its XYZ
 dimensions are bounding diameters. The fixed 672-vertex sphere payload is
-43,008 bytes and is generated once at renderer initialization; no frame
-performs tessellation. The plane payload is 384 bytes. All built-ins use exact
-zero primary coordinates, a disabled `[1, 0, 0, 1]` tangent, and white vertex
-color.
+48,384 bytes and is generated once at renderer initialization; no frame
+performs tessellation. The plane payload is 432 bytes. All built-ins use exact
+zero primary and secondary coordinates, a disabled `[1, 0, 0, 1]` tangent,
+and white vertex color.
 A missing asset uses its exact explicit built-in fallback, and a resident
 asset retains precedence.
 
@@ -483,10 +483,11 @@ explicit scene material disables the imported unlit selection. The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source or bounded generated-tangent TBN perturbs only direct-light response.
-Each of the four texture roles independently applies its retained finite
-`KHR_texture_transform` affine rows to `TEXCOORD_0`; generated tangents use the
-transformed normal-role coordinates while explicit tangents and retained
-coordinates remain authored values. Emissive texture RGB
+Each of the four texture roles independently selects `TEXCOORD_0` or
+`TEXCOORD_1` and applies its retained finite `KHR_texture_transform` affine
+rows. The extension selector overrides the core texture-info selector.
+Generated tangents use the selected transformed normal-role coordinates while
+explicit tangents and retained coordinates remain authored values. Emissive texture RGB
 is decoded from sRGB, multiplied by the numeric linear emissive factor, added
 after the ordinary metallic-roughness response, and clamped to one without
 changing alpha; texture alpha is ignored. Untextured draws use white
@@ -514,7 +515,7 @@ submission.
 The fixed imported-material bind group contains four texture views and four
 samplers in nine total entries. Adapter preflight requires at least four
 sampled textures, four samplers per shader stage, and nine bindings per group,
-five vertex attributes, and a 64-byte vertex-buffer stride, so an insufficient
+six vertex attributes, and a 72-byte vertex-buffer stride, so an insufficient
 adapter fails as structured `UnsupportedCapabilities` before pipeline
 construction.
 
@@ -531,8 +532,8 @@ GPU layouts are explicit and asserted. `bytemuck::Pod` is used only for types wi
 
 Runtime assets are immutable and addressed by cryptographic content hash. The
 MVP accepts primitives first, then a bounded glTF/GLB subset with finite
-positions, optional same-count finite vertex normals, optional same-count
-finite primary `TEXCOORD_0`, optional same-count finite non-zero `TANGENT`
+positions, optional same-count finite vertex normals, optional consecutive
+same-count finite `TEXCOORD_0` and `TEXCOORD_1`, optional same-count finite non-zero `TANGENT`
 `VEC4` with exact handedness, one bounded numeric metallic-roughness material
 and optional same-count primary linear `COLOR_0` as f32 or normalized unsigned
 byte/unsigned short `VEC3`/`VEC4`,
@@ -542,24 +543,26 @@ OPAQUE/MASK alpha coverage plus a strict optional boolean `doubleSided` per
 mesh material. The ratified `KHR_materials_unlit` and
 `KHR_texture_transform` and `KHR_mesh_quantization` extensions are the sole
 supported extensions. Mesh quantization admits only the declared integer
-POSITION/NORMAL/TANGENT/TEXCOORD_0 matrix, requires extension-only accessors to
+POSITION/NORMAL/TANGENT/TEXCOORD_n matrix, requires extension-only accessors to
 name the extension as required, validates raw accessor extrema and complete
 bounded sources, and immediately expands through the fixed f32 vertex ABI;
 node dequantization transforms remain excluded. Core normalized unsigned-byte
-and unsigned-short primary coordinates do not require the extension. Unlit
+and unsigned-short coordinate sets do not require the extension. Unlit
 retains one typed shading model only after strict declaration,
 selected/unused material, and fallback-resource validation. Texture transform
 retains finite offset, rotation, and scale with exact defaults and Khronos
-translation-rotation-scale order for the four existing texture-info roles;
-only omitted/zero core and extension coordinate selectors are supported. The subset also retains
+translation-rotation-scale order for the four existing texture-info roles.
+Each role retains effective selector zero or one, with extension `texCoord`
+overriding core `texCoord`, and requires the selected set on the primitive. The subset also retains
 one shared embedded PNG per base-color, metallic-roughness, normal, or
 emissive role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
 retained-byte, decoder-working-byte, per-asset, and aggregate CPU limits into
 at most four immutable RGBA8 role values; a source shared by roles counts once
 on CPU. Decoders verify declared and decoded sizes before allocation; expanded
-upload vertices always reserve exactly 64 bytes for position, unit normal,
-primary coordinate, unit tangent plus handedness, and unit RGBA color. Missing
+upload vertices always reserve exactly 72 bytes: the accepted 64-byte position,
+unit-normal, primary-coordinate, unit-tangent-plus-handedness, and unit-RGBA-
+color prefix followed by the secondary coordinate. Missing
 non-normal-map tangents use a fixed disabled fallback and missing colors use
 white. For a normal-textured primitive, absent source tangents are generated
 per expanded corner through exact-pinned corrected MikkTSpace after complete
@@ -568,8 +571,8 @@ normal and cause any validated source tangent to be overwritten. Two checked
 pre-library guards cap the sum of cubed exact welded-key multiplicities at
 268,435,456 and nine times degenerate-face count times good-face count at
 16,777,216. Missing or unsuitable generated output rejects before immutable
-adoption. Generated tangent work keys and MikkTSpace input use the transformed
-normal-role coordinates, while the stored primary coordinates and explicit
+adoption. Generated tangent work keys and MikkTSpace input use the selected
+transformed normal-role coordinates, while both stored coordinates and explicit
 source tangents stay unchanged. Every active role's affine evaluation is
 checked over all expanded coordinates; a non-finite product or sum rejects
 before immutable adoption. The local service
@@ -585,10 +588,10 @@ state empty, so callers must rehydrate exact matching bytes before dependent
 rendering resumes. An opt-in storage adapter can retain
 one exact source in a separate immutable bounded file, but it neither maps that
 file to recovery state nor decodes, imports, uploads, or schedules the source.
-Unknown or wider extension payloads, including nonzero texture-transform
-coordinate overrides or future transform properties, and valid out-of-subset image features
+Unknown or wider extension payloads, including texture-coordinate selectors
+above one or future transform properties, and valid out-of-subset image features
 produce structured diagnostics or approved proxies; malformed declaration,
-unlit or texture-transform marker, normal, tangent, primary-coordinate, primary-color, material, image, or over-
+unlit or texture-transform marker, normal, tangent, declared or selected texture-coordinate, primary-color, material, image, or over-
 limit data cannot proxy.
 Aggregate asset status includes optional monotonic oldest-import and
 oldest-upload ages without exposing source bytes, mesh keys, texture content,

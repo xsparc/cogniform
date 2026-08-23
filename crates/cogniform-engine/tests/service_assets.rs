@@ -581,6 +581,11 @@ fn generated_normal_textured_fixture() -> Vec<u8> {
             binary.extend_from_slice(&value.to_le_bytes());
         }
     }
+    for texcoord in [[0.25_f32, 0.25], [0.75, 0.25], [0.25, 0.75]] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
     let base_png = one_pixel_png([128, 64, 32, 255]);
     let normal_png = one_pixel_png([128, 128, 255, 255]);
     let base_offset = binary.len();
@@ -588,7 +593,7 @@ fn generated_normal_textured_fixture() -> Vec<u8> {
     let normal_offset = binary.len();
     binary.extend_from_slice(&normal_png);
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":24}},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{}}},{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1}}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":3,"mimeType":"image/png"}},{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2}},"material":0}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":24}},{{"buffer":0,"byteOffset":96,"byteLength":24}},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{}}},{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"texCoord":1}}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2,"TEXCOORD_1":3}},"material":0}}]}}]}}"#,
         binary.len(),
         base_png.len(),
         normal_png.len(),

@@ -25,8 +25,8 @@ and filterable sampling for `Rgba8UnormSrgb` asset textures.
 Linear `Rgba8Unorm` asset normal and metallic-roughness textures require the
 same sampled, copy-destination, and filterable usages.
 The fixed imported-material layout also requires at least four sampled
-textures, four samplers per shader stage, nine bindings per bind group, five
-vertex attributes, and a 64-byte vertex-buffer stride.
+textures, four samplers per shader stage, nine bindings per bind group, six
+vertex attributes, and a 72-byte vertex-buffer stride.
 Narrow adapters fail structured capability preflight before pipeline creation.
 
 No optional or experimental GPU feature is enabled. The adapter summary records
@@ -40,8 +40,8 @@ RGBA color `[51, 153, 230, 255]`, and a fixed orthographic camera with a small
 view shear. The background entity ID is `0`, cleared depth is `1.0`, and
 normal alpha `0` marks background. The centered cube contains 12
 non-degenerate outward counter-clockwise triangles, 36 expanded vertices, and
-exact axis-aligned source normals, zero primary coordinates, disabled fallback
-tangents, and white colors in one fixed 2,304-byte payload. The reference
+exact axis-aligned source normals, zero primary and secondary coordinates,
+disabled fallback tangents, and white colors in one fixed 2,592-byte payload. The reference
 projection selects its near negative-Z face at the center, so that probe must
 report an outward negative-Z normal.
 
@@ -49,7 +49,7 @@ Extracted built-in geometry supports cuboids, planes, and spheres. A plane is a
 centered unit square at local Z = 0, expanded as two counter-clockwise XY
 triangles with a positive-Z unit normal. Its positive XYZ dimensions scale the
 full model: X and Y control visible size and Z participates in normal
-transformation without creating thickness. One fixed 384-byte plane vertex
+transformation without creating thickness. One fixed 432-byte plane vertex
 payload is allocated at renderer initialization; frames do not tessellate or
 upload it. The unculled pipeline used by built-ins does not cull the back side and does not flip
 its source normal.
@@ -57,24 +57,26 @@ its source normal.
 A sphere is centered, unit diameter, and uses a positive-Z polar axis. Its
 fixed 16 longitude sectors and 8 latitude bands form 224 non-degenerate
 outward counter-clockwise triangles, expanded to 672 vertices with unit radial
-normals, zero primary coordinates, disabled fallback tangents, and white colors
-in the same 64-byte layout. The exact 43,008-byte payload is generated
+normals, zero primary and secondary coordinates, disabled fallback tangents,
+and white colors in the same 72-byte layout. The exact 48,384-byte payload is generated
 once at renderer initialization. XYZ dimensions are bounding diameters, so
 non-uniform values produce an ellipsoid and the existing inverse-transpose
 normal path preserves the smooth direction. Sphere topology supplies exact
-zero primary coordinates, and frames perform no built-in tessellation or
+zero primary and secondary coordinates, and frames perform no built-in tessellation or
 upload.
 
-Imported vertices use one 64-byte position, normal, primary-coordinate,
-tangent, and primary-color layout. Its prior 48-byte prefix remains
-unchanged. Optional finite decoded `TEXCOORD_0` reaches shader location 2 and optional
+Imported vertices use one 72-byte position, normal, primary-coordinate,
+tangent, primary-color, and appended secondary-coordinate layout. Its prior
+64-byte prefix remains unchanged. Optional finite decoded `TEXCOORD_0` reaches shader location 2 and optional
 finite normalized `TANGENT` plus exact handedness reaches location 3; missing
 non-normal-mapped asset values, built-ins, and proxy vertices use exact zero
 coordinates and a disabled `[1, 0, 0, 1]` tangent. A normal-textured primitive
 with missing source tangents receives bounded validated default MikkTSpace
-values before upload, using the normal role's transformed primary coordinates
-while retaining the source coordinates unchanged. Optional f32 or normalized unsigned-byte/
-unsigned-short `COLOR_0` VEC3/VEC4 reaches location 4 as linear unit RGBA.
+values before upload, using the normal role's selected transformed coordinates
+while retaining both source sets unchanged. Optional f32 or normalized unsigned-byte/
+unsigned-short `COLOR_0` VEC3/VEC4 reaches location 4 as linear unit RGBA;
+optional consecutive `TEXCOORD_1` reaches location 5. Omitted secondary values,
+built-ins, and proxies use exact zero.
 Core normalized integer coordinates and admitted required
 `KHR_mesh_quantization` attributes are expanded to these same f32 locations
 before upload, so no packed source format, binding, stride, or pipeline reaches
@@ -90,10 +92,11 @@ Omitted sampling remains linear/repeat. Nearest-family mip filters use nearest
 and linear-family mip filters use linear without generating another image
 level. White base-color/emissive, factor-one metallic-roughness, and
 neutral-normal fallbacks bind on every draw.
-Each active role independently applies its retained finite
-`KHR_texture_transform` offset/rotation/scale affine rows before sampling.
+Each active role independently selects primary or secondary coordinates, then
+applies its retained finite `KHR_texture_transform` offset/rotation/scale
+affine rows before sampling. An extension selector overrides the core selector.
 External images, generated coordinates, non-core sampler features,
-additional coordinate sets, generated/stored mipmaps, and other material
+rendered coordinate sets above one, generated/stored mipmaps, and other material
 texture roles, wider rendered colors, and morph colors remain unsupported.
 
 `HeadlessRenderer::evict_asset` removes every pending upload and resident mesh
@@ -178,7 +181,10 @@ position, and metallic/roughness plus normal scale/material flags. One appended
 `vec4` contains core emissive RGB and uses its prior padding lane for the mask
 cutoff. Eight appended `vec4` rows carry base-color, normal,
 metallic-roughness, and emissive affine transforms. Material flag bit 4 selects
-imported unlit shading and bit 5 selects imported vertex color. Bindings 1, 3, 4, and 5 select
+imported unlit shading, bit 5 selects imported vertex color, and bits 6 through
+9 select secondary coordinates for base color, emissive, metallic-roughness,
+and normal respectively. The integer range through 1,023 remains exact in the
+existing f32 flag lane. Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 selects base-color sampling and bindings 6, 7, and 8 select normal,
 metallic-roughness, and emissive sampling. Inactive roles bind the
@@ -269,6 +275,7 @@ cargo test --release -p cogniform-renderer --test asset_fixture core_sampler_wra
 cargo test --release -p cogniform-renderer --test asset_fixture mipmapped_minification_modes_use_the_documented_one_mip_fallback --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture four_texture_roles_bind_independent_samplers_for_one_shared_image --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture texture_transforms_apply_independently_to_all_four_roles --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture secondary_texture_coordinate_selectors_and_transforms_are_independent_per_role --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture vertex_colors_interpolate_and_preserve_non_color_observations --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture vertex_color_multiplies_factor_texture_and_scene_override --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture vertex_color_alpha_default_material_and_double_sided_back_face_are_exact --all-features --locked --offline -- --ignored --exact --nocapture
@@ -295,6 +302,9 @@ eviction/rehydration plus unchanged revision, logical hash, and replay.
 The texture-transform comparison uses one shared 4-by-4 image and independent
 translation, rotation, and scale combinations for all four roles, then proves
 whole-frame equality with four one-texel references.
+The secondary-coordinate probe uses opposite core and extension selectors for
+each role, proves extension precedence plus independent transformed selection,
+and preserves depth, identity, and geometric-normal observations.
 The vertex-color probes distinguish linearly interpolated primary colors,
 factor and sRGB texture multiplication, independent emission, imported
 OPAQUE/MASK coverage, material-free fallback, double-sided back-face normals,
@@ -386,5 +396,8 @@ override boundary.
 See [ADR 0066](../adr/0066-bounded-gltf-texture-transforms.md) for strict
 transform decoding, independent role sampling, generated-tangent coordinates,
 and the 624-byte prefix-compatible uniform.
+See [ADR 0069](../adr/0069-bounded-secondary-texture-coordinates.md) for the
+appended coordinate attribute, four selector bits, and unchanged renderer
+resource topology.
 See [the extraction and observation guide](incremental-extraction-and-observations.md)
 for the CF005 world-to-render and asynchronous feedback path.

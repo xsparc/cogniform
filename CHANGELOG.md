@@ -40,8 +40,15 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   strictly required ratified `KHR_mesh_quantization` integer matrix for
   POSITION, NORMAL, TANGENT, and primary coordinates, with exact Khronos
   normalization, raw accessor-bound validation, complete bounded-source
-  scanning, strict extension-element alignment, and unchanged 64-byte
-  decoded/GPU vertices;
+  scanning, strict extension-element alignment, and the then-current 64-byte
+  decoded/GPU vertex layout;
+- optional consecutive `TEXCOORD_1` in every admitted primary-coordinate
+  format, with complete declared-set validation, exact core and
+  `KHR_texture_transform` selector precedence for all four texture roles,
+  per-role selected-coordinate transforms, selected normal coordinates for
+  generated MikkTSpace tangents, and one appended shader attribute that makes
+  the fixed decoded/GPU vertex layout 72 bytes while preserving its exact
+  accepted 64-byte prefix;
 - bounded shared embedded PNG GLB base-color, metallic-roughness, normal, and emissive texture roles, with strict static
   8-bit RGB/RGBA decode, independent CPU/GPU accounting, explicit unique
   role upload, bounded per-role core filtering/wrapping with sRGB/linear role
@@ -55,7 +62,8 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   textured triangle omits `TANGENT` or `NORMAL`, with complete source
   validation before fallback, two fixed checked pre-library CPU work guards,
   complete finite/non-zero/handedness output validation, indexed/mirrored/
-  degenerate coverage, and no 64-byte vertex or renderer ABI change;
+  degenerate coverage, and no change to the then-current 64-byte vertex or
+  renderer ABI;
 - optional packed glTF `metallicRoughnessTexture` through the existing bounded
   embedded PNG path, with unique-image CPU accounting, atomic zero-to-three
   role GPU reservation, linear green/blue factor multiplication for
@@ -94,7 +102,7 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   complete prior 496-byte prefix;
 - optional core glTF `COLOR_0` as same-count f32 or normalized unsigned-byte/
   unsigned-short VEC3/VEC4, with finite clamping, synthesized VEC3 alpha,
-  strict wider-set precedence, exact 64-byte expanded vertex accounting,
+  strict wider-set precedence, exact then-current 64-byte expanded vertex accounting,
   interpolated base-color multiplication, white fallback, and complete scene-
   material override;
 - fixed centered XY plane rendering with counter-clockwise positive-Z winding,
@@ -561,7 +569,7 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   metallic-roughness, normal, or emissive role, with bounded independent
   offset/rotation/scale transforms, but excludes external/data images, JPEG,
   non-core sampler controls, generated/stored mipmaps, compression,
-  additional coordinate sets, scene traversal, and most vertex attributes. Normal mapping affects direct
+  rendered coordinate sets above one, scene traversal, and most vertex attributes. Normal mapping affects direct
   light only and never replaces the geometric-normal observation.
   Built-in geometry supports
   cuboids, fixed centered XY planes, and fixed centered unit-diameter spheres;

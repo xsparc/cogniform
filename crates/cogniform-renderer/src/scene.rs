@@ -321,6 +321,7 @@ impl RenderScene {
                     normal_scale: 1.0,
                     imported_texture_roles: ImportedTextureRoles::NONE,
                     imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
+                    imported_texture_coordinate_sets: ImportedTextureCoordinateSets::PRIMARY,
                     imported_alpha_coverage: ImportedAlphaCoverage::Disabled,
                     imported_face_policy: ImportedFacePolicy::Disabled,
                     imported_shading_model: ImportedShadingModel::MetallicRoughness,
@@ -445,6 +446,7 @@ pub(crate) struct PreparedDraw {
     pub(crate) normal_scale: f32,
     pub(crate) imported_texture_roles: ImportedTextureRoles,
     pub(crate) imported_texture_transforms: ImportedTextureTransforms,
+    pub(crate) imported_texture_coordinate_sets: ImportedTextureCoordinateSets,
     pub(crate) imported_alpha_coverage: ImportedAlphaCoverage,
     pub(crate) imported_face_policy: ImportedFacePolicy,
     pub(crate) imported_shading_model: ImportedShadingModel,
@@ -458,10 +460,18 @@ impl PreparedDraw {
         use_imported_material: bool,
         material: Option<AssetMaterial>,
     ) -> Self {
-        let (roles, transforms, normal_scale, alpha_coverage, face_policy, shading_model) =
-            imported_material_selection(use_imported_material, material);
+        let (
+            roles,
+            transforms,
+            normal_scale,
+            alpha_coverage,
+            face_policy,
+            shading_model,
+            texture_coordinate_sets,
+        ) = imported_material_selection(use_imported_material, material);
         self.imported_texture_roles = roles;
         self.imported_texture_transforms = transforms;
+        self.imported_texture_coordinate_sets = texture_coordinate_sets;
         self.normal_scale = normal_scale;
         self.imported_alpha_coverage = alpha_coverage;
         self.imported_face_policy = face_policy;
@@ -487,6 +497,19 @@ impl ImportedTextureTransforms {
         metallic_roughness: AssetTextureTransform::IDENTITY,
         emissive: AssetTextureTransform::IDENTITY,
     };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ImportedTextureCoordinateSets(u8);
+
+impl ImportedTextureCoordinateSets {
+    pub(crate) const PRIMARY: Self = Self(0);
+    #[cfg(test)]
+    pub(crate) const ALL_SECONDARY: Self = Self(0b1111);
+
+    pub(crate) fn flags(self) -> u16 {
+        u16::from(self.0) << 6
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -610,6 +633,7 @@ fn imported_material_selection(
     ImportedAlphaCoverage,
     ImportedFacePolicy,
     ImportedShadingModel,
+    ImportedTextureCoordinateSets,
 ) {
     let shading_model = if use_imported_material
         && material
@@ -641,6 +665,7 @@ fn imported_material_selection(
     roles |= u8::from(use_emissive) * ImportedTextureRoles::EMISSIVE;
     roles |= u8::from(use_metallic_roughness) * ImportedTextureRoles::METALLIC_ROUGHNESS;
     roles |= u8::from(use_normal) * ImportedTextureRoles::NORMAL;
+    let roles = ImportedTextureRoles(roles);
     let transforms = ImportedTextureTransforms {
         base_color: if use_base_color {
             material
@@ -671,6 +696,7 @@ fn imported_material_selection(
             AssetTextureTransform::IDENTITY
         },
     };
+    let coordinate_sets = imported_texture_coordinate_sets(material, roles);
     let alpha_coverage = if use_imported_material {
         material.map_or(ImportedAlphaCoverage::Disabled, |material| {
             match material.alpha_mode() {
@@ -697,12 +723,48 @@ fn imported_material_selection(
         ImportedFacePolicy::Disabled
     };
     (
-        ImportedTextureRoles(roles),
+        roles,
         transforms,
         normal_scale,
         alpha_coverage,
         face_policy,
         shading_model,
+        coordinate_sets,
+    )
+}
+
+fn imported_texture_coordinate_sets(
+    material: Option<AssetMaterial>,
+    roles: ImportedTextureRoles,
+) -> ImportedTextureCoordinateSets {
+    let selected = [
+        (
+            roles.base_color(),
+            material.and_then(AssetMaterial::base_color_texture_coordinate_set),
+            ImportedTextureRoles::BASE_COLOR,
+        ),
+        (
+            roles.emissive(),
+            material.and_then(AssetMaterial::emissive_texture_coordinate_set),
+            ImportedTextureRoles::EMISSIVE,
+        ),
+        (
+            roles.metallic_roughness(),
+            material.and_then(AssetMaterial::metallic_roughness_texture_coordinate_set),
+            ImportedTextureRoles::METALLIC_ROUGHNESS,
+        ),
+        (
+            roles.normal(),
+            material.and_then(AssetMaterial::normal_texture_coordinate_set),
+            ImportedTextureRoles::NORMAL,
+        ),
+    ];
+    ImportedTextureCoordinateSets(
+        selected
+            .into_iter()
+            .fold(0, |sets, (enabled, selector, role)| {
+                sets | (u8::from(enabled && selector == Some(1)) * role)
+            }),
     )
 }
 

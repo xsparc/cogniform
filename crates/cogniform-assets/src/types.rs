@@ -135,7 +135,7 @@ pub enum AssetDiagnosticCode {
     InvalidNormal,
     /// A decoded or generated tangent is non-finite, zero-length, has invalid handedness, or is inconsistent.
     InvalidTangent,
-    /// A decoded primary texture coordinate is non-finite or inconsistent with its positions.
+    /// A decoded texture coordinate is non-finite, malformed, missing, or inconsistent with its positions.
     InvalidTexcoord,
     /// A decoded vertex color has an invalid accessor, value, set sequence, or source count.
     InvalidColor,
@@ -187,9 +187,9 @@ impl AssetDiagnostic {
 }
 
 /// Exact decoded and GPU bytes in one interleaved asset vertex.
-pub const ASSET_VERTEX_BYTES: u64 = 64;
+pub const ASSET_VERTEX_BYTES: u64 = 72;
 
-/// One decoded position, unit normal, tangent, primary texture coordinate, and color.
+/// One decoded position, unit normal, tangent, two texture-coordinate sets, and color.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssetVertex {
     /// XYZ position in mesh-local units.
@@ -202,6 +202,11 @@ pub struct AssetVertex {
     pub texcoord_0: [FiniteF32; 2],
     /// Linear primary glTF vertex color, clamped to the unit interval.
     pub color_0: [UnitF32; 4],
+    /// Secondary glTF texture coordinates retained without unit clamping.
+    ///
+    /// This field is appended after the accepted 64-byte vertex prefix. It is
+    /// zero when `TEXCOORD_1` is omitted or for built-in and proxy geometry.
+    pub texcoord_1: [FiniteF32; 2],
 }
 
 /// Stable key for one mesh inside immutable source bytes.
@@ -419,6 +424,7 @@ pub struct AssetMaterial {
     roughness: UnitF32,
     emissive: [f32; 3],
     texture_roles: u8,
+    texture_coordinate_sets: u8,
     texture_samplers: [AssetSampler; 4],
     texture_transforms: [AssetTextureTransform; 4],
     normal_scale: f32,
@@ -447,6 +453,7 @@ impl AssetMaterial {
             roughness,
             emissive: [0.0; 3],
             texture_roles: 0,
+            texture_coordinate_sets: 0,
             texture_samplers: [AssetSampler::LINEAR_REPEAT; 4],
             texture_transforms: [AssetTextureTransform::IDENTITY; 4],
             normal_scale: 1.0,
@@ -461,8 +468,11 @@ impl AssetMaterial {
         mut self,
         sampler: AssetSampler,
         transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
     ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
         self.texture_roles |= Self::BASE_COLOR_TEXTURE;
+        self.texture_coordinate_sets |= texture_coordinate_set * Self::BASE_COLOR_TEXTURE;
         self.texture_samplers[Self::BASE_COLOR_SAMPLER] = sampler;
         self.texture_transforms[Self::BASE_COLOR_SAMPLER] = transform;
         self
@@ -472,8 +482,11 @@ impl AssetMaterial {
         mut self,
         sampler: AssetSampler,
         transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
     ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
         self.texture_roles |= Self::METALLIC_ROUGHNESS_TEXTURE;
+        self.texture_coordinate_sets |= texture_coordinate_set * Self::METALLIC_ROUGHNESS_TEXTURE;
         self.texture_samplers[Self::METALLIC_ROUGHNESS_SAMPLER] = sampler;
         self.texture_transforms[Self::METALLIC_ROUGHNESS_SAMPLER] = transform;
         self
@@ -483,8 +496,11 @@ impl AssetMaterial {
         mut self,
         sampler: AssetSampler,
         transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
     ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
         self.texture_roles |= Self::EMISSIVE_TEXTURE;
+        self.texture_coordinate_sets |= texture_coordinate_set * Self::EMISSIVE_TEXTURE;
         self.texture_samplers[Self::EMISSIVE_SAMPLER] = sampler;
         self.texture_transforms[Self::EMISSIVE_SAMPLER] = transform;
         self
@@ -500,8 +516,11 @@ impl AssetMaterial {
         scale: FiniteF32,
         sampler: AssetSampler,
         transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
     ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
         self.texture_roles |= Self::NORMAL_TEXTURE;
+        self.texture_coordinate_sets |= texture_coordinate_set * Self::NORMAL_TEXTURE;
         self.texture_samplers[Self::NORMAL_SAMPLER] = sampler;
         self.texture_transforms[Self::NORMAL_SAMPLER] = transform;
         self.normal_scale = scale.get();
@@ -571,6 +590,40 @@ impl AssetMaterial {
     #[must_use]
     pub const fn has_normal_texture(self) -> bool {
         self.texture_roles & Self::NORMAL_TEXTURE != 0
+    }
+
+    const fn texture_coordinate_set(self, role: u8) -> Option<u32> {
+        if self.texture_roles & role == 0 {
+            None
+        } else if self.texture_coordinate_sets & role == 0 {
+            Some(0)
+        } else {
+            Some(1)
+        }
+    }
+
+    /// Returns the effective base-color texture-coordinate set when that role is present.
+    #[must_use]
+    pub const fn base_color_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::BASE_COLOR_TEXTURE)
+    }
+
+    /// Returns the effective emissive texture-coordinate set when that role is present.
+    #[must_use]
+    pub const fn emissive_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::EMISSIVE_TEXTURE)
+    }
+
+    /// Returns the effective metallic-roughness texture-coordinate set when that role is present.
+    #[must_use]
+    pub const fn metallic_roughness_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::METALLIC_ROUGHNESS_TEXTURE)
+    }
+
+    /// Returns the effective normal-map texture-coordinate set when that role is present.
+    #[must_use]
+    pub const fn normal_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::NORMAL_TEXTURE)
     }
 
     /// Returns the retained base-color sampler when that role is present.
