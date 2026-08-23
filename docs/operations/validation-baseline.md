@@ -195,6 +195,12 @@ validated Windows/Vulkan profile on 2026-08-22. No vertex, texture, sampler,
 bind-group, pipeline, lifecycle, logical, observation, protocol, persistence,
 dependency, package, version, workflow, tag, release-asset, or release action
 changed.
+CF067 ABI-derived service-eviction accounting and the complete optimized
+ignored engine/renderer conformance matrix were reproduced on the validated
+Windows/Vulkan profile on 2026-08-23. The correction changes only two test
+expectations and validation/release evidence; no runtime, public API, ABI,
+dependency, package, version, workflow, tag, release-asset, or release action
+changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -1243,15 +1249,38 @@ uv run --no-project python scripts/check_package_policy.py --repository . --expe
 cargo deny check advisories bans licenses sources
 ```
 
-The broader three-test optimized `service_assets` invocation is not recorded
-as passing. Its pre-existing
-`explicit_eviction_is_capacity_exact_and_logically_neutral_before_rehydration`
-case still hard-codes two 96-byte release expectations even though the accepted
-CF063 64-byte vertex ABI makes each three-vertex mesh exactly 192 bytes. CF066
-changes neither that test nor `ASSET_VERTEX_BYTES` or renderer accounting; the
-two relevant import/rehydration cases pass independently above. The stale
-baseline assertion requires a separate bounded correction and keeps the full
-ignored engine matrix open. No check is claimed as passed when it did not pass.
+### CF067 ABI-derived service eviction accounting
+
+CF067 replaces the two stale 96-byte service-eviction expectations inherited
+from CF030 with one expectation derived as three fixture vertices multiplied by
+`ASSET_VERTEX_BYTES`. The accepted CF063 ABI makes that value 192 bytes per
+mesh. Production renderer accounting, the fixture, and every lifecycle,
+logical-state, replay, recovery, observation, and rehydration assertion remain
+unchanged.
+
+The focused correction and the complete optimized ignored engine/renderer
+matrix passed on the validated Windows/Vulkan profile on 2026-08-23:
+
+```text
+cargo test --release -p cogniform-engine --test service_assets --all-features --locked --offline explicit_eviction_is_capacity_exact_and_logically_neutral_before_rehydration -- --ignored --nocapture
+cargo test --release -p cogniform-engine --test service_assets --all-features --locked --offline -- --ignored --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --nocapture
+cargo test --release -p cogniform-renderer --test headless_reference --all-features --locked --offline -- --ignored --nocapture
+```
+
+The results were respectively 1/1, 3/3, 27/27, and 9/9 passing. This closes the
+pre-existing full ignored-matrix evidence gap without changing runtime or
+release behavior.
+
+The final format, all-feature workspace test, warning-denied Clippy and
+rustdoc, public-tree safeguards, source-candidate tests, package-policy tests,
+live package inventory, workflow validation, and diff-hygiene checks also
+passed. `cargo deny check advisories bans licenses sources` could not execute
+because Windows Application Control blocked the installed binary before
+startup with OS error 4551. Manifests, the lockfile, dependency graph, vendor
+tree, deny policy, workflows, runtime code, public API, and ABI are unchanged
+from the accepted CF066 audit; the dependency gate remains required on an
+environment where the approved binary can execute.
 
 ## Deterministic source-candidate commands
 

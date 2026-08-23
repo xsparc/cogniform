@@ -4,6 +4,7 @@
 
 use std::time::{Duration, Instant};
 
+use cogniform_assets::ASSET_VERTEX_BYTES;
 use cogniform_engine::{
     AssetAdmission, AssetError, AssetMeshKey, AssetState, AssetUploadAdmission, EngineError,
     GatewayAdmission, GatewayResponse, LocalService, LocalServiceConfig, LocalServiceError,
@@ -297,6 +298,7 @@ fn explicit_eviction_is_capacity_exact_and_logically_neutral_before_rehydration(
         );
         let decoded_bytes = service.asset_record(hash).unwrap().decoded_bytes;
         assert_eq!(service.asset_record(hash).unwrap().mesh_count, 2);
+        let mesh_bytes = 3 * ASSET_VERTEX_BYTES;
         service.enqueue_asset_upload(first_key).unwrap();
         service.enqueue_asset_upload(second_key).unwrap();
         assert_eq!(service.process_next_asset_upload().unwrap().key, first_key);
@@ -320,9 +322,9 @@ fn explicit_eviction_is_capacity_exact_and_logically_neutral_before_rehydration(
         assert_eq!(eviction.store.removed_meshes, 2);
         assert_eq!(eviction.store.removed_textures, 0);
         assert_eq!(eviction.renderer.removed_pending_uploads, 1);
-        assert_eq!(eviction.renderer.released_pending_bytes, 96);
+        assert_eq!(eviction.renderer.released_pending_bytes, mesh_bytes);
         assert_eq!(eviction.renderer.removed_resident_meshes, 1);
-        assert_eq!(eviction.renderer.released_resident_bytes, 96);
+        assert_eq!(eviction.renderer.released_resident_bytes, mesh_bytes);
         assert_eq!(eviction.renderer.removed_pending_textures, 0);
         assert_eq!(eviction.renderer.removed_resident_textures, 0);
         assert_empty_asset_status(&service);

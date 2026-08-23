@@ -57,13 +57,15 @@ published release.
 
 ## Required evidence and preparation before publication
 
-Checked items below were reproduced through CF066 and are recorded in the
+Checked items below were reproduced through CF067 and are recorded in the
 validation baseline; the package/source identity matrix originated on CF051
-and the executable MCP evidence was revalidated on CF064. The CF055 through
-CF066 controlled GPU paths were reproduced separately on the same validated adapter. Pull-request quality
-must reproduce the portable subset, and the exact clean merged/tagged commit
-must remain unchanged through the still-open identity, archive, and publication
-gates.
+and the executable MCP evidence was revalidated on CF064. The dependency graph
+is unchanged from the accepted CF066 audit; the validation baseline records the
+local CF067 `cargo-deny` execution gap. The CF055 through CF067 controlled GPU
+paths were reproduced separately on the same validated adapter. Pull-request
+quality must reproduce the portable subset, and the exact clean merged/tagged
+commit must remain unchanged through the still-open identity, archive, and
+publication gates.
 
 - [ ] Start from a clean, protected `main` commit whose pull-request checks and
       reviewed tree are recorded.
@@ -71,10 +73,10 @@ gates.
       for the declared profile.
 - [x] Reproduce the ordinary offline format, Clippy, workspace-test, rustdoc,
       public-tree, and dependency-policy checks.
-- [ ] Reproduce all ignored engine/renderer conformance tests on at least one
-      matrix entry named in the compatibility baseline. The renderer matrix
-      passes through CF066, but one pre-existing service-eviction test retains
-      stale pre-CF063 vertex-byte expectations; see the validation baseline.
+- [x] Reproduce all ignored engine/renderer conformance tests on at least one
+      matrix entry named in the compatibility baseline. The complete optimized
+      engine and renderer matrix passes through CF067; see the validation
+      baseline.
 - [x] Re-run the canonical scenario's human and schema-version-one JSON modes
       on that matrix entry and confirm they prove the same successful run
       contract without publishing the adapter or run evidence.
