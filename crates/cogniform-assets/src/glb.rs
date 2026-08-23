@@ -47,10 +47,16 @@ struct ExtensionPreflight {
 
 #[derive(Clone, Copy, Default)]
 struct MaterialTextureTransforms {
-    base_color: Option<AssetTextureTransform>,
-    emissive: Option<AssetTextureTransform>,
-    metallic_roughness: Option<AssetTextureTransform>,
-    normal: Option<AssetTextureTransform>,
+    base_color: Option<MaterialTextureTransform>,
+    emissive: Option<MaterialTextureTransform>,
+    metallic_roughness: Option<MaterialTextureTransform>,
+    normal: Option<MaterialTextureTransform>,
+}
+
+#[derive(Clone, Copy)]
+struct MaterialTextureTransform {
+    transform: AssetTextureTransform,
+    texture_coordinate_set: Option<u32>,
 }
 
 pub(crate) fn decode_glb(
@@ -404,7 +410,7 @@ fn remove_texture_transform_from_info(
     used: &BTreeSet<String>,
     unsupported: &mut Option<AssetDiagnostic>,
     location: &'static str,
-) -> Result<Option<AssetTextureTransform>, AssetDiagnostic> {
+) -> Result<Option<MaterialTextureTransform>, AssetDiagnostic> {
     let Some(texture_info) = texture_info.and_then(serde_json::Value::as_object_mut) else {
         return Ok(None);
     };
@@ -438,7 +444,7 @@ fn decode_texture_transform(
     used: &BTreeSet<String>,
     unsupported: &mut Option<AssetDiagnostic>,
     location: &'static str,
-) -> Result<Option<AssetTextureTransform>, AssetDiagnostic> {
+) -> Result<Option<MaterialTextureTransform>, AssetDiagnostic> {
     let Some(payload) = payload.as_object_mut() else {
         return Err(diagnostic(AssetDiagnosticCode::InvalidJson, location, None));
     };
@@ -452,7 +458,7 @@ fn decode_texture_transform(
                 .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, location, None))
         })
         .transpose()?;
-    let mut wider = tex_coord.is_some_and(|value| value != 0);
+    let mut wider = tex_coord.is_some_and(|value| value > 1);
     if !payload.is_empty() {
         let mut remainder = serde_json::Value::Object(core::mem::take(payload));
         remove_nested_extensions(&mut remainder, used, unsupported)?;
@@ -462,10 +468,11 @@ fn decode_texture_transform(
         unsupported.get_or_insert_with(|| {
             diagnostic(AssetDiagnosticCode::UnsupportedExtension, location, None)
         });
-        Ok(None)
-    } else {
-        Ok(Some(AssetTextureTransform::new(offset, rotation, scale)))
     }
+    Ok(Some(MaterialTextureTransform {
+        transform: AssetTextureTransform::new(offset, rotation, scale),
+        texture_coordinate_set: tex_coord,
+    }))
 }
 
 fn remove_finite_pair(
@@ -623,7 +630,7 @@ fn validate_root(
     validate_root_header(root, binary, limits)?;
     validate_material_values(root)?;
     let alpha_unsupported = validate_alpha_coverage(root)?;
-    let textures = decode_textures(root, binary, limits)?;
+    let textures = decode_textures(root, binary, limits, &extensions.texture_transforms)?;
     let mut decoded_bytes = textures.byte_len;
     let mut meshes = Vec::with_capacity(root.meshes.len());
     for (mesh_index, mesh) in root.meshes.iter().enumerate() {
@@ -898,6 +905,7 @@ fn decode_textures(
     root: &Root,
     binary: &[u8],
     limits: AssetLimits,
+    texture_transforms: &[MaterialTextureTransforms],
 ) -> Result<DecodedTextures, AssetDiagnostic> {
     let resources = validate_texture_resources(root, binary, limits)?;
     let mut unsupported = resources.unsupported;
@@ -931,7 +939,7 @@ fn decode_textures(
             None,
         );
     }
-    validate_texture_coordinates(root, &mut unsupported);
+    validate_texture_coordinates(root, texture_transforms, &mut unsupported);
     let referenced_textures: BTreeSet<_> = role_indices.into_iter().flatten().collect();
     if referenced_textures.len() != root.textures.len() {
         remember_unsupported(
@@ -1358,13 +1366,21 @@ fn shared_texture_index(
     Ok(indices.into_iter().next())
 }
 
-fn validate_texture_coordinates(root: &Root, unsupported: &mut Option<AssetDiagnostic>) {
-    for material in &root.materials {
+fn validate_texture_coordinates(
+    root: &Root,
+    texture_transforms: &[MaterialTextureTransforms],
+    unsupported: &mut Option<AssetDiagnostic>,
+) {
+    for (material_index, material) in root.materials.iter().enumerate() {
+        let transforms = texture_transforms
+            .get(material_index)
+            .copied()
+            .unwrap_or_default();
         if let Some(info) = material
             .pbr_metallic_roughness
             .as_ref()
             .and_then(|pbr| pbr.base_color_texture.as_ref())
-            && info.tex_coord.unwrap_or(0) != 0
+            && effective_texture_coordinate_set(info.tex_coord, transforms.base_color) > 1
         {
             remember_unsupported(
                 unsupported,
@@ -1374,7 +1390,7 @@ fn validate_texture_coordinates(root: &Root, unsupported: &mut Option<AssetDiagn
             );
         }
         if let Some(info) = material.normal_texture.as_ref()
-            && info.tex_coord.unwrap_or(0) != 0
+            && effective_texture_coordinate_set(info.tex_coord, transforms.normal) > 1
         {
             remember_unsupported(
                 unsupported,
@@ -1384,7 +1400,7 @@ fn validate_texture_coordinates(root: &Root, unsupported: &mut Option<AssetDiagn
             );
         }
         if let Some(info) = material.emissive_texture.as_ref()
-            && info.tex_coord.unwrap_or(0) != 0
+            && effective_texture_coordinate_set(info.tex_coord, transforms.emissive) > 1
         {
             remember_unsupported(
                 unsupported,
@@ -1397,7 +1413,7 @@ fn validate_texture_coordinates(root: &Root, unsupported: &mut Option<AssetDiagn
             .pbr_metallic_roughness
             .as_ref()
             .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
-            && info.tex_coord.unwrap_or(0) != 0
+            && effective_texture_coordinate_set(info.tex_coord, transforms.metallic_roughness) > 1
         {
             remember_unsupported(
                 unsupported,
@@ -1689,12 +1705,19 @@ fn decode_mesh(
     }
     validate_vertex_sources(binary, &layouts)?;
     let mut vertices = decode_vertices(binary, &layouts, indices, output_count)?;
+    validate_material_texture_coordinate_sets(
+        root,
+        primitive,
+        extensions,
+        layouts.texcoord_set_count,
+        mesh_index,
+    )?;
     let material = decode_material(root, primitive.material, extensions)?;
     if (material.has_base_color_texture()
         || material.has_emissive_texture()
         || material.has_metallic_roughness_texture()
         || material.has_normal_texture())
-        && layouts.texcoords.is_none()
+        && layouts.texcoords[0].is_none()
     {
         return Err(diagnostic(
             AssetDiagnosticCode::InvalidTexcoord,
@@ -1716,6 +1739,9 @@ fn decode_mesh(
             material
                 .normal_texture_transform()
                 .expect("normal texture retains a transform"),
+            material
+                .normal_texture_coordinate_set()
+                .expect("normal texture retains a coordinate-set selector"),
             mesh_index,
         )?;
     }
@@ -1730,15 +1756,31 @@ fn validate_transformed_texture_coordinates(
     material: AssetMaterial,
     mesh_index: u32,
 ) -> Result<(), AssetDiagnostic> {
-    let transforms = [
-        material.base_color_texture_transform(),
-        material.emissive_texture_transform(),
-        material.metallic_roughness_texture_transform(),
-        material.normal_texture_transform(),
+    let roles = [
+        (
+            material.base_color_texture_transform(),
+            material.base_color_texture_coordinate_set(),
+        ),
+        (
+            material.emissive_texture_transform(),
+            material.emissive_texture_coordinate_set(),
+        ),
+        (
+            material.metallic_roughness_texture_transform(),
+            material.metallic_roughness_texture_coordinate_set(),
+        ),
+        (
+            material.normal_texture_transform(),
+            material.normal_texture_coordinate_set(),
+        ),
     ];
-    for transform in transforms.into_iter().flatten() {
+    for (transform, texture_coordinate_set) in roles {
+        let (Some(transform), Some(texture_coordinate_set)) = (transform, texture_coordinate_set)
+        else {
+            continue;
+        };
         for vertex in vertices {
-            let coordinate = vertex.texcoord_0.map(FiniteF32::get);
+            let coordinate = vertex_texture_coordinate(vertex, texture_coordinate_set);
             if transform.transform(coordinate).is_none() {
                 return Err(diagnostic(
                     AssetDiagnosticCode::InvalidTexcoord,
@@ -1749,6 +1791,54 @@ fn validate_transformed_texture_coordinates(
         }
     }
     Ok(())
+}
+
+fn validate_selected_texture_coordinates(
+    selected: [Option<u32>; 4],
+    available_set_count: usize,
+    mesh_index: u32,
+) -> Result<(), AssetDiagnostic> {
+    for texture_coordinate_set in selected.into_iter().flatten() {
+        if usize::try_from(texture_coordinate_set)
+            .map_or(true, |index| index >= available_set_count)
+        {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidTexcoord,
+                "glb.json.meshes[].primitives[].attributes.TEXCOORD_n",
+                Some(mesh_index),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_material_texture_coordinate_sets(
+    root: &Root,
+    primitive: &Primitive,
+    extensions: &ExtensionPreflight,
+    available_set_count: usize,
+    mesh_index: u32,
+) -> Result<(), AssetDiagnostic> {
+    let transforms = primitive
+        .material
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| extensions.texture_transforms.get(index))
+        .copied()
+        .unwrap_or_default();
+    validate_selected_texture_coordinates(
+        material_texture_coordinate_sets(root, primitive.material, transforms),
+        available_set_count,
+        mesh_index,
+    )
+}
+
+fn vertex_texture_coordinate(vertex: &AssetVertex, texture_coordinate_set: u32) -> [f32; 2] {
+    match texture_coordinate_set {
+        0 => vertex.texcoord_0,
+        1 => vertex.texcoord_1,
+        _ => unreachable!("supported material selectors are zero or one"),
+    }
+    .map(FiniteF32::get)
 }
 
 fn validated_primitive(
@@ -1795,7 +1885,8 @@ struct VertexLayouts {
     positions: AccessorLayout,
     normals: Option<AccessorLayout>,
     tangents: Option<AccessorLayout>,
-    texcoords: Option<AccessorLayout>,
+    texcoords: [Option<AccessorLayout>; 2],
+    texcoord_set_count: usize,
     colors: Option<AccessorLayout>,
     has_unsupported_attributes: bool,
 }
@@ -1855,29 +1946,19 @@ fn vertex_layouts(
             Some(tangents.accessor_index),
         ));
     }
-    let texcoords = optional_attribute_layout(
+    let (texcoords, texcoord_set_count, has_wider_texcoords) = texcoord_layouts(
         root,
         binary,
         primitive,
-        AccessorExpectation::Texcoords,
+        positions,
         limits,
         mesh_quantization_required,
     )?;
-    if let Some(texcoords) = texcoords
-        && texcoords.count != positions.count
-    {
-        return Err(diagnostic(
-            AssetDiagnosticCode::InvalidTexcoord,
-            "glb.json.accessors.texcoord_0.count",
-            Some(texcoords.accessor_index),
-        ));
-    }
     let (colors, has_wider_colors) = color_layouts(root, binary, primitive, positions, limits)?;
     let has_other_unsupported_attributes = primitive.attributes.keys().any(|attribute| {
-        !matches!(
-            attribute.as_str(),
-            "POSITION" | "NORMAL" | "TANGENT" | "TEXCOORD_0"
-        ) && !attribute.starts_with("COLOR_")
+        !matches!(attribute.as_str(), "POSITION" | "NORMAL" | "TANGENT")
+            && !attribute.starts_with("COLOR_")
+            && !attribute.starts_with("TEXCOORD_")
     });
     Ok(VertexLayouts {
         position_index,
@@ -1885,8 +1966,11 @@ fn vertex_layouts(
         normals,
         tangents,
         texcoords,
+        texcoord_set_count,
         colors,
-        has_unsupported_attributes: has_wider_colors || has_other_unsupported_attributes,
+        has_unsupported_attributes: has_wider_colors
+            || has_wider_texcoords
+            || has_other_unsupported_attributes,
     })
 }
 
@@ -1901,8 +1985,7 @@ fn optional_attribute_layout(
     let (semantic, count_location) = match expectation {
         AccessorExpectation::Normals => ("NORMAL", "glb.json.accessors.normal.count"),
         AccessorExpectation::Tangents => ("TANGENT", "glb.json.accessors.tangent.count"),
-        AccessorExpectation::Texcoords => ("TEXCOORD_0", "glb.json.accessors.texcoord_0.count"),
-        _ => unreachable!("only optional directional and coordinate attributes use this helper"),
+        _ => unreachable!("only optional directional attributes use this helper"),
     };
     primitive
         .attributes
@@ -1920,6 +2003,86 @@ fn optional_attribute_layout(
             Ok(layout)
         })
         .transpose()
+}
+
+fn texcoord_layouts(
+    root: &Root,
+    binary: &[u8],
+    primitive: &Primitive,
+    positions: AccessorLayout,
+    limits: AssetLimits,
+    mesh_quantization_required: bool,
+) -> Result<([Option<AccessorLayout>; 2], usize, bool), AssetDiagnostic> {
+    let mut sets = BTreeMap::new();
+    for (attribute, &accessor_index) in &primitive.attributes {
+        let Some(suffix) = attribute.strip_prefix("TEXCOORD_") else {
+            continue;
+        };
+        if suffix.is_empty()
+            || (suffix.len() > 1 && suffix.starts_with('0'))
+            || !suffix.bytes().all(|value| value.is_ascii_digit())
+        {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidTexcoord,
+                "glb.json.meshes[].primitives[].attributes.TEXCOORD_n",
+                Some(accessor_index),
+            ));
+        }
+        let set_index = suffix.parse::<u32>().map_err(|_| {
+            diagnostic(
+                AssetDiagnosticCode::InvalidTexcoord,
+                "glb.json.meshes[].primitives[].attributes.TEXCOORD_n",
+                Some(accessor_index),
+            )
+        })?;
+        sets.insert(set_index, accessor_index);
+    }
+
+    let mut retained = [None; 2];
+    let mut validated_accessors = BTreeMap::new();
+    for (expected_set, (&set_index, &accessor_index)) in (0_u32..).zip(&sets) {
+        if set_index != expected_set {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidTexcoord,
+                "glb.json.meshes[].primitives[].attributes.TEXCOORD_n",
+                Some(accessor_index),
+            ));
+        }
+        let layout = if let Some(layout) = validated_accessors.get(&accessor_index) {
+            *layout
+        } else {
+            let layout = accessor_layout(
+                root,
+                binary,
+                accessor_index,
+                AccessorExpectation::Texcoords,
+                mesh_quantization_required,
+            )?;
+            validate_source_attribute_count(
+                layout,
+                limits,
+                "glb.json.accessors.texcoord_n.count",
+                accessor_index,
+            )?;
+            validate_texcoords(binary, layout)?;
+            validate_accessor_bounds(binary, layout)?;
+            validated_accessors.insert(accessor_index, layout);
+            layout
+        };
+        if layout.count != positions.count {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidTexcoord,
+                "glb.json.accessors.texcoord_n.count",
+                Some(accessor_index),
+            ));
+        }
+        if let Ok(retained_index) = usize::try_from(set_index)
+            && let Some(target) = retained.get_mut(retained_index)
+        {
+            *target = Some(layout);
+        }
+    }
+    Ok((retained, sets.len(), sets.len() > retained.len()))
 }
 
 fn color_layouts(
@@ -2612,8 +2775,11 @@ fn decode_vertices(
                 FiniteF32::new(0.0).expect("zero is finite"),
                 FiniteF32::new(1.0).expect("one is finite"),
             ]);
-        let texcoord_0 = layouts
-            .texcoords
+        let texcoord_0 = layouts.texcoords[0]
+            .map(|layout| read_texcoord(binary, layout, position_index))
+            .transpose()?
+            .unwrap_or([FiniteF32::new(0.0).expect("zero is finite"); 2]);
+        let texcoord_1 = layouts.texcoords[1]
             .map(|layout| read_texcoord(binary, layout, position_index))
             .transpose()?
             .unwrap_or([FiniteF32::new(0.0).expect("zero is finite"); 2]);
@@ -2628,6 +2794,7 @@ fn decode_vertices(
             tangent,
             texcoord_0,
             color_0,
+            texcoord_1,
         });
     }
     if layouts.normals.is_none() {
@@ -2651,9 +2818,15 @@ fn decode_vertices(
 fn generate_missing_tangents(
     vertices: &mut [AssetVertex],
     texture_transform: AssetTextureTransform,
+    texture_coordinate_set: u32,
     mesh_index: u32,
 ) -> Result<(), AssetDiagnostic> {
-    preflight_generated_tangent_work(vertices, texture_transform, mesh_index)?;
+    preflight_generated_tangent_work(
+        vertices,
+        texture_transform,
+        texture_coordinate_set,
+        mesh_index,
+    )?;
 
     let zero = FiniteF32::new(0.0).expect("zero is finite");
     for vertex in &mut *vertices {
@@ -2663,6 +2836,7 @@ fn generate_missing_tangents(
     generate_tangents(&mut GeneratedTangentGeometry {
         vertices,
         texture_transform,
+        texture_coordinate_set,
     })
     .map_err(|_| {
         diagnostic(
@@ -2693,13 +2867,14 @@ fn generate_missing_tangents(
 fn preflight_generated_tangent_work(
     vertices: &[AssetVertex],
     texture_transform: AssetTextureTransform,
+    texture_coordinate_set: u32,
     mesh_index: u32,
 ) -> Result<(), AssetDiagnostic> {
     {
         let mut multiplicities = BTreeMap::<[u32; 8], u64>::new();
         let mut group_work = 0_u64;
         for vertex in vertices {
-            let key = generated_tangent_weld_key(vertex, texture_transform);
+            let key = generated_tangent_weld_key(vertex, texture_transform, texture_coordinate_set);
             let count = multiplicities.entry(key).or_default();
             let next = count
                 .checked_add(1)
@@ -2751,9 +2926,10 @@ fn preflight_generated_tangent_work(
 fn generated_tangent_weld_key(
     vertex: &AssetVertex,
     texture_transform: AssetTextureTransform,
+    texture_coordinate_set: u32,
 ) -> [u32; 8] {
     let texcoord = texture_transform
-        .transform(vertex.texcoord_0.map(FiniteF32::get))
+        .transform(vertex_texture_coordinate(vertex, texture_coordinate_set))
         .expect("texture transforms are validated before tangent generation");
     [
         vertex.position[0].get().to_bits(),
@@ -2809,6 +2985,7 @@ fn validate_triangle_tangent_handedness(
 struct GeneratedTangentGeometry<'a> {
     vertices: &'a mut [AssetVertex],
     texture_transform: AssetTextureTransform,
+    texture_coordinate_set: u32,
 }
 
 impl Geometry for GeneratedTangentGeometry<'_> {
@@ -2830,7 +3007,10 @@ impl Geometry for GeneratedTangentGeometry<'_> {
 
     fn tex_coord(&self, face: usize, vert: usize) -> [f32; 2] {
         self.texture_transform
-            .transform(self.vertex(face, vert).texcoord_0.map(FiniteF32::get))
+            .transform(vertex_texture_coordinate(
+                self.vertex(face, vert),
+                self.texture_coordinate_set,
+            ))
             .expect("texture transforms are validated before tangent generation")
     }
 
@@ -2868,10 +3048,6 @@ fn validate_vertex_sources(binary: &[u8], layouts: &VertexLayouts) -> Result<(),
     if let Some(tangents) = layouts.tangents {
         validate_tangents(binary, tangents)?;
         validate_accessor_bounds(binary, tangents)?;
-    }
-    if let Some(texcoords) = layouts.texcoords {
-        validate_texcoords(binary, texcoords)?;
-        validate_accessor_bounds(binary, texcoords)?;
     }
     Ok(())
 }
@@ -3429,7 +3605,11 @@ fn apply_material_textures(
             texture_sampler(root, info.index)?,
             transforms
                 .base_color
-                .unwrap_or(AssetTextureTransform::IDENTITY),
+                .map_or(AssetTextureTransform::IDENTITY, |value| value.transform),
+            retained_texture_coordinate_set(effective_texture_coordinate_set(
+                info.tex_coord,
+                transforms.base_color,
+            )),
         );
     }
     if let Some(info) = source_material.and_then(|material| material.emissive_texture.as_ref()) {
@@ -3437,7 +3617,11 @@ fn apply_material_textures(
             texture_sampler(root, info.index)?,
             transforms
                 .emissive
-                .unwrap_or(AssetTextureTransform::IDENTITY),
+                .map_or(AssetTextureTransform::IDENTITY, |value| value.transform),
+            retained_texture_coordinate_set(effective_texture_coordinate_set(
+                info.tex_coord,
+                transforms.emissive,
+            )),
         );
     }
     if let Some(info) = source_material
@@ -3448,7 +3632,11 @@ fn apply_material_textures(
             texture_sampler(root, info.index)?,
             transforms
                 .metallic_roughness
-                .unwrap_or(AssetTextureTransform::IDENTITY),
+                .map_or(AssetTextureTransform::IDENTITY, |value| value.transform),
+            retained_texture_coordinate_set(effective_texture_coordinate_set(
+                info.tex_coord,
+                transforms.metallic_roughness,
+            )),
         );
     }
     if let Some(normal_texture) =
@@ -3464,10 +3652,58 @@ fn apply_material_textures(
         material = material.with_normal_texture(
             scale,
             texture_sampler(root, normal_texture.index)?,
-            transforms.normal.unwrap_or(AssetTextureTransform::IDENTITY),
+            transforms
+                .normal
+                .map_or(AssetTextureTransform::IDENTITY, |value| value.transform),
+            retained_texture_coordinate_set(effective_texture_coordinate_set(
+                normal_texture.tex_coord,
+                transforms.normal,
+            )),
         );
     }
     Ok(material)
+}
+
+fn material_texture_coordinate_sets(
+    root: &Root,
+    material_index: Option<u32>,
+    transforms: MaterialTextureTransforms,
+) -> [Option<u32>; 4] {
+    let source_material = material_index.and_then(|index| {
+        root.materials
+            .get(usize::try_from(index).unwrap_or(usize::MAX))
+    });
+    let base_color = source_material
+        .and_then(|material| material.pbr_metallic_roughness.as_ref())
+        .and_then(|pbr| pbr.base_color_texture.as_ref())
+        .map(|info| effective_texture_coordinate_set(info.tex_coord, transforms.base_color));
+    let emissive = source_material
+        .and_then(|material| material.emissive_texture.as_ref())
+        .map(|info| effective_texture_coordinate_set(info.tex_coord, transforms.emissive));
+    let metallic_roughness = source_material
+        .and_then(|material| material.pbr_metallic_roughness.as_ref())
+        .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
+        .map(|info| {
+            effective_texture_coordinate_set(info.tex_coord, transforms.metallic_roughness)
+        });
+    let normal = source_material
+        .and_then(|material| material.normal_texture.as_ref())
+        .map(|info| effective_texture_coordinate_set(info.tex_coord, transforms.normal));
+    [base_color, emissive, metallic_roughness, normal]
+}
+
+fn effective_texture_coordinate_set(
+    core: Option<u32>,
+    texture_transform: Option<MaterialTextureTransform>,
+) -> u32 {
+    texture_transform
+        .and_then(|value| value.texture_coordinate_set)
+        .or(core)
+        .unwrap_or(0)
+}
+
+fn retained_texture_coordinate_set(texture_coordinate_set: u32) -> u8 {
+    u8::from(texture_coordinate_set == 1)
 }
 
 fn apply_unlit(
@@ -3588,6 +3824,7 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
                 ],
                 texcoord_0: [FiniteF32::new(0.0).expect("zero is finite"); 2],
                 color_0: [UnitF32::new(1.0).expect("one is in range"); 4],
+                texcoord_1: [FiniteF32::new(0.0).expect("zero is finite"); 2],
             })
         })
         .collect();
@@ -3909,6 +4146,7 @@ mod tests {
             tangent: [1.0, 0.0, 0.0, 1.0].map(|value| FiniteF32::new(value).unwrap()),
             texcoord_0: texcoord_0.map(|value| FiniteF32::new(value).unwrap()),
             color_0: [UnitF32::new(1.0).unwrap(); 4],
+            texcoord_1: [FiniteF32::new(0.0).unwrap(); 2],
         }
     }
 
@@ -3978,10 +4216,11 @@ mod tests {
         let mut vertices = vec![first; 512];
         vertices.extend(vec![second; 512]);
 
-        preflight_generated_tangent_work(&vertices, AssetTextureTransform::IDENTITY, 7).unwrap();
+        preflight_generated_tangent_work(&vertices, AssetTextureTransform::IDENTITY, 0, 7).unwrap();
         vertices.push(third);
-        let error = preflight_generated_tangent_work(&vertices, AssetTextureTransform::IDENTITY, 7)
-            .unwrap_err();
+        let error =
+            preflight_generated_tangent_work(&vertices, AssetTextureTransform::IDENTITY, 0, 7)
+                .unwrap_err();
         assert_eq!(error.code, AssetDiagnosticCode::CollectionLimitExceeded);
         assert_eq!(error.location, "glb.decoded.generated_tangent_work");
         assert_eq!(error.index, Some(7));
@@ -3992,12 +4231,14 @@ mod tests {
         preflight_generated_tangent_work(
             &exact_budget_vertices(1_365, 1_365),
             AssetTextureTransform::IDENTITY,
+            0,
             3,
         )
         .unwrap();
         let error = preflight_generated_tangent_work(
             &exact_budget_vertices(1_365, 1_366),
             AssetTextureTransform::IDENTITY,
+            0,
             3,
         )
         .unwrap_err();
@@ -4018,8 +4259,9 @@ mod tests {
             ]);
         }
 
-        let error = preflight_generated_tangent_work(&vertices, AssetTextureTransform::IDENTITY, 5)
-            .unwrap_err();
+        let error =
+            preflight_generated_tangent_work(&vertices, AssetTextureTransform::IDENTITY, 0, 5)
+                .unwrap_err();
         assert_eq!(error.code, AssetDiagnosticCode::CollectionLimitExceeded);
         assert_eq!(error.location, "glb.decoded.generated_tangent_work");
         assert_eq!(error.index, Some(5));
@@ -4035,7 +4277,8 @@ mod tests {
             test_vertex([1.0, 0.0, 0.0], [0.0, 1.0]),
             test_vertex([0.0, 1.0, 0.0], [1.0, 0.0]),
         ];
-        generate_missing_tangents(&mut mirrored_seam, AssetTextureTransform::IDENTITY, 0).unwrap();
+        generate_missing_tangents(&mut mirrored_seam, AssetTextureTransform::IDENTITY, 0, 0)
+            .unwrap();
         assert!(
             mirrored_seam[..3]
                 .iter()
@@ -4060,6 +4303,7 @@ mod tests {
             &mut neighboring_degenerate,
             AssetTextureTransform::IDENTITY,
             0,
+            0,
         )
         .unwrap();
         let expected = [1.0_f32, 0.0, 0.0, 1.0].map(f32::to_bits);
@@ -4073,8 +4317,9 @@ mod tests {
     #[test]
     fn isolated_degenerate_generated_tangent_fails_without_a_default() {
         let mut vertices = vec![test_vertex([0.0, 0.0, 0.0], [0.0, 0.0]); 3];
-        let error = generate_missing_tangents(&mut vertices, AssetTextureTransform::IDENTITY, 11)
-            .unwrap_err();
+        let error =
+            generate_missing_tangents(&mut vertices, AssetTextureTransform::IDENTITY, 0, 11)
+                .unwrap_err();
         assert_eq!(error.code, AssetDiagnosticCode::InvalidTangent);
         assert_eq!(error.location, "glb.decoded.generated_tangents");
         assert_eq!(error.index, Some(0));

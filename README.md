@@ -59,7 +59,8 @@ scene revision that produced it.
 > validates and carries those values without moving compiler execution into the
 > schema crate. The current
 > asset baseline adds content-addressed GLB geometry with optional finite vertex
-> normals, one retained finite primary coordinate set, optional source or
+> normals, optional finite primary and consecutive secondary coordinate sets,
+> optional source or
 > bounded generated default MikkTSpace tangents, one bounded primary linear
 > vertex-color set, and unit-bounded numeric metallic-roughness materials, plus bounded
 > embedded PNG base-color, linear packed metallic-roughness, tangent-space
@@ -83,12 +84,14 @@ scene revision that produced it.
 > fixed renderer-owned sampler table and a documented one-mip fallback.
 > Ratified `KHR_texture_transform` offset, rotation, and scale now apply
 > independently to those same four roles under strict finite validation and
-> one fixed prefix-compatible draw uniform. Generated normal-map tangents use
-> the transformed normal coordinates; retained coordinates and explicit
-> tangents remain unchanged.
-> Core normalized integer primary coordinates and a bounded declared
-> `KHR_mesh_quantization` POSITION/NORMAL/TANGENT/TEXCOORD_0 matrix now decode
-> into that same fixed 64-byte CPU/GPU vertex ABI. Quantized positions require
+> one fixed prefix-compatible draw uniform. Each role selects coordinate set
+> zero or one, with the extension selector overriding the core selector.
+> Generated normal-map tangents use the selected transformed normal
+> coordinates; retained coordinates and explicit tangents remain unchanged.
+> Core normalized integer coordinates and a bounded declared
+> `KHR_mesh_quantization` POSITION/NORMAL/TANGENT/TEXCOORD_n matrix now decode
+> into one fixed 72-byte CPU/GPU vertex ABI whose accepted 64-byte prefix is
+> unchanged. Quantized positions require
 > exact raw bounds; node dequantization and packed GPU residency remain outside
 > the supported subset.
 > Primary vertex RGBA multiplies the imported base-color factor and optional

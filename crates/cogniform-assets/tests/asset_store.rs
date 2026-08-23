@@ -151,6 +151,105 @@ fn material_textured_triangle_glb(
     glb_with_json(&json, &binary)
 }
 
+fn secondary_texcoord_four_role_glb(
+    texcoord_0: [[f32; 2]; 3],
+    texcoord_1: &[[f32; 2]],
+    texcoord_1_count: u32,
+    include_primary: bool,
+    include_secondary: bool,
+    include_tangents: bool,
+) -> Vec<u8> {
+    let mut binary = triangle_binary();
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let tangent_offset = binary.len();
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let texcoord_0_offset = binary.len();
+    for texcoord in texcoord_0 {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let texcoord_1_offset = binary.len();
+    for texcoord in texcoord_1 {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let image_offset = binary.len();
+    binary.extend_from_slice(&png);
+
+    let mut views = vec![
+        r#"{"buffer":0,"byteOffset":0,"byteLength":36}"#.to_owned(),
+        r#"{"buffer":0,"byteOffset":36,"byteLength":36}"#.to_owned(),
+    ];
+    let mut accessors = vec![
+        r#"{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}"#.to_owned(),
+        r#"{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}"#.to_owned(),
+    ];
+    let mut attributes = vec![r#""POSITION":0"#.to_owned(), r#""NORMAL":1"#.to_owned()];
+    if include_tangents {
+        let index = views.len();
+        views.push(format!(
+            r#"{{"buffer":0,"byteOffset":{tangent_offset},"byteLength":48}}"#
+        ));
+        accessors.push(format!(
+            r#"{{"bufferView":{index},"componentType":5126,"count":3,"type":"VEC4"}}"#
+        ));
+        attributes.push(format!(r#""TANGENT":{}"#, accessors.len() - 1));
+    }
+    let primary_view = views.len();
+    views.push(format!(
+        r#"{{"buffer":0,"byteOffset":{texcoord_0_offset},"byteLength":24}}"#
+    ));
+    accessors.push(format!(
+        r#"{{"bufferView":{primary_view},"componentType":5126,"count":3,"type":"VEC2"}}"#
+    ));
+    let primary_accessor = accessors.len() - 1;
+    let secondary_view = views.len();
+    views.push(format!(
+        r#"{{"buffer":0,"byteOffset":{texcoord_1_offset},"byteLength":{}}}"#,
+        texcoord_1.len() * 8
+    ));
+    accessors.push(format!(
+        r#"{{"bufferView":{secondary_view},"componentType":5126,"count":{texcoord_1_count},"type":"VEC2"}}"#
+    ));
+    let secondary_accessor = accessors.len() - 1;
+    if include_primary {
+        attributes.push(format!(r#""TEXCOORD_0":{primary_accessor}"#));
+    }
+    if include_secondary {
+        attributes.push(format!(r#""TEXCOORD_1":{secondary_accessor}"#));
+    }
+    let image_view = views.len();
+    views.push(format!(
+        r#"{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}"#,
+        png.len()
+    ));
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_texture_transform"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{}],"accessors":[{}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0,"texCoord":1}},"metallicRoughnessTexture":{{"index":1,"texCoord":2,"extensions":{{"KHR_texture_transform":{{"texCoord":1,"offset":[0.25,0.0]}}}}}}}},"normalTexture":{{"index":2,"texCoord":0,"extensions":{{"KHR_texture_transform":{{"texCoord":1,"scale":[2.0,1.0]}}}}}},"emissiveTexture":{{"index":3,"texCoord":1,"extensions":{{"KHR_texture_transform":{{"texCoord":0,"offset":[0.0,0.5]}}}}}}}}],"textures":[{{"source":0}},{{"source":0}},{{"source":0}},{{"source":0}}],"images":[{{"bufferView":{image_view},"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{{}}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+        views.join(","),
+        accessors.join(","),
+        attributes.join(","),
+    );
+    glb_with_json(&json, &binary)
+}
+
 fn rgba_texture_glb(pixels: &[[u8; 4]], width: u32, height: u32) -> Vec<u8> {
     let rgba = pixels.iter().flatten().copied().collect::<Vec<_>>();
     let png = encode_png(
@@ -968,7 +1067,7 @@ fn verified_fixture_decodes_only_when_explicitly_processed() {
     assert_eq!(outcome.mesh_count, 1);
     assert_eq!(store.stats().pending_imports, 0);
     assert_eq!(store.stats().oldest_pending_import_age_micros, None);
-    assert_eq!(store.stats().resident_cpu_bytes, 192);
+    assert_eq!(store.stats().resident_cpu_bytes, 216);
 
     let upload = store
         .upload_job(AssetMeshKey {
@@ -977,10 +1076,11 @@ fn verified_fixture_decodes_only_when_explicitly_processed() {
         })
         .expect("decoded fixture should produce an upload job");
     assert_eq!(upload.vertices().len(), 3);
-    assert_eq!(upload.byte_len(), 192);
+    assert_eq!(upload.byte_len(), 216);
     for vertex in upload.vertices() {
         assert_normal(vertex.normal, [0.0, 0.0, 1.0]);
         assert_texcoord(vertex.texcoord_0, [0.0, 0.0]);
+        assert_texcoord(vertex.texcoord_1, [0.0, 0.0]);
         assert_color(vertex.color_0, [1.0; 4]);
     }
     assert_color(upload.base_color(), [0.2, 0.6, 0.9, 1.0]);
@@ -1522,12 +1622,12 @@ fn emissive_texture_is_typed_bounded_and_retained_with_exact_accounting() {
     let bytes = emissive_texture_glb(&png, r#"{"index":0,"texCoord":0}"#, true);
     let hash = content_hash(&bytes);
     let mut config = AssetStoreConfig::default();
-    config.limits.max_asset_decoded_bytes = NonZeroU64::new(196).unwrap();
-    config.limits.max_resident_cpu_bytes = NonZeroU64::new(196).unwrap();
+    config.limits.max_asset_decoded_bytes = NonZeroU64::new(220).unwrap();
+    config.limits.max_resident_cpu_bytes = NonZeroU64::new(220).unwrap();
     let mut store = AssetStore::new(config);
     store.enqueue(hash, bytes).unwrap();
     assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(store.record(hash).unwrap().decoded_bytes, 196);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 220);
     let upload = store
         .upload_job(AssetMeshKey {
             content_hash: hash,
@@ -1542,7 +1642,7 @@ fn emissive_texture_is_typed_bounded_and_retained_with_exact_accounting() {
     assert_eq!(upload.byte_len(), 3 * ASSET_VERTEX_BYTES);
     let eviction = store.evict(hash);
     assert_eq!(eviction.removed_textures, 1);
-    assert_eq!(eviction.released_resident_cpu_bytes, 196);
+    assert_eq!(eviction.released_resident_cpu_bytes, 220);
 }
 
 #[test]
@@ -1580,8 +1680,16 @@ fn malformed_emissive_texture_roles_reject_without_proxy() {
 #[test]
 fn valid_but_unsupported_emissive_texture_shapes_obey_proxy_policy() {
     let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
+    let missing_selected_coordinates =
+        emissive_texture_glb(&png, r#"{"index":0,"texCoord":1}"#, true);
+    let (store, hash) = process_with_proxy_policy(missing_selected_coordinates);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidTexcoord
+    );
+
     let cases = [
-        emissive_texture_glb(&png, r#"{"index":0,"texCoord":1}"#, true),
         material_textured_triangle_glb(
             &png,
             r#""pbrMetallicRoughness":{},"emissiveTexture":{"index":0}"#,
@@ -1741,8 +1849,8 @@ fn embedded_rgba_and_rgb_base_color_textures_are_bounded_and_retained() {
     let mut rgba_store = AssetStore::default();
     rgba_store.enqueue(rgba_hash, rgba).unwrap();
     assert_eq!(rgba_store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(rgba_store.record(rgba_hash).unwrap().decoded_bytes, 208);
-    assert_eq!(rgba_store.stats().resident_cpu_bytes, 208);
+    assert_eq!(rgba_store.record(rgba_hash).unwrap().decoded_bytes, 232);
+    assert_eq!(rgba_store.stats().resident_cpu_bytes, 232);
     let upload = rgba_store
         .upload_job(AssetMeshKey {
             content_hash: rgba_hash,
@@ -1764,7 +1872,7 @@ fn embedded_rgba_and_rgb_base_color_textures_are_bounded_and_retained() {
     let rgba_eviction = rgba_store.evict(rgba_hash);
     assert_eq!(rgba_eviction.removed_meshes, 1);
     assert_eq!(rgba_eviction.removed_textures, 1);
-    assert_eq!(rgba_eviction.released_resident_cpu_bytes, 208);
+    assert_eq!(rgba_eviction.released_resident_cpu_bytes, 232);
     assert_eq!(rgba_store.stats().resident_cpu_bytes, 0);
 
     let rgb_png = encode_png(
@@ -1824,7 +1932,7 @@ fn source_tangent_normal_texture_is_typed_normalized_and_retained() {
     let mut store = AssetStore::default();
     store.enqueue(hash, bytes).unwrap();
     assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(store.record(hash).unwrap().decoded_bytes, 196);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 220);
     let upload = store
         .upload_job(AssetMeshKey {
             content_hash: hash,
@@ -1847,7 +1955,7 @@ fn source_tangent_normal_texture_is_typed_normalized_and_retained() {
     }
     let eviction = store.evict(hash);
     assert_eq!(eviction.removed_textures, 1);
-    assert_eq!(eviction.released_resident_cpu_bytes, 196);
+    assert_eq!(eviction.released_resident_cpu_bytes, 220);
 }
 
 #[test]
@@ -1871,7 +1979,7 @@ fn metallic_roughness_texture_is_linear_role_metadata_with_exact_texels() {
     let mut store = AssetStore::default();
     store.enqueue(hash, bytes).unwrap();
     assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(store.record(hash).unwrap().decoded_bytes, 196);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 220);
     let upload = store
         .upload_job(AssetMeshKey {
             content_hash: hash,
@@ -1911,7 +2019,7 @@ fn dual_texture_roles_account_shared_and_distinct_images_exactly() {
         png::BitDepth::Eight,
         &[128, 128, 255, 255],
     );
-    for (shared_image, expected_bytes) in [(true, 196), (false, 200)] {
+    for (shared_image, expected_bytes) in [(true, 220), (false, 224)] {
         let bytes = dual_textured_triangle_glb(&base_png, &normal_png, shared_image);
         let hash = content_hash(&bytes);
         let mut exact_config = AssetStoreConfig::default();
@@ -1980,7 +2088,7 @@ fn three_texture_roles_count_shared_cpu_images_once_and_roles_exactly() {
         png::BitDepth::Eight,
         &[128, 128, 255, 255],
     );
-    for (shared_image, expected_bytes) in [(true, 196), (false, 204)] {
+    for (shared_image, expected_bytes) in [(true, 220), (false, 228)] {
         let bytes = triple_textured_triangle_glb(
             &base_png,
             &metallic_roughness_png,
@@ -2054,7 +2162,7 @@ fn four_texture_roles_count_shared_cpu_images_once_and_roles_exactly() {
             &[32, 64, 128, 3],
         ),
     ];
-    for (shared_image, expected_bytes) in [(true, 196), (false, 208)] {
+    for (shared_image, expected_bytes) in [(true, 220), (false, 232)] {
         let bytes = four_textured_triangle_glb(images.each_ref().map(Vec::as_slice), shared_image);
         let hash = content_hash(&bytes);
         let mut exact_config = AssetStoreConfig::default();
@@ -2121,7 +2229,7 @@ fn texture_transforms_retain_exact_defaults_and_independent_affine_rows() {
     let mut store = AssetStore::default();
     store.enqueue(hash, bytes).unwrap();
     assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(store.record(hash).unwrap().decoded_bytes, 196);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 220);
     let material = store
         .upload_job(AssetMeshKey {
             content_hash: hash,
@@ -2153,6 +2261,138 @@ fn texture_transforms_retain_exact_defaults_and_independent_affine_rows() {
     {
         assert!((actual - expected).abs() <= 1e-6, "{actual} != {expected}");
     }
+}
+
+#[test]
+fn secondary_texture_coordinates_retain_role_selectors_overrides_and_exact_accounting() {
+    let texcoord_0 = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+    let texcoord_1 = [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75]];
+    let bytes = secondary_texcoord_four_role_glb(texcoord_0, &texcoord_1, 3, true, true, true);
+    let hash = content_hash(&bytes);
+    let mut config = AssetStoreConfig::default();
+    config.limits.max_asset_decoded_bytes = NonZeroU64::new(220).unwrap();
+    config.limits.max_resident_cpu_bytes = NonZeroU64::new(220).unwrap();
+    let mut store = AssetStore::new(config);
+    store.enqueue(hash, bytes.clone()).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 220);
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_eq!(upload.byte_len(), 216);
+    for (vertex, (primary, secondary)) in upload
+        .vertices()
+        .iter()
+        .zip(texcoord_0.into_iter().zip(texcoord_1))
+    {
+        assert_texcoord(vertex.texcoord_0, primary);
+        assert_texcoord(vertex.texcoord_1, secondary);
+    }
+    let material = upload.material();
+    assert_eq!(material.base_color_texture_coordinate_set(), Some(1));
+    assert_eq!(
+        material.metallic_roughness_texture_coordinate_set(),
+        Some(1)
+    );
+    assert_eq!(material.normal_texture_coordinate_set(), Some(1));
+    assert_eq!(material.emissive_texture_coordinate_set(), Some(0));
+    assert_eq!(
+        material
+            .metallic_roughness_texture_transform()
+            .unwrap()
+            .affine_rows(),
+        [[1.0, 0.0, 0.25, 0.0], [0.0, 1.0, 0.0, 0.0]]
+    );
+    assert_eq!(
+        material.normal_texture_transform().unwrap().affine_rows(),
+        [[2.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]
+    );
+    assert_eq!(
+        material.emissive_texture_transform().unwrap().affine_rows(),
+        [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.5, 0.0]]
+    );
+
+    let mut narrow = AssetStoreConfig::default();
+    narrow.limits.max_asset_decoded_bytes = NonZeroU64::new(219).unwrap();
+    let mut narrow_store = AssetStore::new(narrow);
+    narrow_store.enqueue(hash, bytes).unwrap();
+    assert_eq!(
+        narrow_store.process_next().unwrap().state,
+        AssetState::Rejected
+    );
+    assert_eq!(
+        narrow_store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::ByteLimitExceeded
+    );
+}
+
+#[test]
+fn secondary_texture_coordinate_validation_and_generated_tangents_fail_closed() {
+    let degenerate_primary = [[0.0, 0.0]; 3];
+    let secondary = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+    let generated =
+        secondary_texcoord_four_role_glb(degenerate_primary, &secondary, 3, true, true, false);
+    let hash = content_hash(&generated);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, generated).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+    let vertices = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap()
+        .vertices()
+        .to_vec();
+    assert!(vertices.iter().all(|vertex| {
+        vertex.tangent[..3]
+            .iter()
+            .any(|component| component.get().to_bits() != 0.0_f32.to_bits())
+    }));
+
+    let skipped =
+        secondary_texcoord_four_role_glb(degenerate_primary, &secondary, 3, false, true, true);
+    let mismatched =
+        secondary_texcoord_four_role_glb(degenerate_primary, &secondary[..2], 2, true, true, true);
+    let non_finite = secondary_texcoord_four_role_glb(
+        degenerate_primary,
+        &[[0.0, 0.0], [f32::NAN, 0.0], [0.0, 1.0]],
+        3,
+        true,
+        true,
+        true,
+    );
+    for bytes in [skipped, mismatched, non_finite] {
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidTexcoord
+        );
+    }
+
+    let over_limit = secondary_texcoord_four_role_glb(
+        degenerate_primary,
+        &[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+        4,
+        true,
+        true,
+        true,
+    );
+    let hash = content_hash(&over_limit);
+    let mut config = AssetStoreConfig::default();
+    config.limits.max_vertices_per_mesh = NonZeroU32::new(3).unwrap();
+    config.unsupported_policy = UnsupportedAssetPolicy::ProxyCuboid;
+    let mut store = AssetStore::new(config);
+    store.enqueue(hash, over_limit).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::CollectionLimitExceeded
+    );
 }
 
 #[test]
@@ -2224,7 +2464,24 @@ fn texture_transform_wider_and_overflow_paths_fail_closed() {
     let images = [image.as_slice(); 4];
     let declared = r#", "extensionsUsed":["KHR_texture_transform"]"#;
 
-    for payload in [r#"{"texCoord":1}"#, r#"{"future":true}"#] {
+    let missing_selected = r#", "extensions":{"KHR_texture_transform":{"texCoord":1}}"#;
+    let (store, hash) = process_with_proxy_policy(four_textured_triangle_glb_with_options(
+        images,
+        true,
+        [None; 4],
+        "",
+        [missing_selected, "", "", ""],
+        declared,
+    ));
+    let record = store.record(hash).unwrap();
+    assert_eq!(record.state, AssetState::Rejected);
+    assert_eq!(
+        record.diagnostics[0].code,
+        AssetDiagnosticCode::InvalidTexcoord
+    );
+
+    {
+        let payload = r#"{"future":true}"#;
         let extension = format!(r#", "extensions":{{"KHR_texture_transform":{payload}}}"#);
         let (store, hash) = process_with_proxy_policy(four_textured_triangle_glb_with_options(
             images,
@@ -2386,8 +2643,8 @@ fn four_texture_roles_retain_independent_samplers_without_accounting_growth() {
     let mut store = AssetStore::default();
     store.enqueue(hash, bytes).unwrap();
     assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(store.record(hash).unwrap().decoded_bytes, 196);
-    assert_eq!(store.stats().resident_cpu_bytes, 196);
+    assert_eq!(store.record(hash).unwrap().decoded_bytes, 220);
+    assert_eq!(store.stats().resident_cpu_bytes, 220);
 
     let material = store
         .upload_job(AssetMeshKey {
@@ -2448,7 +2705,7 @@ fn four_texture_roles_retain_independent_samplers_without_accounting_growth() {
 
     let eviction = store.evict(hash);
     assert_eq!(eviction.removed_textures, 4);
-    assert_eq!(eviction.released_resident_cpu_bytes, 196);
+    assert_eq!(eviction.released_resident_cpu_bytes, 220);
 
     assert_shared_sampler_accounting(images);
 }
@@ -2462,8 +2719,8 @@ fn assert_shared_sampler_accounting(images: [&[u8]; 4]) {
         shared_store.process_next().unwrap().state,
         AssetState::Ready
     );
-    assert_eq!(shared_store.record(shared_hash).unwrap().decoded_bytes, 196);
-    assert_eq!(shared_store.stats().resident_cpu_bytes, 196);
+    assert_eq!(shared_store.record(shared_hash).unwrap().decoded_bytes, 220);
+    assert_eq!(shared_store.stats().resident_cpu_bytes, 220);
     let shared_material = shared_store
         .upload_job(AssetMeshKey {
             content_hash: shared_hash,
@@ -2482,7 +2739,7 @@ fn assert_shared_sampler_accounting(images: [&[u8]; 4]) {
     );
     let shared_eviction = shared_store.evict(shared_hash);
     assert_eq!(shared_eviction.removed_textures, 4);
-    assert_eq!(shared_eviction.released_resident_cpu_bytes, 196);
+    assert_eq!(shared_eviction.released_resident_cpu_bytes, 220);
 }
 
 #[test]
@@ -3176,15 +3433,26 @@ fn malformed_sampler_indices_counts_and_precedence_fail_closed() {
 #[test]
 fn texture_resource_shape_and_coordinate_contract_is_typed() {
     let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
-    let cases = [
-        textured_triangle_glb(
+    for pbr_fields in [
+        r#""baseColorTexture":{"index":0,"texCoord":1}"#,
+        r#""metallicRoughnessTexture":{"index":0,"texCoord":1}"#,
+    ] {
+        let (store, hash) = process_with_proxy_policy(textured_triangle_glb(
             &png,
-            r#""baseColorTexture":{"index":0,"texCoord":1}"#,
+            pbr_fields,
             r#"{"source":0}"#,
             r#"{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
-        ),
+        ));
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidTexcoord
+        );
+    }
+
+    let cases = [
         textured_triangle_glb(
             &png,
             r#""baseColorTexture":{"index":0}"#,
@@ -3198,14 +3466,6 @@ fn texture_resource_shape_and_coordinate_contract_is_typed() {
             r#""baseColorTexture":{"index":0}"#,
             r#"{"source":0}"#,
             r#"{"bufferView":2,"mimeType":"image/jpeg"}"#,
-            "",
-            true,
-        ),
-        textured_triangle_glb(
-            &png,
-            r#""metallicRoughnessTexture":{"index":0,"texCoord":1}"#,
-            r#"{"source":0}"#,
-            r#"{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
         ),
@@ -3466,7 +3726,7 @@ fn finite_source_normals_are_normalized_and_retained() {
             mesh_index: 0,
         })
         .unwrap();
-    assert_eq!(upload.byte_len(), 192);
+    assert_eq!(upload.byte_len(), 216);
     for vertex in upload.vertices() {
         assert_normal(
             vertex.normal,
@@ -3493,7 +3753,7 @@ fn indexed_positions_and_normals_expand_with_the_same_source_index() {
             mesh_index: 0,
         })
         .unwrap();
-    assert_eq!(upload.byte_len(), 192);
+    assert_eq!(upload.byte_len(), 216);
     for (vertex, expected) in
         upload
             .vertices()
@@ -3886,15 +4146,15 @@ fn vertex_color_bytes_hold_exact_decoded_limits() {
         indexed_glb_with_color_bytes(&colors, 4, 5_126, "VEC4", false, 16, r#""COLOR_0":1"#);
     let hash = content_hash(&bytes);
     let mut exact_config = AssetStoreConfig::default();
-    exact_config.limits.max_asset_decoded_bytes = NonZeroU64::new(192).unwrap();
-    exact_config.limits.max_resident_cpu_bytes = NonZeroU64::new(192).unwrap();
+    exact_config.limits.max_asset_decoded_bytes = NonZeroU64::new(216).unwrap();
+    exact_config.limits.max_resident_cpu_bytes = NonZeroU64::new(216).unwrap();
     let mut exact = AssetStore::new(exact_config);
     exact.enqueue(hash, bytes.clone()).unwrap();
     assert_eq!(exact.process_next().unwrap().state, AssetState::Ready);
-    assert_eq!(exact.record(hash).unwrap().decoded_bytes, 192);
+    assert_eq!(exact.record(hash).unwrap().decoded_bytes, 216);
 
     let mut narrow_config = exact_config;
-    narrow_config.limits.max_asset_decoded_bytes = NonZeroU64::new(191).unwrap();
+    narrow_config.limits.max_asset_decoded_bytes = NonZeroU64::new(215).unwrap();
     let mut narrow = AssetStore::new(narrow_config);
     narrow.enqueue(hash, bytes).unwrap();
     assert_eq!(narrow.process_next().unwrap().state, AssetState::Rejected);
@@ -4003,11 +4263,75 @@ fn unsupported_primary_texcoord_encodings_obey_proxy_policy() {
             })
             .unwrap();
         assert_eq!(upload.byte_len(), 36 * ASSET_VERTEX_BYTES);
-        assert!(
-            upload
-                .vertices()
-                .iter()
-                .all(|vertex| vertex.texcoord_0.iter().all(|value| value.get() == 0.0))
+        assert!(upload.vertices().iter().all(|vertex| {
+            vertex.texcoord_0.iter().all(|value| value.get() == 0.0)
+                && vertex.texcoord_1.iter().all(|value| value.get() == 0.0)
+        }));
+    }
+}
+
+#[test]
+fn wider_texture_coordinate_sets_proxy_only_after_every_declared_set_is_valid() {
+    let coordinate = |semantic, values| RawAttribute {
+        semantic,
+        component_type: 5_126,
+        kind: "VEC2",
+        normalized: false,
+        count: 3,
+        byte_stride: 8,
+        bytes: float_attribute_bytes(values, 8),
+        bounds_fields: "",
+    };
+    let valid = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+    let wider = raw_attribute_glb(
+        &[
+            float_position_attribute(),
+            coordinate("TEXCOORD_0", &valid),
+            coordinate("TEXCOORD_1", &valid),
+            coordinate("TEXCOORD_2", &valid),
+        ],
+        "",
+    );
+    let (store, hash) = process_with_proxy_policy(wider);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedFeature
+    );
+
+    let invalid = [[0.0, 0.0], [f32::NAN, 0.0], [0.0, 1.0]];
+    for bytes in [
+        raw_attribute_glb(
+            &[
+                float_position_attribute(),
+                coordinate("TEXCOORD_0", &valid),
+                coordinate("TEXCOORD_1", &valid),
+                coordinate("TEXCOORD_2", &invalid),
+            ],
+            "",
+        ),
+        raw_attribute_glb(
+            &[
+                float_position_attribute(),
+                coordinate("TEXCOORD_0", &valid),
+                coordinate("TEXCOORD_2", &valid),
+            ],
+            "",
+        ),
+        raw_attribute_glb(
+            &[
+                float_position_attribute(),
+                coordinate("TEXCOORD_0", &valid),
+                coordinate("TEXCOORD_01", &valid),
+            ],
+            "",
+        ),
+    ] {
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidTexcoord
         );
     }
 }
@@ -4115,10 +4439,10 @@ fn mesh_quantization_position_matrix_decodes_into_the_fixed_vertex_abi() {
             exact_integer_f32(minimum)
         };
         assert_eq!(first_x.to_bits(), expected.to_bits());
-        assert_eq!(store.record(hash).unwrap().decoded_bytes, 192);
+        assert_eq!(store.record(hash).unwrap().decoded_bytes, 216);
         drop(upload);
         let eviction = store.evict(hash);
-        assert_eq!(eviction.released_resident_cpu_bytes, 192);
+        assert_eq!(eviction.released_resident_cpu_bytes, 216);
     }
 }
 
@@ -4236,6 +4560,20 @@ fn mesh_quantization_texcoord_matrix_decodes_exact_boundaries() {
                     ),
                     bounds_fields: "",
                 },
+                RawAttribute {
+                    semantic: "TEXCOORD_1",
+                    component_type,
+                    kind: "VEC2",
+                    normalized,
+                    count: 3,
+                    byte_stride: stride,
+                    bytes: integer_attribute_bytes(
+                        component_type,
+                        &[[maximum, minimum], [minimum, maximum], [0, 0]],
+                        stride,
+                    ),
+                    bounds_fields: "",
+                },
             ],
             extension_fields,
         );
@@ -4250,6 +4588,7 @@ fn mesh_quantization_texcoord_matrix_decodes_exact_boundaries() {
             })
             .unwrap();
         let texcoord = upload.vertices()[0].texcoord_0.map(FiniteF32::get);
+        let secondary = upload.vertices()[0].texcoord_1.map(FiniteF32::get);
         let expected_min = if normalized && minimum < 0 {
             -1.0
         } else if normalized {
@@ -4264,6 +4603,8 @@ fn mesh_quantization_texcoord_matrix_decodes_exact_boundaries() {
         };
         assert_eq!(texcoord[0].to_bits(), expected_min.to_bits());
         assert_eq!(texcoord[1].to_bits(), expected_max.to_bits());
+        assert_eq!(secondary[0].to_bits(), expected_max.to_bits());
+        assert_eq!(secondary[1].to_bits(), expected_min.to_bits());
     }
 }
 

@@ -227,8 +227,9 @@ The normal path requires three color attachments and twelve color-attachment
 bytes per sample.
 Imported texture sampling additionally requires at least four sampled textures,
 four samplers per shader stage, and nine bindings per bind group.
-Imported vertex colors additionally require at least five vertex attributes
-and a 64-byte vertex-buffer stride.
+Imported secondary coordinates require at least six vertex attributes and a
+72-byte vertex-buffer stride; the same fixed layout carries imported vertex
+colors and preserves the accepted 64-byte prefix.
 The validated GPU above is evidence that one adapter meets the contract; it does
 not impose a specific GPU model or driver version on future entries.
 
@@ -1342,6 +1343,65 @@ this remains an explicit environment gap until an approved environment can
 execute the gate. No renderer resource layout, pipeline, world, protocol,
 persistence, dependency, package, version, workflow, tag, release-asset,
 deployment, or publication action changed.
+
+### CF069 bounded secondary glTF texture coordinates
+
+CF069 accepts optional consecutive `TEXCOORD_1` in the complete core and
+required-`KHR_mesh_quantization` format matrix. Every declared coordinate set
+is canonical, consecutive, bounded, same-count, range-valid, bound-valid, and
+finite before a wider set may receive unsupported/proxy classification. Each
+of the four existing texture roles retains its effective zero-or-one selector;
+`KHR_texture_transform.texCoord` overrides the core selector, including a
+supported override of a wider core value, and the selected set must exist on
+each referencing primitive. Affine validation and generated MikkTSpace input
+use the selected role coordinates.
+
+The decoded/GPU vertex is exactly 72 bytes, with `TEXCOORD_1` appended after
+the exact accepted 64-byte prefix. Omission, built-ins, and proxies append
+zero. One sixth fixed shader attribute and four material-flag bits carry the
+selection without changing the 624-byte uniform, nine-entry bind group,
+36-sampler table, or two pipelines. Focused CPU tests cover float, normalized,
+and quantized matrices; selector precedence and presence; malformed/skipped/
+wider-set ordering; exact byte limits; zero fallbacks; selected transformed
+tangent generation; and eviction. The final portable workspace gate passed on
+2026-08-23:
+
+```text
+cargo fmt --all -- --check
+cargo test --workspace --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python tests/release/test_package_policy.py
+uv run --no-project python tests/release/test_source_candidate.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --check
+```
+
+Three focused optimized checks also passed 1/1 each on the validated profile.
+The CPU boundary check exercises the maximum generated-tangent source limits.
+The Vulkan renderer check independently toggles all four roles between primary
+and secondary transformed coordinates while preserving depth, stable identity,
+and geometric-normal observations. The Vulkan service check carries a
+secondary-selected generated-normal source through import, upload, recovery
+with empty residency, exact-hash rehydration, and unchanged revision, logical
+hash, and replay:
+
+```text
+cargo test --release -p cogniform-assets --test asset_store generated_tangent_maximum_resource_boundaries --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture secondary_texture_coordinate_selectors_and_transforms_are_independent_per_role --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-engine --test service_assets exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work --all-features --locked --offline -- --ignored --exact --nocapture
+```
+
+Public safeguards, package policy, workflow validation, relative-link checks,
+manifest/lock/vendor/toolchain/workflow immutability, and diff hygiene passed.
+`cargo deny check advisories bans licenses sources` remains unexecuted because
+Windows Application Control blocked the installed binary before startup with
+OS error 4551. No dependency or deny-policy input changed from the accepted
+CF066 audit. No protocol, world, persistence, package, version, workflow, tag,
+release-asset, deployment, or publication action changed.
 
 ## Deterministic source-candidate commands
 

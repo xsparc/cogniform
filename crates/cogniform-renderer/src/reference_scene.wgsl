@@ -64,6 +64,7 @@ struct VertexOutput {
     @location(2) texcoord_0: vec2<f32>,
     @location(3) world_tangent: vec4<f32>,
     @location(4) color_0: vec4<f32>,
+    @location(5) texcoord_1: vec2<f32>,
 };
 
 struct FragmentOutput {
@@ -149,6 +150,7 @@ fn vs_main(
     @location(2) texcoord_0: vec2<f32>,
     @location(3) tangent: vec4<f32>,
     @location(4) color_0: vec4<f32>,
+    @location(5) texcoord_1: vec2<f32>,
 ) -> VertexOutput {
     var output: VertexOutput;
     let world_position = draw.model * vec4(position, 1.0);
@@ -175,6 +177,7 @@ fn vs_main(
     output.world_normal = normal_matrix * normal;
     output.world_position = world_position.xyz;
     output.texcoord_0 = texcoord_0;
+    output.texcoord_1 = texcoord_1;
     output.color_0 = color_0;
     let tangent_model_scale = max(scale_x, max(scale_y, scale_z));
     let tangent_matrix = mat3x3<f32>(
@@ -202,8 +205,13 @@ fn fs_main(
     var output: FragmentOutput;
     let material_flags = u32(draw.material.w);
     let vertex_color = select(vec4(1.0), input.color_0, (material_flags & 32u) != 0u);
-    let base_color_uv = transform_uv(
+    let base_color_source_uv = select(
         input.texcoord_0,
+        input.texcoord_1,
+        (material_flags & 64u) != 0u,
+    );
+    let base_color_uv = transform_uv(
+        base_color_source_uv,
         draw.base_color_uv_row_0,
         draw.base_color_uv_row_1,
     );
@@ -225,7 +233,11 @@ fn fs_main(
             let handedness = select(-1.0, 1.0, input.world_tangent.w >= 0.0);
             let world_bitangent = cross(source_geometric_world_normal, world_tangent) * handedness;
             let normal_uv = transform_uv(
-                input.texcoord_0,
+                select(
+                    input.texcoord_0,
+                    input.texcoord_1,
+                    (material_flags & 512u) != 0u,
+                ),
                 draw.normal_uv_row_0,
                 draw.normal_uv_row_1,
             );
@@ -265,7 +277,11 @@ fn fs_main(
         metallic_roughness_texture,
         metallic_roughness_sampler,
         transform_uv(
-            input.texcoord_0,
+            select(
+                input.texcoord_0,
+                input.texcoord_1,
+                (material_flags & 256u) != 0u,
+            ),
             draw.metallic_roughness_uv_row_0,
             draw.metallic_roughness_uv_row_1,
         ),
@@ -342,7 +358,11 @@ fn fs_main(
             emissive_texture,
             emissive_sampler,
             transform_uv(
-                input.texcoord_0,
+                select(
+                    input.texcoord_0,
+                    input.texcoord_1,
+                    (material_flags & 128u) != 0u,
+                ),
                 draw.emissive_uv_row_0,
                 draw.emissive_uv_row_1,
             ),

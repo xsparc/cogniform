@@ -29,6 +29,11 @@ default MikkTSpace tangents for an otherwise supported normal-textured
 triangle primitive under fixed pre-library work guards. CF066 applies bounded
 ratified `KHR_texture_transform` affine mappings independently to all four
 existing texture roles and uses the normal-role mapping for generated tangents.
+CF068 extends the admitted attribute formats through bounded core normalized
+coordinates and required `KHR_mesh_quantization`. CF069 appends one optional
+consecutive secondary coordinate set, applies exact per-role selector and
+extension-override semantics, and expands the fixed decoded/GPU vertex ABI to
+72 bytes while preserving the accepted 64-byte prefix.
 
 ## Ownership and lifecycle
 
@@ -74,7 +79,7 @@ renderer APIs remain available for embedders that own those domains directly.
 
 Records are retained as `Queued`, `Ready`, `ProxyReady`, or `Rejected`. The
 original source is retained only while queued. Ready records retain expanded
-triangle positions, unit normals, primary coordinates, one typed immutable
+triangle positions, unit normals, primary and secondary coordinates, one typed immutable
 source or generated tangent and unit primary color per vertex, one typed immutable numeric
 material per mesh, and
 at most four role-separated immutable RGBA8 textures. A PNG referenced by
@@ -131,7 +136,8 @@ The importer accepts only the following baseline:
 - one embedded buffer with no URI;
 - one or more meshes, with exactly one primitive per mesh;
 - triangle-list mode, either explicit mode `4` or the glTF default;
-- exactly `POSITION`, with optional `NORMAL`, `TANGENT`, `TEXCOORD_0`, and
+- exactly `POSITION`, with optional `NORMAL`, `TANGENT`, consecutive
+  `TEXCOORD_0`/`TEXCOORD_1`, and
   `COLOR_0`, within a fixed maximum of sixteen primitive attribute semantics;
 - finite non-normalized f32 `VEC3` positions, or signed/unsigned byte/short
   `VEC3` positions under required `KHR_mesh_quantization`, with either
@@ -142,8 +148,11 @@ The importer accepts only the following baseline:
   count as positions; each decoded direction must be finite and non-zero;
 - optional finite f32, normalized unsigned-byte/unsigned-short core, or
   `KHR_mesh_quantization` signed-byte/signed-short and unnormalized unsigned-
-  byte/unsigned-short `VEC2` `TEXCOORD_0` with the same source count as
-  positions. Unnormalized values outside `[0, 1]` are retained unchanged;
+  byte/unsigned-short `VEC2` `TEXCOORD_0` or `TEXCOORD_1` with the same source
+  count as positions. Unnormalized values outside `[0, 1]` are retained
+  unchanged. Every declared set must be canonical, consecutive from zero,
+  valid, and same-count before `TEXCOORD_2` or later may receive
+  unsupported/proxy classification;
 - optional non-normalized f32 `VEC4` `TANGENT`, or normalized signed-byte/
   signed-short tangent under required `KHR_mesh_quantization`, with the same
   source count as positions; decoded XYZ must be finite and non-zero, decoded
@@ -158,23 +167,23 @@ The importer accepts only the following baseline:
 - at most four root textures and four referenced root images across one shared
   base-color index, one shared metallic-roughness index, one shared normal
   index, and one shared emissive index. Every referencing material
-  must use omitted or zero core `texCoord`, and each referencing primitive must
-  provide `TEXCOORD_0`. Each texture info may carry a declared
+  must select coordinate set zero or one, and each referencing primitive must
+  provide the selected set plus every preceding set. Each texture info may carry a declared
   `KHR_texture_transform` object with omitted or finite two-component `offset`,
   finite `rotation`, and finite two-component `scale`, using exact defaults and
-  Khronos translation-rotation-scale order. Its coordinate override must be
-  omitted or zero. Each active role's complete affine result must stay finite
-  for every expanded primary coordinate;
-- `normalTexture` additionally requires `TEXCOORD_0`; its optional `scale` must
+  Khronos translation-rotation-scale order. Its optional selector overrides
+  the core selector and must be zero or one. Each active role's complete affine
+  result must stay finite for every expanded selected coordinate;
+- `normalTexture` additionally requires its selected set; its optional `scale` must
   be finite and defaults to one. When `TANGENT` is absent, default MikkTSpace
   tangents are generated from the expanded position, normal, and transformed
-  normal-role primary-coordinate stream. When `NORMAL` is absent, the existing flat normals are
+  normal-role selected-coordinate stream. When `NORMAL` is absent, the existing flat normals are
   generated and any completely validated source tangent is ignored and
   replaced as required by glTF;
-- `pbrMetallicRoughness.metallicRoughnessTexture` uses the same primary
+- `pbrMetallicRoughness.metallicRoughnessTexture` uses the same selected
   coordinate contract, linear texels, green perceptual roughness, and blue
   metallic; red and alpha are retained but have no material effect;
-- `emissiveTexture` uses the same primary-coordinate contract, sRGB-decoded
+- `emissiveTexture` uses the same selected-coordinate contract, sRGB-decoded
   RGB multiplied by the numeric linear `emissiveFactor`, and ignored alpha;
   omission uses a white fallback;
 - at most four strict root sampler objects. Each optional `magFilter`,
@@ -215,14 +224,14 @@ The importer accepts only the following baseline:
   retains `MetallicRoughness`; null, scalar, array, undeclared, or otherwise
   malformed markers are invalid.
 
-A valid nonzero texture-transform coordinate override or otherwise
+A valid texture-transform coordinate override above one or otherwise
 well-formed wider transform property remains an unsupported-extension/proxy
 candidate. It is never treated as identity. A malformed payload, undeclared
 marker, non-finite component, or non-finite expanded affine result rejects
 before that classification.
 
 Indexed geometry is expanded into a triangle vertex stream, using the same
-source index for position, normal, tangent, primary coordinate, and primary
+source index for position, normal, tangent, both coordinates, and primary
 color. Every selected source attribute count is capped by
 `max_vertices_per_mesh`; the complete position, normal, coordinate, tangent,
 and color accessors are validated before expanded allocation, including values
@@ -245,8 +254,8 @@ corner with finite non-zero deterministically renormalized XYZ, W exactly
 `-1` or `1`, and one W sign per triangle. An absent or unsuitable result
 rejects at `glb.decoded.generated_tangents`; no partial asset is adopted.
 Every output vertex is interleaved
-position, normal, primary coordinate, tangent, and color and consumes exactly
-64 decoded and GPU bytes. The prior 48-byte position/normal/coordinate/tangent
+position, normal, primary coordinate, tangent, color, and appended secondary
+coordinate and consumes exactly 72 decoded and GPU bytes. The prior 64-byte
 prefix is unchanged. Missing coordinates are exact zero; missing tangents use
 `[1, 0, 0, 1]` and never enable normal sampling; missing colors are exact
 white.
@@ -257,11 +266,11 @@ indexed primitive must contain a multiple of three indices.
 
 The strict schema rejects unknown fields after recognized unsupported feature
 declarations are classified. External buffers or images, data URIs, additional
-GLB chunks, sparse accessors, other normal or primary-coordinate encodings,
-node-based position dequantization transforms, additional coordinate sets,
+GLB chunks, sparse accessors, other normal or coordinate encodings,
+node-based position dequantization transforms, rendered `TEXCOORD_2` or later,
 wider rendered color sets, morph
 targets, more than four images/textures/samplers, unused image or texture
-records, valid unused sampler records, JPEG and wider PNG forms, nonzero or additional texture-coordinate sets,
+records, valid unused sampler records, JPEG and wider PNG forms, coordinate selectors above one,
 occlusion texture roles, `BLEND` alpha coverage, nodes, scenes, cameras, animations,
 skins, and all other or wider extensions
 are not supported. There is no compressed geometry, mipmap, anisotropy, or
@@ -285,7 +294,7 @@ magenta unit-cube `ProxyReady` record:
 Invalid GLB framing or lengths, malformed or type-invalid JSON, invalid buffer
 ranges or indices, non-finite positions, zero or non-finite normals or
 tangents, invalid tangent handedness, normal/tangent count mismatches,
-non-finite primary coordinates, primary-coordinate count mismatches, malformed
+non-finite coordinates, coordinate count mismatches, malformed or skipped sets, malformed
 or non-finite primary colors, invalid color normalization/count/ranges or
 malformed/skipped color sets, missing positions, multiple primitives, or
 excess primitive attribute semantics,
@@ -301,13 +310,13 @@ image ranges, degenerate
 fallback triangles, and collection or byte-limit failures always produce
 `Rejected`. A proxy therefore never masks malformed or over-limit input. A
 syntactically valid but unsupported normal, tangent accessor,
-primary-coordinate, image format, texture role, or well-
-formed wider alpha mode, unknown extension, non-empty unlit payload, nonzero
-texture-transform coordinate override, or future transform property may
+coordinate encoding, image format, texture role, or well-
+formed wider alpha mode, unknown extension, non-empty unlit payload,
+texture-coordinate selector above one, or future transform property may
 proxy only under explicit policy and only after malformed peer data is
 excluded. Generated-tangent work-limit and unsuitable-result failures always
 reject and never proxy. Proxy vertices always contain exact zero
-primary coordinates, the disabled fallback tangent, white color, opaque coverage, zero
+primary and secondary coordinates, the disabled fallback tangent, white color, opaque coverage, zero
 emission, no imported texture, and the single-sided material default. The
 generated proxy cube topology is unchanged; its faces therefore follow the
 same hardware back-cull rule as another imported false material.
@@ -317,8 +326,8 @@ base-color, metallic-roughness, tangent-space normal, and emissive textures,
 metallic, roughness, normal scale, and emissive RGB unless the world entity has an explicit material,
 which overrides the imported material as a whole and uses renderer-owned
 white base-color/emissive, factor-one metallic-roughness, and neutral-normal
-fallbacks. Each role applies its own retained affine transform to the primary
-coordinate, then selects its own immutable sampler descriptor. Repeat,
+fallbacks. Each role selects its retained primary or secondary coordinate,
+applies its own affine transform, then selects its own immutable sampler descriptor. Repeat,
 mirrored-repeat, and clamp apply independently in S and T. Magnification uses
 the authored nearest/linear choice. With one retained image level, source
 `NEAREST`, `NEAREST_MIPMAP_NEAREST`, and `NEAREST_MIPMAP_LINEAR` use nearest;
@@ -363,7 +372,7 @@ values; the compatible
 `base_color` accessor remains. A source image shared by multiple roles counts once
 in CPU asset residency, while GPU bytes count once per content-hash-and-role
 resource because role semantics differ. All roles are reserved atomically.
-Vertex bytes use the exact 64-byte expanded accounting independently.
+Vertex bytes use the exact 72-byte expanded accounting independently.
 
 ## Default bounds
 
@@ -422,10 +431,10 @@ resident-byte limits.
 The default offline suite verifies exact hash admission, every truncated prefix
 of the checked fixture, malformed extension declarations, proxy eligibility,
 material and emissive retention/defaults/range/type/texture failures, normal and tangent
-normalization/count/value/range/handedness failures, primary-coordinate exact and indexed
+normalization/count/value/range/handedness failures, primary/secondary-coordinate exact and indexed
 retention, zero defaults, full-source validation, embedded RGB/RGBA expansion,
 PNG truncation and malformed/reference/format/resource-limit failures,
-unsupported encodings and texture roles, winding fallback, exact 64-byte and
+unsupported encodings and texture roles, winding fallback, exact 72-byte and
 shared/distinct role-texture accounting, atomic reservation, procedure replay,
 world extraction, and
 renderer upload reservation:
@@ -487,7 +496,9 @@ change while depth, identity, background, and geometric-normal observations
 remain unchanged. The generated-tangent comparison uses proper UVs and proves
 the missing-tangent importer produces exactly the same controlled frame as the
 explicit reference basis through the unchanged renderer, lifecycle, and
-observation path. The maximum-bound CPU case accepts both separated corners
+observation path. The secondary-coordinate comparison proves core/extension
+selector precedence, independent transformed selection for all four roles,
+and unchanged depth, identity, and geometric-normal observations. The maximum-bound CPU case accepts both separated corners
 and same-position/distinct-UV corners at 262,143 expanded vertices and rejects
 maximum overlap before library entry. The metallic-roughness check proves linear green/blue factor multiplication
 for directional and point lights, red/alpha irrelevance, exact unlit and
@@ -553,3 +564,7 @@ validation, and deterministic compatibility boundary.
 See [ADR 0066](../adr/0066-bounded-gltf-texture-transforms.md) for the strict
 transform payload, affine order, finite-result validation, generated-tangent
 coordinate rule, uniform append, and compatibility boundary.
+
+See [ADR 0069](../adr/0069-bounded-secondary-texture-coordinates.md) for
+canonical coordinate-set sequencing, selector precedence, the appended
+72-byte ABI, and the unchanged renderer-resource boundary.
