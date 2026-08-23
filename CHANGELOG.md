@@ -36,6 +36,12 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 - optional finite same-count f32 `TEXCOORD_0`, including exact out-of-unit and
   indexed retention, a preserved 32-byte position/normal/primary-coordinate
   vertex prefix, zero defaults, and shader input location 2;
+- bounded core normalized unsigned-byte/unsigned-short `TEXCOORD_0` and a
+  strictly required ratified `KHR_mesh_quantization` integer matrix for
+  POSITION, NORMAL, TANGENT, and primary coordinates, with exact Khronos
+  normalization, raw accessor-bound validation, complete bounded-source
+  scanning, strict extension-element alignment, and unchanged 64-byte
+  decoded/GPU vertices;
 - bounded shared embedded PNG GLB base-color, metallic-roughness, normal, and emissive texture roles, with strict static
   8-bit RGB/RGBA decode, independent CPU/GPU accounting, explicit unique
   role upload, bounded per-role core filtering/wrapping with sRGB/linear role

@@ -1282,6 +1282,67 @@ tree, deny policy, workflows, runtime code, public API, and ABI are unchanged
 from the accepted CF066 audit; the dependency gate remains required on an
 environment where the approved binary can execute.
 
+### CF068 bounded glTF mesh quantization
+
+CF068 accepts the bounded `KHR_mesh_quantization` attribute matrix documented
+in ADR 0068, plus core normalized unsigned-byte and unsigned-short
+`TEXCOORD_0`. The importer validates exact extension declarations, component
+and vector combinations, source counts, checked ranges and strides, extension
+alignment, optional raw accessor extrema, and every selected source value
+before expanded decoding. Quantized positions require both raw `min` and
+`max`; explicit `null`, wrong-shaped, non-integral, out-of-range, inverted, or
+mismatched bounds reject. Signed normalized minima clamp to negative one,
+unsigned normalized maxima decode to one, normal and tangent XYZ are
+normalized in f64, and tangent handedness remains exactly negative or positive
+one. Expanded vertices retain the accepted exact 64-byte `AssetVertex` ABI and
+existing byte accounting.
+
+The focused CPU matrix covers every admitted position, normal, tangent, and
+primary-coordinate format; used/required marker precedence; core packed UV
+alignment; required four-byte quantized element/start alignment; exact and
+one-over source-count limits; truncation; unused indexed-source validation;
+raw-bound edge cases; fixed upload accounting; and eviction. The final portable
+workspace gate passed on 2026-08-23:
+
+```text
+cargo fmt --all --check
+cargo test --workspace --all-features --locked --offline
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+uv run --no-project python tests/security/test_public_repo_check.py
+uv run --no-project python tests/release/test_package_policy.py
+uv run --no-project python tests/release/test_source_candidate.py
+uv run --no-project python scripts/check_public_repo.py --all
+uv run --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --check
+```
+
+Two focused optimized Vulkan comparisons also passed 1/1 each on the validated
+profile. The renderer comparison proves byte-identical output between float and
+quantized sources after texture-transform-aware generated MikkTSpace tangents,
+normal mapping, eviction, and explicit rehydration. The service comparison now
+runs base-only, generated-tangent normal-textured, and quantized generated-
+tangent normal-textured sources through exact-hash import, upload, recovery
+with empty residency, explicit rehydration, unchanged revision and logical
+hash, and idempotent replay:
+
+```text
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked mesh_quantized_sources_match_float_render_output_after_rehydration -- --ignored --exact --nocapture
+cargo test --release -p cogniform-engine --test service_assets --all-features --locked exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work -- --ignored --exact --nocapture
+```
+
+Public safeguards, package policy, workflow validation, workflow/manifest/
+lock/vendor/toolchain immutability, diff hygiene, and 288 relative targets
+across all thirteen changed public Markdown files passed. `cargo deny check
+advisories bans licenses sources` could not execute because Windows Application
+Control blocked the installed binary before startup with OS error 4551. The
+dependency graph and deny policy are unchanged from the accepted CF066 audit;
+this remains an explicit environment gap until an approved environment can
+execute the gate. No renderer resource layout, pipeline, world, protocol,
+persistence, dependency, package, version, workflow, tag, release-asset,
+deployment, or publication action changed.
+
 ## Deterministic source-candidate commands
 
 CF050 adds no tag, version, dependency, runtime, network, upload, or publication

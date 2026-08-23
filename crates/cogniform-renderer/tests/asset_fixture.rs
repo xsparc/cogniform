@@ -753,6 +753,22 @@ fn generated_tangent_normal_texture_matches_explicit_render_output() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn mesh_quantized_sources_match_float_render_output_after_rehydration() {
+    let texel = [255, 128, 128, 255];
+    let float = lit_normal_textured_frame(
+        mesh_quantized_generated_normal_texture_fixture(texel, false),
+        false,
+    );
+    let quantized = lit_normal_textured_frame(
+        mesh_quantized_generated_normal_texture_fixture(texel, true),
+        false,
+    );
+
+    assert_frames_equal(&float, &quantized);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn double_sided_back_face_composes_with_normal_maps_and_scene_override() {
     let neutral = oriented_material_frame(
         double_sided_normal_texture_fixture([128, 128, 255, 0], 1.0),
@@ -2586,6 +2602,67 @@ fn normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
 
 fn generated_normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
     normal_texture_fixture_with_options(texel, scale, false, false)
+}
+
+fn mesh_quantized_generated_normal_texture_fixture(texel: [u8; 4], quantized: bool) -> Vec<u8> {
+    let mut binary = Vec::new();
+    let (views, accessors, extension_declaration) = if quantized {
+        for position in [[-1_i8, -1, 0], [1, -1, 0], [0, 1, 0]] {
+            for component in position {
+                binary.extend_from_slice(&component.to_le_bytes());
+            }
+            binary.push(0);
+        }
+        for normal in [[0_i8, 0, 127]; 3] {
+            for component in normal {
+                binary.extend_from_slice(&component.to_le_bytes());
+            }
+            binary.push(0);
+        }
+        for texcoord in [[0_u8, 0], [255, 0], [0, 255]] {
+            binary.extend_from_slice(&texcoord);
+            binary.extend_from_slice(&[0, 0]);
+        }
+        (
+            r#"{"buffer":0,"byteOffset":0,"byteLength":12,"byteStride":4},{"buffer":0,"byteOffset":12,"byteLength":12,"byteStride":4},{"buffer":0,"byteOffset":24,"byteLength":12,"byteStride":4}"#,
+            r#"{"bufferView":0,"componentType":5120,"count":3,"type":"VEC3","min":[-1,-1,0],"max":[1,1,0]},{"bufferView":1,"componentType":5120,"count":3,"type":"VEC3","normalized":true},{"bufferView":2,"componentType":5121,"count":3,"type":"VEC2","normalized":true}"#,
+            r#","extensionsUsed":["KHR_mesh_quantization","KHR_texture_transform"],"extensionsRequired":["KHR_mesh_quantization"]"#,
+        )
+    } else {
+        for position in [[-1.0_f32, -1.0, 0.0], [1.0, -1.0, 0.0], [0.0, 1.0, 0.0]] {
+            for component in position {
+                binary.extend_from_slice(&component.to_le_bytes());
+            }
+        }
+        for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+            for component in normal {
+                binary.extend_from_slice(&component.to_le_bytes());
+            }
+        }
+        for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+            for component in texcoord {
+                binary.extend_from_slice(&component.to_le_bytes());
+            }
+        }
+        (
+            r#"{"buffer":0,"byteOffset":0,"byteLength":36,"byteStride":12},{"buffer":0,"byteOffset":36,"byteLength":36,"byteStride":12},{"buffer":0,"byteOffset":72,"byteLength":24,"byteStride":8}"#,
+            r#"{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"},{"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"}"#,
+            r#","extensionsUsed":["KHR_texture_transform"]"#,
+        )
+    };
+    let base_png = encode_png(1, 1, &[255, 255, 255, 255]);
+    let normal_png = encode_png(1, 1, &texel);
+    let base_offset = binary.len();
+    binary.extend_from_slice(&base_png);
+    let normal_offset = binary.len();
+    binary.extend_from_slice(&normal_png);
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}}{extension_declaration},"buffers":[{{"byteLength":{}}}],"bufferViews":[{views},{{"buffer":0,"byteOffset":{base_offset},"byteLength":{}}},{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{}}}],"accessors":[{accessors}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5,"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"extensions":{{"KHR_texture_transform":{{"offset":[0.25,-0.5],"scale":[0.5,2.0]}}}}}}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":3,"mimeType":"image/png"}},{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+        base_png.len(),
+        normal_png.len(),
+    );
+    glb_with_json(&json, &binary)
 }
 
 fn double_sided_normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {

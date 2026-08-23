@@ -667,6 +667,164 @@ fn indexed_glb_with_texcoords(
     glb_with_json(&json, &binary)
 }
 
+struct RawAttribute<'a> {
+    semantic: &'a str,
+    component_type: u32,
+    kind: &'a str,
+    normalized: bool,
+    count: u32,
+    byte_stride: usize,
+    bytes: Vec<u8>,
+    bounds_fields: &'a str,
+}
+
+fn raw_attribute_glb(attributes: &[RawAttribute<'_>], root_fields: &str) -> Vec<u8> {
+    raw_attribute_glb_with_indices(attributes, root_fields, None)
+}
+
+fn raw_attribute_glb_with_indices(
+    attributes: &[RawAttribute<'_>],
+    root_fields: &str,
+    indices: Option<&[u16]>,
+) -> Vec<u8> {
+    assert_eq!(
+        attributes.first().map(|value| value.semantic),
+        Some("POSITION")
+    );
+    let mut binary = Vec::new();
+    let mut views = Vec::with_capacity(attributes.len());
+    let mut accessors = Vec::with_capacity(attributes.len());
+    let mut primitive_attributes = Vec::with_capacity(attributes.len());
+    for (index, attribute) in attributes.iter().enumerate() {
+        binary.resize(binary.len().next_multiple_of(4), 0);
+        let offset = binary.len();
+        binary.extend_from_slice(&attribute.bytes);
+        let component_width = match attribute.component_type {
+            5_120 | 5_121 => 1,
+            5_122 | 5_123 => 2,
+            5_125 | 5_126 => 4,
+            _ => 0,
+        };
+        let component_count = match attribute.kind {
+            "SCALAR" => 1,
+            "VEC2" => 2,
+            "VEC3" => 3,
+            "VEC4" => 4,
+            _ => 0,
+        };
+        let stride_field = if attribute.byte_stride == component_width * component_count {
+            String::new()
+        } else {
+            format!(r#","byteStride":{}"#, attribute.byte_stride)
+        };
+        views.push(format!(
+            r#"{{"buffer":0,"byteOffset":{offset},"byteLength":{}{stride_field}}}"#,
+            attribute.bytes.len(),
+        ));
+        accessors.push(format!(
+            r#"{{"bufferView":{index},"componentType":{},"count":{},"type":"{}","normalized":{}{}}}"#,
+            attribute.component_type,
+            attribute.count,
+            attribute.kind,
+            attribute.normalized,
+            attribute.bounds_fields,
+        ));
+        primitive_attributes.push(format!(r#""{}":{index}"#, attribute.semantic));
+    }
+    let indices_field = if let Some(indices) = indices {
+        binary.resize(binary.len().next_multiple_of(4), 0);
+        let offset = binary.len();
+        for index in indices {
+            binary.extend_from_slice(&index.to_le_bytes());
+        }
+        let view_index = views.len();
+        views.push(format!(
+            r#"{{"buffer":0,"byteOffset":{offset},"byteLength":{}}}"#,
+            indices.len() * 2,
+        ));
+        let accessor_index = accessors.len();
+        accessors.push(format!(
+            r#"{{"bufferView":{view_index},"componentType":5123,"count":{},"type":"SCALAR"}}"#,
+            indices.len(),
+        ));
+        format!(r#","indices":{accessor_index}"#)
+    } else {
+        String::new()
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}}{root_fields},"buffers":[{{"byteLength":{}}}],"bufferViews":[{}],"accessors":[{}],"meshes":[{{"primitives":[{{"attributes":{{{}}}{indices_field},"mode":4}}]}}]}}"#,
+        binary.len(),
+        views.join(","),
+        accessors.join(","),
+        primitive_attributes.join(","),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn float_attribute_bytes<const N: usize>(values: &[[f32; N]], stride: usize) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(values.len() * stride);
+    for value in values {
+        let start = bytes.len();
+        for component in value {
+            bytes.extend_from_slice(&component.to_le_bytes());
+        }
+        assert!(bytes.len() - start <= stride);
+        bytes.resize(start + stride, 0);
+    }
+    bytes
+}
+
+fn integer_attribute_bytes<const N: usize>(
+    component_type: u32,
+    values: &[[i32; N]],
+    stride: usize,
+) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(values.len() * stride);
+    for value in values {
+        let start = bytes.len();
+        for &component in value {
+            match component_type {
+                5_120 => bytes.extend_from_slice(&i8::try_from(component).unwrap().to_le_bytes()),
+                5_121 => bytes.extend_from_slice(&u8::try_from(component).unwrap().to_le_bytes()),
+                5_122 => {
+                    bytes.extend_from_slice(&i16::try_from(component).unwrap().to_le_bytes());
+                }
+                5_123 => {
+                    bytes.extend_from_slice(&u16::try_from(component).unwrap().to_le_bytes());
+                }
+                _ => panic!("unsupported integer test component type"),
+            }
+        }
+        assert!(bytes.len() - start <= stride);
+        bytes.resize(start + stride, 0);
+    }
+    bytes
+}
+
+fn exact_integer_f32(value: i32) -> f32 {
+    if value < 0 {
+        f32::from(i16::try_from(value).unwrap())
+    } else {
+        f32::from(u16::try_from(value).unwrap())
+    }
+}
+
+fn float_position_attribute() -> RawAttribute<'static> {
+    RawAttribute {
+        semantic: "POSITION",
+        component_type: 5_126,
+        kind: "VEC3",
+        normalized: false,
+        count: 3,
+        byte_stride: 12,
+        bytes: float_attribute_bytes(
+            &[[-0.75, -0.75, 0.0], [0.75, -0.75, 0.0], [0.0, 0.75, 0.0]],
+            12,
+        ),
+        bounds_fields: "",
+    }
+}
+
 fn indexed_glb_with_color_bytes(
     color_bytes: &[u8],
     color_count: u32,
@@ -3830,7 +3988,7 @@ fn invalid_primary_texcoords_never_receive_a_proxy() {
 fn unsupported_primary_texcoord_encodings_obey_proxy_policy() {
     for bytes in [
         indexed_glb_with_texcoords([[0.0; 2]; 4], 4, 32, 5_126, true),
-        indexed_glb_with_texcoords([[0.0; 2]; 4], 4, 32, 5_123, false),
+        indexed_glb_with_texcoords([[0.0; 2]; 4], 4, 32, 5_125, false),
     ] {
         let (store, hash) = process_with_proxy_policy(bytes);
         assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
@@ -3852,6 +4010,526 @@ fn unsupported_primary_texcoord_encodings_obey_proxy_policy() {
                 .all(|vertex| vertex.texcoord_0.iter().all(|value| value.get() == 0.0))
         );
     }
+}
+
+#[test]
+fn core_normalized_integer_texcoords_decode_without_mesh_quantization() {
+    for (component_type, maximum, stride) in [(5_121, 255, 2), (5_123, 65_535, 4)] {
+        let bytes = raw_attribute_glb(
+            &[
+                float_position_attribute(),
+                RawAttribute {
+                    semantic: "TEXCOORD_0",
+                    component_type,
+                    kind: "VEC2",
+                    normalized: true,
+                    count: 3,
+                    byte_stride: stride,
+                    bytes: integer_attribute_bytes(
+                        component_type,
+                        &[[0, maximum], [maximum, 0], [0, 0]],
+                        stride,
+                    ),
+                    bounds_fields: "",
+                },
+            ],
+            "",
+        );
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert_eq!(
+            upload.vertices()[0]
+                .texcoord_0
+                .map(FiniteF32::get)
+                .map(f32::to_bits),
+            [0.0_f32, 1.0].map(f32::to_bits)
+        );
+        assert_eq!(upload.byte_len(), 3 * ASSET_VERTEX_BYTES);
+    }
+}
+
+#[test]
+fn mesh_quantization_position_matrix_decodes_into_the_fixed_vertex_abi() {
+    let extension_fields = r#","extensionsUsed":["KHR_mesh_quantization"],"extensionsRequired":["KHR_mesh_quantization"]"#;
+    for (component_type, normalized, minimum, maximum, stride) in [
+        (5_120, false, -128, 127, 4),
+        (5_120, true, -128, 127, 4),
+        (5_121, false, 0, 255, 4),
+        (5_121, true, 0, 255, 4),
+        (5_122, false, -32_768, 32_767, 8),
+        (5_122, true, -32_768, 32_767, 8),
+        (5_123, false, 0, 65_535, 8),
+        (5_123, true, 0, 65_535, 8),
+    ] {
+        let signed = minimum < 0;
+        let rows = if signed {
+            [
+                [minimum, minimum, 0],
+                [maximum, minimum, 0],
+                [0, maximum, 0],
+            ]
+        } else {
+            [
+                [minimum, minimum, 0],
+                [maximum, minimum, 0],
+                [minimum, maximum, 0],
+            ]
+        };
+        let bounds = format!(r#","min":[{minimum},{minimum},0],"max":[{maximum},{maximum},0]"#);
+        let bytes = raw_attribute_glb(
+            &[RawAttribute {
+                semantic: "POSITION",
+                component_type,
+                kind: "VEC3",
+                normalized,
+                count: 3,
+                byte_stride: stride,
+                bytes: integer_attribute_bytes(component_type, &rows, stride),
+                bounds_fields: &bounds,
+            }],
+            extension_fields,
+        );
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert_eq!(upload.byte_len(), 3 * ASSET_VERTEX_BYTES);
+        let first_x = upload.vertices()[0].position[0].get();
+        let expected = if normalized && signed {
+            -1.0
+        } else {
+            exact_integer_f32(minimum)
+        };
+        assert_eq!(first_x.to_bits(), expected.to_bits());
+        assert_eq!(store.record(hash).unwrap().decoded_bytes, 192);
+        drop(upload);
+        let eviction = store.evict(hash);
+        assert_eq!(eviction.released_resident_cpu_bytes, 192);
+    }
+}
+
+#[test]
+fn mesh_quantization_normal_and_tangent_matrix_decodes_exact_boundaries() {
+    let extension_fields = r#","extensionsUsed":["KHR_mesh_quantization"],"extensionsRequired":["KHR_mesh_quantization"]"#;
+    for (component_type, minimum, maximum, stride) in
+        [(5_120, -128, 127, 4), (5_122, -32_768, 32_767, 8)]
+    {
+        let bytes = raw_attribute_glb(
+            &[
+                float_position_attribute(),
+                RawAttribute {
+                    semantic: "NORMAL",
+                    component_type,
+                    kind: "VEC3",
+                    normalized: true,
+                    count: 3,
+                    byte_stride: stride,
+                    bytes: integer_attribute_bytes(
+                        component_type,
+                        &[[minimum, 0, maximum]; 3],
+                        stride,
+                    ),
+                    bounds_fields: "",
+                },
+            ],
+            extension_fields,
+        );
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        let normal = upload.vertices()[0].normal.map(FiniteF32::get);
+        assert!(normal[0] < 0.0 && normal[2] > 0.0);
+        assert!((normal.iter().map(|value| value * value).sum::<f32>() - 1.0).abs() < 1.0e-6);
+
+        for handedness in [minimum, maximum] {
+            let tangent_stride = if component_type == 5_120 { 4 } else { 8 };
+            let bytes = raw_attribute_glb(
+                &[
+                    float_position_attribute(),
+                    RawAttribute {
+                        semantic: "TANGENT",
+                        component_type,
+                        kind: "VEC4",
+                        normalized: true,
+                        count: 3,
+                        byte_stride: tangent_stride,
+                        bytes: integer_attribute_bytes(
+                            component_type,
+                            &[[maximum, 0, 0, handedness]; 3],
+                            tangent_stride,
+                        ),
+                        bounds_fields: "",
+                    },
+                ],
+                extension_fields,
+            );
+            let hash = content_hash(&bytes);
+            let mut store = AssetStore::default();
+            store.enqueue(hash, bytes).unwrap();
+            assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+            let upload = store
+                .upload_job(AssetMeshKey {
+                    content_hash: hash,
+                    mesh_index: 0,
+                })
+                .unwrap();
+            let expected_w = if handedness < 0 { -1.0_f32 } else { 1.0_f32 };
+            assert_eq!(
+                upload.vertices()[0]
+                    .tangent
+                    .map(FiniteF32::get)
+                    .map(f32::to_bits),
+                [1.0_f32, 0.0, 0.0, expected_w].map(f32::to_bits)
+            );
+        }
+    }
+}
+
+#[test]
+fn mesh_quantization_texcoord_matrix_decodes_exact_boundaries() {
+    let extension_fields = r#","extensionsUsed":["KHR_mesh_quantization"],"extensionsRequired":["KHR_mesh_quantization"]"#;
+    for (component_type, normalized, minimum, maximum, stride) in [
+        (5_120, false, -128, 127, 4),
+        (5_120, true, -128, 127, 4),
+        (5_121, false, 0, 255, 4),
+        (5_121, true, 0, 255, 4),
+        (5_122, false, -32_768, 32_767, 4),
+        (5_122, true, -32_768, 32_767, 4),
+        (5_123, false, 0, 65_535, 4),
+        (5_123, true, 0, 65_535, 4),
+    ] {
+        let bytes = raw_attribute_glb(
+            &[
+                float_position_attribute(),
+                RawAttribute {
+                    semantic: "TEXCOORD_0",
+                    component_type,
+                    kind: "VEC2",
+                    normalized,
+                    count: 3,
+                    byte_stride: stride,
+                    bytes: integer_attribute_bytes(
+                        component_type,
+                        &[[minimum, maximum], [maximum, minimum], [0, 0]],
+                        stride,
+                    ),
+                    bounds_fields: "",
+                },
+            ],
+            extension_fields,
+        );
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        let texcoord = upload.vertices()[0].texcoord_0.map(FiniteF32::get);
+        let expected_min = if normalized && minimum < 0 {
+            -1.0
+        } else if normalized {
+            0.0
+        } else {
+            exact_integer_f32(minimum)
+        };
+        let expected_max = if normalized {
+            1.0
+        } else {
+            exact_integer_f32(maximum)
+        };
+        assert_eq!(texcoord[0].to_bits(), expected_min.to_bits());
+        assert_eq!(texcoord[1].to_bits(), expected_max.to_bits());
+    }
+}
+
+#[test]
+fn mesh_quantization_validates_unused_indexed_source_values() {
+    let extension_fields = r#","extensionsUsed":["KHR_mesh_quantization"],"extensionsRequired":["KHR_mesh_quantization"]"#;
+    let bytes = raw_attribute_glb_with_indices(
+        &[
+            RawAttribute {
+                semantic: "POSITION",
+                component_type: 5_126,
+                kind: "VEC3",
+                normalized: false,
+                count: 4,
+                byte_stride: 12,
+                bytes: float_attribute_bytes(
+                    &[
+                        [-0.75, -0.75, 0.0],
+                        [0.75, -0.75, 0.0],
+                        [0.0, 0.75, 0.0],
+                        [0.0, 0.0, 1.0],
+                    ],
+                    12,
+                ),
+                bounds_fields: "",
+            },
+            RawAttribute {
+                semantic: "NORMAL",
+                component_type: 5_120,
+                kind: "VEC3",
+                normalized: true,
+                count: 4,
+                byte_stride: 4,
+                bytes: integer_attribute_bytes(
+                    5_120,
+                    &[[0, 0, 127], [0, 0, 127], [0, 0, 127], [0, 0, 0]],
+                    4,
+                ),
+                bounds_fields: "",
+            },
+        ],
+        extension_fields,
+        Some(&[0, 1, 2]),
+    );
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidNormal
+    );
+}
+
+#[test]
+fn mesh_quantization_requires_ratified_markers_and_exact_raw_bounds() {
+    let rows = [[-128, -128, 0], [127, -128, 0], [0, 127, 0]];
+    let position = |bounds_fields| RawAttribute {
+        semantic: "POSITION",
+        component_type: 5_120,
+        kind: "VEC3",
+        normalized: true,
+        count: 3,
+        byte_stride: 4,
+        bytes: integer_attribute_bytes(5_120, &rows, 4),
+        bounds_fields,
+    };
+    for (root_fields, bounds_fields) in [
+        ("", r#","min":[-128,-128,0],"max":[127,127,0]"#),
+        (
+            r#","extensionsUsed":["KHR_mesh_quantization"]"#,
+            r#","min":[-128,-128,0],"max":[127,127,0]"#,
+        ),
+        (
+            r#","extensionsUsed":["KHR_mesh_quantization"],"extensionsRequired":["KHR_mesh_quantization"]"#,
+            r#","max":[127,127,0]"#,
+        ),
+        (
+            r#","extensionsUsed":["KHR_mesh_quantization"],"extensionsRequired":["KHR_mesh_quantization"]"#,
+            r#","min":[-127,-128,0],"max":[127,127,0]"#,
+        ),
+        (
+            r#","extensionsUsed":["KHR_mesh_quantization"],"extensionsRequired":["KHR_mesh_quantization"]"#,
+            r#","min":[-128,-128],"max":[127,127,0]"#,
+        ),
+        (
+            r#","extensionsUsed":["KHR_mesh_quantization"],"extensionsRequired":["KHR_mesh_quantization"]"#,
+            r#","min":[-127.5,-128,0],"max":[127,127,0]"#,
+        ),
+        (
+            r#","extensionsUsed":["KHR_mesh_quantization"],"extensionsRequired":["KHR_mesh_quantization"]"#,
+            r#","min":[-129,-128,0],"max":[127,127,0]"#,
+        ),
+        (
+            r#","extensionsUsed":["KHR_mesh_quantization"],"extensionsRequired":["KHR_mesh_quantization"]"#,
+            r#","min":[1,-128,0],"max":[0,127,0]"#,
+        ),
+    ] {
+        let bytes = raw_attribute_glb(&[position(bounds_fields)], root_fields);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+
+    let normalized_texcoords = RawAttribute {
+        semantic: "TEXCOORD_0",
+        component_type: 5_121,
+        kind: "VEC2",
+        normalized: true,
+        count: 3,
+        byte_stride: 4,
+        bytes: integer_attribute_bytes(5_121, &[[0, 255], [255, 0], [0, 0]], 4),
+        bounds_fields: r#","min":[0,0],"max":[255,255]"#,
+    };
+    let bytes = raw_attribute_glb(&[float_position_attribute(), normalized_texcoords], "");
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+
+    let mismatched_texcoords = RawAttribute {
+        semantic: "TEXCOORD_0",
+        component_type: 5_121,
+        kind: "VEC2",
+        normalized: true,
+        count: 3,
+        byte_stride: 4,
+        bytes: integer_attribute_bytes(5_121, &[[0, 255], [255, 0], [0, 0]], 4),
+        bounds_fields: r#","min":[0,0],"max":[254,255]"#,
+    };
+    let bytes = raw_attribute_glb(&[float_position_attribute(), mismatched_texcoords], "");
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+}
+
+#[test]
+fn floating_accessor_bounds_compare_after_f32_rounding() {
+    let bytes = raw_attribute_glb(
+        &[RawAttribute {
+            semantic: "POSITION",
+            component_type: 5_126,
+            kind: "VEC3",
+            normalized: false,
+            count: 3,
+            byte_stride: 12,
+            bytes: float_attribute_bytes(&[[0.1, 0.1, 0.0], [0.2, 0.1, 0.0], [0.1, 0.2, 0.0]], 12),
+            bounds_fields: r#","min":[0.1,0.1,0],"max":[0.2,0.2,0]"#,
+        }],
+        "",
+    );
+    let hash = content_hash(&bytes);
+    let mut store = AssetStore::default();
+    store.enqueue(hash, bytes).unwrap();
+    assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+}
+
+#[test]
+fn null_accessor_bounds_are_not_treated_as_omitted() {
+    let null_texcoords = RawAttribute {
+        semantic: "TEXCOORD_0",
+        component_type: 5_121,
+        kind: "VEC2",
+        normalized: true,
+        count: 3,
+        byte_stride: 2,
+        bytes: integer_attribute_bytes(5_121, &[[0, 255], [255, 0], [0, 0]], 2),
+        bounds_fields: r#","min":null,"max":[255,255]"#,
+    };
+    let bytes = raw_attribute_glb(&[float_position_attribute(), null_texcoords], "");
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+}
+
+#[test]
+fn mesh_quantization_alignment_and_source_count_limits_fail_before_decode() {
+    let extension_fields = r#","extensionsUsed":["KHR_mesh_quantization"],"extensionsRequired":["KHR_mesh_quantization"]"#;
+    let bounds = r#","min":[-128,-128,0],"max":[127,127,0]"#;
+    let bytes = raw_attribute_glb(
+        &[RawAttribute {
+            semantic: "POSITION",
+            component_type: 5_120,
+            kind: "VEC3",
+            normalized: true,
+            count: 3,
+            byte_stride: 3,
+            bytes: integer_attribute_bytes(
+                5_120,
+                &[[-128, -128, 0], [127, -128, 0], [0, 127, 0]],
+                3,
+            ),
+            bounds_fields: bounds,
+        }],
+        extension_fields,
+    );
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedAccessor
+    );
+
+    let mut truncated =
+        integer_attribute_bytes(5_120, &[[-128, -128, 0], [127, -128, 0], [0, 127, 0]], 4);
+    truncated.truncate(10);
+    let bytes = raw_attribute_glb(
+        &[RawAttribute {
+            semantic: "POSITION",
+            component_type: 5_120,
+            kind: "VEC3",
+            normalized: true,
+            count: 3,
+            byte_stride: 4,
+            bytes: truncated,
+            bounds_fields: bounds,
+        }],
+        extension_fields,
+    );
+    let (store, hash) = process_with_proxy_policy(bytes);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidBufferRange
+    );
+
+    let bytes = raw_attribute_glb(
+        &[RawAttribute {
+            semantic: "POSITION",
+            component_type: 5_120,
+            kind: "VEC3",
+            normalized: true,
+            count: 3,
+            byte_stride: 4,
+            bytes: integer_attribute_bytes(
+                5_120,
+                &[[-128, -128, 0], [127, -128, 0], [0, 127, 0]],
+                4,
+            ),
+            bounds_fields: bounds,
+        }],
+        extension_fields,
+    );
+    let hash = content_hash(&bytes);
+    let mut exact_config = AssetStoreConfig::default();
+    exact_config.limits.max_vertices_per_mesh = NonZeroU32::new(3).unwrap();
+    let mut exact = AssetStore::new(exact_config);
+    exact.enqueue(hash, bytes.clone()).unwrap();
+    assert_eq!(exact.process_next().unwrap().state, AssetState::Ready);
+
+    let mut config = AssetStoreConfig::default();
+    config.limits.max_vertices_per_mesh = NonZeroU32::new(2).unwrap();
+    let mut narrow = AssetStore::new(config);
+    narrow.enqueue(hash, bytes).unwrap();
+    assert_eq!(narrow.process_next().unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        narrow.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::CollectionLimitExceeded
+    );
 }
 
 #[test]

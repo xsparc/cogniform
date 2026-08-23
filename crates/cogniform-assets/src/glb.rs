@@ -19,8 +19,10 @@ const GLB_MAGIC: [u8; 4] = *b"glTF";
 const GLB_VERSION: u32 = 2;
 const JSON_CHUNK: u32 = 0x4e4f_534a;
 const BIN_CHUNK: u32 = 0x004e_4942;
+const BYTE: u32 = 5_120;
 const FLOAT: u32 = 5_126;
 const UNSIGNED_BYTE: u32 = 5_121;
+const SHORT: u32 = 5_122;
 const UNSIGNED_SHORT: u32 = 5_123;
 const UNSIGNED_INT: u32 = 5_125;
 const TRIANGLES: u32 = 4;
@@ -31,12 +33,14 @@ const PNG_IEND: [u8; 12] = [0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xae, 0x42, 0x60
 const PNG_RGB: u8 = 2;
 const PNG_RGBA: u8 = 6;
 const KHR_MATERIALS_UNLIT: &str = "KHR_materials_unlit";
+const KHR_MESH_QUANTIZATION: &str = "KHR_mesh_quantization";
 const KHR_TEXTURE_TRANSFORM: &str = "KHR_texture_transform";
 const GENERATED_TANGENT_GROUP_WORK_LIMIT: u64 = 268_435_456;
 const GENERATED_TANGENT_DEGENERATE_SEARCH_LIMIT: u64 = 16_777_216;
 
 struct ExtensionPreflight {
     unsupported: Option<AssetDiagnostic>,
+    mesh_quantization_required: bool,
     unlit_materials: Vec<bool>,
     texture_transforms: Vec<MaterialTextureTransforms>,
 }
@@ -180,7 +184,12 @@ fn remove_declared_extensions_and_features(
     }
     let mut unsupported = used
         .iter()
-        .any(|name| !matches!(name.as_str(), KHR_MATERIALS_UNLIT | KHR_TEXTURE_TRANSFORM))
+        .any(|name| {
+            !matches!(
+                name.as_str(),
+                KHR_MATERIALS_UNLIT | KHR_MESH_QUANTIZATION | KHR_TEXTURE_TRANSFORM
+            )
+        })
         .then(|| {
             diagnostic(
                 AssetDiagnosticCode::UnsupportedExtension,
@@ -229,6 +238,7 @@ fn remove_declared_extensions_and_features(
     remove_unsupported_material_features(value, &mut unsupported)?;
     Ok(ExtensionPreflight {
         unsupported,
+        mesh_quantization_required: required.contains(KHR_MESH_QUANTIZATION),
         unlit_materials,
         texture_transforms,
     })
@@ -1625,7 +1635,13 @@ fn decode_mesh(
     extensions: &ExtensionPreflight,
 ) -> Result<DecodedMesh, AssetDiagnostic> {
     let primitive = validated_primitive(mesh, limits, mesh_index)?;
-    let layouts = vertex_layouts(root, binary, primitive)?;
+    let layouts = vertex_layouts(
+        root,
+        binary,
+        primitive,
+        limits,
+        extensions.mesh_quantization_required,
+    )?;
     if primitive.mode.unwrap_or(TRIANGLES) != TRIANGLES {
         return Err(diagnostic(
             AssetDiagnosticCode::UnsupportedPrimitiveMode,
@@ -1671,12 +1687,7 @@ fn decode_mesh(
             None,
         ));
     }
-    if let Some(texcoords) = layouts.texcoords {
-        validate_texcoords(binary, texcoords)?;
-    }
-    if let Some(tangents) = layouts.tangents {
-        validate_tangents(binary, tangents)?;
-    }
+    validate_vertex_sources(binary, &layouts)?;
     let mut vertices = decode_vertices(binary, &layouts, indices, output_count)?;
     let material = decode_material(root, primitive.material, extensions)?;
     if (material.has_base_color_texture()
@@ -1793,64 +1804,75 @@ fn vertex_layouts(
     root: &Root,
     binary: &[u8],
     primitive: &Primitive,
+    limits: AssetLimits,
+    mesh_quantization_required: bool,
 ) -> Result<VertexLayouts, AssetDiagnostic> {
     let position_index = primitive.attributes["POSITION"];
-    let positions = accessor_layout(root, binary, position_index, AccessorExpectation::Positions)?;
-    let normals = primitive
-        .attributes
-        .get("NORMAL")
-        .copied()
-        .map(|normal_index| {
-            accessor_layout(root, binary, normal_index, AccessorExpectation::Normals)
-                .map(|layout| (normal_index, layout))
-        })
-        .transpose()?;
-    if let Some((normal_index, normals)) = normals
+    let positions = accessor_layout(
+        root,
+        binary,
+        position_index,
+        AccessorExpectation::Positions,
+        mesh_quantization_required,
+    )?;
+    validate_source_attribute_count(
+        positions,
+        limits,
+        "glb.json.accessors.position.count",
+        position_index,
+    )?;
+    let normals = optional_attribute_layout(
+        root,
+        binary,
+        primitive,
+        AccessorExpectation::Normals,
+        limits,
+        mesh_quantization_required,
+    )?;
+    if let Some(normals) = normals
         && normals.count != positions.count
     {
         return Err(diagnostic(
             AssetDiagnosticCode::InvalidNormal,
             "glb.json.accessors.normal.count",
-            Some(normal_index),
+            Some(normals.accessor_index),
         ));
     }
-    let tangents = primitive
-        .attributes
-        .get("TANGENT")
-        .copied()
-        .map(|tangent_index| {
-            accessor_layout(root, binary, tangent_index, AccessorExpectation::Tangents)
-                .map(|layout| (tangent_index, layout))
-        })
-        .transpose()?;
-    if let Some((tangent_index, tangents)) = tangents
+    let tangents = optional_attribute_layout(
+        root,
+        binary,
+        primitive,
+        AccessorExpectation::Tangents,
+        limits,
+        mesh_quantization_required,
+    )?;
+    if let Some(tangents) = tangents
         && tangents.count != positions.count
     {
         return Err(diagnostic(
             AssetDiagnosticCode::InvalidTangent,
             "glb.json.accessors.tangent.count",
-            Some(tangent_index),
+            Some(tangents.accessor_index),
         ));
     }
-    let texcoords = primitive
-        .attributes
-        .get("TEXCOORD_0")
-        .copied()
-        .map(|texcoord_index| {
-            accessor_layout(root, binary, texcoord_index, AccessorExpectation::Texcoords)
-                .map(|layout| (texcoord_index, layout))
-        })
-        .transpose()?;
-    if let Some((texcoord_index, texcoords)) = texcoords
+    let texcoords = optional_attribute_layout(
+        root,
+        binary,
+        primitive,
+        AccessorExpectation::Texcoords,
+        limits,
+        mesh_quantization_required,
+    )?;
+    if let Some(texcoords) = texcoords
         && texcoords.count != positions.count
     {
         return Err(diagnostic(
             AssetDiagnosticCode::InvalidTexcoord,
             "glb.json.accessors.texcoord_0.count",
-            Some(texcoord_index),
+            Some(texcoords.accessor_index),
         ));
     }
-    let (colors, has_wider_colors) = color_layouts(root, binary, primitive, positions)?;
+    let (colors, has_wider_colors) = color_layouts(root, binary, primitive, positions, limits)?;
     let has_other_unsupported_attributes = primitive.attributes.keys().any(|attribute| {
         !matches!(
             attribute.as_str(),
@@ -1860,12 +1882,44 @@ fn vertex_layouts(
     Ok(VertexLayouts {
         position_index,
         positions,
-        normals: normals.map(|(_, layout)| layout),
-        tangents: tangents.map(|(_, layout)| layout),
-        texcoords: texcoords.map(|(_, layout)| layout),
+        normals,
+        tangents,
+        texcoords,
         colors,
         has_unsupported_attributes: has_wider_colors || has_other_unsupported_attributes,
     })
+}
+
+fn optional_attribute_layout(
+    root: &Root,
+    binary: &[u8],
+    primitive: &Primitive,
+    expectation: AccessorExpectation,
+    limits: AssetLimits,
+    mesh_quantization_required: bool,
+) -> Result<Option<AccessorLayout>, AssetDiagnostic> {
+    let (semantic, count_location) = match expectation {
+        AccessorExpectation::Normals => ("NORMAL", "glb.json.accessors.normal.count"),
+        AccessorExpectation::Tangents => ("TANGENT", "glb.json.accessors.tangent.count"),
+        AccessorExpectation::Texcoords => ("TEXCOORD_0", "glb.json.accessors.texcoord_0.count"),
+        _ => unreachable!("only optional directional and coordinate attributes use this helper"),
+    };
+    primitive
+        .attributes
+        .get(semantic)
+        .copied()
+        .map(|accessor_index| {
+            let layout = accessor_layout(
+                root,
+                binary,
+                accessor_index,
+                expectation,
+                mesh_quantization_required,
+            )?;
+            validate_source_attribute_count(layout, limits, count_location, accessor_index)?;
+            Ok(layout)
+        })
+        .transpose()
 }
 
 fn color_layouts(
@@ -1873,6 +1927,7 @@ fn color_layouts(
     binary: &[u8],
     primitive: &Primitive,
     positions: AccessorLayout,
+    limits: AssetLimits,
 ) -> Result<(Option<AccessorLayout>, bool), AssetDiagnostic> {
     let mut sets = BTreeMap::new();
     for (attribute, &accessor_index) in &primitive.attributes {
@@ -1912,19 +1967,32 @@ fn color_layouts(
         let layout = if let Some(layout) = validated_accessors.get(&accessor_index) {
             *layout
         } else {
-            let layout = accessor_layout(root, binary, accessor_index, AccessorExpectation::Colors)
-                .map_err(|error| {
-                    if matches!(error.code, AssetDiagnosticCode::UnsupportedAccessor) {
-                        diagnostic(
-                            AssetDiagnosticCode::InvalidColor,
-                            "glb.json.accessors.color_0",
-                            Some(accessor_index),
-                        )
-                    } else {
-                        error
-                    }
-                })?;
+            let layout = accessor_layout(
+                root,
+                binary,
+                accessor_index,
+                AccessorExpectation::Colors,
+                false,
+            )
+            .map_err(|error| {
+                if matches!(error.code, AssetDiagnosticCode::UnsupportedAccessor) {
+                    diagnostic(
+                        AssetDiagnosticCode::InvalidColor,
+                        "glb.json.accessors.color_0",
+                        Some(accessor_index),
+                    )
+                } else {
+                    error
+                }
+            })?;
+            validate_source_attribute_count(
+                layout,
+                limits,
+                "glb.json.accessors.color_0.count",
+                accessor_index,
+            )?;
             validate_colors(binary, layout)?;
+            validate_accessor_bounds(binary, layout)?;
             validated_accessors.insert(accessor_index, layout);
             layout
         };
@@ -1953,8 +2021,14 @@ fn output_layout(
     let indices = primitive
         .indices
         .map(|index_accessor| {
-            accessor_layout(root, binary, index_accessor, AccessorExpectation::Indices)
-                .map(|layout| (index_accessor, layout))
+            accessor_layout(
+                root,
+                binary,
+                index_accessor,
+                AccessorExpectation::Indices,
+                false,
+            )
+            .map(|layout| (index_accessor, layout))
         })
         .transpose()?;
     let output_count = if let Some((index_accessor, indices)) = indices {
@@ -1989,13 +2063,31 @@ enum AccessorExpectation {
     Indices,
 }
 
+#[derive(Clone, Copy, Default)]
+struct AccessorBounds {
+    min: Option<[f64; 4]>,
+    max: Option<[f64; 4]>,
+}
+
 #[derive(Clone, Copy)]
 struct AccessorLayout {
+    accessor_index: u32,
     start: usize,
     stride: usize,
     count: u32,
     component_type: u32,
     component_count: u8,
+    normalized: bool,
+    bounds: AccessorBounds,
+}
+
+#[derive(Clone, Copy)]
+struct AccessorFormat {
+    element_bytes: usize,
+    element_alignment: usize,
+    explicit_stride_alignment: usize,
+    component_count: u8,
+    requires_mesh_quantization: bool,
 }
 
 fn accessor_layout(
@@ -2003,6 +2095,7 @@ fn accessor_layout(
     binary: &[u8],
     accessor_index: u32,
     expectation: AccessorExpectation,
+    mesh_quantization_required: bool,
 ) -> Result<AccessorLayout, AssetDiagnostic> {
     let accessor = get(&root.accessors, accessor_index, "glb.json.accessors")?;
     let view = get(
@@ -2024,15 +2117,33 @@ fn accessor_layout(
             Some(accessor_index),
         ));
     }
-    let (element_bytes, component_alignment, component_count) =
-        accessor_format(accessor, expectation, accessor_index)?;
+    let format = accessor_format(accessor, expectation, accessor_index)?;
+    if format.requires_mesh_quantization && !mesh_quantization_required {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            "glb.json.extensionsRequired.KHR_mesh_quantization",
+            Some(accessor_index),
+        ));
+    }
+    let bounds = accessor_bounds(accessor, format.component_count, accessor_index)?;
+    if matches!(expectation, AccessorExpectation::Positions)
+        && format.requires_mesh_quantization
+        && (bounds.min.is_none() || bounds.max.is_none())
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            "glb.json.accessors.position.bounds",
+            Some(accessor_index),
+        ));
+    }
     let mut layout = accessor_range(
         binary,
         accessor,
         view,
         accessor_index,
-        element_bytes,
-        component_alignment,
+        format.element_bytes,
+        format.element_alignment,
+        format.explicit_stride_alignment,
     )
     .map_err(|error| {
         if matches!(expectation, AccessorExpectation::Colors)
@@ -2047,7 +2158,9 @@ fn accessor_layout(
             error
         }
     })?;
-    layout.component_count = component_count;
+    layout.component_count = format.component_count;
+    layout.normalized = accessor.normalized;
+    layout.bounds = bounds;
     Ok(layout)
 }
 
@@ -2055,75 +2168,273 @@ fn accessor_format(
     accessor: &Accessor,
     expectation: AccessorExpectation,
     accessor_index: u32,
-) -> Result<(usize, usize, u8), AssetDiagnostic> {
-    match expectation {
-        AccessorExpectation::Positions | AccessorExpectation::Normals
-            if accessor.component_type == FLOAT
-                && accessor.kind == "VEC3"
-                && !accessor.normalized =>
-        {
-            Ok((12, 4, 3))
+) -> Result<AccessorFormat, AssetDiagnostic> {
+    let format = match expectation {
+        AccessorExpectation::Positions => position_accessor_format(accessor),
+        AccessorExpectation::Normals => normal_accessor_format(accessor),
+        AccessorExpectation::Tangents => tangent_accessor_format(accessor),
+        AccessorExpectation::Texcoords => texcoord_accessor_format(accessor),
+        AccessorExpectation::Colors => color_accessor_format(accessor),
+        AccessorExpectation::Indices => index_accessor_format(accessor),
+    };
+    format.ok_or_else(|| {
+        if matches!(expectation, AccessorExpectation::Colors) {
+            diagnostic(
+                AssetDiagnosticCode::InvalidColor,
+                "glb.json.accessors.color_0",
+                Some(accessor_index),
+            )
+        } else {
+            diagnostic(
+                AssetDiagnosticCode::UnsupportedAccessor,
+                "glb.json.accessors",
+                Some(accessor_index),
+            )
         }
-        AccessorExpectation::Tangents
-            if accessor.component_type == FLOAT
-                && accessor.kind == "VEC4"
-                && !accessor.normalized =>
-        {
-            Ok((16, 4, 4))
-        }
-        AccessorExpectation::Texcoords
-            if accessor.component_type == FLOAT
-                && accessor.kind == "VEC2"
-                && !accessor.normalized =>
-        {
-            Ok((8, 4, 2))
-        }
-        AccessorExpectation::Colors
-            if matches!(accessor.kind.as_str(), "VEC3" | "VEC4")
-                && ((accessor.component_type == FLOAT && !accessor.normalized)
-                    || (matches!(accessor.component_type, UNSIGNED_BYTE | UNSIGNED_SHORT)
-                        && accessor.normalized)) =>
-        {
-            let component_count: u8 = if accessor.kind == "VEC3" { 3 } else { 4 };
-            let component_bytes = match accessor.component_type {
-                UNSIGNED_BYTE => 1,
-                UNSIGNED_SHORT => 2,
-                FLOAT => 4,
-                _ => unreachable!("guard admits only core color component types"),
-            };
-            Ok((
-                usize::from(component_count) * component_bytes,
-                4,
-                component_count,
-            ))
-        }
-        AccessorExpectation::Indices
-            if accessor.kind == "SCALAR"
-                && !accessor.normalized
-                && matches!(accessor.component_type, UNSIGNED_SHORT | UNSIGNED_INT) =>
-        {
-            let width = if accessor.component_type == UNSIGNED_SHORT {
-                2
-            } else {
-                4
-            };
-            Ok((width, width, 1))
-        }
-        AccessorExpectation::Colors => Err(diagnostic(
-            AssetDiagnosticCode::InvalidColor,
-            "glb.json.accessors.color_0",
-            Some(accessor_index),
-        )),
-        AccessorExpectation::Positions
-        | AccessorExpectation::Normals
-        | AccessorExpectation::Tangents
-        | AccessorExpectation::Texcoords
-        | AccessorExpectation::Indices => Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedAccessor,
-            "glb.json.accessors",
-            Some(accessor_index),
-        )),
+    })
+}
+
+fn position_accessor_format(accessor: &Accessor) -> Option<AccessorFormat> {
+    if accessor.component_type == FLOAT && accessor.kind == "VEC3" && !accessor.normalized {
+        Some(attribute_format(FLOAT, 3, false))
+    } else if accessor.kind == "VEC3"
+        && matches!(
+            accessor.component_type,
+            BYTE | UNSIGNED_BYTE | SHORT | UNSIGNED_SHORT
+        )
+    {
+        Some(attribute_format(accessor.component_type, 3, true))
+    } else {
+        None
     }
+}
+
+fn normal_accessor_format(accessor: &Accessor) -> Option<AccessorFormat> {
+    if accessor.component_type == FLOAT && accessor.kind == "VEC3" && !accessor.normalized {
+        Some(attribute_format(FLOAT, 3, false))
+    } else if accessor.kind == "VEC3"
+        && accessor.normalized
+        && matches!(accessor.component_type, BYTE | SHORT)
+    {
+        Some(attribute_format(accessor.component_type, 3, true))
+    } else {
+        None
+    }
+}
+
+fn tangent_accessor_format(accessor: &Accessor) -> Option<AccessorFormat> {
+    if accessor.component_type == FLOAT && accessor.kind == "VEC4" && !accessor.normalized {
+        Some(attribute_format(FLOAT, 4, false))
+    } else if accessor.kind == "VEC4"
+        && accessor.normalized
+        && matches!(accessor.component_type, BYTE | SHORT)
+    {
+        Some(attribute_format(accessor.component_type, 4, true))
+    } else {
+        None
+    }
+}
+
+fn texcoord_accessor_format(accessor: &Accessor) -> Option<AccessorFormat> {
+    if accessor.component_type == FLOAT && accessor.kind == "VEC2" && !accessor.normalized {
+        Some(attribute_format(FLOAT, 2, false))
+    } else if accessor.kind == "VEC2"
+        && accessor.normalized
+        && matches!(accessor.component_type, UNSIGNED_BYTE | UNSIGNED_SHORT)
+    {
+        Some(core_texcoord_format(accessor.component_type))
+    } else if accessor.kind == "VEC2"
+        && (matches!(accessor.component_type, BYTE | SHORT)
+            || (matches!(accessor.component_type, UNSIGNED_BYTE | UNSIGNED_SHORT)
+                && !accessor.normalized))
+    {
+        Some(attribute_format(accessor.component_type, 2, true))
+    } else {
+        None
+    }
+}
+
+fn color_accessor_format(accessor: &Accessor) -> Option<AccessorFormat> {
+    let component_count = match accessor.kind.as_str() {
+        "VEC3" => 3,
+        "VEC4" => 4,
+        _ => return None,
+    };
+    if (accessor.component_type == FLOAT && !accessor.normalized)
+        || (matches!(accessor.component_type, UNSIGNED_BYTE | UNSIGNED_SHORT)
+            && accessor.normalized)
+    {
+        Some(attribute_format(
+            accessor.component_type,
+            component_count,
+            false,
+        ))
+    } else {
+        None
+    }
+}
+
+fn index_accessor_format(accessor: &Accessor) -> Option<AccessorFormat> {
+    if accessor.kind != "SCALAR"
+        || accessor.normalized
+        || !matches!(accessor.component_type, UNSIGNED_SHORT | UNSIGNED_INT)
+    {
+        return None;
+    }
+    let width = if accessor.component_type == UNSIGNED_SHORT {
+        2
+    } else {
+        4
+    };
+    Some(AccessorFormat {
+        element_bytes: width,
+        element_alignment: width,
+        explicit_stride_alignment: width,
+        component_count: 1,
+        requires_mesh_quantization: false,
+    })
+}
+
+fn attribute_format(
+    component_type: u32,
+    component_count: u8,
+    requires_mesh_quantization: bool,
+) -> AccessorFormat {
+    AccessorFormat {
+        element_bytes: usize::from(component_count)
+            * component_width(component_type).expect("admitted component type has a width"),
+        element_alignment: 4,
+        explicit_stride_alignment: 4,
+        component_count,
+        requires_mesh_quantization,
+    }
+}
+
+fn core_texcoord_format(component_type: u32) -> AccessorFormat {
+    let component_width =
+        component_width(component_type).expect("core texcoord component has width");
+    AccessorFormat {
+        element_bytes: 2 * component_width,
+        element_alignment: component_width,
+        explicit_stride_alignment: 4,
+        component_count: 2,
+        requires_mesh_quantization: false,
+    }
+}
+
+const fn component_width(component_type: u32) -> Option<usize> {
+    match component_type {
+        BYTE | UNSIGNED_BYTE => Some(1),
+        SHORT | UNSIGNED_SHORT => Some(2),
+        FLOAT | UNSIGNED_INT => Some(4),
+        _ => None,
+    }
+}
+
+fn accessor_bounds(
+    accessor: &Accessor,
+    component_count: u8,
+    accessor_index: u32,
+) -> Result<AccessorBounds, AssetDiagnostic> {
+    let min = accessor
+        .min
+        .as_deref()
+        .map(|values| {
+            parse_accessor_bound(
+                values,
+                accessor.component_type,
+                component_count,
+                accessor_index,
+                "glb.json.accessors.min",
+            )
+        })
+        .transpose()?;
+    let max = accessor
+        .max
+        .as_deref()
+        .map(|values| {
+            parse_accessor_bound(
+                values,
+                accessor.component_type,
+                component_count,
+                accessor_index,
+                "glb.json.accessors.max",
+            )
+        })
+        .transpose()?;
+    if let (Some(min), Some(max)) = (min, max) {
+        for component in 0..usize::from(component_count) {
+            if min[component] > max[component] {
+                return Err(diagnostic(
+                    AssetDiagnosticCode::InvalidJson,
+                    "glb.json.accessors.bounds",
+                    Some(accessor_index),
+                ));
+            }
+        }
+    }
+    Ok(AccessorBounds { min, max })
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn parse_accessor_bound(
+    values: &[f64],
+    component_type: u32,
+    component_count: u8,
+    accessor_index: u32,
+    location: &'static str,
+) -> Result<[f64; 4], AssetDiagnostic> {
+    if values.len() != usize::from(component_count) {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            location,
+            Some(accessor_index),
+        ));
+    }
+    let mut parsed = [0.0; 4];
+    for (target, &value) in parsed.iter_mut().zip(values) {
+        let value = match component_type {
+            FLOAT => {
+                let rounded = value as f32;
+                if !value.is_finite() || !rounded.is_finite() {
+                    return Err(diagnostic(
+                        AssetDiagnosticCode::InvalidJson,
+                        location,
+                        Some(accessor_index),
+                    ));
+                }
+                f64::from(rounded)
+            }
+            BYTE | UNSIGNED_BYTE | SHORT | UNSIGNED_SHORT | UNSIGNED_INT => {
+                let (minimum, maximum) = match component_type {
+                    BYTE => (f64::from(i8::MIN), f64::from(i8::MAX)),
+                    UNSIGNED_BYTE => (0.0, f64::from(u8::MAX)),
+                    SHORT => (f64::from(i16::MIN), f64::from(i16::MAX)),
+                    UNSIGNED_SHORT => (0.0, f64::from(u16::MAX)),
+                    UNSIGNED_INT => (0.0, f64::from(u32::MAX)),
+                    _ => unreachable!("guard admits only integer component types"),
+                };
+                if !value.is_finite() || value.fract() != 0.0 || value < minimum || value > maximum
+                {
+                    return Err(diagnostic(
+                        AssetDiagnosticCode::InvalidJson,
+                        location,
+                        Some(accessor_index),
+                    ));
+                }
+                value
+            }
+            _ => {
+                return Err(diagnostic(
+                    AssetDiagnosticCode::InvalidJson,
+                    location,
+                    Some(accessor_index),
+                ));
+            }
+        };
+        *target = value;
+    }
+    Ok(parsed)
 }
 
 fn accessor_range(
@@ -2132,26 +2443,16 @@ fn accessor_range(
     view: &BufferView,
     accessor_index: u32,
     element_bytes: usize,
-    component_alignment: usize,
+    element_alignment: usize,
+    explicit_stride_alignment: usize,
 ) -> Result<AccessorLayout, AssetDiagnostic> {
-    let stride = usize::try_from(
-        view.byte_stride
-            .unwrap_or(u32::try_from(element_bytes).unwrap()),
-    )
-    .map_err(|_| {
-        diagnostic(
-            AssetDiagnosticCode::InvalidBufferRange,
-            "glb.json.bufferViews.byteStride",
-            Some(accessor.buffer_view),
-        )
-    })?;
-    if stride < element_bytes || stride % component_alignment != 0 || stride > 252 {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedAccessor,
-            "glb.json.bufferViews.byteStride",
-            Some(accessor.buffer_view),
-        ));
-    }
+    let stride = accessor_stride(
+        view,
+        accessor.buffer_view,
+        element_bytes,
+        element_alignment,
+        explicit_stride_alignment,
+    )?;
     let view_start = usize::try_from(view.byte_offset).map_err(|_| {
         diagnostic(
             AssetDiagnosticCode::InvalidBufferRange,
@@ -2194,18 +2495,15 @@ fn accessor_range(
             Some(accessor_index),
         )
     })?;
-    if accessor_offset % component_alignment != 0 || start % component_alignment != 0 {
+    if accessor_offset % element_alignment != 0 || start % element_alignment != 0 {
         return Err(diagnostic(
             AssetDiagnosticCode::InvalidBufferRange,
             "glb.json.accessors.alignment",
             Some(accessor_index),
         ));
     }
-    let occupied = usize::try_from(accessor.count - 1)
-        .ok()
-        .and_then(|count| count.checked_mul(stride))
-        .and_then(|bytes| bytes.checked_add(element_bytes))
-        .ok_or_else(|| {
+    let occupied =
+        accessor_occupied_bytes(accessor.count, stride, element_bytes).ok_or_else(|| {
             diagnostic(
                 AssetDiagnosticCode::InvalidBufferRange,
                 "glb.json.accessors.range",
@@ -2227,12 +2525,55 @@ fn accessor_range(
         ));
     }
     Ok(AccessorLayout {
+        accessor_index,
         start,
         stride,
         count: accessor.count,
         component_type: accessor.component_type,
         component_count: 0,
+        normalized: false,
+        bounds: AccessorBounds::default(),
     })
+}
+
+fn accessor_stride(
+    view: &BufferView,
+    view_index: u32,
+    element_bytes: usize,
+    element_alignment: usize,
+    explicit_stride_alignment: usize,
+) -> Result<usize, AssetDiagnostic> {
+    let stride = usize::try_from(
+        view.byte_stride
+            .unwrap_or(u32::try_from(element_bytes).unwrap()),
+    )
+    .map_err(|_| {
+        diagnostic(
+            AssetDiagnosticCode::InvalidBufferRange,
+            "glb.json.bufferViews.byteStride",
+            Some(view_index),
+        )
+    })?;
+    let alignment = if view.byte_stride.is_some() {
+        explicit_stride_alignment
+    } else {
+        element_alignment
+    };
+    if stride < element_bytes || stride % alignment != 0 || stride > 252 {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedAccessor,
+            "glb.json.bufferViews.byteStride",
+            Some(view_index),
+        ));
+    }
+    Ok(stride)
+}
+
+fn accessor_occupied_bytes(count: u32, stride: usize, element_bytes: usize) -> Option<usize> {
+    usize::try_from(count - 1)
+        .ok()?
+        .checked_mul(stride)?
+        .checked_add(element_bytes)
 }
 
 fn decode_vertices(
@@ -2517,6 +2858,54 @@ impl GeneratedTangentGeometry<'_> {
     }
 }
 
+fn validate_vertex_sources(binary: &[u8], layouts: &VertexLayouts) -> Result<(), AssetDiagnostic> {
+    validate_positions(binary, layouts.positions)?;
+    validate_accessor_bounds(binary, layouts.positions)?;
+    if let Some(normals) = layouts.normals {
+        validate_normals(binary, normals)?;
+        validate_accessor_bounds(binary, normals)?;
+    }
+    if let Some(tangents) = layouts.tangents {
+        validate_tangents(binary, tangents)?;
+        validate_accessor_bounds(binary, tangents)?;
+    }
+    if let Some(texcoords) = layouts.texcoords {
+        validate_texcoords(binary, texcoords)?;
+        validate_accessor_bounds(binary, texcoords)?;
+    }
+    Ok(())
+}
+
+fn validate_source_attribute_count(
+    layout: AccessorLayout,
+    limits: AssetLimits,
+    location: &'static str,
+    accessor_index: u32,
+) -> Result<(), AssetDiagnostic> {
+    if layout.count > limits.max_vertices_per_mesh.get() {
+        return Err(diagnostic(
+            AssetDiagnosticCode::CollectionLimitExceeded,
+            location,
+            Some(accessor_index),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_positions(binary: &[u8], layout: AccessorLayout) -> Result<(), AssetDiagnostic> {
+    for index in 0..layout.count {
+        read_position(binary, layout, index)?;
+    }
+    Ok(())
+}
+
+fn validate_normals(binary: &[u8], layout: AccessorLayout) -> Result<(), AssetDiagnostic> {
+    for index in 0..layout.count {
+        read_normal(binary, layout, index)?;
+    }
+    Ok(())
+}
+
 fn validate_texcoords(binary: &[u8], layout: AccessorLayout) -> Result<(), AssetDiagnostic> {
     for index in 0..layout.count {
         read_texcoord(binary, layout, index)?;
@@ -2534,6 +2923,44 @@ fn validate_tangents(binary: &[u8], layout: AccessorLayout) -> Result<(), AssetD
 fn validate_colors(binary: &[u8], layout: AccessorLayout) -> Result<(), AssetDiagnostic> {
     for index in 0..layout.count {
         read_color(binary, layout, index)?;
+    }
+    Ok(())
+}
+
+fn validate_accessor_bounds(binary: &[u8], layout: AccessorLayout) -> Result<(), AssetDiagnostic> {
+    if layout.bounds.min.is_none() && layout.bounds.max.is_none() {
+        return Ok(());
+    }
+    let mut actual_min = [f64::INFINITY; 4];
+    let mut actual_max = [f64::NEG_INFINITY; 4];
+    for index in 0..layout.count {
+        for component in 0..usize::from(layout.component_count) {
+            let value = read_raw_component(
+                binary,
+                layout,
+                index,
+                component,
+                "glb.binary.accessor_bounds",
+            )?;
+            actual_min[component] = actual_min[component].min(value);
+            actual_max[component] = actual_max[component].max(value);
+        }
+    }
+    let component_count = usize::from(layout.component_count);
+    let min_matches = layout
+        .bounds
+        .min
+        .is_none_or(|expected| expected[..component_count] == actual_min[..component_count]);
+    let max_matches = layout
+        .bounds
+        .max
+        .is_none_or(|expected| expected[..component_count] == actual_max[..component_count]);
+    if !min_matches || !max_matches {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidJson,
+            "glb.json.accessors.bounds",
+            Some(layout.accessor_index),
+        ));
     }
     Ok(())
 }
@@ -2580,21 +3007,13 @@ fn read_position(
     layout: AccessorLayout,
     index: u32,
 ) -> Result<[FiniteF32; 3], AssetDiagnostic> {
-    let offset = element_offset(layout, index, "glb.binary.positions")?;
     let mut position = [FiniteF32::new(0.0).expect("zero is finite"); 3];
     for (component, target) in position.iter_mut().enumerate() {
-        let start = offset + component * 4;
-        let encoded: [u8; 4] = binary
-            .get(start..start + 4)
-            .and_then(|value| value.try_into().ok())
-            .ok_or_else(|| {
-                diagnostic(
-                    AssetDiagnosticCode::InvalidBufferRange,
-                    "glb.binary.positions",
-                    Some(index),
-                )
-            })?;
-        *target = FiniteF32::new(f32::from_le_bytes(encoded)).map_err(|_| {
+        let value =
+            read_decoded_component(binary, layout, index, component, "glb.binary.positions")?;
+        #[allow(clippy::cast_possible_truncation)]
+        let value = value as f32;
+        *target = FiniteF32::new(value).map_err(|_| {
             diagnostic(
                 AssetDiagnosticCode::NonFiniteVertex,
                 "glb.binary.positions",
@@ -2610,29 +3029,11 @@ fn read_normal(
     layout: AccessorLayout,
     index: u32,
 ) -> Result<[FiniteF32; 3], AssetDiagnostic> {
-    let offset = element_offset(layout, index, "glb.binary.normals")?;
-    let mut normal = [FiniteF32::new(0.0).expect("zero is finite"); 3];
+    let mut normal = [0.0; 3];
     for (component, target) in normal.iter_mut().enumerate() {
-        let start = offset + component * 4;
-        let encoded: [u8; 4] = binary
-            .get(start..start + 4)
-            .and_then(|value| value.try_into().ok())
-            .ok_or_else(|| {
-                diagnostic(
-                    AssetDiagnosticCode::InvalidBufferRange,
-                    "glb.binary.normals",
-                    Some(index),
-                )
-            })?;
-        *target = FiniteF32::new(f32::from_le_bytes(encoded)).map_err(|_| {
-            diagnostic(
-                AssetDiagnosticCode::InvalidNormal,
-                "glb.binary.normals",
-                Some(index),
-            )
-        })?;
+        *target = read_decoded_component(binary, layout, index, component, "glb.binary.normals")?;
     }
-    normalize_vector(normal, "glb.binary.normals", Some(index))
+    normalize_f64_vector(normal, "glb.binary.normals", Some(index))
 }
 
 fn read_tangent(
@@ -2640,41 +3041,33 @@ fn read_tangent(
     layout: AccessorLayout,
     index: u32,
 ) -> Result<[FiniteF32; 4], AssetDiagnostic> {
-    let offset = element_offset(layout, index, "glb.binary.tangents")?;
-    let mut tangent = [FiniteF32::new(0.0).expect("zero is finite"); 4];
+    let mut tangent = [0.0; 4];
     for (component, target) in tangent.iter_mut().enumerate() {
-        let start = offset + component * 4;
-        let encoded: [u8; 4] = binary
-            .get(start..start + 4)
-            .and_then(|value| value.try_into().ok())
-            .ok_or_else(|| {
-                diagnostic(
-                    AssetDiagnosticCode::InvalidBufferRange,
-                    "glb.binary.tangents",
-                    Some(index),
-                )
-            })?;
-        *target = FiniteF32::new(f32::from_le_bytes(encoded)).map_err(|_| {
-            diagnostic(
-                AssetDiagnosticCode::InvalidTangent,
-                "glb.binary.tangents",
-                Some(index),
-            )
-        })?;
+        *target = read_decoded_component(binary, layout, index, component, "glb.binary.tangents")?;
     }
-    if !matches!(tangent[3].get(), -1.0 | 1.0) {
+    if !matches!(tangent[3], -1.0 | 1.0) {
         return Err(diagnostic(
             AssetDiagnosticCode::InvalidTangent,
             "glb.binary.tangents.handedness",
             Some(index),
         ));
     }
-    let xyz = normalize_tangent_vector(
+    let xyz = normalize_f64_tangent_vector(
         [tangent[0], tangent[1], tangent[2]],
         "glb.binary.tangents",
         Some(index),
     )?;
-    Ok([xyz[0], xyz[1], xyz[2], tangent[3]])
+    let handedness = if tangent[3].is_sign_negative() {
+        -1.0_f32
+    } else {
+        1.0_f32
+    };
+    Ok([
+        xyz[0],
+        xyz[1],
+        xyz[2],
+        FiniteF32::new(handedness).expect("validated tangent handedness is finite"),
+    ])
 }
 
 fn read_texcoord(
@@ -2682,21 +3075,13 @@ fn read_texcoord(
     layout: AccessorLayout,
     index: u32,
 ) -> Result<[FiniteF32; 2], AssetDiagnostic> {
-    let offset = element_offset(layout, index, "glb.binary.texcoord_0")?;
     let mut texcoord = [FiniteF32::new(0.0).expect("zero is finite"); 2];
     for (component, target) in texcoord.iter_mut().enumerate() {
-        let start = offset + component * 4;
-        let encoded: [u8; 4] = binary
-            .get(start..start + 4)
-            .and_then(|value| value.try_into().ok())
-            .ok_or_else(|| {
-                diagnostic(
-                    AssetDiagnosticCode::InvalidBufferRange,
-                    "glb.binary.texcoord_0",
-                    Some(index),
-                )
-            })?;
-        *target = FiniteF32::new(f32::from_le_bytes(encoded)).map_err(|_| {
+        let value =
+            read_decoded_component(binary, layout, index, component, "glb.binary.texcoord_0")?;
+        #[allow(clippy::cast_possible_truncation)]
+        let value = value as f32;
+        *target = FiniteF32::new(value).map_err(|_| {
             diagnostic(
                 AssetDiagnosticCode::InvalidTexcoord,
                 "glb.binary.texcoord_0",
@@ -2784,6 +3169,83 @@ fn read_color(
     Ok(color)
 }
 
+fn read_decoded_component(
+    binary: &[u8],
+    layout: AccessorLayout,
+    index: u32,
+    component: usize,
+    location: &'static str,
+) -> Result<f64, AssetDiagnostic> {
+    let raw = read_raw_component(binary, layout, index, component, location)?;
+    if !layout.normalized {
+        return Ok(raw);
+    }
+    Ok(match layout.component_type {
+        BYTE => (raw / f64::from(i8::MAX)).max(-1.0),
+        UNSIGNED_BYTE => raw / f64::from(u8::MAX),
+        SHORT => (raw / f64::from(i16::MAX)).max(-1.0),
+        UNSIGNED_SHORT => raw / f64::from(u16::MAX),
+        _ => raw,
+    })
+}
+
+fn read_raw_component(
+    binary: &[u8],
+    layout: AccessorLayout,
+    index: u32,
+    component: usize,
+    location: &'static str,
+) -> Result<f64, AssetDiagnostic> {
+    let width = component_width(layout.component_type).ok_or_else(|| {
+        diagnostic(
+            AssetDiagnosticCode::UnsupportedAccessor,
+            location,
+            Some(layout.accessor_index),
+        )
+    })?;
+    let start = element_offset(layout, index, location)?
+        .checked_add(component.checked_mul(width).ok_or_else(|| {
+            diagnostic(
+                AssetDiagnosticCode::InvalidBufferRange,
+                location,
+                Some(index),
+            )
+        })?)
+        .ok_or_else(|| {
+            diagnostic(
+                AssetDiagnosticCode::InvalidBufferRange,
+                location,
+                Some(index),
+            )
+        })?;
+    let bytes = binary
+        .get(
+            start..start.checked_add(width).ok_or_else(|| {
+                diagnostic(
+                    AssetDiagnosticCode::InvalidBufferRange,
+                    location,
+                    Some(index),
+                )
+            })?,
+        )
+        .ok_or_else(|| {
+            diagnostic(
+                AssetDiagnosticCode::InvalidBufferRange,
+                location,
+                Some(index),
+            )
+        })?;
+    Ok(match layout.component_type {
+        BYTE => f64::from(i8::from_le_bytes([bytes[0]])),
+        UNSIGNED_BYTE => f64::from(bytes[0]),
+        SHORT => f64::from(i16::from_le_bytes([bytes[0], bytes[1]])),
+        UNSIGNED_SHORT => f64::from(u16::from_le_bytes([bytes[0], bytes[1]])),
+        UNSIGNED_INT => f64::from(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])),
+        FLOAT => f64::from(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])),
+        _ => unreachable!("component width admits every decoded component type"),
+    })
+}
+
 fn face_normal(
     first: [FiniteF32; 3],
     second: [FiniteF32; 3],
@@ -2813,21 +3275,20 @@ fn face_normal(
     )
 }
 
-fn normalize_vector(
-    vector: [FiniteF32; 3],
-    location: &'static str,
-    index: Option<u32>,
-) -> Result<[FiniteF32; 3], AssetDiagnostic> {
-    normalize_f64_vector(vector.map(|value| f64::from(value.get())), location, index)
-}
-
-#[allow(clippy::cast_possible_truncation)]
 fn normalize_tangent_vector(
     vector: [FiniteF32; 3],
     location: &'static str,
     index: Option<u32>,
 ) -> Result<[FiniteF32; 3], AssetDiagnostic> {
-    let vector = vector.map(|value| f64::from(value.get()));
+    normalize_f64_tangent_vector(vector.map(|value| f64::from(value.get())), location, index)
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn normalize_f64_tangent_vector(
+    vector: [f64; 3],
+    location: &'static str,
+    index: Option<u32>,
+) -> Result<[FiniteF32; 3], AssetDiagnostic> {
     let length_squared = vector.iter().map(|value| value * value).sum::<f64>();
     if !length_squared.is_finite() || length_squared == 0.0 {
         return Err(diagnostic(
@@ -3242,6 +3703,17 @@ struct Accessor {
     kind: String,
     #[serde(default)]
     normalized: bool,
+    #[serde(default, deserialize_with = "deserialize_accessor_bound")]
+    min: Option<Vec<f64>>,
+    #[serde(default, deserialize_with = "deserialize_accessor_bound")]
+    max: Option<Vec<f64>>,
+}
+
+fn deserialize_accessor_bound<'de, D>(deserializer: D) -> Result<Option<Vec<f64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::<f64>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Deserialize)]

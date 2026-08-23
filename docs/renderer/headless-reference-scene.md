@@ -67,15 +67,18 @@ upload.
 
 Imported vertices use one 64-byte position, normal, primary-coordinate,
 tangent, and primary-color layout. Its prior 48-byte prefix remains
-unchanged. Optional
-non-normalized finite f32 `TEXCOORD_0` reaches shader location 2 and optional
+unchanged. Optional finite decoded `TEXCOORD_0` reaches shader location 2 and optional
 finite normalized `TANGENT` plus exact handedness reaches location 3; missing
 non-normal-mapped asset values, built-ins, and proxy vertices use exact zero
 coordinates and a disabled `[1, 0, 0, 1]` tangent. A normal-textured primitive
 with missing source tangents receives bounded validated default MikkTSpace
 values before upload, using the normal role's transformed primary coordinates
 while retaining the source coordinates unchanged. Optional f32 or normalized unsigned-byte/
-unsigned-short `COLOR_0` VEC3/VEC4 reaches location 4 as linear unit RGBA;
+unsigned-short `COLOR_0` VEC3/VEC4 reaches location 4 as linear unit RGBA.
+Core normalized integer coordinates and admitted required
+`KHR_mesh_quantization` attributes are expanded to these same f32 locations
+before upload, so no packed source format, binding, stride, or pipeline reaches
+the renderer;
 missing asset values, built-ins, and proxies use white. A mesh may sample one approved embedded PNG
 for each base-color, metallic-roughness, normal, and emissive role. The renderer
 decodes base and emissive RGB as sRGB and the data roles as linear, ignores

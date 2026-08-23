@@ -62,6 +62,12 @@ CF064 adds a CLI-private three-name parser and composes existing constructor
 arguments, limits, codecs, and transports. It adds no package, feature, build
 script, native code, network, telemetry, or paid-service requirement and
 leaves the dependency graph unchanged.
+CF066 applies ratified texture transforms through existing JSON, math,
+MikkTSpace, and WebGPU paths without changing the dependency graph. CF068
+decodes the bounded core and ratified mesh-quantization integer matrix with
+first-party checked byte conversion and the existing finite-value types. It
+adds no package, feature, build script, native code, network, telemetry,
+paid-service requirement, manifest, lockfile, or vendored source change.
 `cogniform-renderer` and `cogniform-engine` use the `png` package only to
 generate test fixtures. It is dual licensed `MIT OR Apache-2.0`, uses the pure-Rust miniz
 backend with the direct crate's default features disabled, and requires no

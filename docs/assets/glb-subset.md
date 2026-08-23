@@ -133,14 +133,22 @@ The importer accepts only the following baseline:
 - triangle-list mode, either explicit mode `4` or the glTF default;
 - exactly `POSITION`, with optional `NORMAL`, `TANGENT`, `TEXCOORD_0`, and
   `COLOR_0`, within a fixed maximum of sixteen primitive attribute semantics;
-- finite non-normalized f32 `VEC3` positions;
-- optional non-normalized f32 `VEC3` normals with the same source count as
-  positions; each direction must be finite and non-zero;
-- optional non-normalized finite f32 `VEC2` `TEXCOORD_0` with the same source
-  count as positions; values outside `[0, 1]` are retained unchanged;
-- optional non-normalized f32 `VEC4` `TANGENT` with the same source count as
-  positions; XYZ must be finite and non-zero, W must be exactly `-1` or `1`,
-  and all expanded vertices in one triangle must use the same W sign;
+- finite non-normalized f32 `VEC3` positions, or signed/unsigned byte/short
+  `VEC3` positions under required `KHR_mesh_quantization`, with either
+  normalization mode. Quantized positions require exact raw `min` and `max`;
+  legacy accepted f32 positions may still omit them;
+- optional non-normalized f32 `VEC3` normals, or normalized signed-byte/signed-
+  short normals under required `KHR_mesh_quantization`, with the same source
+  count as positions; each decoded direction must be finite and non-zero;
+- optional finite f32, normalized unsigned-byte/unsigned-short core, or
+  `KHR_mesh_quantization` signed-byte/signed-short and unnormalized unsigned-
+  byte/unsigned-short `VEC2` `TEXCOORD_0` with the same source count as
+  positions. Unnormalized values outside `[0, 1]` are retained unchanged;
+- optional non-normalized f32 `VEC4` `TANGENT`, or normalized signed-byte/
+  signed-short tangent under required `KHR_mesh_quantization`, with the same
+  source count as positions; decoded XYZ must be finite and non-zero, decoded
+  W must be exactly `-1` or `1`, and all expanded vertices in one triangle
+  must use the same W sign;
 - optional same-count `COLOR_0` as `VEC3` or `VEC4`. Components may be
   non-normalized finite f32 or normalized unsigned byte/unsigned short. Finite
   f32 values are clamped to `[0, 1]`, integers expand into that range, and
@@ -180,10 +188,13 @@ The importer accepts only the following baseline:
 - optional non-normalized scalar u16 or u32 indices;
 - optional non-empty unique-string `extensionsUsed` and
   `extensionsRequired`, with required a subset of used. The recognized names
-  are `KHR_materials_unlit` and `KHR_texture_transform`; every actual supported or unknown extension
-  member must be declared in used;
-- tightly packed or valid component-aligned buffer-view strides up to 252
-  bytes; and
+  are `KHR_materials_unlit`, `KHR_mesh_quantization`, and
+  `KHR_texture_transform`; every actual supported or unknown extension member
+  must be declared in used. An extension-only vertex encoding additionally
+  requires `KHR_mesh_quantization` in required;
+- component-aligned core accessor starts, four-byte-aligned explicit vertex
+  strides, four-byte-aligned extension-format starts and elements, and
+  component-aligned index strides, up to 252 bytes; and
 - an optional material with unit-interval
   `pbrMetallicRoughness.baseColorFactor`, `metallicFactor`, and
   `roughnessFactor`, plus optional `emissiveFactor` containing exactly three
@@ -212,10 +223,14 @@ before that classification.
 
 Indexed geometry is expanded into a triangle vertex stream, using the same
 source index for position, normal, tangent, primary coordinate, and primary
-color. The complete source coordinate, tangent, and color accessors are
-validated before expanded allocation, including values not selected by the
-index stream. Accepted source
-normals and tangent XYZ are normalized deterministically. When `NORMAL` is
+color. Every selected source attribute count is capped by
+`max_vertices_per_mesh`; the complete position, normal, coordinate, tangent,
+and color accessors are validated before expanded allocation, including values
+not selected by the index stream. Every present selected-attribute `min` or
+`max` must exactly equal its raw source extrema, ignoring normalization;
+floating bounds are compared after f32 rounding. Normalized integers use the
+exact Khronos signed/unsigned equations. Accepted source normals and tangent
+XYZ are normalized deterministically from f64 decoded values. When `NORMAL` is
 absent, each expanded triangle receives one unit cross-product normal following
 its winding; degenerate triangles reject before tangent generation. A normal-
 textured primitive generates tangents whenever `TANGENT` or `NORMAL` is absent.
@@ -242,8 +257,9 @@ indexed primitive must contain a multiple of three indices.
 
 The strict schema rejects unknown fields after recognized unsupported feature
 declarations are classified. External buffers or images, data URIs, additional
-GLB chunks, sparse accessors, unsupported normal or primary-coordinate
-encodings, additional coordinate sets, wider rendered color sets, morph
+GLB chunks, sparse accessors, other normal or primary-coordinate encodings,
+node-based position dequantization transforms, additional coordinate sets,
+wider rendered color sets, morph
 targets, more than four images/textures/samplers, unused image or texture
 records, valid unused sampler records, JPEG and wider PNG forms, nonzero or additional texture-coordinate sets,
 occlusion texture roles, `BLEND` alpha coverage, nodes, scenes, cameras, animations,
@@ -274,7 +290,8 @@ or non-finite primary colors, invalid color normalization/count/ranges or
 malformed/skipped color sets, missing positions, multiple primitives, or
 excess primitive attribute semantics,
 or out-of-range emissive factors, malformed alpha mode/cutoff values,
-malformed `doubleSided` or sampler values and indices,
+malformed `doubleSided` or sampler values and indices, missing required mesh-
+quantization declarations, invalid accessor bounds or source-attribute counts,
 malformed, duplicate, empty, or inconsistent extension declarations, malformed
 or undeclared unlit or texture-transform markers, non-finite
 texture-transform inputs or expanded results,

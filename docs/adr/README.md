@@ -72,5 +72,6 @@ earlier one and links the history.
 | [0064](0064-bounded-named-stdio-profiles.md) | Accepted | Select one of three immutable bounded local stdio profiles at child launch |
 | [0065](0065-bounded-generated-mikktspace-tangents.md) | Accepted | Generate missing normal-map tangents under two fixed pre-library work guards |
 | [0066](0066-bounded-gltf-texture-transforms.md) | Accepted | Apply bounded independent affine transforms to the four existing glTF texture roles |
+| [0068](0068-bounded-gltf-mesh-quantization.md) | Accepted | Decode bounded core and ratified integer vertex attributes into the fixed 64-byte ABI |
 
 New records use four sections: context, decision, consequences, and status.

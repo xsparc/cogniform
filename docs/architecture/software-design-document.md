@@ -532,7 +532,7 @@ GPU layouts are explicit and asserted. `bytemuck::Pod` is used only for types wi
 Runtime assets are immutable and addressed by cryptographic content hash. The
 MVP accepts primitives first, then a bounded glTF/GLB subset with finite
 positions, optional same-count finite vertex normals, optional same-count
-finite f32 `TEXCOORD_0`, optional same-count finite non-zero f32 `TANGENT`
+finite primary `TEXCOORD_0`, optional same-count finite non-zero `TANGENT`
 `VEC4` with exact handedness, one bounded numeric metallic-roughness material
 and optional same-count primary linear `COLOR_0` as f32 or normalized unsigned
 byte/unsigned short `VEC3`/`VEC4`,
@@ -540,7 +540,13 @@ with at most sixteen attribute semantics per primitive,
 plus an optional three-channel unit-bounded core emissive factor and bounded
 OPAQUE/MASK alpha coverage plus a strict optional boolean `doubleSided` per
 mesh material. The ratified `KHR_materials_unlit` and
-`KHR_texture_transform` extensions are the sole supported extensions. Unlit
+`KHR_texture_transform` and `KHR_mesh_quantization` extensions are the sole
+supported extensions. Mesh quantization admits only the declared integer
+POSITION/NORMAL/TANGENT/TEXCOORD_0 matrix, requires extension-only accessors to
+name the extension as required, validates raw accessor extrema and complete
+bounded sources, and immediately expands through the fixed f32 vertex ABI;
+node dequantization transforms remain excluded. Core normalized unsigned-byte
+and unsigned-short primary coordinates do not require the extension. Unlit
 retains one typed shading model only after strict declaration,
 selected/unused material, and fallback-resource validation. Texture transform
 retains finite offset, rotation, and scale with exact defaults and Khronos
