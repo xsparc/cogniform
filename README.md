@@ -86,6 +86,11 @@ scene revision that produced it.
 > one fixed prefix-compatible draw uniform. Generated normal-map tangents use
 > the transformed normal coordinates; retained coordinates and explicit
 > tangents remain unchanged.
+> Core normalized integer primary coordinates and a bounded declared
+> `KHR_mesh_quantization` POSITION/NORMAL/TANGENT/TEXCOORD_0 matrix now decode
+> into that same fixed 64-byte CPU/GPU vertex ABI. Quantized positions require
+> exact raw bounds; node dequantization and packed GPU residency remain outside
+> the supported subset.
 > Primary vertex RGBA multiplies the imported base-color factor and optional
 > sampled base color; omission is white and an explicit scene material disables
 > the imported color with the rest of the imported material.

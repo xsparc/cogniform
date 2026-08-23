@@ -1596,6 +1596,31 @@ two pipelines, lifecycle, observations, logical state, replay, protocols,
 persistence, and release authority. See
 [ADR 0066](../adr/0066-bounded-gltf-texture-transforms.md).
 
+### PR 68 - CF068: Bounded glTF mesh quantization
+
+Outcome: bounded core normalized primary coordinates and ratified
+`KHR_mesh_quantization` vertex formats decode through the existing immutable
+64-byte CPU/GPU vertex ABI.
+
+Gate: admit the exact core and extension component/normalization matrix for
+`POSITION`, `NORMAL`, `TANGENT`, and `TEXCOORD_0`. Require every extension-only
+selection to declare `KHR_mesh_quantization` in both the unique
+`extensionsUsed` and `extensionsRequired` sets. Decode the exact Khronos
+integer equations, normalize normal/tangent XYZ from f64, and retain exact
+tangent handedness. Require four-byte element alignment, checked ranges, and a
+source-count cap before complete-source validation.
+
+Validate every present selected-attribute min/max against raw source extrema;
+require both for quantized POSITION while intentionally preserving legacy
+finite-f32 POSITION fixtures without bounds. Materialize only the existing
+fixed decoded vertex. Preserve indices, colors, materials, texture transforms,
+generated tangents, renderer resources and pipelines, observations, lifecycle,
+logical state, and replay. Exclude node dequantization transforms, scenes,
+additional coordinates, morphs, skins, animation, sparse accessors,
+compression, packed GPU residency, protocol, persistence, release, and
+deployment. See
+[ADR 0068](../adr/0068-bounded-gltf-mesh-quantization.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1607,7 +1632,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
-  -> CF062 -> CF063 -> CF064 -> CF065 -> CF066
+  -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.

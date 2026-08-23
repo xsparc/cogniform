@@ -40,7 +40,7 @@ release publication, or deployment.
 | Revision causality | Pass | Receipt, extraction, renderer revision, frame, camera, observation, staleness, and visibility agree |
 | Overload | Pass | Fixed capacities and tested `MustApply`, `LatestWins`, `BestEffort`, readback, asset, and replay behavior |
 | Pending-work age | Pass on validated profile | Empty and retained command/observation/import/upload status, duplicate retention, supersession reset, rejection/drop neutrality, processing/eviction/delivery cleanup, saturation, and restoration/revert compatibility |
-| Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, finite non-zero same-count normals/tangents with exact handedness, full-source validation before fallback, two fixed checked generated-tangent work guards plus complete generated-output validation, finite same-count primary coordinates and f32/normalized-integer primary colors, bounded numeric materials, three-channel emissive factor, finite non-negative alpha cutoff, strict selected/unused boolean `doubleSided`, unique/subset extension declarations with exact-empty unlit and finite texture-transform markers, complete expanded affine-result validation, strict zero-to-four selected/unused sampler records and indices, finite normal scale, bounded static embedded RGB/RGBA PNG decode across four typed roles, shared/distinct role accounting, exact decoded/GPU bytes, truncation corpus, typed unsupported/proxy policy |
+| Asset safety | Pass for documented GLB subset | Exact hash, strict framing/ranges/counts, finite non-zero same-count normals/tangents with exact handedness, full-source validation before fallback, exact selected-attribute raw extrema, bounded core normalized primary coordinates and required `KHR_mesh_quantization` integer formats expanded into the fixed ABI, two fixed checked generated-tangent work guards plus complete generated-output validation, finite same-count primary coordinates and f32/normalized-integer primary colors, bounded numeric materials, three-channel emissive factor, finite non-negative alpha cutoff, strict selected/unused boolean `doubleSided`, unique/subset extension declarations with exact-empty unlit and finite texture-transform markers, complete expanded affine-result validation, strict zero-to-four selected/unused sampler records and indices, finite normal scale, bounded static embedded RGB/RGBA PNG decode across four typed roles, shared/distinct role accounting, exact decoded/GPU bytes, truncation corpus, typed unsupported/proxy policy |
 | Service asset resolution | Pass on validated profile | Explicit one-item import/upload renders an exact stable ID and optional base-color, metallic-roughness, normal, and emissive role textures; recovery retains logical references and exact-hash rehydration resumes rendering without replay mutation |
 | Asset lifecycle | Pass on validated profile | Explicit content-hash-wide eviction releases exact queued, decoded, upload, mesh, and content-hash-and-role texture capacity; preserves unrelated FIFO, submitted frames, world/replay/frame state, and persisted sources; and supports exact rehydration |
 | Service procedure composition | Pass on validated profile | A bounded 2x3 built-in procedure follows ordinary queue, idempotency, query, replay/hash, and restored world-idempotency behavior |
@@ -57,11 +57,11 @@ published release.
 
 ## Required evidence and preparation before publication
 
-Checked items below were reproduced through CF067 and are recorded in the
+Checked items below were reproduced through CF068 and are recorded in the
 validation baseline; the package/source identity matrix originated on CF051
 and the executable MCP evidence was revalidated on CF064. The dependency graph
 is unchanged from the accepted CF066 audit; the validation baseline records the
-local CF067 `cargo-deny` execution gap. The CF055 through CF067 controlled GPU
+local CF068 `cargo-deny` execution gap. The CF055 through CF068 controlled GPU
 paths were reproduced separately on the same validated adapter. Pull-request
 quality must reproduce the portable subset, and the exact clean merged/tagged
 commit must remain unchanged through the still-open identity, archive, and
@@ -75,8 +75,9 @@ publication gates.
       public-tree, and dependency-policy checks.
 - [x] Reproduce all ignored engine/renderer conformance tests on at least one
       matrix entry named in the compatibility baseline. The complete optimized
-      engine and renderer matrix passes through CF067; see the validation
-      baseline.
+      engine and renderer matrix passes through CF067, with the focused CF068
+      renderer and service comparisons reproduced separately; see the
+      validation baseline.
 - [x] Re-run the canonical scenario's human and schema-version-one JSON modes
       on that matrix entry and confirm they prove the same successful run
       contract without publishing the adapter or run evidence.
