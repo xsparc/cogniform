@@ -333,6 +333,14 @@ inventory and inherited dependency declarations, and runs in the existing
 quality job without a new dependency, network call, artifact, permission, or
 runner.
 
+CF072 changes no Cargo manifest, lock entry, vendored byte, feature, build
+script, unsafe/native boundary, workflow, or runtime dependency edge. Strict
+`KHR_materials_ior` parsing uses the existing JSON and finite-value contracts;
+F0 derivation uses standard f64 arithmetic; and the renderer appends one
+first-party uniform row. Refraction, transmission, image-based lighting, and
+new texture roles remain outside the slice and cannot introduce transitive
+runtime or supply-chain authority.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

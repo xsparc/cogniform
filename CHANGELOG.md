@@ -83,6 +83,13 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   exclusion, and factor/texture multiplication before the existing unit clamp;
   the scalar reuses camera-position uniform padding, so the 624-byte layout and
   every renderer resource count remain unchanged;
+- ratified `KHR_materials_ior` through strict declarations, exact finite zero-
+  or-at-least-one retention with the `1.5` default, forbidden unlit and legacy
+  specular-glossiness coexistence, and deterministic f64-derived finite unit
+  dielectric F0. Imported direct metallic-roughness shading uses the retained
+  value while omission, scene materials, built-ins, fallbacks, proxies, and
+  metallic-one output remain compatible. One `[F0,0,0,0]` row preserves the
+  exact 624-byte prefix in a fixed 640-byte uniform without resource growth;
 - optional core glTF `OPAQUE` and `MASK` alpha coverage, with strict finite
   non-negative cutoff handling, multiplied factor/texture alpha, exact cutoff
   equality, pre-output discard across color/depth/identity/normal, opaque

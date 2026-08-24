@@ -1051,6 +1051,126 @@ fn emissive_strength_scales_factor_and_texture_before_unit_clamp() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn material_ior_changes_only_imported_dielectric_direct_response() {
+    let center = (WIDTH / 2, HEIGHT / 2);
+    let unlit_default = material_frame(ior_fixture(None, 0.0, None), None, false);
+    let unlit_zero = material_frame(ior_fixture(Some(0.0), 0.0, None), None, false);
+    let unlit_diamond = material_frame(ior_fixture(Some(2.42), 0.0, None), None, false);
+    assert_frames_equal(&unlit_zero, &unlit_default);
+    assert_frames_equal(&unlit_diamond, &unlit_default);
+
+    for (light, expected_colors) in [
+        (
+            LightKind::Directional,
+            [
+                [38, 22, 14, 255],
+                [162, 162, 162, 255],
+                [32, 16, 8, 255],
+                [35, 19, 11, 255],
+                [55, 41, 35, 255],
+            ],
+        ),
+        (
+            LightKind::Point,
+            [
+                [37, 22, 14, 255],
+                [159, 159, 159, 255],
+                [32, 16, 8, 255],
+                [35, 19, 11, 255],
+                [54, 41, 34, 255],
+            ],
+        ),
+    ] {
+        assert_ior_light_response(light, expected_colors, center);
+    }
+
+    let overridden_zero = material_frame(
+        ior_fixture(Some(0.0), 0.0, None),
+        Some(LightKind::Directional),
+        true,
+    );
+    let overridden_diamond = material_frame(
+        ior_fixture(Some(2.42), 0.0, None),
+        Some(LightKind::Directional),
+        true,
+    );
+    assert_frames_equal(&overridden_zero, &overridden_diamond);
+
+    let neutral_normal = material_frame(
+        normal_texture_ior_fixture([128, 128, 255, 255], 1.0, 2.42),
+        Some(LightKind::Directional),
+        false,
+    );
+    let tilted_one = material_frame(
+        normal_texture_ior_fixture([255, 128, 255, 255], 1.0, 1.0),
+        Some(LightKind::Directional),
+        false,
+    );
+    let tilted_diamond = material_frame(
+        normal_texture_ior_fixture([255, 128, 255, 255], 1.0, 2.42),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_ne!(
+        neutral_normal.color_at(center.0, center.1),
+        tilted_diamond.color_at(center.0, center.1)
+    );
+    assert_ne!(
+        tilted_one.color_at(center.0, center.1),
+        tilted_diamond.color_at(center.0, center.1)
+    );
+    assert_non_color_observations_equal(&tilted_one, &tilted_diamond);
+
+    let diamond = material_frame(
+        ior_fixture(Some(2.42), 0.0, None),
+        Some(LightKind::Directional),
+        false,
+    );
+    let diamond_with_emission = material_frame(
+        ior_fixture(Some(2.42), 0.0, Some(2.0)),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_emissive_addition(&diamond_with_emission, &diamond, center, [10, 5, 0]);
+    assert_non_color_observations_equal(&diamond_with_emission, &diamond);
+}
+
+fn assert_ior_light_response(light: LightKind, expected_colors: [[u8; 4]; 5], center: (u32, u32)) {
+    let omitted = material_frame(ior_fixture(None, 0.0, None), Some(light), false);
+    let explicit_default = material_frame(ior_fixture(Some(1.5), 0.0, None), Some(light), false);
+    let zero = material_frame(ior_fixture(Some(0.0), 0.0, None), Some(light), false);
+    let one = material_frame(ior_fixture(Some(1.0), 0.0, None), Some(light), false);
+    let water = material_frame(ior_fixture(Some(1.33), 0.0, None), Some(light), false);
+    let diamond = material_frame(ior_fixture(Some(2.42), 0.0, None), Some(light), false);
+
+    assert_frames_equal(&explicit_default, &omitted);
+    for candidate in [&zero, &one, &water, &diamond] {
+        assert_non_color_observations_equal(candidate, &omitted);
+    }
+    let omitted_color = omitted.color_at(center.0, center.1).unwrap();
+    for (index, (frame, expected)) in [
+        (&omitted, expected_colors[0]),
+        (&zero, expected_colors[1]),
+        (&one, expected_colors[2]),
+        (&water, expected_colors[3]),
+        (&diamond, expected_colors[4]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_color_near(frame, center, expected);
+        if index > 0 {
+            assert_ne!(frame.color_at(center.0, center.1).unwrap(), omitted_color);
+        }
+    }
+
+    let metallic_zero = material_frame(ior_fixture(Some(0.0), 1.0, None), Some(light), false);
+    let metallic_diamond = material_frame(ior_fixture(Some(2.42), 1.0, None), Some(light), false);
+    assert_frames_equal(&metallic_zero, &metallic_diamond);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback() {
     let center = (WIDTH / 2, HEIGHT / 2);
     let baseline = material_frame(emissive_texture_fixture(None, [0.0; 3]), None, false);
@@ -2683,6 +2803,46 @@ fn metallic_roughness_fixture(
     glb_with_json(&json, &binary)
 }
 
+fn ior_fixture(ior: Option<f32>, metallic_factor: f32, emissive_strength: Option<f32>) -> Vec<u8> {
+    let mut binary = Vec::with_capacity(36);
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let mut declarations = Vec::new();
+    let mut material_extensions = Vec::new();
+    if let Some(value) = ior {
+        declarations.push(r#""KHR_materials_ior""#);
+        material_extensions.push(format!(r#""KHR_materials_ior":{{"ior":{value}}}"#));
+    }
+    if let Some(value) = emissive_strength {
+        declarations.push(r#""KHR_materials_emissive_strength""#);
+        material_extensions.push(format!(
+            r#""KHR_materials_emissive_strength":{{"emissiveStrength":{value}}}"#
+        ));
+    }
+    let root_extensions = if declarations.is_empty() {
+        String::new()
+    } else {
+        format!(r#", "extensionsUsed":[{}]"#, declarations.join(","))
+    };
+    let material_extensions = if material_extensions.is_empty() {
+        String::new()
+    } else {
+        format!(r#", "extensions":{{{}}}"#, material_extensions.join(","))
+    };
+    let emissive = emissive_strength.map_or("", |_| r#", "emissiveFactor":[0.02,0.01,0.0]"#);
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}}{root_extensions},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,0.4],"metallicFactor":{metallic_factor},"roughnessFactor":0.5}}{emissive}{material_extensions}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":0,"mode":4}}]}}]}}"#,
+    );
+    glb_with_json(&json, &binary)
+}
+
 fn primary_uv_fixture() -> Vec<u8> {
     let positions = [[-0.75_f32, -0.5, 0.0], [0.75, -0.5, 0.0], [0.0, 0.75, 0.0]];
     let texcoords = [[-0.25_f32, 1.25], [2.0, -3.0], [0.5, 0.75]];
@@ -2739,11 +2899,15 @@ fn textured_two_mesh_fixture() -> Vec<u8> {
 }
 
 fn normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
-    normal_texture_fixture_with_options(texel, scale, false, true)
+    normal_texture_fixture_with_options(texel, scale, false, true, None)
+}
+
+fn normal_texture_ior_fixture(texel: [u8; 4], scale: f32, ior: f32) -> Vec<u8> {
+    normal_texture_fixture_with_options(texel, scale, false, true, Some(ior))
 }
 
 fn generated_normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
-    normal_texture_fixture_with_options(texel, scale, false, false)
+    normal_texture_fixture_with_options(texel, scale, false, false, None)
 }
 
 fn mesh_quantized_generated_normal_texture_fixture(texel: [u8; 4], quantized: bool) -> Vec<u8> {
@@ -2808,7 +2972,7 @@ fn mesh_quantized_generated_normal_texture_fixture(texel: [u8; 4], quantized: bo
 }
 
 fn double_sided_normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
-    normal_texture_fixture_with_options(texel, scale, true, true)
+    normal_texture_fixture_with_options(texel, scale, true, true, None)
 }
 
 fn normal_texture_fixture_with_options(
@@ -2816,6 +2980,7 @@ fn normal_texture_fixture_with_options(
     scale: f32,
     double_sided: bool,
     include_tangents: bool,
+    ior: Option<f32>,
 ) -> Vec<u8> {
     let positions = [
         [-0.75_f32, -0.75, 0.0],
@@ -2859,8 +3024,14 @@ fn normal_texture_fixture_with_options(
     } else {
         ""
     };
+    let root_extension = ior.map_or_else(String::new, |_| {
+        r#", "extensionsUsed":["KHR_materials_ior"]"#.to_owned()
+    });
+    let material_extension = ior.map_or_else(String::new, |value| {
+        format!(r#", "extensions":{{"KHR_materials_ior":{{"ior":{value}}}}}"#)
+    });
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_image_offset},"byteLength":{base_image_length}}},{{"buffer":0,"byteOffset":{normal_image_offset},"byteLength":{normal_image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5,"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"scale":{scale}}}{double_sided}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1{tangent_attribute},"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}}{root_extension},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_image_offset},"byteLength":{base_image_length}}},{{"buffer":0,"byteOffset":{normal_image_offset},"byteLength":{normal_image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5,"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"scale":{scale}}}{double_sided}{material_extension}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1{tangent_attribute},"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         base_image_length = base_png.len(),
         normal_image_length = normal_png.len(),

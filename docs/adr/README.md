@@ -75,5 +75,6 @@ earlier one and links the history.
 | [0068](0068-bounded-gltf-mesh-quantization.md) | Accepted | Decode bounded core and ratified integer vertex attributes into the fixed 64-byte ABI |
 | [0069](0069-bounded-secondary-texture-coordinates.md) | Accepted | Retain one bounded secondary glTF coordinate set with exact per-role selection |
 | [0071](0071-bounded-gltf-emissive-strength.md) | Accepted | Scale imported glTF surface emission with one bounded ratified strength |
+| [0072](0072-bounded-gltf-material-ior.md) | Accepted | Apply one bounded ratified material IOR to imported direct dielectric response |
 
 New records use four sections: context, decision, consequences, and status.

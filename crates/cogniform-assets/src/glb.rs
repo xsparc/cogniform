@@ -33,6 +33,8 @@ const PNG_IEND: [u8; 12] = [0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xae, 0x42, 0x60
 const PNG_RGB: u8 = 2;
 const PNG_RGBA: u8 = 6;
 const KHR_MATERIALS_EMISSIVE_STRENGTH: &str = "KHR_materials_emissive_strength";
+const KHR_MATERIALS_IOR: &str = "KHR_materials_ior";
+const KHR_MATERIALS_PBR_SPECULAR_GLOSSINESS: &str = "KHR_materials_pbrSpecularGlossiness";
 const KHR_MATERIALS_UNLIT: &str = "KHR_materials_unlit";
 const KHR_MESH_QUANTIZATION: &str = "KHR_mesh_quantization";
 const KHR_TEXTURE_TRANSFORM: &str = "KHR_texture_transform";
@@ -44,7 +46,14 @@ struct ExtensionPreflight {
     mesh_quantization_required: bool,
     unlit_materials: Vec<bool>,
     emissive_strengths: Vec<NonNegativeF32>,
+    material_optics: Vec<MaterialOptics>,
     texture_transforms: Vec<MaterialTextureTransforms>,
+}
+
+#[derive(Clone, Copy)]
+struct MaterialOptics {
+    ior: FiniteF32,
+    dielectric_f0: UnitF32,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -196,6 +205,7 @@ fn remove_declared_extensions_and_features(
             !matches!(
                 name.as_str(),
                 KHR_MATERIALS_EMISSIVE_STRENGTH
+                    | KHR_MATERIALS_IOR
                     | KHR_MATERIALS_UNLIT
                     | KHR_MESH_QUANTIZATION
                     | KHR_TEXTURE_TRANSFORM
@@ -250,6 +260,8 @@ fn remove_declared_extensions_and_features(
         &unlit_extension_members,
         &mut unsupported,
     )?;
+    let material_optics =
+        remove_material_ior_extensions(value, &used, &unlit_extension_members, &mut unsupported)?;
     let texture_transforms =
         remove_material_texture_transform_extensions(value, &used, &mut unsupported)?;
     remove_nested_extensions(value, &used, &mut unsupported)?;
@@ -259,6 +271,7 @@ fn remove_declared_extensions_and_features(
         mesh_quantization_required: required.contains(KHR_MESH_QUANTIZATION),
         unlit_materials,
         emissive_strengths,
+        material_optics,
         texture_transforms,
     })
 }
@@ -450,6 +463,110 @@ fn remove_material_emissive_strength_extensions(
         strengths.push(strength);
     }
     Ok(strengths)
+}
+
+fn remove_material_ior_extensions(
+    value: &mut serde_json::Value,
+    used: &BTreeSet<String>,
+    unlit_extension_members: &[bool],
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<Vec<MaterialOptics>, AssetDiagnostic> {
+    const LOCATION: &str = "glb.json.materials.extensions.KHR_materials_ior";
+    let Some(materials) = value
+        .as_object_mut()
+        .and_then(|root| root.get_mut("materials"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(Vec::new());
+    };
+    let default = material_optics(1.5).expect("the default IOR is valid");
+    let mut retained = Vec::with_capacity(materials.len());
+    for (material_index, material) in materials.iter_mut().enumerate() {
+        let Some(material) = material.as_object_mut() else {
+            retained.push(default);
+            continue;
+        };
+        let Some(mut extensions) = material.remove("extensions") else {
+            retained.push(default);
+            continue;
+        };
+        let Some(extensions) = extensions.as_object_mut() else {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.materials.extensions",
+                None,
+            ));
+        };
+        let specular_glossiness_member =
+            extensions.contains_key(KHR_MATERIALS_PBR_SPECULAR_GLOSSINESS);
+        let optics = extensions
+            .remove(KHR_MATERIALS_IOR)
+            .map(|mut payload| {
+                if !used.contains(KHR_MATERIALS_IOR) {
+                    return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+                }
+                let Some(payload) = payload.as_object_mut() else {
+                    return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+                };
+                let value = payload
+                    .remove("ior")
+                    .map(|value| {
+                        serde_json::from_value::<f32>(value)
+                            .map_err(|_| {
+                                diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None)
+                            })
+                            .and_then(|value| {
+                                material_optics(value).ok_or_else(|| {
+                                    diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None)
+                                })
+                            })
+                    })
+                    .transpose()?
+                    .unwrap_or(default);
+                if unlit_extension_members.get(material_index).copied() == Some(true)
+                    || specular_glossiness_member
+                {
+                    return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+                }
+                if !payload.is_empty() {
+                    let mut remainder = serde_json::Value::Object(core::mem::take(payload));
+                    remove_nested_extensions(&mut remainder, used, unsupported)?;
+                    unsupported.get_or_insert_with(|| {
+                        diagnostic(AssetDiagnosticCode::UnsupportedExtension, LOCATION, None)
+                    });
+                }
+                Ok(value)
+            })
+            .transpose()?
+            .unwrap_or(default);
+        if !extensions.is_empty() {
+            material.insert(
+                "extensions".to_owned(),
+                serde_json::Value::Object(core::mem::take(extensions)),
+            );
+        }
+        retained.push(optics);
+    }
+    Ok(retained)
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn material_optics(value: f32) -> Option<MaterialOptics> {
+    let ior = FiniteF32::new(value).ok()?;
+    if ior.get() != 0.0 && ior.get() < 1.0 {
+        return None;
+    }
+    let dielectric_f0 = if ior.get() == 0.0 {
+        1.0
+    } else {
+        let ior_f64 = f64::from(ior.get());
+        let ratio = (ior_f64 - 1.0) / (ior_f64 + 1.0);
+        (ratio * ratio) as f32
+    };
+    Some(MaterialOptics {
+        ior,
+        dielectric_f0: UnitF32::new(dielectric_f0).ok()?,
+    })
 }
 
 fn remove_material_texture_transform_extensions(
@@ -3675,13 +3792,19 @@ fn decode_material(
         .and_then(|index| extensions.emissive_strengths.get(index))
         .copied()
         .unwrap_or_else(|| NonNegativeF32::new(1.0).expect("one is finite and non-negative"));
+    let optics = material_index
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| extensions.material_optics.get(index))
+        .copied()
+        .unwrap_or_else(|| material_optics(1.5).expect("the default IOR is valid"));
     let material = AssetMaterial::new(
         color,
         material_scalar(metallic_value)?,
         material_scalar(roughness_value)?,
     )
     .with_emissive(emissive)
-    .with_emissive_strength(emissive_strength);
+    .with_emissive_strength(emissive_strength)
+    .with_ior(optics.ior, optics.dielectric_f0);
     let material = apply_unlit(material_index, &extensions.unlit_materials, material);
     let material = apply_double_sided(root, material_index, material);
     let material = apply_alpha_coverage(root, material_index, material)?;

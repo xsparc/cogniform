@@ -1671,6 +1671,207 @@ fn emissive_strength_defaults_and_finite_non_negative_values_are_retained_exactl
 }
 
 #[test]
+#[allow(clippy::cast_possible_truncation)]
+fn ior_defaults_valid_values_and_f64_derived_f0_are_retained_exactly() {
+    let cases = [
+        ("", r"[{}]", 0, 1.5_f32),
+        (
+            r#""extensionsUsed":["KHR_materials_ior"],"#,
+            r#"[{"extensions":{"KHR_materials_ior":{}}}]"#,
+            0,
+            1.5,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior"],"extensionsRequired":["KHR_materials_ior"],"#,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":-0.0}}}]"#,
+            0,
+            0.0,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior"],"#,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":1.0}}}]"#,
+            0,
+            1.0,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior"],"#,
+            r#"[{}, {"extensions":{"KHR_materials_ior":{"ior":1.33}}}]"#,
+            1,
+            1.33,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior"],"#,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":2.42}}}, {}]"#,
+            1,
+            1.5,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior"],"#,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":3.4028235e38}}}]"#,
+            0,
+            f32::MAX,
+        ),
+    ];
+    let mut decoded_bytes = Vec::new();
+    let mut upload_bytes = Vec::new();
+    for (root_fields, materials, selected, expected_ior) in cases {
+        let bytes = triangle_glb_with_extension_materials(root_fields, materials, selected);
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        decoded_bytes.push(store.record(hash).unwrap().decoded_bytes);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        let expected_f0 = if expected_ior == 0.0 {
+            1.0
+        } else {
+            let ior = f64::from(expected_ior);
+            let ratio = (ior - 1.0) / (ior + 1.0);
+            (ratio * ratio) as f32
+        };
+        assert_eq!(upload.material().ior().to_bits(), expected_ior.to_bits());
+        assert_eq!(
+            upload.material().dielectric_f0().to_bits(),
+            expected_f0.to_bits()
+        );
+        upload_bytes.push(upload.byte_len());
+    }
+    assert!(decoded_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+    assert!(upload_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn malformed_or_forbidden_ior_never_receives_a_proxy() {
+    let declared = r#""extensionsUsed":["KHR_materials_ior"],"#;
+    let cases = [
+        ("", r#"[{"extensions":{"KHR_materials_ior":{}}}]"#),
+        (declared, r#"[{"extensions":{"KHR_materials_ior":null}}]"#),
+        (declared, r#"[{"extensions":{"KHR_materials_ior":[]}}]"#),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":null}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":"1.5"}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":true}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":[]}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":{}}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":-0.1}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":0.5}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":0.99999994}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":1e100}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior","KHR_materials_unlit"],"#,
+            r#"[{"extensions":{"KHR_materials_ior":{},"KHR_materials_unlit":{}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior","KHR_materials_unlit"],"#,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":1.5},"KHR_materials_unlit":{"future":true}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior","KHR_materials_unlit"],"#,
+            r#"[{}, {"extensions":{"KHR_materials_ior":{},"KHR_materials_unlit":{}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior","KHR_materials_pbrSpecularGlossiness"],"#,
+            r#"[{"extensions":{"KHR_materials_ior":{},"KHR_materials_pbrSpecularGlossiness":{}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior","KHR_materials_pbrSpecularGlossiness"],"#,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":2.0},"KHR_materials_pbrSpecularGlossiness":{"future":true}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior","KHR_materials_pbrSpecularGlossiness"],"#,
+            r#"[{"extensions":{"KHR_materials_ior":{},"KHR_materials_pbrSpecularGlossiness":null}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior","KHR_materials_pbrSpecularGlossiness"],"#,
+            r#"[{}, {"extensions":{"KHR_materials_ior":{},"KHR_materials_pbrSpecularGlossiness":{}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{}, {"extensions":{"KHR_materials_ior":{"ior":0.5}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_ior","EXT_other"],"#,
+            r#"[{"extensions":{"KHR_materials_ior":{"ior":0.5},"EXT_other":{}}}]"#,
+        ),
+    ];
+    for (root_fields, materials) in cases {
+        let bytes = triangle_glb_with_extension_materials(root_fields, materials, 0);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+}
+
+#[test]
+fn wider_ior_payload_proxies_only_after_supported_fields_validate() {
+    let declared = r#""extensionsUsed":["KHR_materials_ior"],"#;
+    let wider = triangle_glb_with_extension_materials(
+        declared,
+        r#"[{"extensions":{"KHR_materials_ior":{"ior":1.33,"future":true}}}]"#,
+        0,
+    );
+    let (store, hash) = process_with_proxy_policy(wider);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedExtension
+    );
+
+    for payload in [
+        r#"{"ior":0.5,"future":true}"#,
+        r#"{"ior":1.33,"future":true,"extensions":{"EXT_other":null}}"#,
+    ] {
+        let materials = format!(r#"[{{"extensions":{{"KHR_materials_ior":{payload}}}}}]"#);
+        let root = if payload.contains("EXT_other") {
+            r#""extensionsUsed":["KHR_materials_ior","EXT_other"],"#
+        } else {
+            declared
+        };
+        let bytes = triangle_glb_with_extension_materials(root, &materials, 0);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+}
+
+#[test]
 fn malformed_or_unlit_emissive_strength_never_receives_a_proxy() {
     let declared = r#""extensionsUsed":["KHR_materials_emissive_strength"],"#;
     let cases = [
