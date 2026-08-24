@@ -367,7 +367,8 @@ fn fs_main(
                 draw.emissive_uv_row_1,
             ),
         ).rgb
-            * draw.emissive.rgb;
+            * draw.emissive.rgb
+            * draw.camera_position.w;
         shaded_color = min(shaded_color + emissive, vec3(1.0));
     }
     let output_alpha = select(base_color.a, 1.0, (material_flags & 2u) != 0u);

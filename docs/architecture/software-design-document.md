@@ -448,7 +448,8 @@ Only a scene with no active definition of either kind bypasses lighting and
 preserves exact base RGBA. A resident GLB mesh supplies its imported base
 color, optional base-color, metallic-roughness, and tangent-space normal
 textures, an optional emissive texture, metallic, roughness, normal scale, and
-core unit-bounded emissive RGB
+core unit-bounded emissive RGB plus an optional finite non-negative ratified
+emissive-strength multiplier
 when the entity has no explicit material. The shader samples base color as
 `Rgba8UnormSrgb`, samples emissive as `Rgba8UnormSrgb`, samples the data roles
 as linear `Rgba8Unorm`. Each role retains one bounded core glTF sampler
@@ -480,6 +481,11 @@ base color multiplied by its numeric factor, independently of active direct
 lights. Normal, metallic-roughness, and emissive fallback values and textures
 remain strictly validated and lifecycle-accounted but visually inert. An
 explicit scene material disables the imported unlit selection. The
+same material may not also carry the supported
+`KHR_materials_emissive_strength` extension. That extension requires the same
+strict declaration contract, retains optional finite non-negative
+`emissiveStrength` with an exact one default, and validates its supported field
+before a wider payload can become unsupported. The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source or bounded generated-tangent TBN perturbs only direct-light response.
@@ -488,7 +494,8 @@ Each of the four texture roles independently selects `TEXCOORD_0` or
 rows. The extension selector overrides the core texture-info selector.
 Generated tangents use the selected transformed normal-role coordinates while
 explicit tangents and retained coordinates remain authored values. Emissive texture RGB
-is decoded from sRGB, multiplied by the numeric linear emissive factor, added
+is decoded from sRGB, multiplied by the numeric linear emissive factor and
+retained strength, then added
 after the ordinary metallic-roughness response, and clamped to one without
 changing alpha; texture alpha is ignored. Untextured draws use white
 base-color/emissive, factor-one metallic-roughness, and neutral-normal
@@ -496,15 +503,16 @@ fallbacks. A scene `MaterialComponent` overrides the whole imported material,
 disables all four imported texture roles, and selects zero imported emission.
 A built-in or material-free
 asset without a scene material uses its existing fallback color with neutral
-dielectric parameters `metallic = 0`, `roughness = 0.8`. Emissive strength,
-cross-surface emission, ambient, image-based lighting,
+dielectric parameters `metallic = 0`, `roughness = 0.8`. Cross-surface
+emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
 fixed 624-byte per-draw uniform preserves the complete prior 496-byte prefix,
 which in turn preserves the 480-byte model,
 view-projection, material-color, identity, directional, point-light,
 camera-position, and metallic/roughness/normal-scale/material-flag prefix and
-appends one emissive slot whose padding lane carries the imported mask cutoff,
+uses the prior camera-position padding lane for emissive strength, appends one
+emissive slot whose padding lane carries the imported mask cutoff,
 then appends eight padded affine rows in base-color, normal,
 metallic-roughness, and emissive order.
 A fifth definition
@@ -538,10 +546,12 @@ same-count finite `TEXCOORD_0` and `TEXCOORD_1`, optional same-count finite non-
 and optional same-count primary linear `COLOR_0` as f32 or normalized unsigned
 byte/unsigned short `VEC3`/`VEC4`,
 with at most sixteen attribute semantics per primitive,
-plus an optional three-channel unit-bounded core emissive factor and bounded
+plus an optional three-channel unit-bounded core emissive factor, optional
+finite non-negative ratified emissive strength, and bounded
 OPAQUE/MASK alpha coverage plus a strict optional boolean `doubleSided` per
-mesh material. The ratified `KHR_materials_unlit` and
-`KHR_texture_transform` and `KHR_mesh_quantization` extensions are the sole
+mesh material. The ratified `KHR_materials_emissive_strength`,
+`KHR_materials_unlit`, `KHR_texture_transform`, and `KHR_mesh_quantization`
+extensions are the sole
 supported extensions. Mesh quantization admits only the declared integer
 POSITION/NORMAL/TANGENT/TEXCOORD_n matrix, requires extension-only accessors to
 name the extension as required, validates raw accessor extrema and complete
@@ -549,7 +559,9 @@ bounded sources, and immediately expands through the fixed f32 vertex ABI;
 node dequantization transforms remain excluded. Core normalized unsigned-byte
 and unsigned-short coordinate sets do not require the extension. Unlit
 retains one typed shading model only after strict declaration,
-selected/unused material, and fallback-resource validation. Texture transform
+selected/unused material, and fallback-resource validation. Emissive strength
+defaults to one, is retained for selected and unused materials, and is
+mutually exclusive with the supported unlit marker. Texture transform
 retains finite offset, rotation, and scale with exact defaults and Khronos
 translation-rotation-scale order for the four existing texture-info roles.
 Each role retains effective selector zero or one, with extension `texCoord`

@@ -69,7 +69,8 @@ scene revision that produced it.
 > sRGB base color multiplies the imported factor, while a linear normal map can
 > perturb direct lighting without changing geometric-normal observations,
 > while metallic-roughness green/blue multiply the numeric direct-light
-> factors and emissive texture RGB multiplies the numeric emission before it
+> factors and emissive texture RGB plus optional finite non-negative ratified
+> emissive strength multiply the numeric emission before it
 > adds to the bounded surface result when the entity
 > has no explicit scene material. Imported core glTF materials now apply
 > deterministic OPAQUE or cutoff-based MASK coverage; blending and sorting
@@ -148,7 +149,7 @@ implementations arrive:
 | `cogniform-mcp` | Bounded stable MCP stdio query/imagination/patch/observation translation and one retained canonical observation resource over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/primary-coordinate/texture-transform/material/emissive/embedded-PNG decoding, immutable role-textured upload jobs, and explicit CPU-state eviction |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/coordinate/texture-transform/material/emissive-strength/embedded-PNG decoding, immutable role-textured upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |

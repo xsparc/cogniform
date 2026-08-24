@@ -33,7 +33,9 @@ CF068 extends the admitted attribute formats through bounded core normalized
 coordinates and required `KHR_mesh_quantization`. CF069 appends one optional
 consecutive secondary coordinate set, applies exact per-role selector and
 extension-override semantics, and expands the fixed decoded/GPU vertex ABI to
-72 bytes while preserving the accepted 64-byte prefix.
+72 bytes while preserving the accepted 64-byte prefix. CF071 admits ratified
+finite non-negative emissive strength, multiplies it into the existing
+surface-only emissive path, and preserves all renderer resource counts.
 
 ## Ownership and lifecycle
 
@@ -184,7 +186,8 @@ The importer accepts only the following baseline:
   coordinate contract, linear texels, green perceptual roughness, and blue
   metallic; red and alpha are retained but have no material effect;
 - `emissiveTexture` uses the same selected-coordinate contract, sRGB-decoded
-  RGB multiplied by the numeric linear `emissiveFactor`, and ignored alpha;
+  RGB multiplied by the numeric linear `emissiveFactor` and retained emissive
+  strength, and ignored alpha;
   omission uses a white fallback;
 - at most four strict root sampler objects. Each optional `magFilter`,
   `minFilter`, `wrapS`, and `wrapT` must be one core integer enum; explicit
@@ -197,8 +200,9 @@ The importer accepts only the following baseline:
 - optional non-normalized scalar u16 or u32 indices;
 - optional non-empty unique-string `extensionsUsed` and
   `extensionsRequired`, with required a subset of used. The recognized names
-  are `KHR_materials_unlit`, `KHR_mesh_quantization`, and
-  `KHR_texture_transform`; every actual supported or unknown extension member
+  are `KHR_materials_emissive_strength`, `KHR_materials_unlit`,
+  `KHR_mesh_quantization`, and `KHR_texture_transform`; every actual supported
+  or unknown extension member
   must be declared in used. An extension-only vertex encoding additionally
   requires `KHR_mesh_quantization` in required;
 - component-aligned core accessor starts, four-byte-aligned explicit vertex
@@ -222,7 +226,13 @@ The importer accepts only the following baseline:
 - optional exact empty material `extensions.KHR_materials_unlit`, retained as
   typed `AssetShadingModel::Unlit` for selected and unused materials. Omission
   retains `MetallicRoughness`; null, scalar, array, undeclared, or otherwise
-  malformed markers are invalid.
+  malformed markers are invalid; and
+- optional material `extensions.KHR_materials_emissive_strength` object with
+  optional finite non-negative f32 `emissiveStrength`, defaulting exactly to
+  one. Null, scalar, array, undeclared, negative, or overflowed values are
+  invalid. A well-formed wider property is unsupported only after the supported
+  field validates. The extension must not coexist with any declared unlit
+  member on one material.
 
 A valid texture-transform coordinate override above one or otherwise
 well-formed wider transform property remains an unsupported-extension/proxy
@@ -302,7 +312,8 @@ or out-of-range emissive factors, malformed alpha mode/cutoff values,
 malformed `doubleSided` or sampler values and indices, missing required mesh-
 quantization declarations, invalid accessor bounds or source-attribute counts,
 malformed, duplicate, empty, or inconsistent extension declarations, malformed
-or undeclared unlit or texture-transform markers, non-finite
+or undeclared emissive-strength, unlit, or texture-transform markers, negative
+or non-finite emissive strength, prohibited strength/unlit coexistence, non-finite
 texture-transform inputs or expanded results,
 malformed emissive texture roles or missing
 coordinates, malformed or truncated PNG data, invalid
@@ -323,7 +334,8 @@ same hardware back-cull rule as another imported false material.
 
 At draw time, a resident mesh uses its imported base-color factor, optional
 base-color, metallic-roughness, tangent-space normal, and emissive textures,
-metallic, roughness, normal scale, and emissive RGB unless the world entity has an explicit material,
+metallic, roughness, normal scale, emissive RGB, and emissive strength unless
+the world entity has an explicit material,
 which overrides the imported material as a whole and uses renderer-owned
 white base-color/emissive, factor-one metallic-roughness, and neutral-normal
 fallbacks. Each role selects its retained primary or secondary coordinate,
@@ -357,14 +369,14 @@ metallic-roughness green and blue channels multiply the numeric roughness and
 metallic factors only for the direct-light response. The
 retained tangent basis perturbs ordinary direct lighting only; depth, identity, and the
 normal observation retain the geometric direction. Emissive texture RGB
-multiplies the numeric factor before it is added after the ordinary no-light or
+multiplies the numeric factor and retained strength before it is added after the ordinary no-light or
 direct-light metallic-roughness response and clamped to one while alpha stays
 unchanged; it neither creates a light nor illuminates another entity. If the referenced mesh is not resident,
 an explicit primitive component is used as the author-chosen fallback. Without
 that component, preparation fails with `AssetUnavailable`.
 
 `AssetMaterial` carries validated numeric metadata including core emissive
-RGB, typed alpha coverage/cutoff, the retained double-sided value, typed
+RGB, finite non-negative emissive strength, typed alpha coverage/cutoff, the retained double-sided value, typed
 shading model, immutable texture-role, sampler, and per-role affine-transform facts, and finite
 normal scale. `AssetUploadJob` exposes that material and
 separate optional base-color, metallic-roughness, normal, and emissive `AssetTexture`
@@ -430,7 +442,7 @@ resident-byte limits.
 
 The default offline suite verifies exact hash admission, every truncated prefix
 of the checked fixture, malformed extension declarations, proxy eligibility,
-material and emissive retention/defaults/range/type/texture failures, normal and tangent
+material and emissive retention/defaults/range/type/texture/strength failures, normal and tangent
 normalization/count/value/range/handedness failures, primary/secondary-coordinate exact and indexed
 retention, zero defaults, full-source validation, embedded RGB/RGBA expansion,
 PNG truncation and malformed/reference/format/resource-limit failures,
@@ -460,6 +472,7 @@ cargo test --release -p cogniform-renderer --test asset_fixture --locked --offli
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outputs
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_adds_after_direct_light_and_scene_override_disables_it
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_strength_scales_factor_and_texture_before_unit_clamp
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
@@ -508,7 +521,10 @@ clamping, alpha preservation, scene-override suppression, unchanged non-color
 and background output, and unchanged revision/hash/replay. The emissive-texture
 checks prove hardware sRGB decoding, RGB-factor multiplication, alpha
 irrelevance, white/zero neutrality, both direct-light paths, override
-suppression, and unchanged non-color output. The four-role test proves exact
+suppression, and unchanged non-color output. The emissive-strength comparison
+proves exact one default, zero neutrality, factor-only and textured scaling
+before the existing unit clamp, saturation, scene-override suppression, and
+unchanged non-color output. The four-role test proves exact
 distinct-image CPU bytes plus GPU upload, eviction, and
 rehydration counts. The alpha checks prove factor-only, texture-only, and
 multiplied coverage, exact cutoff equality, cutoff-above-one discard, OPAQUE

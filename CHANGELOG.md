@@ -77,7 +77,12 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   PNG path, with zero-to-four atomic role reservation, unique-image CPU
   accounting, sRGB RGB-factor multiplication, ignored alpha, white and
   zero-factor neutrality, explicit scene-override suppression, exact
-  eviction/rehydration, and no light, strength, HDR, or exposure authority;
+  eviction/rehydration, and no light, HDR, or exposure authority;
+- ratified `KHR_materials_emissive_strength` through strict declarations,
+  finite non-negative f32 retention with an exact one default, unlit
+  exclusion, and factor/texture multiplication before the existing unit clamp;
+  the scalar reuses camera-position uniform padding, so the 624-byte layout and
+  every renderer resource count remain unchanged;
 - optional core glTF `OPAQUE` and `MASK` alpha coverage, with strict finite
   non-negative cutoff handling, multiplied factor/texture alpha, exact cutoff
   equality, pre-output discard across color/depth/identity/normal, opaque
@@ -558,11 +563,11 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 - renderer materials support base color plus bounded direct metallic-roughness
   response for directional and point lights; configurable point
   range/radius/cutoff, spot lights, ambient/image-based lighting, shadows,
-  emissive strength/cross-surface illumination, HDR/tone mapping,
+  cross-surface illumination, HDR/tone mapping,
   gamma conversion, and lighting configuration are not implemented.
   Normal output is quantized and the imported subset supports numeric base
-  color, metallic, roughness, and one explicit or bounded generated-tangent
-  normal map, but no generated coordinates, emissive strength, alpha
+  color, metallic, roughness, finite non-negative emissive strength, and one
+  explicit or bounded generated-tangent normal map, but no generated coordinates, alpha
   blending/sorting, or other
   material texture roles;
   the GLB subset samples at most one shared embedded PNG per base-color,

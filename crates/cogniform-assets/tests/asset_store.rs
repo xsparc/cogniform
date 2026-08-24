@@ -1611,6 +1611,178 @@ fn emissive_factors_are_bounded_and_do_not_change_asset_accounting() {
 }
 
 #[test]
+fn emissive_strength_defaults_and_finite_non_negative_values_are_retained_exactly() {
+    let cases = [
+        ("", r#"[{"emissiveFactor":[0.25,0.5,0.75]}]"#, 0, 1.0_f32),
+        (
+            r#""extensionsUsed":["KHR_materials_emissive_strength"],"#,
+            r#"[{"emissiveFactor":[0.25,0.5,0.75],"extensions":{"KHR_materials_emissive_strength":{}}}]"#,
+            0,
+            1.0,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_emissive_strength"],"extensionsRequired":["KHR_materials_emissive_strength"],"#,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":0.0}}}]"#,
+            0,
+            0.0,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_emissive_strength"],"#,
+            r#"[{}, {"emissiveFactor":[0.25,0.5,0.75],"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":2.5}}}]"#,
+            1,
+            2.5,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_emissive_strength"],"#,
+            r#"[{"emissiveFactor":[0.25,0.5,0.75]}, {"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":8.0}}}]"#,
+            0,
+            1.0,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_emissive_strength"],"#,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":3.4028235e38}}}]"#,
+            0,
+            f32::MAX,
+        ),
+    ];
+    let mut decoded_bytes = Vec::new();
+    let mut upload_bytes = Vec::new();
+    for (root_fields, materials, selected, expected) in cases {
+        let bytes = triangle_glb_with_extension_materials(root_fields, materials, selected);
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        decoded_bytes.push(store.record(hash).unwrap().decoded_bytes);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert_eq!(
+            upload.material().emissive_strength().to_bits(),
+            expected.to_bits()
+        );
+        upload_bytes.push(upload.byte_len());
+    }
+    assert!(decoded_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+    assert!(upload_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn malformed_or_unlit_emissive_strength_never_receives_a_proxy() {
+    let declared = r#""extensionsUsed":["KHR_materials_emissive_strength"],"#;
+    let cases = [
+        (
+            "",
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":null}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":[]}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":null}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":"2"}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":true}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":[]}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":{}}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":-0.1}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":1e100}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_emissive_strength","KHR_materials_unlit"],"#,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":2.0},"KHR_materials_unlit":{}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_emissive_strength","KHR_materials_unlit"],"#,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{},"KHR_materials_unlit":{"future":true}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_emissive_strength","KHR_materials_unlit"],"#,
+            r#"[{}, {"extensions":{"KHR_materials_emissive_strength":{},"KHR_materials_unlit":{}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{}, {"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":null}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_emissive_strength","EXT_other"],"#,
+            r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":null},"EXT_other":{}}}]"#,
+        ),
+    ];
+    for (root_fields, materials) in cases {
+        let bytes = triangle_glb_with_extension_materials(root_fields, materials, 0);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+}
+
+#[test]
+fn wider_emissive_strength_payload_proxies_only_after_supported_fields_validate() {
+    let declared = r#""extensionsUsed":["KHR_materials_emissive_strength"],"#;
+    let wider = triangle_glb_with_extension_materials(
+        declared,
+        r#"[{"extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":2.0,"future":true}}}]"#,
+        0,
+    );
+    let (store, hash) = process_with_proxy_policy(wider);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedExtension
+    );
+
+    for payload in [
+        r#"{"emissiveStrength":null,"future":true}"#,
+        r#"{"emissiveStrength":2.0,"future":true,"extensions":{"EXT_other":null}}"#,
+    ] {
+        let materials =
+            format!(r#"[{{"extensions":{{"KHR_materials_emissive_strength":{payload}}}}}]"#);
+        let root = if payload.contains("EXT_other") {
+            r#""extensionsUsed":["KHR_materials_emissive_strength","EXT_other"],"#
+        } else {
+            declared
+        };
+        let bytes = triangle_glb_with_extension_materials(root, &materials, 0);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+}
+
+#[test]
 fn emissive_texture_is_typed_bounded_and_retained_with_exact_accounting() {
     let png = encode_png(
         1,
