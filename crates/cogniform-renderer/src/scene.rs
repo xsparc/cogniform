@@ -306,8 +306,16 @@ impl RenderScene {
                     model[8 + row] *= dimensions[2];
                 }
             }
-            let (color, metallic, roughness, emissive, emissive_strength, dielectric_f0) =
-                material_values(entity.material(), imported_material);
+            let MaterialValues {
+                color,
+                metallic,
+                roughness,
+                emissive,
+                emissive_strength,
+                dielectric_f0,
+                specular_color_factor,
+                specular_factor,
+            } = material_values(entity.material(), imported_material);
             draws.push(
                 PreparedDraw {
                     geometry,
@@ -320,6 +328,8 @@ impl RenderScene {
                     emissive,
                     emissive_strength,
                     dielectric_f0,
+                    specular_color_factor,
+                    specular_factor,
                     normal_scale: 1.0,
                     imported_texture_roles: ImportedTextureRoles::NONE,
                     imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -447,6 +457,8 @@ pub(crate) struct PreparedDraw {
     pub(crate) emissive: [f32; 3],
     pub(crate) emissive_strength: f32,
     pub(crate) dielectric_f0: f32,
+    pub(crate) specular_color_factor: [f32; 3],
+    pub(crate) specular_factor: f32,
     pub(crate) normal_scale: f32,
     pub(crate) imported_texture_roles: ImportedTextureRoles,
     pub(crate) imported_texture_transforms: ImportedTextureTransforms,
@@ -776,42 +788,55 @@ fn color_values(color: ColorRgba) -> [f32; 4] {
     [color.r.get(), color.g.get(), color.b.get(), color.a.get()]
 }
 
+struct MaterialValues {
+    color: [f32; 4],
+    metallic: f32,
+    roughness: f32,
+    emissive: [f32; 3],
+    emissive_strength: f32,
+    dielectric_f0: f32,
+    specular_color_factor: [f32; 3],
+    specular_factor: f32,
+}
+
 fn material_values(
     scene_material: Option<MaterialComponent>,
     imported_material: Option<AssetMaterial>,
-) -> ([f32; 4], f32, f32, [f32; 3], f32, f32) {
+) -> MaterialValues {
     scene_material.map_or_else(
         || {
             imported_material.map_or(
-                (
-                    [0.8, 0.8, 0.8, 1.0],
-                    DEFAULT_METALLIC,
-                    DEFAULT_ROUGHNESS,
-                    [0.0; 3],
-                    1.0,
-                    0.04,
-                ),
-                |material| {
-                    (
-                        material.base_color().map(cogniform_protocol::UnitF32::get),
-                        material.metallic().get(),
-                        material.roughness().get(),
-                        material.emissive(),
-                        material.emissive_strength(),
-                        material.dielectric_f0(),
-                    )
+                MaterialValues {
+                    color: [0.8, 0.8, 0.8, 1.0],
+                    metallic: DEFAULT_METALLIC,
+                    roughness: DEFAULT_ROUGHNESS,
+                    emissive: [0.0; 3],
+                    emissive_strength: 1.0,
+                    dielectric_f0: 0.04,
+                    specular_color_factor: [1.0; 3],
+                    specular_factor: 1.0,
+                },
+                |material| MaterialValues {
+                    color: material.base_color().map(cogniform_protocol::UnitF32::get),
+                    metallic: material.metallic().get(),
+                    roughness: material.roughness().get(),
+                    emissive: material.emissive(),
+                    emissive_strength: material.emissive_strength(),
+                    dielectric_f0: material.dielectric_f0(),
+                    specular_color_factor: material.specular_color_factor(),
+                    specular_factor: material.specular_factor(),
                 },
             )
         },
-        |material| {
-            (
-                color_values(material.base_color),
-                material.metallic.get(),
-                material.roughness.get(),
-                [0.0; 3],
-                1.0,
-                0.04,
-            )
+        |material| MaterialValues {
+            color: color_values(material.base_color),
+            metallic: material.metallic.get(),
+            roughness: material.roughness.get(),
+            emissive: [0.0; 3],
+            emissive_strength: 1.0,
+            dielectric_f0: 0.04,
+            specular_color_factor: [1.0; 3],
+            specular_factor: 1.0,
         },
     )
 }

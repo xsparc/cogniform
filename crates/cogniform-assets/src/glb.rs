@@ -35,6 +35,7 @@ const PNG_RGBA: u8 = 6;
 const KHR_MATERIALS_EMISSIVE_STRENGTH: &str = "KHR_materials_emissive_strength";
 const KHR_MATERIALS_IOR: &str = "KHR_materials_ior";
 const KHR_MATERIALS_PBR_SPECULAR_GLOSSINESS: &str = "KHR_materials_pbrSpecularGlossiness";
+const KHR_MATERIALS_SPECULAR: &str = "KHR_materials_specular";
 const KHR_MATERIALS_UNLIT: &str = "KHR_materials_unlit";
 const KHR_MESH_QUANTIZATION: &str = "KHR_mesh_quantization";
 const KHR_TEXTURE_TRANSFORM: &str = "KHR_texture_transform";
@@ -47,6 +48,7 @@ struct ExtensionPreflight {
     unlit_materials: Vec<bool>,
     emissive_strengths: Vec<NonNegativeF32>,
     material_optics: Vec<MaterialOptics>,
+    material_specular: Vec<MaterialSpecular>,
     texture_transforms: Vec<MaterialTextureTransforms>,
 }
 
@@ -54,6 +56,20 @@ struct ExtensionPreflight {
 struct MaterialOptics {
     ior: FiniteF32,
     dielectric_f0: UnitF32,
+}
+
+#[derive(Clone, Copy)]
+struct MaterialSpecular {
+    factor: UnitF32,
+    color_factor: [NonNegativeF32; 3],
+    texture: Option<PendingTextureInfo>,
+    color_texture: Option<PendingTextureInfo>,
+}
+
+#[derive(Clone, Copy)]
+struct PendingTextureInfo {
+    index: u32,
+    texture_coordinate_set: u32,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -206,6 +222,7 @@ fn remove_declared_extensions_and_features(
                 name.as_str(),
                 KHR_MATERIALS_EMISSIVE_STRENGTH
                     | KHR_MATERIALS_IOR
+                    | KHR_MATERIALS_SPECULAR
                     | KHR_MATERIALS_UNLIT
                     | KHR_MESH_QUANTIZATION
                     | KHR_TEXTURE_TRANSFORM
@@ -262,6 +279,12 @@ fn remove_declared_extensions_and_features(
     )?;
     let material_optics =
         remove_material_ior_extensions(value, &used, &unlit_extension_members, &mut unsupported)?;
+    let material_specular = remove_material_specular_extensions(
+        value,
+        &used,
+        &unlit_extension_members,
+        &mut unsupported,
+    )?;
     let texture_transforms =
         remove_material_texture_transform_extensions(value, &used, &mut unsupported)?;
     remove_nested_extensions(value, &used, &mut unsupported)?;
@@ -272,6 +295,7 @@ fn remove_declared_extensions_and_features(
         unlit_materials,
         emissive_strengths,
         material_optics,
+        material_specular,
         texture_transforms,
     })
 }
@@ -569,6 +593,198 @@ fn material_optics(value: f32) -> Option<MaterialOptics> {
     })
 }
 
+fn default_material_specular() -> MaterialSpecular {
+    MaterialSpecular {
+        factor: UnitF32::new(1.0).expect("one is in range"),
+        color_factor: [
+            NonNegativeF32::new(1.0).expect("one is finite and non-negative"),
+            NonNegativeF32::new(1.0).expect("one is finite and non-negative"),
+            NonNegativeF32::new(1.0).expect("one is finite and non-negative"),
+        ],
+        texture: None,
+        color_texture: None,
+    }
+}
+
+fn remove_material_specular_extensions(
+    value: &mut serde_json::Value,
+    used: &BTreeSet<String>,
+    unlit_extension_members: &[bool],
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<Vec<MaterialSpecular>, AssetDiagnostic> {
+    let Some(materials) = value
+        .as_object_mut()
+        .and_then(|root| root.get_mut("materials"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(Vec::new());
+    };
+    let default = default_material_specular();
+    let mut retained = Vec::with_capacity(materials.len());
+    for (material_index, material) in materials.iter_mut().enumerate() {
+        let Some(material) = material.as_object_mut() else {
+            retained.push(default);
+            continue;
+        };
+        let Some(mut extensions) = material.remove("extensions") else {
+            retained.push(default);
+            continue;
+        };
+        let Some(extensions) = extensions.as_object_mut() else {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.materials.extensions",
+                None,
+            ));
+        };
+        let specular_glossiness_member =
+            extensions.contains_key(KHR_MATERIALS_PBR_SPECULAR_GLOSSINESS);
+        let specular = extensions
+            .remove(KHR_MATERIALS_SPECULAR)
+            .map(|payload| {
+                decode_material_specular(
+                    payload,
+                    used,
+                    unlit_extension_members.get(material_index).copied() == Some(true)
+                        || specular_glossiness_member,
+                    unsupported,
+                )
+            })
+            .transpose()?
+            .unwrap_or(default);
+        if !extensions.is_empty() {
+            material.insert(
+                "extensions".to_owned(),
+                serde_json::Value::Object(core::mem::take(extensions)),
+            );
+        }
+        retained.push(specular);
+    }
+    Ok(retained)
+}
+
+fn decode_material_specular(
+    mut value: serde_json::Value,
+    used: &BTreeSet<String>,
+    forbidden_coexistence: bool,
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<MaterialSpecular, AssetDiagnostic> {
+    const LOCATION: &str = "glb.json.materials.extensions.KHR_materials_specular";
+    if !used.contains(KHR_MATERIALS_SPECULAR) {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    }
+    let Some(payload) = value.as_object_mut() else {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    };
+    let default = default_material_specular();
+    let factor = payload
+        .remove("specularFactor")
+        .map(|value| {
+            serde_json::from_value::<f32>(value)
+                .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None))
+                .and_then(|value| {
+                    UnitF32::new(value)
+                        .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None))
+                })
+        })
+        .transpose()?
+        .unwrap_or(default.factor);
+    let color_factor = remove_specular_color_factor(payload, default.color_factor, LOCATION)?;
+    let texture = remove_pending_specular_texture_info(
+        payload,
+        "specularTexture",
+        used,
+        unsupported,
+        "glb.json.materials.extensions.KHR_materials_specular.specularTexture",
+    )?;
+    let color_texture = remove_pending_specular_texture_info(
+        payload,
+        "specularColorTexture",
+        used,
+        unsupported,
+        "glb.json.materials.extensions.KHR_materials_specular.specularColorTexture",
+    )?;
+    if forbidden_coexistence {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    }
+    if !payload.is_empty() {
+        let mut remainder = serde_json::Value::Object(core::mem::take(payload));
+        remove_nested_extensions(&mut remainder, used, unsupported)?;
+        unsupported.get_or_insert_with(|| {
+            diagnostic(AssetDiagnosticCode::UnsupportedExtension, LOCATION, None)
+        });
+    }
+    Ok(MaterialSpecular {
+        factor,
+        color_factor,
+        texture,
+        color_texture,
+    })
+}
+
+fn remove_specular_color_factor(
+    payload: &mut serde_json::Map<String, serde_json::Value>,
+    default: [NonNegativeF32; 3],
+    location: &'static str,
+) -> Result<[NonNegativeF32; 3], AssetDiagnostic> {
+    let Some(value) = payload.remove("specularColorFactor") else {
+        return Ok(default);
+    };
+    let values = serde_json::from_value::<[f32; 3]>(value)
+        .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, location, None))?;
+    let mut retained = default;
+    for (target, value) in retained.iter_mut().zip(values) {
+        *target = NonNegativeF32::new(value)
+            .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, location, None))?;
+    }
+    Ok(retained)
+}
+
+fn remove_pending_specular_texture_info(
+    payload: &mut serde_json::Map<String, serde_json::Value>,
+    field: &str,
+    used: &BTreeSet<String>,
+    unsupported: &mut Option<AssetDiagnostic>,
+    location: &'static str,
+) -> Result<Option<PendingTextureInfo>, AssetDiagnostic> {
+    let Some(mut value) = payload.remove(field) else {
+        return Ok(None);
+    };
+    let transform =
+        remove_texture_transform_from_info(Some(&mut value), used, unsupported, location)?;
+    let Some(info) = value.as_object_mut() else {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, location, None));
+    };
+    let index = info
+        .remove("index")
+        .ok_or_else(|| diagnostic(AssetDiagnosticCode::InvalidJson, location, None))
+        .and_then(|value| {
+            serde_json::from_value::<u32>(value)
+                .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, location, None))
+        })?;
+    let texture_coordinate_set = info
+        .remove("texCoord")
+        .map(|value| {
+            serde_json::from_value::<u32>(value)
+                .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, location, None))
+        })
+        .transpose()?
+        .unwrap_or(0);
+    if !info.is_empty() {
+        let mut remainder = serde_json::Value::Object(core::mem::take(info));
+        remove_nested_extensions(&mut remainder, used, unsupported)?;
+    }
+    unsupported.get_or_insert_with(|| {
+        diagnostic(AssetDiagnosticCode::UnsupportedExtension, location, None)
+    });
+    Ok(Some(PendingTextureInfo {
+        index,
+        texture_coordinate_set: transform
+            .and_then(|value| value.texture_coordinate_set)
+            .unwrap_or(texture_coordinate_set),
+    }))
+}
+
 fn remove_material_texture_transform_extensions(
     value: &mut serde_json::Value,
     used: &BTreeSet<String>,
@@ -846,8 +1062,15 @@ fn validate_root(
     validate_sampler_resources(root)?;
     validate_root_header(root, binary, limits)?;
     validate_material_values(root)?;
+    validate_specular_texture_references(root, extensions)?;
     let alpha_unsupported = validate_alpha_coverage(root)?;
-    let textures = decode_textures(root, binary, limits, &extensions.texture_transforms)?;
+    let textures = decode_textures(
+        root,
+        binary,
+        limits,
+        &extensions.texture_transforms,
+        &extensions.material_specular,
+    )?;
     let mut decoded_bytes = textures.byte_len;
     let mut meshes = Vec::with_capacity(root.meshes.len());
     for (mesh_index, mesh) in root.meshes.iter().enumerate() {
@@ -922,6 +1145,29 @@ fn validate_root(
         normal_texture: textures.normal,
         byte_len: decoded_bytes,
     })
+}
+
+fn validate_specular_texture_references(
+    root: &Root,
+    extensions: &ExtensionPreflight,
+) -> Result<(), AssetDiagnostic> {
+    for (material_index, specular) in extensions.material_specular.iter().enumerate() {
+        for texture in [specular.texture, specular.color_texture]
+            .into_iter()
+            .flatten()
+        {
+            get(
+                &root.textures,
+                texture.index,
+                "glb.json.materials.extensions.KHR_materials_specular.texture.index",
+            )
+            .map_err(|mut error| {
+                error.index = Some(stable_index(material_index));
+                error
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn validate_alpha_coverage(root: &Root) -> Result<Option<AssetDiagnostic>, AssetDiagnostic> {
@@ -1123,6 +1369,7 @@ fn decode_textures(
     binary: &[u8],
     limits: AssetLimits,
     texture_transforms: &[MaterialTextureTransforms],
+    material_specular: &[MaterialSpecular],
 ) -> Result<DecodedTextures, AssetDiagnostic> {
     let resources = validate_texture_resources(root, binary, limits)?;
     let mut unsupported = resources.unsupported;
@@ -1138,7 +1385,13 @@ fn decode_textures(
         metallic_roughness_index,
         normal_index,
     ];
-    if role_indices.iter().all(Option::is_none) {
+    let pending_specular_indices = material_specular
+        .iter()
+        .flat_map(|specular| [specular.texture, specular.color_texture])
+        .flatten()
+        .map(|info| info.index)
+        .collect::<BTreeSet<_>>();
+    if role_indices.iter().all(Option::is_none) && pending_specular_indices.is_empty() {
         if root.textures.is_empty() && root.images.is_empty() {
             return Ok(DecodedTextures {
                 base_color: None,
@@ -1157,7 +1410,11 @@ fn decode_textures(
         );
     }
     validate_texture_coordinates(root, texture_transforms, &mut unsupported);
-    let referenced_textures: BTreeSet<_> = role_indices.into_iter().flatten().collect();
+    let referenced_textures: BTreeSet<_> = role_indices
+        .into_iter()
+        .flatten()
+        .chain(pending_specular_indices)
+        .collect();
     if referenced_textures.len() != root.textures.len() {
         remember_unsupported(
             &mut unsupported,
@@ -2010,8 +2267,8 @@ fn validate_transformed_texture_coordinates(
     Ok(())
 }
 
-fn validate_selected_texture_coordinates(
-    selected: [Option<u32>; 4],
+fn validate_selected_texture_coordinates<const N: usize>(
+    selected: [Option<u32>; N],
     available_set_count: usize,
     mesh_index: u32,
 ) -> Result<(), AssetDiagnostic> {
@@ -2044,6 +2301,20 @@ fn validate_material_texture_coordinate_sets(
         .unwrap_or_default();
     validate_selected_texture_coordinates(
         material_texture_coordinate_sets(root, primitive.material, transforms),
+        available_set_count,
+        mesh_index,
+    )?;
+    let specular = primitive
+        .material
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| extensions.material_specular.get(index));
+    validate_selected_texture_coordinates(
+        specular.map_or([None, None], |value| {
+            [
+                value.texture.map(|info| info.texture_coordinate_set),
+                value.color_texture.map(|info| info.texture_coordinate_set),
+            ]
+        }),
         available_set_count,
         mesh_index,
     )
@@ -3797,6 +4068,11 @@ fn decode_material(
         .and_then(|index| extensions.material_optics.get(index))
         .copied()
         .unwrap_or_else(|| material_optics(1.5).expect("the default IOR is valid"));
+    let specular = material_index
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| extensions.material_specular.get(index))
+        .copied()
+        .unwrap_or_else(default_material_specular);
     let material = AssetMaterial::new(
         color,
         material_scalar(metallic_value)?,
@@ -3804,7 +4080,8 @@ fn decode_material(
     )
     .with_emissive(emissive)
     .with_emissive_strength(emissive_strength)
-    .with_ior(optics.ior, optics.dielectric_f0);
+    .with_ior(optics.ior, optics.dielectric_f0)
+    .with_specular(specular.factor, specular.color_factor);
     let material = apply_unlit(material_index, &extensions.unlit_materials, material);
     let material = apply_double_sided(root, material_index, material);
     let material = apply_alpha_coverage(root, material_index, material)?;

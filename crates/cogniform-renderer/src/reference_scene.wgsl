@@ -29,6 +29,7 @@ struct DrawUniform {
     emissive_uv_row_0: vec4<f32>,
     emissive_uv_row_1: vec4<f32>,
     optical: vec4<f32>,
+    specular: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -82,9 +83,14 @@ fn transform_uv(uv: vec2<f32>, row_0: vec4<f32>, row_1: vec4<f32>) -> vec2<f32> 
     return vec2(dot(row_0.xyz, homogeneous), dot(row_1.xyz, homogeneous));
 }
 
-fn fresnel_schlick(view_half: f32, reflectance_at_normal: vec3<f32>) -> vec3<f32> {
+fn fresnel_schlick_range(
+    view_half: f32,
+    reflectance_at_normal: vec3<f32>,
+    reflectance_at_grazing: vec3<f32>,
+) -> vec3<f32> {
     let grazing = pow(1.0 - clamp(view_half, 0.0, 1.0), 5.0);
-    return reflectance_at_normal + (vec3(1.0) - reflectance_at_normal) * grazing;
+    return reflectance_at_normal
+        + (reflectance_at_grazing - reflectance_at_normal) * grazing;
 }
 
 fn distribution_ggx(normal_half: f32, roughness: f32) -> f32 {
@@ -110,14 +116,42 @@ fn direct_material_response(
     metallic: f32,
     roughness: f32,
     dielectric_f0: f32,
+    specular_color_factor: vec3<f32>,
+    specular_factor: f32,
 ) -> vec3<f32> {
     let normal_light = clamp(dot(world_normal, surface_to_light), 0.0, 1.0);
     if normal_light <= 0.0 {
         return vec3(0.0);
     }
 
-    let normal_reflectance = mix(vec3(dielectric_f0), base_color, vec3(metallic));
+    let default_specular = specular_factor == 1.0
+        && all(specular_color_factor == vec3(1.0));
+    let configured_dielectric_normal_reflectance = min(
+        vec3(dielectric_f0) * specular_color_factor,
+        vec3(1.0),
+    ) * specular_factor;
+    let dielectric_normal_reflectance = select(
+        configured_dielectric_normal_reflectance,
+        vec3(dielectric_f0),
+        default_specular,
+    );
+    let normal_reflectance = mix(
+        dielectric_normal_reflectance,
+        base_color,
+        vec3(metallic),
+    );
+    let configured_grazing_reflectance = mix(
+        vec3(specular_factor),
+        vec3(1.0),
+        vec3(metallic),
+    );
+    let grazing_reflectance = select(
+        configured_grazing_reflectance,
+        vec3(1.0),
+        default_specular,
+    );
     var fresnel = normal_reflectance;
+    var dielectric_fresnel = dielectric_normal_reflectance;
     var specular = vec3(0.0);
 
     if has_view {
@@ -130,7 +164,16 @@ fn direct_material_response(
                 let surface_to_half = half_vector * inverse_half_length;
                 let normal_half = clamp(dot(world_normal, surface_to_half), 0.0, 1.0);
                 let view_half = clamp(dot(surface_to_view, surface_to_half), 0.0, 1.0);
-                fresnel = fresnel_schlick(view_half, normal_reflectance);
+                fresnel = fresnel_schlick_range(
+                    view_half,
+                    normal_reflectance,
+                    grazing_reflectance,
+                );
+                dielectric_fresnel = fresnel_schlick_range(
+                    view_half,
+                    dielectric_normal_reflectance,
+                    vec3(specular_factor),
+                );
                 let distribution = distribution_ggx(normal_half, roughness);
                 let geometry = geometry_schlick_ggx(normal_view, roughness)
                     * geometry_schlick_ggx(normal_light, roughness);
@@ -140,7 +183,17 @@ fn direct_material_response(
         }
     }
 
-    let diffuse_weight = (vec3(1.0) - fresnel) * (1.0 - metallic);
+    let dielectric_energy = max(
+        max(dielectric_fresnel.r, dielectric_fresnel.g),
+        dielectric_fresnel.b,
+    );
+    let specular_diffuse_weight = vec3(1.0 - dielectric_energy) * (1.0 - metallic);
+    let compatibility_diffuse_weight = (vec3(1.0) - fresnel) * (1.0 - metallic);
+    let diffuse_weight = select(
+        specular_diffuse_weight,
+        compatibility_diffuse_weight,
+        default_specular,
+    );
     let diffuse = diffuse_weight * base_color / PI;
     return (diffuse + specular) * normal_light;
 }
@@ -316,6 +369,8 @@ fn fs_main(
                 metallic,
                 roughness,
                 draw.optical.x,
+                draw.specular.xyz,
+                draw.specular.w,
             );
             let contribution = min(
                 response * min(
@@ -347,6 +402,8 @@ fn fs_main(
                         metallic,
                         roughness,
                         draw.optical.x,
+                        draw.specular.xyz,
+                        draw.specular.w,
                     );
                     let contribution = min(
                         response * light.color_intensity.rgb * attenuated_intensity,

@@ -90,6 +90,14 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   value while omission, scene materials, built-ins, fallbacks, proxies, and
   metallic-one output remain compatible. One `[F0,0,0,0]` row preserves the
   exact 624-byte prefix in a fixed 640-byte uniform without resource growth;
+- ratified `KHR_materials_specular` numeric strength and RGB color factors
+  through strict declarations, exact neutral defaults, finite unit strength,
+  finite non-negative unbounded color, forbidden unlit and legacy specular-
+  glossiness coexistence, and fully validated-but-unsupported texture
+  authority. Imported dielectric Fresnel composes color, strength, and IOR
+  while metallic-one output remains independent. One appended factor row
+  preserves the exact 640-byte prefix in a fixed 656-byte uniform without
+  adding a texture role, binding, sampler, pipeline, or dependency;
 - optional core glTF `OPAQUE` and `MASK` alpha coverage, with strict finite
   non-negative cutoff handling, multiplied factor/texture alpha, exact cutoff
   equality, pre-output discard across color/depth/identity/normal, opaque

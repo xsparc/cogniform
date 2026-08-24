@@ -341,6 +341,14 @@ first-party uniform row. Refraction, transmission, image-based lighting, and
 new texture roles remain outside the slice and cannot introduce transitive
 runtime or supply-chain authority.
 
+CF073 changes no Cargo manifest, lock entry, vendored byte, feature, build
+script, unsafe/native boundary, workflow, or runtime dependency edge. Strict
+`KHR_materials_specular` numeric and deferred-texture preflight reuses existing
+JSON, finite-value, texture-resource, PNG, and coordinate validation. BRDF
+composition and the appended private uniform row use first-party code only.
+The texture members remain unsupported and add no image role, binding,
+sampler, pipeline, decoder, network, or supply-chain authority.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

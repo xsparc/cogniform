@@ -426,6 +426,8 @@ pub struct AssetMaterial {
     emissive_strength: f32,
     ior: f32,
     dielectric_f0: f32,
+    specular_factor: f32,
+    specular_color_factor: [f32; 3],
     texture_roles: u8,
     texture_coordinate_sets: u8,
     texture_samplers: [AssetSampler; 4],
@@ -458,6 +460,8 @@ impl AssetMaterial {
             emissive_strength: 1.0,
             ior: 1.5,
             dielectric_f0: 0.04,
+            specular_factor: 1.0,
+            specular_color_factor: [1.0; 3],
             texture_roles: 0,
             texture_coordinate_sets: 0,
             texture_samplers: [AssetSampler::LINEAR_REPEAT; 4],
@@ -525,6 +529,20 @@ impl AssetMaterial {
     pub(crate) const fn with_ior(mut self, ior: FiniteF32, dielectric_f0: UnitF32) -> Self {
         self.ior = ior.get();
         self.dielectric_f0 = dielectric_f0.get();
+        self
+    }
+
+    pub(crate) const fn with_specular(
+        mut self,
+        factor: UnitF32,
+        color_factor: [NonNegativeF32; 3],
+    ) -> Self {
+        self.specular_factor = factor.get();
+        self.specular_color_factor = [
+            color_factor[0].get(),
+            color_factor[1].get(),
+            color_factor[2].get(),
+        ];
         self
     }
 
@@ -600,6 +618,18 @@ impl AssetMaterial {
     #[must_use]
     pub const fn dielectric_f0(self) -> f32 {
         self.dielectric_f0
+    }
+
+    /// Returns the finite unit dielectric specular-strength multiplier.
+    #[must_use]
+    pub const fn specular_factor(self) -> f32 {
+        self.specular_factor
+    }
+
+    /// Returns the finite non-negative dielectric specular-color multiplier.
+    #[must_use]
+    pub const fn specular_color_factor(self) -> [f32; 3] {
+        self.specular_color_factor
     }
 
     /// Returns whether this material samples the asset's shared base-color texture.

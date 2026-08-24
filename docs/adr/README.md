@@ -76,5 +76,6 @@ earlier one and links the history.
 | [0069](0069-bounded-secondary-texture-coordinates.md) | Accepted | Retain one bounded secondary glTF coordinate set with exact per-role selection |
 | [0071](0071-bounded-gltf-emissive-strength.md) | Accepted | Scale imported glTF surface emission with one bounded ratified strength |
 | [0072](0072-bounded-gltf-material-ior.md) | Accepted | Apply one bounded ratified material IOR to imported direct dielectric response |
+| [0073](0073-bounded-gltf-material-specular-factors.md) | Accepted | Apply bounded ratified material specular strength and color factors to imported direct response |
 
 New records use four sections: context, decision, consequences, and status.

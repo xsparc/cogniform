@@ -439,8 +439,9 @@ translation and capped inverse-square attenuation
 coincidence and finite-input f32 squared-distance overflow contribute zero.
 Active definitions use one bounded direct Cook-Torrance metallic-roughness
 response: GGX distribution, Schlick-GGX Smith visibility, Schlick Fresnel,
-default dielectric normal reflectance `0.04` with an optional bounded imported
-IOR-derived replacement, a metallic base-color reflectance blend,
+default dielectric normal reflectance `0.04` with optional bounded imported
+IOR-derived and ratified specular-strength/color composition, a metallic base-
+color reflectance blend,
 and an energy-conserving Lambert diffuse split. Perceptual roughness has a
 `0.05` distribution floor for numerical safety. Contributions and their sum
 are clamped in linear color space, and alpha remains unchanged.
@@ -494,9 +495,17 @@ f64 `((ior - 1) / (ior + 1))^2` derivation before a finite unit-f32 result is
 retained. IOR may not coexist with unlit or
 `KHR_materials_pbrSpecularGlossiness`, and its supported field is validated
 before wider-payload classification. Only selected imported metallic-
-roughness direct lighting uses retained IOR. Omission, explicit scene
-materials, built-ins, missing-asset fallbacks, and proxies preserve exact
-dielectric `0.04`. The
+roughness direct lighting uses retained IOR. A material may additionally select
+ratified `KHR_materials_specular`. Its optional finite unit strength defaults
+to one and its exact three-channel finite non-negative color defaults to
+`[1,1,1]` without an upper bound. It may not coexist with unlit or legacy
+specular-glossiness. Dielectric F0 clamps `IOR_F0 * color` per channel before
+strength multiplication, f90 equals strength, RGB Schlick drives the lobe, and
+the maximum dielectric Fresnel channel controls scalar diffuse energy. Well-
+formed specular texture infos are fully reference-validated but remain
+unsupported/proxy candidates until a separate texture slice. Omission,
+explicit scene materials, built-ins, missing-asset fallbacks, and proxies
+preserve exact dielectric `0.04` and neutral specular factors. The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source or bounded generated-tangent TBN perturbs only direct-light response.
@@ -518,15 +527,16 @@ dielectric parameters `metallic = 0`, `roughness = 0.8`. Cross-surface
 emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
-fixed 640-byte per-draw uniform preserves the complete prior 624-byte prefix,
+fixed 656-byte per-draw uniform preserves the complete prior 640-byte prefix,
 which in turn preserves the 496-byte and 480-byte model,
 view-projection, material-color, identity, directional, point-light,
 camera-position, and metallic/roughness/normal-scale/material-flag prefix and
 uses the prior camera-position padding lane for emissive strength, appends one
 emissive slot whose padding lane carries the imported mask cutoff,
 then appends eight padded affine rows in base-color, normal,
-metallic-roughness, and emissive order. One final optical row carries
-dielectric F0 followed by three exact-zero padding lanes.
+metallic-roughness, and emissive order. One optical row carries dielectric F0
+followed by three exact-zero padding lanes, and one final row carries specular
+color RGB followed by strength.
 A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU

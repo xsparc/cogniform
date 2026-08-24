@@ -217,6 +217,14 @@ and validated Windows/Vulkan profile on 2026-08-24. No vertex, texture,
 sampler, bind-group, pipeline, lifecycle, logical, observation, protocol,
 persistence, dependency, package, version, workflow, tag, release-asset, or
 release action changed.
+CF073 strict ratified material-specular declaration, finite factor and color
+retention, unsupported-texture validation before proxy, exact 640-byte uniform-
+prefix preservation in a 656-byte layout, RGB Schlick response, scalar
+dielectric diffuse conservation, and normal-map/emission composition were
+collected on the CPU and validated Windows/Vulkan profile on 2026-08-25. No
+vertex, texture-role, sampler, bind-group, pipeline, lifecycle, logical,
+observation, protocol, persistence, dependency, package, version, workflow,
+tag, release-asset, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -1535,6 +1543,81 @@ rehydration with unchanged revision, logical hash, and replay:
 
 ```text
 WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture emissive_strength_scales_factor_and_texture_before_unit_clamp --all-features --locked --offline -- --ignored --exact --nocapture
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture normal_texture_changes_direct_lighting_not_geometric_normal_observation --all-features --locked --offline -- --ignored --exact --nocapture
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-engine --test service_assets exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work --all-features --locked --offline -- --ignored --exact --nocapture
+```
+
+`cargo deny check advisories bans licenses sources` could not start because
+Windows Application Control blocked the installed binary with OS error 4551.
+No manifest, lockfile, vendored source, workflow, dependency, or deny-policy
+input changed from the accepted CF066 audit. No protocol, world, persistence,
+package, version, tag, release-asset, deployment, or publication action
+changed.
+
+### CF073 bounded glTF material specular factors
+
+CF073 recognizes ratified `KHR_materials_specular` through the existing strict
+unique declaration contract. Its optional `specularFactor` is a finite unit
+f32 with an exact one default; `specularColorFactor` is exactly three finite
+non-negative f32 values with exact one defaults and no artificial upper bound.
+Malformed, undeclared, non-finite, negative, over-strength, unlit-coexisting,
+and specular-glossiness-coexisting values reject without proxy. Both supported
+fields validate before wider-payload classification for selected and unused
+material records.
+
+The two extension texture members remain intentionally unsupported through
+CF073. Their objects, indexes, nested texture-transform declarations, root
+texture/sampler/image resources, PNG payloads, and effective coordinates are
+still fully type-checked before a well-formed import returns the existing
+unsupported-extension proxy. Texture adoption is deferred to CF074, so this
+slice does not add a fifth texture role or change renderer topology.
+
+Imported dielectric direct lighting computes the colored normal-incidence
+term as `min(CF072_F0 * color, 1) * factor`, uses the factor as the grazing
+term, and applies RGB Schlick Fresnel. Its scalar diffuse complement follows
+the maximum dielectric Fresnel channel; metallic response remains authored by
+the existing base-color/metallic path and independent of the specular
+extension. Exact defaults preserve CF072 output, while factor zero produces
+pure dielectric diffuse. One appended `[color.rgb,factor]` row preserves the
+complete prior 640 bytes and produces an exact 656-byte uniform. The 72-byte
+vertex, nine-entry bind group, four texture roles, 36-sampler table, two
+pipelines, and every observation/lifecycle contract are unchanged.
+
+The following portable checks passed on 2026-08-25:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+uv run --no-cache --no-project python tests/security/test_public_repo_check.py
+uv run --no-cache --no-project python tests/release/test_package_policy.py
+uv run --no-cache --no-project python tests/release/test_source_candidate.py
+uv run --no-cache --no-project python scripts/check_public_repo.py --all
+uv run --no-cache --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-cache --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- Cargo.toml Cargo.lock deny.toml rust-toolchain.toml .github/workflows vendor
+git diff --check
+```
+
+The changed-public-Markdown check resolved 309 relative targets across the
+modified Markdown files; the new ADR contains only external links. The focused
+optimized Vulkan comparison passed and pins omitted and explicit defaults,
+zero strength, colored and above-one color factors, IOR composition,
+metallic-one independence, normal-map plus emissive-strength composition,
+scene override, directional/point combination, and exact no-light behavior.
+It also preserves alpha, depth, stable identity, and geometric-normal outputs:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture material_specular_factors_compose_without_changing_renderer_topology --all-features --locked --offline -- --ignored --exact --nocapture
+```
+
+Three unchanged optimized Vulkan regressions passed 1/1 each, protecting IOR,
+normal-texture shading, and service exact-hash rehydration with unchanged
+revision, logical hash, and replay:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture material_ior_changes_only_imported_dielectric_direct_response --all-features --locked --offline -- --ignored --exact --nocapture
 WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture normal_texture_changes_direct_lighting_not_geometric_normal_observation --all-features --locked --offline -- --ignored --exact --nocapture
 WGPU_BACKEND=vulkan cargo test --release -p cogniform-engine --test service_assets exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work --all-features --locked --offline -- --ignored --exact --nocapture
 ```

@@ -1697,6 +1697,34 @@ pipelines, emission, observations, lifecycle, revision, logical hash, replay,
 protocol, persistence, dependency, workflow, release, and deployment
 boundaries. See [ADR 0072](../adr/0072-bounded-gltf-material-ior.md).
 
+### PR 73 - CF073: Bounded glTF material specular factors
+
+Outcome: supported imported metallic-roughness materials apply ratified
+numeric dielectric specular strength and color factors through the existing
+direct BRDF without gaining a texture role or renderer resource.
+
+Gate: recognize `KHR_materials_specular` through the strict unique declaration
+contract. Require an object payload. Retain optional finite unit
+`specularFactor` with exact default one and exactly-three finite non-negative
+`specularColorFactor` channels with exact default `[1,1,1]` and no upper bound.
+Reject malformed, undeclared, non-finite, negative, above-one strength, unlit-
+combined, or legacy specular-glossiness-combined members without proxy. Apply
+the checks to selected and unused materials before wider classification.
+
+Fully validate optional `specularTexture` and `specularColorTexture` infos,
+declared texture transforms, root texture/sampler/source/image/PNG resources,
+and selected coordinates, then classify well-formed texture authority as
+unsupported/proxy because the two roles remain deferred. Compute dielectric F0
+as `min(CF072_IOR_F0 * color, 1) * strength`, f90 as strength, RGB Schlick for
+the direct lobe, and maximum-channel dielectric Fresnel for scalar diffuse
+energy. Preserve exact CF072 behavior at default factors and metallic-one
+independence. Append `[color.r,color.g,color.b,strength]` after the preserved
+640-byte prefix for a fixed 656-byte uniform. Preserve the 72-byte vertex,
+nine-entry bind group, four texture roles, 36 samplers, two pipelines,
+observations, lifecycle, revision, logical hash, replay, protocol, persistence,
+dependency, workflow, release, and deployment boundaries. See
+[ADR 0073](../adr/0073-bounded-gltf-material-specular-factors.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1709,7 +1737,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
-  -> CF072
+  -> CF072 -> CF073
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2062,6 +2090,16 @@ Validation expands with capability:
   row in a 640-byte uniform; unchanged vertex, texture, sampler, bind-group,
   pipeline, lifecycle, observation, revision, logical-hash, replay, and
   rehydration behavior.
+- CF073: strict ratified specular declaration, exact default/unit strength and
+  exact three-channel finite non-negative unbounded color, malformed/unused/
+  coexistence/wider-payload precedence, complete deferred texture-info/root-
+  resource/selected-coordinate validation before proxy classification,
+  IOR/color/strength clamp order, f90, RGB Schlick, scalar maximum-channel
+  dielectric energy, zero-strength diffuse, default identity, and metallic-one
+  independence; exact 640-byte prefix plus appended factor row in a 656-byte
+  uniform; directional, point, combined-light, scene-override, emission, and
+  observation evidence; unchanged vertex, texture, sampler, bind-group,
+  pipeline, lifecycle, revision, logical-hash, replay, and rehydration behavior.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

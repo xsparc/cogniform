@@ -1746,6 +1746,261 @@ fn ior_defaults_valid_values_and_f64_derived_f0_are_retained_exactly() {
 }
 
 #[test]
+fn specular_defaults_strength_and_unbounded_color_are_retained_exactly() {
+    let cases = [
+        ("", r"[{}]", 0, 1.0_f32, [1.0_f32; 3]),
+        (
+            r#""extensionsUsed":["KHR_materials_specular"],"#,
+            r#"[{"extensions":{"KHR_materials_specular":{}}}]"#,
+            0,
+            1.0,
+            [1.0; 3],
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_specular"],"extensionsRequired":["KHR_materials_specular"],"#,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularFactor":0.0,"specularColorFactor":[0.0,1.5,3.4028235e38]}}}]"#,
+            0,
+            0.0,
+            [0.0, 1.5, f32::MAX],
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_specular"],"#,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularFactor":0.25,"specularColorFactor":[2.0,3.0,4.0]}}},{}]"#,
+            1,
+            1.0,
+            [1.0; 3],
+        ),
+    ];
+    let mut decoded_bytes = Vec::new();
+    let mut upload_bytes = Vec::new();
+    for (root_fields, materials, selected, expected_factor, expected_color) in cases {
+        let bytes = triangle_glb_with_extension_materials(root_fields, materials, selected);
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        decoded_bytes.push(store.record(hash).unwrap().decoded_bytes);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert_eq!(
+            upload.material().specular_factor().to_bits(),
+            expected_factor.to_bits()
+        );
+        assert_eq!(
+            upload.material().specular_color_factor().map(f32::to_bits),
+            expected_color.map(f32::to_bits)
+        );
+        upload_bytes.push(upload.byte_len());
+    }
+    assert!(decoded_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+    assert!(upload_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn malformed_or_forbidden_specular_never_receives_a_proxy() {
+    let declared = r#""extensionsUsed":["KHR_materials_specular"],"#;
+    let cases = [
+        ("", r#"[{"extensions":{"KHR_materials_specular":{}}}]"#),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":null}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":[]}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularFactor":null}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularFactor":"1"}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularFactor":-0.1}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularFactor":1.1}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularFactor":1e100}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularColorFactor":null}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularColorFactor":[1.0,1.0]}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularColorFactor":[1.0,-0.1,1.0]}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularTexture":null}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularTexture":{}}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularTexture":{"index":"0"}}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularColorTexture":{"index":0,"texCoord":-1}}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_specular"],"#,
+            r#"[{"extensions":{"KHR_materials_specular":{"specularTexture":{"index":0,"extensions":{"KHR_texture_transform":{}}}}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{}, {"extensions":{"KHR_materials_specular":{"specularFactor":2.0}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_specular","KHR_materials_unlit"],"#,
+            r#"[{"extensions":{"KHR_materials_specular":{},"KHR_materials_unlit":{}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_specular","KHR_materials_pbrSpecularGlossiness"],"#,
+            r#"[{"extensions":{"KHR_materials_specular":{},"KHR_materials_pbrSpecularGlossiness":{}}}]"#,
+        ),
+    ];
+    for (root_fields, materials) in cases {
+        let bytes = triangle_glb_with_extension_materials(root_fields, materials, 0);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+}
+
+#[test]
+fn specular_textures_proxy_only_after_info_resource_and_coordinate_validation() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[255, 255, 255, 255],
+    );
+    let cases = [
+        (
+            r#", "extensionsUsed":["KHR_materials_specular"]"#,
+            r#"{"index":0}"#,
+        ),
+        (
+            r#", "extensionsUsed":["KHR_materials_specular"]"#,
+            r#"{"index":0,"texCoord":0}"#,
+        ),
+        (
+            r#", "extensionsUsed":["KHR_materials_specular","KHR_texture_transform"]"#,
+            r#"{"index":0,"texCoord":1,"extensions":{"KHR_texture_transform":{"texCoord":0,"offset":[0.25,-0.5],"scale":[0.5,2.0]}}}"#,
+        ),
+    ];
+    for (declarations, texture_info) in cases {
+        let material = format!(
+            r#""extensions":{{"KHR_materials_specular":{{"specularTexture":{texture_info},"specularColorTexture":{texture_info}}}}}"#
+        );
+        let bytes = material_textured_triangle_glb(
+            &png,
+            &material,
+            r#"{"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"}"#,
+            declarations,
+            true,
+        );
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::UnsupportedExtension
+        );
+    }
+
+    let dangling = triangle_glb_with_extension_materials(
+        r#""extensionsUsed":["KHR_materials_specular"],"#,
+        r#"[{"extensions":{"KHR_materials_specular":{"specularTexture":{"index":0}}}}]"#,
+        0,
+    );
+    let (store, hash) = process_with_proxy_policy(dangling);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidBufferRange
+    );
+
+    let unused_dangling = triangle_glb_with_extension_materials(
+        r#""extensionsUsed":["KHR_materials_specular"],"#,
+        r#"[{"extensions":{"KHR_materials_specular":{"specularColorTexture":{"index":0}}}},{}]"#,
+        1,
+    );
+    let (store, hash) = process_with_proxy_policy(unused_dangling);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidBufferRange
+    );
+
+    let missing_coordinates = material_textured_triangle_glb(
+        &png,
+        r#""extensions":{"KHR_materials_specular":{"specularColorTexture":{"index":0,"texCoord":0}}}"#,
+        r#"{"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        r#", "extensionsUsed":["KHR_materials_specular"]"#,
+        false,
+    );
+    let (store, hash) = process_with_proxy_policy(missing_coordinates);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidTexcoord
+    );
+}
+
+#[test]
+fn wider_specular_payload_proxies_only_after_numeric_fields_validate() {
+    let declared = r#""extensionsUsed":["KHR_materials_specular"],"#;
+    let wider = triangle_glb_with_extension_materials(
+        declared,
+        r#"[{"extensions":{"KHR_materials_specular":{"specularFactor":0.5,"specularColorFactor":[2.0,0.5,1.0],"future":true}}}]"#,
+        0,
+    );
+    let (store, hash) = process_with_proxy_policy(wider);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedExtension
+    );
+
+    let invalid = triangle_glb_with_extension_materials(
+        declared,
+        r#"[{"extensions":{"KHR_materials_specular":{"specularFactor":2.0,"future":true}}}]"#,
+        0,
+    );
+    let (store, hash) = process_with_proxy_policy(invalid);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+}
+
+#[test]
 fn malformed_or_forbidden_ior_never_receives_a_proxy() {
     let declared = r#""extensionsUsed":["KHR_materials_ior"],"#;
     let cases = [
