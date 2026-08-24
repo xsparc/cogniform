@@ -131,7 +131,8 @@ core emissive RGB when the entity has no scene material. Its interpolated
 primary vertex RGBA multiplies the base-color factor and optional sampled base
 RGBA before either lit or unlit response and before OPAQUE/MASK handling.
 Emissive texture RGB
-is sRGB-decoded, multiplied by the numeric emissive factor, added after either
+is sRGB-decoded, multiplied by the numeric emissive factor and optional finite
+non-negative ratified emissive strength, added after either
 response, and clamped to one while preserving material alpha; texture alpha is
 ignored and emission affects only that surface. An explicit `MaterialComponent` overrides all imported
 values together and selects zero imported emission. Built-in and material-free asset fallbacks retain
@@ -177,7 +178,9 @@ The existing bind group carries one fixed 624-byte per-draw uniform. The prior
 496-byte prefix remains exact; its first 480 bytes remain model,
 view-projection, color, compact ID, directional
 count and four directional slots, point count and four point slots, camera
-position, and metallic/roughness plus normal scale/material flags. One appended
+position, and metallic/roughness plus normal scale/material flags. The prior
+padding lane in the camera-position `vec4` carries imported emissive strength
+with an exact one default. One appended
 `vec4` contains core emissive RGB and uses its prior padding lane for the mask
 cutoff. Eight appended `vec4` rows carry base-color, normal,
 metallic-roughness, and emissive affine transforms. Material flag bit 4 selects
@@ -191,7 +194,7 @@ metallic-roughness, and emissive sampling. Inactive roles bind the
 linear/repeat table entry. This adds
 no light buffer, runtime-selected pipeline creation, runtime
 configuration, or observation payload. Point range/cutoff/radius, spot lights,
-emissive strength, cross-surface emission, ambient or image-based
+cross-surface emission, ambient or image-based
 lighting, shadows, additional material texture roles,
 HDR, tone mapping, and configurable gamma conversion are unsupported.
 
@@ -263,6 +266,7 @@ cargo test --release -p cogniform-renderer --test asset_fixture --locked --offli
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outputs
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_adds_after_direct_light_and_scene_override_disables_it
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_strength_scales_factor_and_texture_before_unit_clamp
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
@@ -318,6 +322,9 @@ The emissive-texture contract additionally proves sRGB RGB-factor
 multiplication, alpha irrelevance, white and zero-factor neutrality,
 directional/point composition, scene-override suppression, exact four-role GPU
 accounting, eviction/rehydration, and unchanged non-color observations.
+The emissive-strength contract proves the exact one default, zero neutrality,
+factor-only and textured scaling before the unit clamp, saturation, explicit
+scene-material suppression, and unchanged non-color observations.
 The alpha-coverage contract distinguishes factor, texture, and product alpha;
 pins equality, cutoff-above-one, OPAQUE, and scene-override behavior; verifies
 discard across every attachment; and preserves revision, logical hash, and
@@ -387,6 +394,9 @@ See [ADR 0057](../adr/0057-bounded-glb-emissive-factors.md) for the core
 emissive-factor, uniform-append, clamp, and authority rules.
 See [ADR 0058](../adr/0058-bounded-glb-emissive-textures.md) for emissive
 texture decode, role-residency, sRGB sampling, fallback, and override rules.
+See [ADR 0071](../adr/0071-bounded-gltf-emissive-strength.md) for strict
+ratified extension admission, scalar retention, padding-lane reuse, and clamp
+rules.
 See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for strict sampler
 decode, fixed-table indexing, independent role bindings, and the one-mip
 fallback.

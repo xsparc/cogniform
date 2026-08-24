@@ -985,6 +985,72 @@ fn emissive_factor_adds_after_unlit_or_direct_response_and_preserves_other_outpu
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn emissive_strength_scales_factor_and_texture_before_unit_clamp() {
+    let center = (WIDTH / 2, HEIGHT / 2);
+    let baseline = material_frame(emissive_strength_fixture(None, Some(8.0)), None, false);
+    let omitted = material_frame(
+        emissive_strength_fixture(Some([0.1, 0.2, 0.3]), None),
+        None,
+        false,
+    );
+    let explicit_one = material_frame(
+        emissive_strength_fixture(Some([0.1, 0.2, 0.3]), Some(1.0)),
+        None,
+        false,
+    );
+    assert_frames_equal(&explicit_one, &omitted);
+
+    let zero = material_frame(
+        emissive_strength_fixture(Some([0.1, 0.2, 0.3]), Some(0.0)),
+        None,
+        false,
+    );
+    assert_frames_equal(&zero, &baseline);
+
+    let doubled = material_frame(
+        emissive_strength_fixture(Some([0.1, 0.2, 0.3]), Some(2.0)),
+        None,
+        false,
+    );
+    assert_emissive_addition(&doubled, &baseline, center, [51, 102, 153]);
+    assert_non_color_observations_equal(&doubled, &baseline);
+
+    let saturated = material_frame(
+        emissive_strength_fixture(Some([0.1, 0.2, 0.3]), Some(16.0)),
+        None,
+        false,
+    );
+    assert_color_near(&saturated, center, [255; 4]);
+    assert_non_color_observations_equal(&saturated, &baseline);
+
+    let textured_baseline = material_frame(
+        emissive_texture_strength_fixture(Some([128, 64, 32, 7]), [0.0; 3], Some(2.0)),
+        None,
+        false,
+    );
+    let textured = material_frame(
+        emissive_texture_strength_fixture(Some([128, 64, 32, 7]), [0.5, 0.25, 0.75], Some(2.0)),
+        None,
+        false,
+    );
+    assert_emissive_addition(&textured, &textured_baseline, center, [55, 7, 6]);
+    assert_non_color_observations_equal(&textured, &textured_baseline);
+
+    let overridden = material_frame(
+        emissive_strength_fixture(Some([0.1, 0.2, 0.3]), Some(2.0)),
+        Some(LightKind::Directional),
+        true,
+    );
+    let overridden_baseline = material_frame(
+        emissive_strength_fixture(None, Some(2.0)),
+        Some(LightKind::Directional),
+        true,
+    );
+    assert_frames_equal(&overridden, &overridden_baseline);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback() {
     let center = (WIDTH / 2, HEIGHT / 2);
     let baseline = material_frame(emissive_texture_fixture(None, [0.0; 3]), None, false);
@@ -2223,6 +2289,10 @@ fn metallic_fixture() -> Vec<u8> {
 }
 
 fn emissive_fixture(emissive: Option<[f32; 3]>) -> Vec<u8> {
+    emissive_strength_fixture(emissive, None)
+}
+
+fn emissive_strength_fixture(emissive: Option<[f32; 3]>, strength: Option<f32>) -> Vec<u8> {
     let mut binary = Vec::with_capacity(36);
     for position in [
         [-0.75_f32, -0.75, 0.0],
@@ -2239,8 +2309,16 @@ fn emissive_fixture(emissive: Option<[f32; 3]>) -> Vec<u8> {
             value[0], value[1], value[2]
         )
     });
+    let root_extension = strength.map_or_else(String::new, |_| {
+        r#", "extensionsUsed":["KHR_materials_emissive_strength"]"#.to_owned()
+    });
+    let material_extension = strength.map_or_else(String::new, |value| {
+        format!(
+            r#", "extensions":{{"KHR_materials_emissive_strength":{{"emissiveStrength":{value}}}}}"#
+        )
+    });
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.2,0.1,0.05,0.4],"metallicFactor":0.0,"roughnessFactor":0.5}}{emissive_field}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}}{root_extension},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.2,0.1,0.05,0.4],"metallicFactor":0.0,"roughnessFactor":0.5}}{emissive_field}{material_extension}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":0,"mode":4}}]}}]}}"#,
     );
     glb_with_json(&json, &binary)
 }
@@ -2501,6 +2579,14 @@ fn alpha_fixture_with_double_sided(
 }
 
 fn emissive_texture_fixture(texel: Option<[u8; 4]>, factor: [f32; 3]) -> Vec<u8> {
+    emissive_texture_strength_fixture(texel, factor, None)
+}
+
+fn emissive_texture_strength_fixture(
+    texel: Option<[u8; 4]>,
+    factor: [f32; 3],
+    strength: Option<f32>,
+) -> Vec<u8> {
     let mut binary = Vec::new();
     for position in [
         [-0.75_f32, -0.75, 0.0],
@@ -2533,8 +2619,16 @@ fn emissive_texture_fixture(texel: Option<[u8; 4]>, factor: [f32; 3]) -> Vec<u8>
             )
         },
     );
+    let root_extension = strength.map_or_else(String::new, |_| {
+        r#", "extensionsUsed":["KHR_materials_emissive_strength"]"#.to_owned()
+    });
+    let material_extension = strength.map_or_else(String::new, |value| {
+        format!(
+            r#", "extensions":{{"KHR_materials_emissive_strength":{{"emissiveStrength":{value}}}}}"#
+        )
+    });
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}}{image_view}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.2,0.1,0.05,0.4],"metallicFactor":0.0,"roughnessFactor":0.5}},"emissiveFactor":[{red},{green},{blue}]{emissive_role}}}]{resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}}{root_extension},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}}{image_view}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.2,0.1,0.05,0.4],"metallicFactor":0.0,"roughnessFactor":0.5}},"emissiveFactor":[{red},{green},{blue}]{emissive_role}{material_extension}}}]{resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         red = factor[0],
         green = factor[1],

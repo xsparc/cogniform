@@ -1,7 +1,7 @@
 use core::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
 
-use cogniform_protocol::{ContentHash, FiniteF32, UnitF32};
+use cogniform_protocol::{ContentHash, FiniteF32, NonNegativeF32, UnitF32};
 
 /// Fixed admission and decoded-output limits for one asset store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -423,6 +423,7 @@ pub struct AssetMaterial {
     metallic: UnitF32,
     roughness: UnitF32,
     emissive: [f32; 3],
+    emissive_strength: f32,
     texture_roles: u8,
     texture_coordinate_sets: u8,
     texture_samplers: [AssetSampler; 4],
@@ -452,6 +453,7 @@ impl AssetMaterial {
             metallic,
             roughness,
             emissive: [0.0; 3],
+            emissive_strength: 1.0,
             texture_roles: 0,
             texture_coordinate_sets: 0,
             texture_samplers: [AssetSampler::LINEAR_REPEAT; 4],
@@ -511,6 +513,11 @@ impl AssetMaterial {
         self
     }
 
+    pub(crate) const fn with_emissive_strength(mut self, strength: NonNegativeF32) -> Self {
+        self.emissive_strength = strength.get();
+        self
+    }
+
     pub(crate) fn with_normal_texture(
         mut self,
         scale: FiniteF32,
@@ -565,6 +572,12 @@ impl AssetMaterial {
     #[must_use]
     pub const fn emissive(self) -> [f32; 3] {
         self.emissive
+    }
+
+    /// Returns the finite non-negative multiplier for imported emission.
+    #[must_use]
+    pub const fn emissive_strength(self) -> f32 {
+        self.emissive_strength
     }
 
     /// Returns whether this material samples the asset's shared base-color texture.

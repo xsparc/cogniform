@@ -201,6 +201,14 @@ Windows/Vulkan profile on 2026-08-23. The correction changes only two test
 expectations and validation/release evidence; no runtime, public API, ABI,
 dependency, package, version, workflow, tag, release-asset, or release action
 changed.
+CF071 strict ratified emissive-strength declaration, finite non-negative
+retention, wider-payload and unlit-exclusion precedence, exact camera-padding
+uniform reuse, factor/texture scaling before the existing unit clamp, scene-
+material suppression, and non-color preservation were collected on the CPU
+and validated Windows/Vulkan profile on 2026-08-24. No vertex, texture,
+sampler, bind-group, pipeline, uniform-size, lifecycle, logical, observation,
+protocol, persistence, dependency, package, version, workflow, tag, release-
+asset, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -210,7 +218,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, canonical scenario, and bounded 64x64/480x270 stdio child tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core emission, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, independent four-role core wrapping/filtering and one-mip fallback, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core and strength-scaled emission, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, independent four-role core wrapping/filtering and one-mip fallback, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -1402,6 +1410,67 @@ Windows Application Control blocked the installed binary before startup with
 OS error 4551. No dependency or deny-policy input changed from the accepted
 CF066 audit. No protocol, world, persistence, package, version, workflow, tag,
 release-asset, deployment, or publication action changed.
+
+### CF071 bounded glTF emissive strength
+
+CF071 recognizes ratified `KHR_materials_emissive_strength` through the
+existing strict unique declaration contract. Its optional per-material
+`emissiveStrength` is a finite non-negative f32 with an exact one default.
+Malformed, undeclared, negative, overflowed, and unlit-coexisting members
+reject without proxy. Supported-field validation precedes well-formed wider-
+payload classification, including unused material records. The immutable
+material retains the scalar without decoded-byte accounting growth.
+
+Imported metallic-roughness draws multiply the existing linear emissive factor
+and sRGB-decoded emissive texture RGB by strength before the existing final
+unit clamp. An explicit scene material remains non-emissive. Strength occupies
+the prior camera-position padding lane, so the uniform remains exactly 624
+bytes and the 72-byte vertex, nine-entry bind group, four texture roles,
+36-sampler table, and two pipelines are unchanged.
+
+The following portable checks passed on 2026-08-24:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+uv run --no-cache --no-project python tests/security/test_public_repo_check.py
+uv run --no-cache --no-project python tests/release/test_package_policy.py
+uv run --no-cache --no-project python tests/release/test_source_candidate.py
+uv run --no-cache --no-project python scripts/check_public_repo.py --all
+uv run --no-cache --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-cache --no-project python scripts/agent_workflow.py validate
+git diff --check
+```
+
+The changed-public-Markdown check resolved all 301 relative targets across 13
+files. One optimized Vulkan command passed all four emissive regressions,
+covering default and explicit strength, zero neutrality, below-clamp factor and
+texture multiplication, saturation, directional/point composition, scene
+override, alpha, depth, stable identity, and geometric-normal observations:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture emissive_ --all-features --locked --offline -- --ignored --nocapture
+```
+
+Three unchanged optimized Vulkan regressions also passed 1/1 each, protecting
+independent four-role affine sampling, secondary-coordinate selection, and
+exact-hash recovery/rehydration with unchanged revision, logical hash, and
+replay:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture texture_transforms_apply_independently_to_all_four_roles --all-features --locked --offline -- --ignored --exact --nocapture
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture secondary_texture_coordinate_selectors_and_transforms_are_independent_per_role --all-features --locked --offline -- --ignored --exact --nocapture
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-engine --test service_assets exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work --all-features --locked --offline -- --ignored --exact --nocapture
+```
+
+`cargo deny check advisories bans licenses sources` could not start because
+Windows Application Control blocked the installed binary with OS error 4551.
+No manifest, lockfile, vendored source, workflow, dependency, or deny-policy
+input changed from the accepted CF066 audit. No protocol, world, persistence,
+package, version, tag, release-asset, deployment, or publication action
+changed.
 
 ## Deterministic source-candidate commands
 

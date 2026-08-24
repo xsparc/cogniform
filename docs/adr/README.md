@@ -74,5 +74,6 @@ earlier one and links the history.
 | [0066](0066-bounded-gltf-texture-transforms.md) | Accepted | Apply bounded independent affine transforms to the four existing glTF texture roles |
 | [0068](0068-bounded-gltf-mesh-quantization.md) | Accepted | Decode bounded core and ratified integer vertex attributes into the fixed 64-byte ABI |
 | [0069](0069-bounded-secondary-texture-coordinates.md) | Accepted | Retain one bounded secondary glTF coordinate set with exact per-role selection |
+| [0071](0071-bounded-gltf-emissive-strength.md) | Accepted | Scale imported glTF surface emission with one bounded ratified strength |
 
 New records use four sections: context, decision, consequences, and status.

@@ -362,6 +362,7 @@ impl HeadlessRenderer {
                 metallic: 0.0,
                 roughness: 0.8,
                 emissive: [0.0; 3],
+                emissive_strength: 1.0,
                 normal_scale: 1.0,
                 imported_texture_roles: ImportedTextureRoles::NONE,
                 imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -1796,7 +1797,7 @@ fn append_material_uniform(bytes: &mut Vec<u8>, draw: &PreparedDraw) {
     for value in draw.camera_position {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
-    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+    bytes.extend_from_slice(&draw.emissive_strength.to_le_bytes());
     bytes.extend_from_slice(&draw.metallic.to_le_bytes());
     bytes.extend_from_slice(&draw.roughness.to_le_bytes());
     bytes.extend_from_slice(&draw.normal_scale.to_le_bytes());
@@ -2129,7 +2130,7 @@ mod tests {
     }
 
     #[test]
-    fn draw_uniform_has_exact_fixed_light_layout_and_zero_padding() {
+    fn draw_uniform_has_exact_fixed_light_layout_and_emissive_strength_lane() {
         let draw = PreparedDraw {
             geometry: PreparedGeometry::Plane,
             model: [1.0; 16],
@@ -2139,6 +2140,7 @@ mod tests {
             metallic: 0.9,
             roughness: 0.2,
             emissive: [0.1, 0.3, 0.7],
+            emissive_strength: 2.5,
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NONE,
             imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -2204,7 +2206,7 @@ mod tests {
         assert!(words[88..112].iter().all(|word| *word == [0; 4]));
         assert_eq!(
             (112..116).map(float).collect::<Vec<_>>(),
-            vec![6.0, 7.0, 8.0, 0.0]
+            vec![6.0, 7.0, 8.0, 2.5]
         );
         assert_eq!(
             (116..120).map(float).collect::<Vec<_>>(),
@@ -2231,6 +2233,7 @@ mod tests {
             metallic: 0.0,
             roughness: 1.0,
             emissive: [0.0; 3],
+            emissive_strength: 1.0,
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NORMAL_ONLY,
             imported_texture_transforms: ImportedTextureTransforms::IDENTITY,

@@ -306,7 +306,7 @@ impl RenderScene {
                     model[8 + row] *= dimensions[2];
                 }
             }
-            let (color, metallic, roughness, emissive) =
+            let (color, metallic, roughness, emissive, emissive_strength) =
                 material_values(entity.material(), imported_material);
             draws.push(
                 PreparedDraw {
@@ -318,6 +318,7 @@ impl RenderScene {
                     metallic,
                     roughness,
                     emissive,
+                    emissive_strength,
                     normal_scale: 1.0,
                     imported_texture_roles: ImportedTextureRoles::NONE,
                     imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -443,6 +444,7 @@ pub(crate) struct PreparedDraw {
     pub(crate) metallic: f32,
     pub(crate) roughness: f32,
     pub(crate) emissive: [f32; 3],
+    pub(crate) emissive_strength: f32,
     pub(crate) normal_scale: f32,
     pub(crate) imported_texture_roles: ImportedTextureRoles,
     pub(crate) imported_texture_transforms: ImportedTextureTransforms,
@@ -775,7 +777,7 @@ fn color_values(color: ColorRgba) -> [f32; 4] {
 fn material_values(
     scene_material: Option<MaterialComponent>,
     imported_material: Option<AssetMaterial>,
-) -> ([f32; 4], f32, f32, [f32; 3]) {
+) -> ([f32; 4], f32, f32, [f32; 3], f32) {
     scene_material.map_or_else(
         || {
             imported_material.map_or(
@@ -784,6 +786,7 @@ fn material_values(
                     DEFAULT_METALLIC,
                     DEFAULT_ROUGHNESS,
                     [0.0; 3],
+                    1.0,
                 ),
                 |material| {
                     (
@@ -791,6 +794,7 @@ fn material_values(
                         material.metallic().get(),
                         material.roughness().get(),
                         material.emissive(),
+                        material.emissive_strength(),
                     )
                 },
             )
@@ -801,6 +805,7 @@ fn material_values(
                 material.metallic.get(),
                 material.roughness.get(),
                 [0.0; 3],
+                1.0,
             )
         },
     )
@@ -1229,6 +1234,7 @@ mod tests {
         );
         assert_eq!(draw.metallic.to_bits(), 0.0_f32.to_bits());
         assert_eq!(draw.roughness.to_bits(), 0.5_f32.to_bits());
+        assert_eq!(draw.emissive_strength.to_bits(), 1.0_f32.to_bits());
     }
 
     #[test]
@@ -1643,6 +1649,7 @@ mod tests {
         assert_eq!(fallback.draws[0].metallic.to_bits(), 0.0_f32.to_bits());
         assert_eq!(fallback.draws[0].roughness.to_bits(), 0.8_f32.to_bits());
         assert_eq!(fallback.draws[0].emissive.map(f32::to_bits), [0; 3]);
+        assert_exact_f32(fallback.draws[0].emissive_strength, 1.0);
         assert!(!fallback.draws[0].imported_vertex_color);
         assert_exact_f32(fallback.draws[0].model[0], 2.0);
         assert_exact_f32(fallback.draws[0].model[5], 3.0);
@@ -1692,6 +1699,7 @@ mod tests {
         assert_exact_f32(prepared.draws[0].metallic, 0.75);
         assert_exact_f32(prepared.draws[0].roughness, 0.25);
         assert_eq!(prepared.draws[0].emissive.map(f32::to_bits), [0; 3]);
+        assert_exact_f32(prepared.draws[0].emissive_strength, 1.0);
         assert_eq!(
             prepared.draws[0].imported_alpha_coverage,
             ImportedAlphaCoverage::Opaque
@@ -1738,6 +1746,7 @@ mod tests {
         assert_exact_f32(overridden.draws[0].metallic, 0.0);
         assert_exact_f32(overridden.draws[0].roughness, 0.9);
         assert_eq!(overridden.draws[0].emissive.map(f32::to_bits), [0; 3]);
+        assert_exact_f32(overridden.draws[0].emissive_strength, 1.0);
         assert_eq!(
             overridden.draws[0].imported_alpha_coverage,
             ImportedAlphaCoverage::Disabled

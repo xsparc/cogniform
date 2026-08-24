@@ -1648,6 +1648,30 @@ observations, revision, logical hash, replay, protocol, persistence, dependency,
 workflow, release, and deployment boundaries. See
 [ADR 0069](../adr/0069-bounded-secondary-texture-coordinates.md).
 
+### PR 71 - CF071: Bounded glTF emissive strength
+
+Outcome: supported imported glTF materials can scale their existing surface-
+only emission through the ratified `KHR_materials_emissive_strength`
+extension without gaining HDR, light, or resource authority.
+
+Gate: recognize the extension through the strict unique declaration contract.
+Require an object payload; retain optional finite non-negative f32
+`emissiveStrength` with an exact one default; reject malformed, undeclared,
+negative, overflowed, or coexisting exact `KHR_materials_unlit` members without
+proxy substitution. Validate the supported field before a well-formed wider
+payload may receive unsupported/proxy classification, including unused
+materials.
+
+Multiply the existing linear emissive factor and sRGB-decoded emissive texture
+RGB by strength before the existing final unit clamp. Keep zero/default,
+material-free, unlit exclusion, and explicit scene-material override behavior
+deterministic. Carry strength in the prior camera-position padding lane while
+preserving the exact 624-byte uniform, 72-byte vertex, nine-entry bind group,
+four texture roles, 36 samplers, and two pipelines. Preserve observations,
+lifecycle, revision, logical hash, replay, protocol, persistence, dependency,
+workflow, release, and deployment boundaries. See
+[ADR 0071](../adr/0071-bounded-gltf-emissive-strength.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1659,7 +1683,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF038 -> CF039 -> CF040 -> CF041 -> CF042 -> CF043 -> CF044 -> CF045
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
-  -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069
+  -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -1997,6 +2021,12 @@ Validation expands with capability:
   624-byte uniform; zero built-in/proxy/omission fallback; unchanged bind group,
   sampler table, pipeline count, lifecycle, observation, revision, logical
   hash, replay, and exact-hash rehydration behavior.
+- CF071: strict ratified emissive-strength declaration, finite non-negative
+  default/override retention, malformed/unlit/wider-payload precedence,
+  factor/texture multiplication before the existing unit clamp, exact scene-
+  material suppression, reuse of the camera-position padding lane in the
+  unchanged 624-byte uniform, and unchanged resource, lifecycle, observation,
+  revision, logical-hash, replay, and rehydration behavior.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
