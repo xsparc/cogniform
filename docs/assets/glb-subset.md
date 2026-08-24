@@ -35,7 +35,9 @@ consecutive secondary coordinate set, applies exact per-role selector and
 extension-override semantics, and expands the fixed decoded/GPU vertex ABI to
 72 bytes while preserving the accepted 64-byte prefix. CF071 admits ratified
 finite non-negative emissive strength, multiplies it into the existing
-surface-only emissive path, and preserves all renderer resource counts.
+surface-only emissive path, and preserves all renderer resource counts. CF072
+admits ratified material IOR, derives one bounded dielectric Fresnel base, and
+appends one private uniform row without adding a resource.
 
 ## Ownership and lifecycle
 
@@ -200,7 +202,8 @@ The importer accepts only the following baseline:
 - optional non-normalized scalar u16 or u32 indices;
 - optional non-empty unique-string `extensionsUsed` and
   `extensionsRequired`, with required a subset of used. The recognized names
-  are `KHR_materials_emissive_strength`, `KHR_materials_unlit`,
+  are `KHR_materials_emissive_strength`, `KHR_materials_ior`,
+  `KHR_materials_unlit`,
   `KHR_mesh_quantization`, and `KHR_texture_transform`; every actual supported
   or unknown extension member
   must be declared in used. An extension-only vertex encoding additionally
@@ -232,7 +235,14 @@ The importer accepts only the following baseline:
   one. Null, scalar, array, undeclared, negative, or overflowed values are
   invalid. A well-formed wider property is unsupported only after the supported
   field validates. The extension must not coexist with any declared unlit
-  member on one material.
+  member on one material; and
+- optional material `extensions.KHR_materials_ior` object with optional finite
+  f32 `ior`, defaulting exactly to `1.5`. Exact zero and values at least one
+  are valid; zero-to-one, negative, non-finite, null, scalar, array, or
+  undeclared values are invalid. The supported field validates before a wider
+  payload becomes unsupported. The extension must not coexist with any
+  declared `KHR_materials_unlit` or
+  `KHR_materials_pbrSpecularGlossiness` member on the same material.
 
 A valid texture-transform coordinate override above one or otherwise
 well-formed wider transform property remains an unsupported-extension/proxy
@@ -312,8 +322,10 @@ or out-of-range emissive factors, malformed alpha mode/cutoff values,
 malformed `doubleSided` or sampler values and indices, missing required mesh-
 quantization declarations, invalid accessor bounds or source-attribute counts,
 malformed, duplicate, empty, or inconsistent extension declarations, malformed
-or undeclared emissive-strength, unlit, or texture-transform markers, negative
+or undeclared emissive-strength, IOR, unlit, or texture-transform markers, negative
 or non-finite emissive strength, prohibited strength/unlit coexistence, non-finite
+or zero-to-one IOR, prohibited IOR/unlit or IOR/specular-glossiness
+coexistence,
 texture-transform inputs or expanded results,
 malformed emissive texture roles or missing
 coordinates, malformed or truncated PNG data, invalid
@@ -334,7 +346,8 @@ same hardware back-cull rule as another imported false material.
 
 At draw time, a resident mesh uses its imported base-color factor, optional
 base-color, metallic-roughness, tangent-space normal, and emissive textures,
-metallic, roughness, normal scale, emissive RGB, and emissive strength unless
+metallic, roughness, normal scale, emissive RGB, emissive strength, and
+IOR-derived dielectric F0 unless
 the world entity has an explicit material,
 which overrides the imported material as a whole and uses renderer-owned
 white base-color/emissive, factor-one metallic-roughness, and neutral-normal
@@ -375,8 +388,15 @@ unchanged; it neither creates a light nor illuminates another entity. If the ref
 an explicit primitive component is used as the author-chosen fallback. Without
 that component, preparation fails with `AssetUnavailable`.
 
+For imported metallic-roughness direct lighting, retained IOR zero selects
+dielectric F0 one and every other admitted value selects finite unit f64-
+derived `((ior - 1) / (ior + 1))^2`. Omission, explicit scene materials,
+built-ins, fallbacks, and proxies select exact `0.04`. Metallic-one output is
+independent of IOR. IOR does not refract, transmit, or illuminate light.
+
 `AssetMaterial` carries validated numeric metadata including core emissive
-RGB, finite non-negative emissive strength, typed alpha coverage/cutoff, the retained double-sided value, typed
+RGB, finite non-negative emissive strength, authored finite IOR and finite unit
+dielectric F0, typed alpha coverage/cutoff, the retained double-sided value, typed
 shading model, immutable texture-role, sampler, and per-role affine-transform facts, and finite
 normal scale. `AssetUploadJob` exposes that material and
 separate optional base-color, metallic-roughness, normal, and emissive `AssetTexture`
@@ -442,7 +462,7 @@ resident-byte limits.
 
 The default offline suite verifies exact hash admission, every truncated prefix
 of the checked fixture, malformed extension declarations, proxy eligibility,
-material and emissive retention/defaults/range/type/texture/strength failures, normal and tangent
+material, emissive, and IOR retention/default/range/type/derivation failures, normal and tangent
 normalization/count/value/range/handedness failures, primary/secondary-coordinate exact and indexed
 retention, zero defaults, full-source validation, embedded RGB/RGBA expansion,
 PNG truncation and malformed/reference/format/resource-limit failures,
@@ -473,6 +493,7 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_adds_after_direct_light_and_scene_override_disables_it
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_strength_scales_factor_and_texture_before_unit_clamp
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact material_ior_changes_only_imported_dielectric_direct_response
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
@@ -524,7 +545,10 @@ irrelevance, white/zero neutrality, both direct-light paths, override
 suppression, and unchanged non-color output. The emissive-strength comparison
 proves exact one default, zero neutrality, factor-only and textured scaling
 before the existing unit clamp, saturation, scene-override suppression, and
-unchanged non-color output. The four-role test proves exact
+unchanged non-color output. The IOR comparison proves exact omitted/default
+compatibility, zero/one/water/diamond response under directional and point
+lights, metallic-one invariance, scene override, normal-map and emissive-
+strength composition, and unchanged non-color output. The four-role test proves exact
 distinct-image CPU bytes plus GPU upload, eviction, and
 rehydration counts. The alpha checks prove factor-only, texture-only, and
 multiplied coverage, exact cutoff equality, cutoff-above-one discard, OPAQUE
@@ -584,3 +608,7 @@ coordinate rule, uniform append, and compatibility boundary.
 See [ADR 0069](../adr/0069-bounded-secondary-texture-coordinates.md) for
 canonical coordinate-set sequencing, selector precedence, the appended
 72-byte ABI, and the unchanged renderer-resource boundary.
+
+See [ADR 0072](../adr/0072-bounded-gltf-material-ior.md) for the strict value
+domain and exclusions, deterministic F0 derivation, appended optical row, and
+direct-light compatibility boundary.

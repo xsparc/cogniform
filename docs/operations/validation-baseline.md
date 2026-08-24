@@ -209,6 +209,14 @@ and validated Windows/Vulkan profile on 2026-08-24. No vertex, texture,
 sampler, bind-group, pipeline, uniform-size, lifecycle, logical, observation,
 protocol, persistence, dependency, package, version, workflow, tag, release-
 asset, or release action changed.
+CF072 strict ratified IOR declaration, exact zero-or-at-least-one retention,
+f64-derived finite unit F0, unlit/specular-glossiness exclusion and wider-
+payload precedence, exact 624-byte uniform-prefix preservation in a 640-byte
+layout, and directional/point dielectric response were collected on the CPU
+and validated Windows/Vulkan profile on 2026-08-24. No vertex, texture,
+sampler, bind-group, pipeline, lifecycle, logical, observation, protocol,
+persistence, dependency, package, version, workflow, tag, release-asset, or
+release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -218,7 +226,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, canonical scenario, and bounded 64x64/480x270 stdio child tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness response, bounded surface-only core and strength-scaled emission, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, independent four-role core wrapping/filtering and one-mip fallback, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness and IOR-derived dielectric response, bounded surface-only core and strength-scaled emission, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive plus linear normal and packed metallic-roughness texture response, independent four-role core wrapping/filtering and one-mip fallback, four-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -1462,6 +1470,72 @@ replay:
 ```text
 WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture texture_transforms_apply_independently_to_all_four_roles --all-features --locked --offline -- --ignored --exact --nocapture
 WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture secondary_texture_coordinate_selectors_and_transforms_are_independent_per_role --all-features --locked --offline -- --ignored --exact --nocapture
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-engine --test service_assets exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work --all-features --locked --offline -- --ignored --exact --nocapture
+```
+
+`cargo deny check advisories bans licenses sources` could not start because
+Windows Application Control blocked the installed binary with OS error 4551.
+No manifest, lockfile, vendored source, workflow, dependency, or deny-policy
+input changed from the accepted CF066 audit. No protocol, world, persistence,
+package, version, tag, release-asset, deployment, or publication action
+changed.
+
+### CF072 bounded glTF material IOR
+
+CF072 recognizes ratified `KHR_materials_ior` through the existing strict
+unique declaration contract. Its optional per-material `ior` is a finite f32
+with an exact `1.5` default and must be exact zero or at least one. Malformed,
+undeclared, negative, zero-to-one, overflowed, unlit-coexisting, and
+specular-glossiness-coexisting members reject without proxy. Supported-field
+validation precedes well-formed wider-payload classification for selected and
+unused material records.
+
+The immutable material retains authored IOR and derives finite unit dielectric
+F0 with f64 intermediates: exact one for IOR zero and
+`((ior - 1) / (ior + 1))^2` otherwise. Imported metallic-roughness direct
+lighting uses that base while omission, explicit scene materials, built-ins,
+fallbacks, and proxies keep exact `0.04`. One appended `[F0,0,0,0]` row
+preserves the complete prior 624 bytes and produces an exact 640-byte uniform.
+The 72-byte vertex, nine-entry bind group, four texture roles, 36-sampler
+table, two pipelines, and every observation/lifecycle contract are unchanged.
+
+The following portable checks passed on 2026-08-24:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+uv run --no-cache --no-project python tests/security/test_public_repo_check.py
+uv run --no-cache --no-project python tests/release/test_package_policy.py
+uv run --no-cache --no-project python tests/release/test_source_candidate.py
+uv run --no-cache --no-project python scripts/check_public_repo.py --all
+uv run --no-cache --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-cache --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- ':(glob)**/Cargo.toml' Cargo.lock deny.toml vendor rust-toolchain.toml .github/workflows
+git diff --check
+```
+
+The changed-public-Markdown check resolved 305 relative targets across the 13
+modified Markdown files; the new ADR contains only external links. The focused
+optimized Vulkan comparison passed and pins tolerant center colors for omitted
+and explicit default, zero, one, water-like, and diamond-like IOR under both
+directional and point sources. It also proves no-light compatibility,
+metallic-one invariance, scene override, normal-map and emissive-strength
+composition, exact-hash rehydration in the fixture lifecycle, and unchanged
+alpha, depth, stable identity, and geometric-normal observations:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture material_ior_changes_only_imported_dielectric_direct_response --all-features --locked --offline -- --ignored --exact --nocapture
+```
+
+Three unchanged optimized Vulkan regressions also passed 1/1 each, protecting
+emissive-strength scaling, normal-texture shading, and service exact-hash
+rehydration with unchanged revision, logical hash, and replay:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture emissive_strength_scales_factor_and_texture_before_unit_clamp --all-features --locked --offline -- --ignored --exact --nocapture
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture normal_texture_changes_direct_lighting_not_geometric_normal_observation --all-features --locked --offline -- --ignored --exact --nocapture
 WGPU_BACKEND=vulkan cargo test --release -p cogniform-engine --test service_assets exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work --all-features --locked --offline -- --ignored --exact --nocapture
 ```
 

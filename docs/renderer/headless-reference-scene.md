@@ -122,7 +122,12 @@ toward their kind's capacity but are omitted from the active arrays.
 Active directional and point lights evaluate GGX distribution, Schlick-GGX
 Smith visibility, Schlick Fresnel, and an energy-conserving Lambert diffuse
 split. Normal-incidence reflectance blends dielectric `0.04` toward base color
-by metallic, and perceptual roughness is floored to `0.05` only in the GGX
+by metallic by default. A selected imported metallic-roughness material may
+replace that dielectric base with finite unit F0 derived from ratified
+`KHR_materials_ior`: exact one for authored IOR zero and f64
+`((ior - 1) / (ior + 1))^2` for values at least one. Omission, explicit scene
+materials, built-ins, missing-asset fallbacks, and proxies retain exact `0.04`,
+and metallic one remains independent of IOR. Perceptual roughness is floored to `0.05` only in the GGX
 distribution to avoid a singular highlight. Each contribution and the shared
 sum are clamped in linear RGB; material alpha is preserved. If neither kind is
 active, the shader bypasses that response and preserves exact base RGBA. A
@@ -174,8 +179,8 @@ non-finite value. A fifth definition of either kind, a degenerate active
 directional positive-Z axis, or an active point or selected camera translation
 outside finite GPU f32 returns a typed error before submission.
 
-The existing bind group carries one fixed 624-byte per-draw uniform. The prior
-496-byte prefix remains exact; its first 480 bytes remain model,
+The existing bind group carries one fixed 640-byte per-draw uniform. The prior
+624-byte prefix remains exact; its 496-byte prefix and first 480 bytes remain model,
 view-projection, color, compact ID, directional
 count and four directional slots, point count and four point slots, camera
 position, and metallic/roughness plus normal scale/material flags. The prior
@@ -187,7 +192,8 @@ metallic-roughness, and emissive affine transforms. Material flag bit 4 selects
 imported unlit shading, bit 5 selects imported vertex color, and bits 6 through
 9 select secondary coordinates for base color, emissive, metallic-roughness,
 and normal respectively. The integer range through 1,023 remains exact in the
-existing f32 flag lane. Bindings 1, 3, 4, and 5 select
+existing f32 flag lane. One final optical `vec4` contains dielectric F0 and
+three exact-zero padding lanes. Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 selects base-color sampling and bindings 6, 7, and 8 select normal,
 metallic-roughness, and emissive sampling. Inactive roles bind the
@@ -397,6 +403,9 @@ texture decode, role-residency, sRGB sampling, fallback, and override rules.
 See [ADR 0071](../adr/0071-bounded-gltf-emissive-strength.md) for strict
 ratified extension admission, scalar retention, padding-lane reuse, and clamp
 rules.
+See [ADR 0072](../adr/0072-bounded-gltf-material-ior.md) for strict IOR
+admission, deterministic F0 derivation, the appended optical row, and direct-
+light compatibility.
 See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for strict sampler
 decode, fixed-table indexing, independent role bindings, and the one-mip
 fallback.

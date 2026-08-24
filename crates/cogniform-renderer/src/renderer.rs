@@ -363,6 +363,7 @@ impl HeadlessRenderer {
                 roughness: 0.8,
                 emissive: [0.0; 3],
                 emissive_strength: 1.0,
+                dielectric_f0: 0.04,
                 normal_scale: 1.0,
                 imported_texture_roles: ImportedTextureRoles::NONE,
                 imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -1713,12 +1714,14 @@ fn encode_draw_uniform(
     const FLOATS_PER_POINT_LIGHT: usize = 8;
     const MATERIAL_VIEW_EMISSIVE_FLOATS: usize = 12;
     const TEXTURE_TRANSFORM_FLOATS: usize = 4 * 2 * 4;
+    const OPTICAL_FLOATS: usize = 4;
     const UNIFORM_BYTES: usize = (BASE_FLOATS
         + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT
         + POINT_COUNT_FLOATS
         + MAX_POINT_LIGHTS * FLOATS_PER_POINT_LIGHT
         + MATERIAL_VIEW_EMISSIVE_FLOATS
-        + TEXTURE_TRANSFORM_FLOATS)
+        + TEXTURE_TRANSFORM_FLOATS
+        + OPTICAL_FLOATS)
         * 4;
     debug_assert!(directional_lights.len() <= MAX_DIRECTIONAL_LIGHTS);
     debug_assert!(point_lights.len() <= MAX_POINT_LIGHTS);
@@ -1826,6 +1829,10 @@ fn append_material_uniform(bytes: &mut Vec<u8>, draw: &PreparedDraw) {
             }
         }
     }
+    bytes.extend_from_slice(&draw.dielectric_f0.to_le_bytes());
+    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
 }
 
 fn create_target_texture(
@@ -2130,7 +2137,7 @@ mod tests {
     }
 
     #[test]
-    fn draw_uniform_has_exact_fixed_light_layout_and_emissive_strength_lane() {
+    fn draw_uniform_preserves_prefix_and_appends_exact_optical_row() {
         let draw = PreparedDraw {
             geometry: PreparedGeometry::Plane,
             model: [1.0; 16],
@@ -2141,6 +2148,7 @@ mod tests {
             roughness: 0.2,
             emissive: [0.1, 0.3, 0.7],
             emissive_strength: 2.5,
+            dielectric_f0: 0.25,
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NONE,
             imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -2170,7 +2178,7 @@ mod tests {
         }];
 
         let bytes = encode_draw_uniform(&draw, &lights, &point_lights);
-        assert_eq!(bytes.len(), 624);
+        assert_eq!(bytes.len(), 640);
         let words = bytes
             .chunks_exact(4)
             .map(|word| <[u8; 4]>::try_from(word).unwrap())
@@ -2220,6 +2228,10 @@ mod tests {
             (124..156).map(float).collect::<Vec<_>>(),
             [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0].repeat(4)
         );
+        assert_eq!(
+            (156..160).map(float).collect::<Vec<_>>(),
+            vec![0.25, 0.0, 0.0, 0.0]
+        );
     }
 
     #[test]
@@ -2234,6 +2246,7 @@ mod tests {
             roughness: 1.0,
             emissive: [0.0; 3],
             emissive_strength: 1.0,
+            dielectric_f0: 0.04,
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NORMAL_ONLY,
             imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -2246,7 +2259,7 @@ mod tests {
         };
 
         let bytes = encode_draw_uniform(&draw, &[], &[]);
-        assert_eq!(bytes.len(), 624);
+        assert_eq!(bytes.len(), 640);
         let float_at =
             |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
         assert_eq!(float_at(119).to_bits(), 1_023.0_f32.to_bits());

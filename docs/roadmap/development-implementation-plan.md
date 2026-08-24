@@ -1672,6 +1672,31 @@ lifecycle, revision, logical hash, replay, protocol, persistence, dependency,
 workflow, release, and deployment boundaries. See
 [ADR 0071](../adr/0071-bounded-gltf-emissive-strength.md).
 
+### PR 72 - CF072: Bounded glTF material IOR
+
+Outcome: supported imported metallic-roughness materials replace the fixed
+dielectric Fresnel base with one bounded ratified `KHR_materials_ior` value,
+without gaining refraction, transmission, texture, or resource authority.
+
+Gate: recognize the extension through the strict unique declaration contract.
+Require an object payload and retain optional finite f32 `ior` with exact
+default `1.5`. Accept only exact zero or values at least one. Reject malformed,
+undeclared, negative, zero-to-one, overflowed, unlit-combined, or
+`KHR_materials_pbrSpecularGlossiness`-combined members without proxy
+substitution. Validate selected and unused material records and the supported
+field before wider-payload classification.
+
+Retain authored IOR and derive finite unit dielectric F0 with f64
+intermediates: exact one for IOR zero and `((ior - 1) / (ior + 1))^2`
+otherwise. Replace only the imported direct metallic-roughness BRDF's default
+`0.04`; omission, explicit scene materials, built-ins, fallbacks, proxies, and
+metallic-one response remain compatible. Append one exact `[F0,0,0,0]` row
+after the preserved 624-byte prefix for a fixed 640-byte uniform. Preserve the
+72-byte vertex, nine-entry bind group, four texture roles, 36 samplers, two
+pipelines, emission, observations, lifecycle, revision, logical hash, replay,
+protocol, persistence, dependency, workflow, release, and deployment
+boundaries. See [ADR 0072](../adr/0072-bounded-gltf-material-ior.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1684,6 +1709,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
+  -> CF072
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2027,6 +2053,15 @@ Validation expands with capability:
   material suppression, reuse of the camera-position padding lane in the
   unchanged 624-byte uniform, and unchanged resource, lifecycle, observation,
   revision, logical-hash, replay, and rehydration behavior.
+- CF072: strict ratified IOR declaration, exact zero-or-at-least-one domain,
+  default/authored retention, f64-derived finite unit F0, malformed/unlit/
+  specular-glossiness/wider-payload precedence, and selected/unused-material
+  validation; imported direct dielectric response under directional and point
+  lights; metallic-one and scene-override compatibility; normal-map and
+  emissive-strength composition; exact 624-byte prefix and appended optical
+  row in a 640-byte uniform; unchanged vertex, texture, sampler, bind-group,
+  pipeline, lifecycle, observation, revision, logical-hash, replay, and
+  rehydration behavior.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

@@ -424,6 +424,8 @@ pub struct AssetMaterial {
     roughness: UnitF32,
     emissive: [f32; 3],
     emissive_strength: f32,
+    ior: f32,
+    dielectric_f0: f32,
     texture_roles: u8,
     texture_coordinate_sets: u8,
     texture_samplers: [AssetSampler; 4],
@@ -454,6 +456,8 @@ impl AssetMaterial {
             roughness,
             emissive: [0.0; 3],
             emissive_strength: 1.0,
+            ior: 1.5,
+            dielectric_f0: 0.04,
             texture_roles: 0,
             texture_coordinate_sets: 0,
             texture_samplers: [AssetSampler::LINEAR_REPEAT; 4],
@@ -518,6 +522,12 @@ impl AssetMaterial {
         self
     }
 
+    pub(crate) const fn with_ior(mut self, ior: FiniteF32, dielectric_f0: UnitF32) -> Self {
+        self.ior = ior.get();
+        self.dielectric_f0 = dielectric_f0.get();
+        self
+    }
+
     pub(crate) fn with_normal_texture(
         mut self,
         scale: FiniteF32,
@@ -578,6 +588,18 @@ impl AssetMaterial {
     #[must_use]
     pub const fn emissive_strength(self) -> f32 {
         self.emissive_strength
+    }
+
+    /// Returns the finite authored index of refraction, or the glTF default.
+    #[must_use]
+    pub const fn ior(self) -> f32 {
+        self.ior
+    }
+
+    /// Returns the finite unit dielectric reflectance derived from the IOR.
+    #[must_use]
+    pub const fn dielectric_f0(self) -> f32 {
+        self.dielectric_f0
     }
 
     /// Returns whether this material samples the asset's shared base-color texture.

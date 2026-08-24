@@ -439,7 +439,8 @@ translation and capped inverse-square attenuation
 coincidence and finite-input f32 squared-distance overflow contribute zero.
 Active definitions use one bounded direct Cook-Torrance metallic-roughness
 response: GGX distribution, Schlick-GGX Smith visibility, Schlick Fresnel,
-dielectric normal reflectance `0.04`, a metallic base-color reflectance blend,
+default dielectric normal reflectance `0.04` with an optional bounded imported
+IOR-derived replacement, a metallic base-color reflectance blend,
 and an energy-conserving Lambert diffuse split. Perceptual roughness has a
 `0.05` distribution floor for numerical safety. Contributions and their sum
 are clamped in linear color space, and alpha remains unchanged.
@@ -485,7 +486,17 @@ same material may not also carry the supported
 `KHR_materials_emissive_strength` extension. That extension requires the same
 strict declaration contract, retains optional finite non-negative
 `emissiveStrength` with an exact one default, and validates its supported field
-before a wider payload can become unsupported. The
+before a wider payload can become unsupported. A material may also select
+ratified `KHR_materials_ior` through that declaration contract. Its optional
+finite f32 value defaults to `1.5` and must be exact zero or at least one; zero
+maps to angle-independent dielectric reflectance one, while other values use
+f64 `((ior - 1) / (ior + 1))^2` derivation before a finite unit-f32 result is
+retained. IOR may not coexist with unlit or
+`KHR_materials_pbrSpecularGlossiness`, and its supported field is validated
+before wider-payload classification. Only selected imported metallic-
+roughness direct lighting uses retained IOR. Omission, explicit scene
+materials, built-ins, missing-asset fallbacks, and proxies preserve exact
+dielectric `0.04`. The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source or bounded generated-tangent TBN perturbs only direct-light response.
@@ -507,14 +518,15 @@ dielectric parameters `metallic = 0`, `roughness = 0.8`. Cross-surface
 emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
-fixed 624-byte per-draw uniform preserves the complete prior 496-byte prefix,
-which in turn preserves the 480-byte model,
+fixed 640-byte per-draw uniform preserves the complete prior 624-byte prefix,
+which in turn preserves the 496-byte and 480-byte model,
 view-projection, material-color, identity, directional, point-light,
 camera-position, and metallic/roughness/normal-scale/material-flag prefix and
 uses the prior camera-position padding lane for emissive strength, appends one
 emissive slot whose padding lane carries the imported mask cutoff,
 then appends eight padded affine rows in base-color, normal,
-metallic-roughness, and emissive order.
+metallic-roughness, and emissive order. One final optical row carries
+dielectric F0 followed by three exact-zero padding lanes.
 A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU

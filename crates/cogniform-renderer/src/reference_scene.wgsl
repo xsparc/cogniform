@@ -28,6 +28,7 @@ struct DrawUniform {
     metallic_roughness_uv_row_1: vec4<f32>,
     emissive_uv_row_0: vec4<f32>,
     emissive_uv_row_1: vec4<f32>,
+    optical: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -108,13 +109,14 @@ fn direct_material_response(
     base_color: vec3<f32>,
     metallic: f32,
     roughness: f32,
+    dielectric_f0: f32,
 ) -> vec3<f32> {
     let normal_light = clamp(dot(world_normal, surface_to_light), 0.0, 1.0);
     if normal_light <= 0.0 {
         return vec3(0.0);
     }
 
-    let normal_reflectance = mix(vec3(0.04), base_color, vec3(metallic));
+    let normal_reflectance = mix(vec3(dielectric_f0), base_color, vec3(metallic));
     var fresnel = normal_reflectance;
     var specular = vec3(0.0);
 
@@ -313,6 +315,7 @@ fn fs_main(
                 base_color.rgb,
                 metallic,
                 roughness,
+                draw.optical.x,
             );
             let contribution = min(
                 response * min(
@@ -343,6 +346,7 @@ fn fs_main(
                         base_color.rgb,
                         metallic,
                         roughness,
+                        draw.optical.x,
                     );
                     let contribution = min(
                         response * light.color_intensity.rgb * attenuated_intensity,
