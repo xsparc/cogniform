@@ -430,8 +430,8 @@ pub struct AssetMaterial {
     specular_color_factor: [f32; 3],
     texture_roles: u8,
     texture_coordinate_sets: u8,
-    texture_samplers: [AssetSampler; 4],
-    texture_transforms: [AssetTextureTransform; 4],
+    texture_samplers: [AssetSampler; 6],
+    texture_transforms: [AssetTextureTransform; 6],
     normal_scale: f32,
     alpha_mode: AssetAlphaMode,
     alpha_cutoff: f32,
@@ -444,10 +444,14 @@ impl AssetMaterial {
     const EMISSIVE_TEXTURE: u8 = 1 << 1;
     const METALLIC_ROUGHNESS_TEXTURE: u8 = 1 << 2;
     const NORMAL_TEXTURE: u8 = 1 << 3;
+    const SPECULAR_TEXTURE: u8 = 1 << 4;
+    const SPECULAR_COLOR_TEXTURE: u8 = 1 << 5;
     const BASE_COLOR_SAMPLER: usize = 0;
     const EMISSIVE_SAMPLER: usize = 1;
     const METALLIC_ROUGHNESS_SAMPLER: usize = 2;
     const NORMAL_SAMPLER: usize = 3;
+    const SPECULAR_SAMPLER: usize = 4;
+    const SPECULAR_COLOR_SAMPLER: usize = 5;
 
     /// Creates one validated linear metallic-roughness material with zero emission.
     #[must_use]
@@ -464,8 +468,8 @@ impl AssetMaterial {
             specular_color_factor: [1.0; 3],
             texture_roles: 0,
             texture_coordinate_sets: 0,
-            texture_samplers: [AssetSampler::LINEAR_REPEAT; 4],
-            texture_transforms: [AssetTextureTransform::IDENTITY; 4],
+            texture_samplers: [AssetSampler::LINEAR_REPEAT; 6],
+            texture_transforms: [AssetTextureTransform::IDENTITY; 6],
             normal_scale: 1.0,
             alpha_mode: AssetAlphaMode::Opaque,
             alpha_cutoff: 0.5,
@@ -543,6 +547,34 @@ impl AssetMaterial {
             color_factor[1].get(),
             color_factor[2].get(),
         ];
+        self
+    }
+
+    pub(crate) const fn with_specular_texture(
+        mut self,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
+    ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
+        self.texture_roles |= Self::SPECULAR_TEXTURE;
+        self.texture_coordinate_sets |= texture_coordinate_set * Self::SPECULAR_TEXTURE;
+        self.texture_samplers[Self::SPECULAR_SAMPLER] = sampler;
+        self.texture_transforms[Self::SPECULAR_SAMPLER] = transform;
+        self
+    }
+
+    pub(crate) const fn with_specular_color_texture(
+        mut self,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
+    ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
+        self.texture_roles |= Self::SPECULAR_COLOR_TEXTURE;
+        self.texture_coordinate_sets |= texture_coordinate_set * Self::SPECULAR_COLOR_TEXTURE;
+        self.texture_samplers[Self::SPECULAR_COLOR_SAMPLER] = sampler;
+        self.texture_transforms[Self::SPECULAR_COLOR_SAMPLER] = transform;
         self
     }
 
@@ -657,6 +689,18 @@ impl AssetMaterial {
         self.texture_roles & Self::NORMAL_TEXTURE != 0
     }
 
+    /// Returns whether this material samples the linear specular-strength texture.
+    #[must_use]
+    pub const fn has_specular_texture(self) -> bool {
+        self.texture_roles & Self::SPECULAR_TEXTURE != 0
+    }
+
+    /// Returns whether this material samples the sRGB specular-color texture.
+    #[must_use]
+    pub const fn has_specular_color_texture(self) -> bool {
+        self.texture_roles & Self::SPECULAR_COLOR_TEXTURE != 0
+    }
+
     const fn texture_coordinate_set(self, role: u8) -> Option<u32> {
         if self.texture_roles & role == 0 {
             None
@@ -689,6 +733,18 @@ impl AssetMaterial {
     #[must_use]
     pub const fn normal_texture_coordinate_set(self) -> Option<u32> {
         self.texture_coordinate_set(Self::NORMAL_TEXTURE)
+    }
+
+    /// Returns the effective specular-strength texture-coordinate set when present.
+    #[must_use]
+    pub const fn specular_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::SPECULAR_TEXTURE)
+    }
+
+    /// Returns the effective specular-color texture-coordinate set when present.
+    #[must_use]
+    pub const fn specular_color_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::SPECULAR_COLOR_TEXTURE)
     }
 
     /// Returns the retained base-color sampler when that role is present.
@@ -731,6 +787,26 @@ impl AssetMaterial {
         }
     }
 
+    /// Returns the retained specular-strength sampler when that role is present.
+    #[must_use]
+    pub const fn specular_sampler(self) -> Option<AssetSampler> {
+        if self.has_specular_texture() {
+            Some(self.texture_samplers[Self::SPECULAR_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained specular-color sampler when that role is present.
+    #[must_use]
+    pub const fn specular_color_sampler(self) -> Option<AssetSampler> {
+        if self.has_specular_color_texture() {
+            Some(self.texture_samplers[Self::SPECULAR_COLOR_SAMPLER])
+        } else {
+            None
+        }
+    }
+
     /// Returns the retained base-color UV transform when that role is present.
     #[must_use]
     pub const fn base_color_texture_transform(self) -> Option<AssetTextureTransform> {
@@ -766,6 +842,26 @@ impl AssetMaterial {
     pub const fn normal_texture_transform(self) -> Option<AssetTextureTransform> {
         if self.has_normal_texture() {
             Some(self.texture_transforms[Self::NORMAL_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained specular-strength UV transform when present.
+    #[must_use]
+    pub const fn specular_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_specular_texture() {
+            Some(self.texture_transforms[Self::SPECULAR_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained specular-color UV transform when present.
+    #[must_use]
+    pub const fn specular_color_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_specular_color_texture() {
+            Some(self.texture_transforms[Self::SPECULAR_COLOR_SAMPLER])
         } else {
             None
         }
@@ -857,26 +953,35 @@ pub struct AssetUploadJob {
     emissive_texture: Option<AssetTexture>,
     metallic_roughness_texture: Option<AssetTexture>,
     normal_texture: Option<AssetTexture>,
+    specular_texture: Option<AssetTexture>,
+    specular_color_texture: Option<AssetTexture>,
 }
 
 impl AssetUploadJob {
     pub(crate) fn new(
         key: AssetMeshKey,
         vertices: Arc<[AssetVertex]>,
-        material: AssetMaterial,
-        base_color_texture: Option<AssetTexture>,
-        emissive_texture: Option<AssetTexture>,
-        metallic_roughness_texture: Option<AssetTexture>,
-        normal_texture: Option<AssetTexture>,
+        material: &AssetMaterial,
+        textures: [Option<AssetTexture>; 6],
     ) -> Self {
-        Self {
-            key,
-            vertices,
-            material,
+        let [
             base_color_texture,
             emissive_texture,
             metallic_roughness_texture,
             normal_texture,
+            specular_texture,
+            specular_color_texture,
+        ] = textures;
+        Self {
+            key,
+            vertices,
+            material: *material,
+            base_color_texture,
+            emissive_texture,
+            metallic_roughness_texture,
+            normal_texture,
+            specular_texture,
+            specular_color_texture,
         }
     }
 
@@ -929,6 +1034,18 @@ impl AssetUploadJob {
         self.normal_texture.as_ref()
     }
 
+    /// Returns the immutable shared linear specular-strength texture when referenced.
+    #[must_use]
+    pub const fn specular_texture(&self) -> Option<&AssetTexture> {
+        self.specular_texture.as_ref()
+    }
+
+    /// Returns the immutable shared sRGB specular-color texture when referenced.
+    #[must_use]
+    pub const fn specular_color_texture(&self) -> Option<&AssetTexture> {
+        self.specular_color_texture.as_ref()
+    }
+
     /// Returns exact GPU vertex bytes required by this interleaved mesh.
     #[must_use]
     pub fn byte_len(&self) -> u64 {
@@ -951,6 +1068,8 @@ pub(crate) struct DecodedAsset {
     pub(crate) emissive_texture: Option<AssetTexture>,
     pub(crate) metallic_roughness_texture: Option<AssetTexture>,
     pub(crate) normal_texture: Option<AssetTexture>,
+    pub(crate) specular_texture: Option<AssetTexture>,
+    pub(crate) specular_color_texture: Option<AssetTexture>,
     pub(crate) byte_len: u64,
 }
 
@@ -960,6 +1079,8 @@ impl DecodedAsset {
             + u32::from(self.emissive_texture.is_some())
             + u32::from(self.metallic_roughness_texture.is_some())
             + u32::from(self.normal_texture.is_some())
+            + u32::from(self.specular_texture.is_some())
+            + u32::from(self.specular_color_texture.is_some())
     }
 }
 
@@ -1038,7 +1159,7 @@ pub struct AssetStoreEviction {
     pub released_resident_cpu_bytes: u64,
     /// Decoded mesh records released.
     pub removed_meshes: u32,
-    /// Role-separated decoded textures released; currently zero to four.
+    /// Role-separated decoded textures released; currently zero to six.
     pub removed_textures: u32,
 }
 

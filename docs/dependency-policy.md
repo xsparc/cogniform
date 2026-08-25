@@ -349,6 +349,14 @@ composition and the appended private uniform row use first-party code only.
 The texture members remain unsupported and add no image role, binding,
 sampler, pipeline, decoder, network, or supply-chain authority.
 
+CF074 changes no Cargo manifest, lock entry, vendored byte, feature, build
+script, unsafe/native boundary, workflow, or runtime dependency edge. The two
+specular texture roles reuse existing strict JSON, PNG, coordinate, transform,
+sampler, upload, and shader paths. The fixed uniform and bind group grow only
+in first-party code; the sampler table and pipeline count stay fixed. The
+Khronos SpecularTest model informs behavior coverage but no sample asset byte,
+license payload, decoder, network path, or supply-chain authority is added.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

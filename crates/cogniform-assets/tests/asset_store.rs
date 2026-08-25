@@ -130,6 +130,26 @@ fn material_textured_triangle_glb(
     root_fields: &str,
     include_texcoords: bool,
 ) -> Vec<u8> {
+    material_list_textured_triangle_glb(
+        png,
+        &format!(r"[{{{material_fields}}}]"),
+        0,
+        texture_items,
+        image_items,
+        root_fields,
+        include_texcoords,
+    )
+}
+
+fn material_list_textured_triangle_glb(
+    png: &[u8],
+    materials: &str,
+    selected_material: u32,
+    texture_items: &str,
+    image_items: &str,
+    root_fields: &str,
+    include_texcoords: bool,
+) -> Vec<u8> {
     let mut binary = triangle_binary();
     for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
         for value in texcoord {
@@ -144,7 +164,7 @@ fn material_textured_triangle_glb(
         r#""POSITION":0"#
     };
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{{material_fields}}}],"textures":[{texture_items}],"images":[{image_items}]{root_fields},"meshes":[{{"primitives":[{{"attributes":{{{attributes}}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":{materials},"textures":[{texture_items}],"images":[{image_items}]{root_fields},"meshes":[{{"primitives":[{{"attributes":{{{attributes}}},"material":{selected_material},"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         image_length = png.len(),
     );
@@ -657,6 +677,63 @@ fn four_textured_triangle_glb_with_options(
         normal_extension = texture_info_extensions[1],
         metallic_roughness_extension = texture_info_extensions[2],
         emissive_extension = texture_info_extensions[3],
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn six_textured_triangle_glb(images: [&[u8]; 6], shared_image: bool) -> Vec<u8> {
+    let mut binary = triangle_binary();
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.25_f32, 0.75], [0.75, 0.75], [0.25, 0.25]] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let selected = if shared_image { &images[..1] } else { &images };
+    let mut image_views = Vec::with_capacity(selected.len());
+    let mut image_defs = Vec::with_capacity(selected.len());
+    for (index, image) in selected.iter().enumerate() {
+        let offset = binary.len();
+        binary.extend_from_slice(image);
+        image_views.push(format!(
+            r#"{{"buffer":0,"byteOffset":{offset},"byteLength":{}}}"#,
+            image.len()
+        ));
+        image_defs.push(format!(
+            r#"{{"bufferView":{},"mimeType":"image/png"}}"#,
+            index + 5
+        ));
+    }
+    let sources = if shared_image {
+        [0; 6]
+    } else {
+        [0, 1, 2, 3, 4, 5]
+    };
+    let textures = sources
+        .into_iter()
+        .enumerate()
+        .map(|(sampler, source)| format!(r#"{{"sampler":{sampler},"source":{source}}}"#))
+        .collect::<Vec<_>>()
+        .join(",");
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_specular","KHR_texture_transform"],"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":144,"byteLength":24}},{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}},{{"bufferView":4,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":1,"texCoord":1}},"metallicFactor":0.75,"roughnessFactor":0.5}},"normalTexture":{{"index":2,"scale":0.5}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":3,"texCoord":1}},"extensions":{{"KHR_materials_specular":{{"specularFactor":0.75,"specularColorFactor":[0.5,0.75,1.0],"specularTexture":{{"index":4,"texCoord":0,"extensions":{{"KHR_texture_transform":{{"offset":[0.25,-0.5],"scale":[0.5,2.0]}}}}}},"specularColorTexture":{{"index":5,"texCoord":0,"extensions":{{"KHR_texture_transform":{{"texCoord":1,"offset":[-0.25,0.75],"scale":[2.0,0.25]}}}}}}}}}}}}],"textures":[{textures}],"images":[{image_defs}],"samplers":[{{}},{{}},{{}},{{}},{{"magFilter":9728,"minFilter":9986,"wrapS":33648,"wrapT":33071}},{{"magFilter":9729,"minFilter":9985,"wrapS":33071,"wrapT":33648}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3,"TEXCOORD_1":4}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        image_views = image_views.join(","),
+        image_defs = image_defs.join(","),
     );
     glb_with_json(&json, &binary)
 }
@@ -1890,7 +1967,7 @@ fn malformed_or_forbidden_specular_never_receives_a_proxy() {
 }
 
 #[test]
-fn specular_textures_proxy_only_after_info_resource_and_coordinate_validation() {
+fn specular_textures_are_retained_after_info_resource_and_coordinate_validation() {
     let png = encode_png(
         1,
         1,
@@ -1902,34 +1979,21 @@ fn specular_textures_proxy_only_after_info_resource_and_coordinate_validation() 
         (
             r#", "extensionsUsed":["KHR_materials_specular"]"#,
             r#"{"index":0}"#,
+            AssetTextureTransform::IDENTITY.affine_rows(),
         ),
         (
             r#", "extensionsUsed":["KHR_materials_specular"]"#,
             r#"{"index":0,"texCoord":0}"#,
+            AssetTextureTransform::IDENTITY.affine_rows(),
         ),
         (
             r#", "extensionsUsed":["KHR_materials_specular","KHR_texture_transform"]"#,
             r#"{"index":0,"texCoord":1,"extensions":{"KHR_texture_transform":{"texCoord":0,"offset":[0.25,-0.5],"scale":[0.5,2.0]}}}"#,
+            [[0.5, 0.0, 0.25, 0.0], [0.0, 2.0, -0.5, 0.0]],
         ),
     ];
-    for (declarations, texture_info) in cases {
-        let material = format!(
-            r#""extensions":{{"KHR_materials_specular":{{"specularTexture":{texture_info},"specularColorTexture":{texture_info}}}}}"#
-        );
-        let bytes = material_textured_triangle_glb(
-            &png,
-            &material,
-            r#"{"source":0}"#,
-            r#"{"bufferView":2,"mimeType":"image/png"}"#,
-            declarations,
-            true,
-        );
-        let (store, hash) = process_with_proxy_policy(bytes);
-        assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
-        assert_eq!(
-            store.record(hash).unwrap().diagnostics[0].code,
-            AssetDiagnosticCode::UnsupportedExtension
-        );
+    for (declarations, texture_info, expected_transform) in cases {
+        assert_ready_specular_texture_case(&png, declarations, texture_info, expected_transform);
     }
 
     let dangling = triangle_glb_with_extension_materials(
@@ -1969,6 +2033,78 @@ fn specular_textures_proxy_only_after_info_resource_and_coordinate_validation() 
     assert_eq!(
         store.record(hash).unwrap().diagnostics[0].code,
         AssetDiagnosticCode::InvalidTexcoord
+    );
+
+    let unsupported_unused_coordinate = material_list_textured_triangle_glb(
+        &png,
+        r#"[{"extensions":{"KHR_materials_specular":{"specularTexture":{"index":0}}}},{"extensions":{"KHR_materials_specular":{"specularTexture":{"index":0,"texCoord":2}}}}]"#,
+        0,
+        r#"{"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        r#", "extensionsUsed":["KHR_materials_specular"]"#,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(unsupported_unused_coordinate);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedFeature
+    );
+}
+
+fn assert_ready_specular_texture_case(
+    png: &[u8],
+    declarations: &str,
+    texture_info: &str,
+    expected_transform: [[f32; 4]; 2],
+) {
+    let material = format!(
+        r#""extensions":{{"KHR_materials_specular":{{"specularTexture":{texture_info},"specularColorTexture":{texture_info}}}}}"#
+    );
+    let bytes = material_textured_triangle_glb(
+        png,
+        &material,
+        r#"{"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        declarations,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(bytes);
+    let record = store.record(hash).unwrap();
+    assert_eq!(record.state, AssetState::Ready);
+    assert_eq!(record.decoded_bytes, 220);
+    assert!(record.diagnostics.is_empty());
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_eq!(upload.specular_texture().unwrap().rgba8(), [255; 4]);
+    assert_eq!(upload.specular_color_texture().unwrap().rgba8(), [255; 4]);
+    let material = upload.material();
+    assert!(material.has_specular_texture());
+    assert!(material.has_specular_color_texture());
+    assert_eq!(material.specular_texture_coordinate_set(), Some(0));
+    assert_eq!(material.specular_color_texture_coordinate_set(), Some(0));
+    assert_eq!(
+        material.specular_sampler(),
+        Some(AssetSampler::LINEAR_REPEAT)
+    );
+    assert_eq!(
+        material.specular_color_sampler(),
+        Some(AssetSampler::LINEAR_REPEAT)
+    );
+    assert_eq!(
+        material.specular_texture_transform().unwrap().affine_rows(),
+        expected_transform
+    );
+    assert_eq!(
+        material
+            .specular_color_texture_transform()
+            .unwrap()
+            .affine_rows(),
+        expected_transform
     );
 }
 
@@ -2819,6 +2955,105 @@ fn four_texture_roles_count_shared_cpu_images_once_and_roles_exactly() {
         }
         let eviction = store.evict(hash);
         assert_eq!(eviction.removed_textures, 4);
+        assert_eq!(eviction.released_resident_cpu_bytes, expected_bytes);
+
+        let mut narrow_config = exact_config;
+        narrow_config.limits.max_asset_decoded_bytes = NonZeroU64::new(expected_bytes - 1).unwrap();
+        let mut narrow = AssetStore::new(narrow_config);
+        narrow.enqueue(hash, bytes).unwrap();
+        assert_eq!(narrow.process_next().unwrap().state, AssetState::Rejected);
+        assert_eq!(narrow.stats().resident_cpu_bytes, 0);
+    }
+}
+
+#[test]
+fn six_texture_roles_retain_independent_specular_state_and_exact_accounting() {
+    let texels = [
+        [255, 0, 0, 255],
+        [7, 64, 192, 9],
+        [128, 128, 255, 255],
+        [32, 64, 128, 3],
+        [9, 8, 7, 64],
+        [128, 64, 32, 200],
+    ];
+    let images =
+        texels.map(|texel| encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &texel));
+    for (shared_image, expected_bytes) in [(true, 220), (false, 240)] {
+        let bytes = six_textured_triangle_glb(images.each_ref().map(Vec::as_slice), shared_image);
+        let hash = content_hash(&bytes);
+        let mut exact_config = AssetStoreConfig::default();
+        exact_config.limits.max_asset_decoded_bytes = NonZeroU64::new(expected_bytes).unwrap();
+        exact_config.limits.max_resident_cpu_bytes = NonZeroU64::new(expected_bytes).unwrap();
+        let mut store = AssetStore::new(exact_config);
+        store.enqueue(hash, bytes.clone()).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        assert_eq!(store.record(hash).unwrap().decoded_bytes, expected_bytes);
+        assert_eq!(store.stats().resident_cpu_bytes, expected_bytes);
+
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        let uploaded_texels = [
+            upload.base_color_texture().unwrap().rgba8(),
+            upload.metallic_roughness_texture().unwrap().rgba8(),
+            upload.normal_texture().unwrap().rgba8(),
+            upload.emissive_texture().unwrap().rgba8(),
+            upload.specular_texture().unwrap().rgba8(),
+            upload.specular_color_texture().unwrap().rgba8(),
+        ];
+        assert_eq!(
+            uploaded_texels,
+            if shared_image { [texels[0]; 6] } else { texels }
+        );
+
+        let material = upload.material();
+        assert_eq!(material.specular_texture_coordinate_set(), Some(0));
+        assert_eq!(material.specular_color_texture_coordinate_set(), Some(1));
+        assert_eq!(
+            material.specular_texture_transform().unwrap().affine_rows(),
+            [[0.5, 0.0, 0.25, 0.0], [0.0, 2.0, -0.5, 0.0]]
+        );
+        assert_eq!(
+            material
+                .specular_color_texture_transform()
+                .unwrap()
+                .affine_rows(),
+            [[2.0, 0.0, -0.25, 0.0], [0.0, 0.25, 0.75, 0.0]]
+        );
+        assert_eq!(
+            material.specular_sampler().map(|sampler| (
+                sampler.mag_filter(),
+                sampler.min_filter(),
+                sampler.wrap_s(),
+                sampler.wrap_t(),
+            )),
+            Some((
+                AssetSamplerFilter::Nearest,
+                AssetSamplerMinFilter::NearestMipmapLinear,
+                AssetSamplerWrap::MirroredRepeat,
+                AssetSamplerWrap::ClampToEdge,
+            ))
+        );
+        assert_eq!(
+            material.specular_color_sampler().map(|sampler| (
+                sampler.mag_filter(),
+                sampler.min_filter(),
+                sampler.wrap_s(),
+                sampler.wrap_t(),
+            )),
+            Some((
+                AssetSamplerFilter::Linear,
+                AssetSamplerMinFilter::LinearMipmapNearest,
+                AssetSamplerWrap::ClampToEdge,
+                AssetSamplerWrap::MirroredRepeat,
+            ))
+        );
+
+        let eviction = store.evict(hash);
+        assert_eq!(eviction.removed_textures, 6);
         assert_eq!(eviction.released_resident_cpu_bytes, expected_bytes);
 
         let mut narrow_config = exact_config;
@@ -4012,15 +4247,15 @@ fn malformed_sampler_indices_counts_and_precedence_fail_closed() {
         }
     }
 
-    let five_records = textured_triangle_glb(
+    let seven_records = textured_triangle_glb(
         &png,
         r#""baseColorTexture":{"index":0}"#,
         r#"{"sampler":0,"source":0}"#,
         r#"{"bufferView":2,"mimeType":"image/png"}"#,
-        r#","samplers":[{},{},{},{},{}]"#,
+        r#","samplers":[{},{},{},{},{},{},{}]"#,
         true,
     );
-    let (store, hash) = process_with_proxy_policy(five_records);
+    let (store, hash) = process_with_proxy_policy(seven_records);
     assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
     assert_eq!(
         store.record(hash).unwrap().diagnostics[0].code,
@@ -4180,13 +4415,13 @@ fn explicit_default_sampler_is_supported_and_retained() {
 }
 
 #[test]
-fn more_than_four_texture_or_image_resources_fail_closed() {
+fn more_than_six_texture_or_image_resources_fail_closed() {
     let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
     for bytes in [
         textured_triangle_glb(
             &png,
             r#""baseColorTexture":{"index":0}"#,
-            r#"{"source":0},{"source":0},{"source":0},{"source":0},{"source":0}"#,
+            r#"{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0}"#,
             r#"{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
@@ -4195,7 +4430,7 @@ fn more_than_four_texture_or_image_resources_fail_closed() {
             &png,
             r#""baseColorTexture":{"index":0}"#,
             r#"{"source":0}"#,
-            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
         ),

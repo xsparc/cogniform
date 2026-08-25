@@ -1120,6 +1120,160 @@ fn material_specular_factors_compose_without_changing_renderer_topology() {
     assert_non_color_observations_equal(&normal_emissive_default, &normal_emissive_tinted);
 }
 
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn specular_textures_multiply_alpha_and_srgb_rgb_with_neutral_fallbacks() {
+    let center = (WIDTH / 2, HEIGHT / 2);
+    for light in [LightKind::Directional, LightKind::Point] {
+        let factor_only = material_frame(
+            specular_texture_fixture(None, None, 0.75, [0.8, 0.6, 0.4]),
+            Some(light),
+            false,
+        );
+        let neutral = material_frame(
+            specular_texture_fixture(
+                Some([13, 220, 7, 255]),
+                Some([255, 255, 255, 0]),
+                0.75,
+                [0.8, 0.6, 0.4],
+            ),
+            Some(light),
+            false,
+        );
+        assert_frames_equal(&neutral, &factor_only);
+
+        let ignored_channels = material_frame(
+            specular_texture_fixture(
+                Some([250, 1, 99, 255]),
+                Some([255, 255, 255, 255]),
+                0.75,
+                [0.8, 0.6, 0.4],
+            ),
+            Some(light),
+            false,
+        );
+        assert_frames_equal(&ignored_channels, &neutral);
+
+        let zero_strength = material_frame(
+            specular_texture_fixture(
+                Some([250, 1, 99, 0]),
+                Some([255, 255, 255, 255]),
+                0.75,
+                [0.8, 0.6, 0.4],
+            ),
+            Some(light),
+            false,
+        );
+        assert_ne!(
+            zero_strength.color_at(center.0, center.1),
+            neutral.color_at(center.0, center.1)
+        );
+        assert_non_color_observations_equal(&zero_strength, &neutral);
+
+        let tinted = material_frame(
+            specular_texture_fixture(
+                Some([0, 0, 0, 255]),
+                Some([128, 64, 32, 17]),
+                0.75,
+                [1.0; 3],
+            ),
+            Some(light),
+            false,
+        );
+        assert_ne!(
+            tinted.color_at(center.0, center.1),
+            neutral.color_at(center.0, center.1)
+        );
+        assert_non_color_observations_equal(&tinted, &neutral);
+    }
+
+    let srgb_texture = material_frame(
+        specular_texture_fixture(None, Some([128, 128, 128, 0]), 1.0, [1.0; 3]),
+        Some(LightKind::Directional),
+        false,
+    );
+    let linear_factor = material_frame(
+        specular_texture_fixture(None, None, 1.0, [0.215_860_53; 3]),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_color_near(
+        &srgb_texture,
+        center,
+        linear_factor.color_at(center.0, center.1).unwrap(),
+    );
+    assert_non_color_observations_equal(&srgb_texture, &linear_factor);
+
+    let overridden_texture = material_frame(
+        specular_texture_fixture(
+            Some([0, 0, 0, 0]),
+            Some([0, 255, 0, 255]),
+            0.0,
+            [20.0, 0.0, 0.5],
+        ),
+        Some(LightKind::Directional),
+        true,
+    );
+    let overridden_factor = material_frame(
+        specular_texture_fixture(None, None, 1.0, [1.0; 3]),
+        Some(LightKind::Directional),
+        true,
+    );
+    assert_frames_equal(&overridden_texture, &overridden_factor);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn specular_texture_coordinates_transforms_and_samplers_are_independent() {
+    let strength_reference = material_frame(
+        specular_texture_fixture(Some([9, 8, 7, 0]), Some([255, 255, 255, 17]), 1.0, [1.0; 3]),
+        Some(LightKind::Directional),
+        false,
+    );
+    let strength_selected = material_frame(
+        patterned_specular_texture_fixture(0b11, 0, [255, 255, 255]),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_frames_equal(&strength_selected, &strength_reference);
+    let strength_wrong_coordinate = material_frame(
+        patterned_specular_texture_fixture(0b10, 0, [255, 255, 255]),
+        Some(LightKind::Directional),
+        false,
+    );
+
+    let center = (WIDTH / 2, HEIGHT / 2);
+    assert_ne!(
+        strength_wrong_coordinate.color_at(center.0, center.1),
+        strength_selected.color_at(center.0, center.1),
+        "the strength role must independently select its transformed coordinate set"
+    );
+    assert_non_color_observations_equal(&strength_wrong_coordinate, &strength_selected);
+
+    let color_reference = material_frame(
+        specular_texture_fixture(Some([9, 8, 7, 255]), Some([0, 0, 0, 17]), 1.0, [1.0; 3]),
+        Some(LightKind::Directional),
+        false,
+    );
+    let color_selected = material_frame(
+        patterned_specular_texture_fixture(0b11, 255, [0, 0, 0]),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_frames_equal(&color_selected, &color_reference);
+    let color_wrong_coordinate = material_frame(
+        patterned_specular_texture_fixture(0b01, 255, [0, 0, 0]),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_ne!(
+        color_wrong_coordinate.color_at(center.0, center.1),
+        color_selected.color_at(center.0, center.1),
+        "the color role must independently select its transformed coordinate set"
+    );
+    assert_non_color_observations_equal(&color_wrong_coordinate, &color_selected);
+}
+
 fn assert_specular_light_response(light: LightKind, center: (u32, u32)) {
     let omitted = material_frame(
         specular_fixture(None, None, Some(2.42), 0.0, false),
@@ -1679,6 +1833,51 @@ fn four_texture_roles_upload_evict_and_rehydrate_exactly() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn six_texture_roles_upload_evict_and_rehydrate_exactly() {
+    let bytes = six_role_shared_image_fixture();
+    let content_hash = content_hash(&bytes);
+    let key = AssetMeshKey {
+        content_hash,
+        mesh_index: 0,
+    };
+    let mut assets = AssetStore::default();
+    assets.enqueue(content_hash, bytes).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(assets.record(content_hash).unwrap().decoded_bytes, 220);
+    let upload = assets.upload_job(key).unwrap();
+    assert!(upload.base_color_texture().is_some());
+    assert!(upload.emissive_texture().is_some());
+    assert!(upload.metallic_roughness_texture().is_some());
+    assert!(upload.normal_texture().is_some());
+    assert!(upload.specular_texture().is_some());
+    assert!(upload.specular_color_texture().is_some());
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer.enqueue_asset_upload(upload.clone()).unwrap();
+    assert_eq!(renderer.asset_stats().pending_textures, 6);
+    assert_eq!(renderer.asset_stats().pending_texture_bytes, 24);
+    let uploaded = renderer.process_next_asset_upload().unwrap();
+    assert_eq!(uploaded.texture_byte_len, 24);
+    assert_eq!(renderer.asset_stats().resident_textures, 6);
+    assert_eq!(renderer.asset_stats().resident_texture_bytes, 24);
+    let eviction = renderer.evict_asset(content_hash);
+    assert_eq!(eviction.removed_resident_textures, 6);
+    assert_eq!(eviction.released_resident_texture_bytes, 24);
+    renderer.enqueue_asset_upload(upload).unwrap();
+    assert_eq!(
+        renderer
+            .process_next_asset_upload()
+            .unwrap()
+            .texture_byte_len,
+        24
+    );
+    assert_eq!(renderer.asset_stats().resident_textures, 6);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work() {
     let bytes = textured_two_mesh_fixture();
     let content_hash = content_hash(&bytes);
@@ -2024,6 +2223,8 @@ fn oriented_material_frame_with_lights(
         upload.emissive_texture(),
         upload.metallic_roughness_texture(),
         upload.normal_texture(),
+        upload.specular_texture(),
+        upload.specular_color_texture(),
     ]
     .into_iter()
     .flatten()
@@ -2034,6 +2235,8 @@ fn oriented_material_frame_with_lights(
         upload.emissive_texture(),
         upload.metallic_roughness_texture(),
         upload.normal_texture(),
+        upload.specular_texture(),
+        upload.specular_color_texture(),
     ]
     .into_iter()
     .flatten()
@@ -3046,6 +3249,146 @@ fn specular_fixture(
     glb_with_json(&json, &binary)
 }
 
+fn specular_texture_fixture(
+    strength_texel: Option<[u8; 4]>,
+    color_texel: Option<[u8; 4]>,
+    specular_factor: f32,
+    specular_color_factor: [f32; 3],
+) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.5_f32, 0.5]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let mut image_views = Vec::new();
+    let mut image_defs = Vec::new();
+    let mut texture_defs = Vec::new();
+    let mut texture_fields = Vec::new();
+    for (field, texel) in [
+        ("specularTexture", strength_texel),
+        ("specularColorTexture", color_texel),
+    ] {
+        let Some(texel) = texel else {
+            continue;
+        };
+        let png = encode_png(1, 1, &texel);
+        let image_offset = binary.len();
+        binary.extend_from_slice(&png);
+        let image_index = image_defs.len();
+        image_views.push(format!(
+            r#"{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}"#,
+            png.len()
+        ));
+        image_defs.push(format!(
+            r#"{{"bufferView":{},"mimeType":"image/png"}}"#,
+            image_index + 2
+        ));
+        texture_defs.push(format!(r#"{{"source":{image_index}}}"#));
+        texture_fields.push(format!(
+            r#""{field}":{{"index":{}}}"#,
+            texture_defs.len() - 1
+        ));
+    }
+    let image_views = if image_views.is_empty() {
+        String::new()
+    } else {
+        format!(",{}", image_views.join(","))
+    };
+    let texture_resources = if texture_defs.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#", "textures":[{}],"images":[{}]"#,
+            texture_defs.join(","),
+            image_defs.join(",")
+        )
+    };
+    let texture_fields = if texture_fields.is_empty() {
+        String::new()
+    } else {
+        format!(",{}", texture_fields.join(","))
+    };
+    let [red, green, blue] = specular_color_factor;
+    let specular_fields = format!(
+        r#""specularFactor":{specular_factor},"specularColorFactor":[{red},{green},{blue}]{texture_fields}"#
+    );
+    let material = format!(
+        r#""pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5}},"extensions":{{"KHR_materials_specular":{{{specular_fields}}}}}"#
+    );
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_specular"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}}{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{{material}}}]{texture_resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn patterned_specular_texture_fixture(
+    selected_roles: u8,
+    strength_alpha: u8,
+    color_rgb: [u8; 3],
+) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.125_f32, 0.125]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.875_f32, 0.875]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let mut strength_pixels = vec![255_u8; 4 * 4 * 4];
+    strength_pixels[(3 * 4) * 4..(3 * 4) * 4 + 4].copy_from_slice(&[9, 8, 7, strength_alpha]);
+    let mut color_pixels = vec![255_u8; 4 * 4 * 4];
+    color_pixels[16..20].copy_from_slice(&[color_rgb[0], color_rgb[1], color_rgb[2], 17]);
+    let strength_png = encode_png(4, 4, &strength_pixels);
+    let color_png = encode_png(4, 4, &color_pixels);
+    let strength_offset = binary.len();
+    binary.extend_from_slice(&strength_png);
+    let color_offset = binary.len();
+    binary.extend_from_slice(&color_png);
+
+    let strength_override = if selected_roles & 0b01 != 0 {
+        r#""texCoord":1,"#
+    } else {
+        ""
+    };
+    let color_override = if selected_roles & 0b10 != 0 {
+        r#""texCoord":0,"#
+    } else {
+        ""
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_specular","KHR_texture_transform"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}},{{"buffer":0,"byteOffset":60,"byteLength":24}},{{"buffer":0,"byteOffset":{strength_offset},"byteLength":{}}},{{"buffer":0,"byteOffset":{color_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5}},"extensions":{{"KHR_materials_specular":{{"specularFactor":1.0,"specularColorFactor":[1.0,1.0,1.0],"specularTexture":{{"index":0,"texCoord":0,"extensions":{{"KHR_texture_transform":{{{strength_override}"offset":[0.25,0.0]}}}}}},"specularColorTexture":{{"index":1,"texCoord":1,"extensions":{{"KHR_texture_transform":{{{color_override}"offset":[-0.25,0.25]}}}}}}}}}}}}],"textures":[{{"sampler":0,"source":0}},{{"sampler":1,"source":1}}],"images":[{{"bufferView":3,"mimeType":"image/png"}},{{"bufferView":4,"mimeType":"image/png"}}],"samplers":[{{"magFilter":9728,"minFilter":9728,"wrapS":10497,"wrapT":33071}},{{"magFilter":9728,"minFilter":9728,"wrapS":33648,"wrapT":33071}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1,"TEXCOORD_1":2}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+        strength_png.len(),
+        color_png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
 fn primary_uv_fixture() -> Vec<u8> {
     let positions = [[-0.75_f32, -0.5, 0.0], [0.75, -0.5, 0.0], [0.0, 0.75, 0.0]];
     let texcoords = [[-0.25_f32, 1.25], [2.0, -3.0], [0.5, 0.75]];
@@ -3288,6 +3631,19 @@ fn normal_texture_fixture_with_options(
 
 fn four_role_texture_fixture() -> Vec<u8> {
     four_role_texture_fixture_with_unlit(false)
+}
+
+fn six_role_shared_image_fixture() -> Vec<u8> {
+    let mut binary = four_role_fixture_geometry(false);
+    let png = encode_png(1, 1, &[128, 128, 255, 255]);
+    let image_offset = binary.len();
+    binary.extend_from_slice(&png);
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_specular"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":0}}}},"normalTexture":{{"index":0}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":0}},"extensions":{{"KHR_materials_specular":{{"specularTexture":{{"index":0}},"specularColorTexture":{{"index":0}}}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+        png.len(),
+    );
+    glb_with_json(&json, &binary)
 }
 
 fn unlit_four_role_texture_fixture() -> Vec<u8> {

@@ -70,6 +70,7 @@ struct MaterialSpecular {
 struct PendingTextureInfo {
     index: u32,
     texture_coordinate_set: u32,
+    transform: AssetTextureTransform,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -770,18 +771,22 @@ fn remove_pending_specular_texture_info(
         })
         .transpose()?
         .unwrap_or(0);
-    if !info.is_empty() {
+    let wider = !info.is_empty();
+    if wider {
         let mut remainder = serde_json::Value::Object(core::mem::take(info));
         remove_nested_extensions(&mut remainder, used, unsupported)?;
     }
-    unsupported.get_or_insert_with(|| {
-        diagnostic(AssetDiagnosticCode::UnsupportedExtension, location, None)
-    });
+    if wider {
+        unsupported.get_or_insert_with(|| {
+            diagnostic(AssetDiagnosticCode::UnsupportedExtension, location, None)
+        });
+    }
     Ok(Some(PendingTextureInfo {
         index,
         texture_coordinate_set: transform
             .and_then(|value| value.texture_coordinate_set)
             .unwrap_or(texture_coordinate_set),
+        transform: transform.map_or(AssetTextureTransform::IDENTITY, |value| value.transform),
     }))
 }
 
@@ -1094,46 +1099,7 @@ fn validate_root(
     if let Some(unsupported) = textures.unsupported {
         return Err(unsupported);
     }
-    if textures.base_color.is_some()
-        && !meshes
-            .iter()
-            .any(|mesh| mesh.material.has_base_color_texture())
-    {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.materials.baseColorTexture",
-            None,
-        ));
-    }
-    if textures.normal.is_some() && !meshes.iter().any(|mesh| mesh.material.has_normal_texture()) {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.materials.normalTexture",
-            None,
-        ));
-    }
-    if textures.emissive.is_some()
-        && !meshes
-            .iter()
-            .any(|mesh| mesh.material.has_emissive_texture())
-    {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.materials.emissiveTexture",
-            None,
-        ));
-    }
-    if textures.metallic_roughness.is_some()
-        && !meshes
-            .iter()
-            .any(|mesh| mesh.material.has_metallic_roughness_texture())
-    {
-        return Err(diagnostic(
-            AssetDiagnosticCode::UnsupportedFeature,
-            "glb.json.materials.metallicRoughnessTexture",
-            None,
-        ));
-    }
+    validate_selected_texture_roles(&meshes, &textures)?;
     if let Some(unsupported) = alpha_unsupported {
         return Err(unsupported);
     }
@@ -1143,8 +1109,69 @@ fn validate_root(
         emissive_texture: textures.emissive,
         metallic_roughness_texture: textures.metallic_roughness,
         normal_texture: textures.normal,
+        specular_texture: textures.specular,
+        specular_color_texture: textures.specular_color,
         byte_len: decoded_bytes,
     })
+}
+
+fn validate_selected_texture_roles(
+    meshes: &[DecodedMesh],
+    textures: &DecodedTextures,
+) -> Result<(), AssetDiagnostic> {
+    let retained = [
+        (
+            textures.base_color.is_some(),
+            meshes
+                .iter()
+                .any(|mesh| mesh.material.has_base_color_texture()),
+            "glb.json.materials.baseColorTexture",
+        ),
+        (
+            textures.emissive.is_some(),
+            meshes
+                .iter()
+                .any(|mesh| mesh.material.has_emissive_texture()),
+            "glb.json.materials.emissiveTexture",
+        ),
+        (
+            textures.metallic_roughness.is_some(),
+            meshes
+                .iter()
+                .any(|mesh| mesh.material.has_metallic_roughness_texture()),
+            "glb.json.materials.metallicRoughnessTexture",
+        ),
+        (
+            textures.normal.is_some(),
+            meshes.iter().any(|mesh| mesh.material.has_normal_texture()),
+            "glb.json.materials.normalTexture",
+        ),
+        (
+            textures.specular.is_some(),
+            meshes
+                .iter()
+                .any(|mesh| mesh.material.has_specular_texture()),
+            "glb.json.materials.extensions.KHR_materials_specular.specularTexture",
+        ),
+        (
+            textures.specular_color.is_some(),
+            meshes
+                .iter()
+                .any(|mesh| mesh.material.has_specular_color_texture()),
+            "glb.json.materials.extensions.KHR_materials_specular.specularColorTexture",
+        ),
+    ];
+    if let Some((_, _, location)) = retained
+        .into_iter()
+        .find(|(texture, selected, _)| *texture && !selected)
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::UnsupportedFeature,
+            location,
+            None,
+        ));
+    }
+    Ok(())
 }
 
 fn validate_specular_texture_references(
@@ -1344,7 +1371,7 @@ fn validate_root_header(
         (root.samplers.len(), "glb.json.samplers"),
         (root.textures.len(), "glb.json.textures"),
     ] {
-        if actual > 4 {
+        if actual > 6 {
             return Err(diagnostic(
                 AssetDiagnosticCode::CollectionLimitExceeded,
                 location,
@@ -1360,6 +1387,8 @@ struct DecodedTextures {
     emissive: Option<AssetTexture>,
     metallic_roughness: Option<AssetTexture>,
     normal: Option<AssetTexture>,
+    specular: Option<AssetTexture>,
+    specular_color: Option<AssetTexture>,
     byte_len: u64,
     unsupported: Option<AssetDiagnostic>,
 }
@@ -1378,26 +1407,26 @@ fn decode_textures(
         emissive_index,
         metallic_roughness_index,
         normal_index,
-    ] = texture_role_indices(root, &mut unsupported)?;
+        specular_index,
+        specular_color_index,
+    ] = texture_role_indices(root, material_specular, &mut unsupported)?;
     let role_indices = [
         base_color_index,
         emissive_index,
         metallic_roughness_index,
         normal_index,
+        specular_index,
+        specular_color_index,
     ];
-    let pending_specular_indices = material_specular
-        .iter()
-        .flat_map(|specular| [specular.texture, specular.color_texture])
-        .flatten()
-        .map(|info| info.index)
-        .collect::<BTreeSet<_>>();
-    if role_indices.iter().all(Option::is_none) && pending_specular_indices.is_empty() {
+    if role_indices.iter().all(Option::is_none) {
         if root.textures.is_empty() && root.images.is_empty() {
             return Ok(DecodedTextures {
                 base_color: None,
                 emissive: None,
                 metallic_roughness: None,
                 normal: None,
+                specular: None,
+                specular_color: None,
                 byte_len: 0,
                 unsupported,
             });
@@ -1409,12 +1438,13 @@ fn decode_textures(
             None,
         );
     }
-    validate_texture_coordinates(root, texture_transforms, &mut unsupported);
-    let referenced_textures: BTreeSet<_> = role_indices
-        .into_iter()
-        .flatten()
-        .chain(pending_specular_indices)
-        .collect();
+    validate_texture_coordinates(
+        root,
+        texture_transforms,
+        material_specular,
+        &mut unsupported,
+    );
+    let referenced_textures: BTreeSet<_> = role_indices.into_iter().flatten().collect();
     if referenced_textures.len() != root.textures.len() {
         remember_unsupported(
             &mut unsupported,
@@ -1446,6 +1476,8 @@ fn decode_textures(
         emissive: role_texture(emissive_index),
         metallic_roughness: role_texture(metallic_roughness_index),
         normal: role_texture(normal_index),
+        specular: role_texture(specular_index),
+        specular_color: role_texture(specular_color_index),
         byte_len: resources.byte_len,
         unsupported,
     })
@@ -1453,8 +1485,9 @@ fn decode_textures(
 
 fn texture_role_indices(
     root: &Root,
+    material_specular: &[MaterialSpecular],
     unsupported: &mut Option<AssetDiagnostic>,
-) -> Result<[Option<u32>; 4], AssetDiagnostic> {
+) -> Result<[Option<u32>; 6], AssetDiagnostic> {
     let base_color_index = shared_texture_index(
         root.materials.iter().filter_map(|material| {
             material
@@ -1495,11 +1528,29 @@ fn texture_role_indices(
         "glb.json.materials.metallicRoughnessTexture.index",
         unsupported,
     )?;
+    let specular_index = shared_texture_index(
+        material_specular
+            .iter()
+            .filter_map(|specular| specular.texture.map(|info| info.index)),
+        root.textures.len(),
+        "glb.json.materials.extensions.KHR_materials_specular.specularTexture.index",
+        unsupported,
+    )?;
+    let specular_color_index = shared_texture_index(
+        material_specular
+            .iter()
+            .filter_map(|specular| specular.color_texture.map(|info| info.index)),
+        root.textures.len(),
+        "glb.json.materials.extensions.KHR_materials_specular.specularColorTexture.index",
+        unsupported,
+    )?;
     Ok([
         base_color_index,
         emissive_index,
         metallic_roughness_index,
         normal_index,
+        specular_index,
+        specular_color_index,
     ])
 }
 
@@ -1547,7 +1598,7 @@ fn validate_root_samplers(root: &Root) -> Result<(), AssetDiagnostic> {
 }
 
 fn validate_sampler_resources(root: &Root) -> Result<(), AssetDiagnostic> {
-    if root.samplers.len() > 4 {
+    if root.samplers.len() > 6 {
         return Err(diagnostic(
             AssetDiagnosticCode::CollectionLimitExceeded,
             "glb.json.samplers",
@@ -1843,6 +1894,7 @@ fn shared_texture_index(
 fn validate_texture_coordinates(
     root: &Root,
     texture_transforms: &[MaterialTextureTransforms],
+    material_specular: &[MaterialSpecular],
     unsupported: &mut Option<AssetDiagnostic>,
 ) {
     for (material_index, material) in root.materials.iter().enumerate() {
@@ -1895,6 +1947,26 @@ fn validate_texture_coordinates(
                 "glb.json.materials.metallicRoughnessTexture.texCoord",
                 None,
             );
+        }
+        let specular = material_specular.get(material_index);
+        for (info, location) in [
+            (
+                specular.and_then(|value| value.texture),
+                "glb.json.materials.extensions.KHR_materials_specular.specularTexture.texCoord",
+            ),
+            (
+                specular.and_then(|value| value.color_texture),
+                "glb.json.materials.extensions.KHR_materials_specular.specularColorTexture.texCoord",
+            ),
+        ] {
+            if info.is_some_and(|info| info.texture_coordinate_set > 1) {
+                remember_unsupported(
+                    unsupported,
+                    AssetDiagnosticCode::UnsupportedFeature,
+                    location,
+                    None,
+                );
+            }
         }
     }
 }
@@ -2199,7 +2271,7 @@ fn decode_mesh(
             Some(mesh_index),
         ));
     }
-    validate_transformed_texture_coordinates(&vertices, material, mesh_index)?;
+    validate_transformed_texture_coordinates(&vertices, &material, mesh_index)?;
     if layouts.has_unsupported_attributes {
         return Err(diagnostic(
             AssetDiagnosticCode::UnsupportedFeature,
@@ -2227,7 +2299,7 @@ fn decode_mesh(
 
 fn validate_transformed_texture_coordinates(
     vertices: &[AssetVertex],
-    material: AssetMaterial,
+    material: &AssetMaterial,
     mesh_index: u32,
 ) -> Result<(), AssetDiagnostic> {
     let roles = [
@@ -2246,6 +2318,14 @@ fn validate_transformed_texture_coordinates(
         (
             material.normal_texture_transform(),
             material.normal_texture_coordinate_set(),
+        ),
+        (
+            material.specular_texture_transform(),
+            material.specular_texture_coordinate_set(),
+        ),
+        (
+            material.specular_color_texture_transform(),
+            material.specular_color_texture_coordinate_set(),
         ),
     ];
     for (transform, texture_coordinate_set) in roles {
@@ -4082,23 +4162,25 @@ fn decode_material(
     .with_emissive_strength(emissive_strength)
     .with_ior(optics.ior, optics.dielectric_f0)
     .with_specular(specular.factor, specular.color_factor);
-    let material = apply_unlit(material_index, &extensions.unlit_materials, material);
-    let material = apply_double_sided(root, material_index, material);
-    let material = apply_alpha_coverage(root, material_index, material)?;
+    let material = apply_unlit(material_index, &extensions.unlit_materials, &material);
+    let material = apply_double_sided(root, material_index, &material);
+    let material = apply_alpha_coverage(root, material_index, &material)?;
     let transforms = material_index
         .and_then(|index| usize::try_from(index).ok())
         .and_then(|index| extensions.texture_transforms.get(index))
         .copied()
         .unwrap_or_default();
-    apply_material_textures(root, material_index, transforms, material)
+    apply_material_textures(root, material_index, transforms, specular, &material)
 }
 
 fn apply_material_textures(
     root: &Root,
     material_index: Option<u32>,
     transforms: MaterialTextureTransforms,
-    mut material: AssetMaterial,
+    specular: MaterialSpecular,
+    material: &AssetMaterial,
 ) -> Result<AssetMaterial, AssetDiagnostic> {
+    let mut material = *material;
     let source_material = material_index.and_then(|index| {
         root.materials
             .get(usize::try_from(index).unwrap_or(usize::MAX))
@@ -4167,6 +4249,20 @@ fn apply_material_textures(
             )),
         );
     }
+    if let Some(info) = specular.texture {
+        material = material.with_specular_texture(
+            texture_sampler(root, info.index)?,
+            info.transform,
+            retained_texture_coordinate_set(info.texture_coordinate_set),
+        );
+    }
+    if let Some(info) = specular.color_texture {
+        material = material.with_specular_color_texture(
+            texture_sampler(root, info.index)?,
+            info.transform,
+            retained_texture_coordinate_set(info.texture_coordinate_set),
+        );
+    }
     Ok(material)
 }
 
@@ -4215,7 +4311,7 @@ fn retained_texture_coordinate_set(texture_coordinate_set: u32) -> u8 {
 fn apply_unlit(
     material_index: Option<u32>,
     unlit_materials: &[bool],
-    material: AssetMaterial,
+    material: &AssetMaterial,
 ) -> AssetMaterial {
     let enabled = material_index
         .and_then(|index| usize::try_from(index).ok())
@@ -4223,16 +4319,16 @@ fn apply_unlit(
         .copied()
         .unwrap_or(false);
     if enabled {
-        material.with_unlit()
+        (*material).with_unlit()
     } else {
-        material
+        *material
     }
 }
 
 fn apply_double_sided(
     root: &Root,
     material_index: Option<u32>,
-    material: AssetMaterial,
+    material: &AssetMaterial,
 ) -> AssetMaterial {
     let enabled = material_index
         .and_then(|index| {
@@ -4242,16 +4338,16 @@ fn apply_double_sided(
         .and_then(|material| material.double_sided)
         .unwrap_or(false);
     if enabled {
-        material.with_double_sided()
+        (*material).with_double_sided()
     } else {
-        material
+        *material
     }
 }
 
 fn apply_alpha_coverage(
     root: &Root,
     material_index: Option<u32>,
-    material: AssetMaterial,
+    material: &AssetMaterial,
 ) -> Result<AssetMaterial, AssetDiagnostic> {
     let Some(source) = material_index
         .and_then(|index| {
@@ -4260,7 +4356,7 @@ fn apply_alpha_coverage(
         })
         .filter(|material| material.alpha_mode.as_deref() == Some("MASK"))
     else {
-        return Ok(material);
+        return Ok(*material);
     };
     let cutoff = FiniteF32::new(source.alpha_cutoff.unwrap_or(0.5)).map_err(|_| {
         diagnostic(
@@ -4269,7 +4365,7 @@ fn apply_alpha_coverage(
             material_index,
         )
     })?;
-    Ok(material.with_alpha_mask(cutoff))
+    Ok((*material).with_alpha_mask(cutoff))
 }
 
 pub(crate) fn proxy_asset() -> DecodedAsset {
@@ -4352,6 +4448,8 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
         emissive_texture: None,
         metallic_roughness_texture: None,
         normal_texture: None,
+        specular_texture: None,
+        specular_color_texture: None,
         byte_len: 36 * ASSET_VERTEX_BYTES,
     }
 }
