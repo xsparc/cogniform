@@ -364,6 +364,8 @@ impl HeadlessRenderer {
                 emissive: [0.0; 3],
                 emissive_strength: 1.0,
                 dielectric_f0: 0.04,
+                specular_color_factor: [1.0; 3],
+                specular_factor: 1.0,
                 normal_scale: 1.0,
                 imported_texture_roles: ImportedTextureRoles::NONE,
                 imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -1714,7 +1716,7 @@ fn encode_draw_uniform(
     const FLOATS_PER_POINT_LIGHT: usize = 8;
     const MATERIAL_VIEW_EMISSIVE_FLOATS: usize = 12;
     const TEXTURE_TRANSFORM_FLOATS: usize = 4 * 2 * 4;
-    const OPTICAL_FLOATS: usize = 4;
+    const OPTICAL_FLOATS: usize = 8;
     const UNIFORM_BYTES: usize = (BASE_FLOATS
         + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT
         + POINT_COUNT_FLOATS
@@ -1833,6 +1835,10 @@ fn append_material_uniform(bytes: &mut Vec<u8>, draw: &PreparedDraw) {
     bytes.extend_from_slice(&0.0_f32.to_le_bytes());
     bytes.extend_from_slice(&0.0_f32.to_le_bytes());
     bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+    for value in draw.specular_color_factor {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&draw.specular_factor.to_le_bytes());
 }
 
 fn create_target_texture(
@@ -2137,7 +2143,7 @@ mod tests {
     }
 
     #[test]
-    fn draw_uniform_preserves_prefix_and_appends_exact_optical_row() {
+    fn draw_uniform_preserves_prefix_and_appends_exact_optical_and_specular_rows() {
         let draw = PreparedDraw {
             geometry: PreparedGeometry::Plane,
             model: [1.0; 16],
@@ -2149,6 +2155,8 @@ mod tests {
             emissive: [0.1, 0.3, 0.7],
             emissive_strength: 2.5,
             dielectric_f0: 0.25,
+            specular_color_factor: [1.5, 0.5, 2.0],
+            specular_factor: 0.75,
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NONE,
             imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -2178,7 +2186,7 @@ mod tests {
         }];
 
         let bytes = encode_draw_uniform(&draw, &lights, &point_lights);
-        assert_eq!(bytes.len(), 640);
+        assert_eq!(bytes.len(), 656);
         let words = bytes
             .chunks_exact(4)
             .map(|word| <[u8; 4]>::try_from(word).unwrap())
@@ -2232,6 +2240,10 @@ mod tests {
             (156..160).map(float).collect::<Vec<_>>(),
             vec![0.25, 0.0, 0.0, 0.0]
         );
+        assert_eq!(
+            (160..164).map(float).collect::<Vec<_>>(),
+            vec![1.5, 0.5, 2.0, 0.75]
+        );
     }
 
     #[test]
@@ -2247,6 +2259,8 @@ mod tests {
             emissive: [0.0; 3],
             emissive_strength: 1.0,
             dielectric_f0: 0.04,
+            specular_color_factor: [1.0; 3],
+            specular_factor: 1.0,
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NORMAL_ONLY,
             imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -2259,11 +2273,58 @@ mod tests {
         };
 
         let bytes = encode_draw_uniform(&draw, &[], &[]);
-        assert_eq!(bytes.len(), 640);
+        assert_eq!(bytes.len(), 656);
         let float_at =
             |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
         assert_eq!(float_at(119).to_bits(), 1_023.0_f32.to_bits());
         assert_eq!(float_at(123).to_bits(), 1.25_f32.to_bits());
+    }
+
+    #[test]
+    fn specular_reference_vectors_clamp_before_strength_and_preserve_metal_authority() {
+        fn schlick(normal: [f32; 3], grazing: [f32; 3], view_half: f32) -> [f32; 3] {
+            let weight = (1.0 - view_half.clamp(0.0, 1.0)).powi(5);
+            core::array::from_fn(|index| normal[index] + (grazing[index] - normal[index]) * weight)
+        }
+
+        fn terms(
+            ior_f0: f32,
+            color: [f32; 3],
+            strength: f32,
+            view_half: f32,
+            metallic: f32,
+            base_color: [f32; 3],
+        ) -> ([f32; 3], f32) {
+            let dielectric_f0 = color.map(|value| (ior_f0 * value).min(1.0) * strength);
+            let dielectric = schlick(dielectric_f0, [strength; 3], view_half);
+            let metal = schlick(base_color, [1.0; 3], view_half);
+            let combined = core::array::from_fn(|index| {
+                dielectric[index] * (1.0 - metallic) + metal[index] * metallic
+            });
+            let dielectric_energy = dielectric.into_iter().fold(0.0, f32::max);
+            (combined, (1.0 - dielectric_energy) * (1.0 - metallic))
+        }
+
+        let (clamped, _) = terms(0.8, [2.0, 0.5, 4.0], 0.5, 1.0, 0.0, [0.2; 3]);
+        assert_eq!(clamped.map(f32::to_bits), [0.5, 0.2, 0.5].map(f32::to_bits));
+
+        let (grazing, _) = terms(0.04, [2.0, 0.5, 1.0], 0.25, 0.0, 0.0, [0.2; 3]);
+        assert_eq!(grazing.map(f32::to_bits), [0.25; 3].map(f32::to_bits));
+
+        let (zero, zero_diffuse) = terms(0.9, [3.0, 2.0, 1.0], 0.0, 0.25, 0.0, [0.2; 3]);
+        assert_eq!(zero.map(f32::to_bits), [0.0; 3].map(f32::to_bits));
+        assert_eq!(zero_diffuse.to_bits(), 1.0_f32.to_bits());
+
+        let base = [0.2, 0.4, 0.8];
+        let (metal_low, diffuse_low) = terms(0.0, [0.0; 3], 0.0, 0.35, 1.0, base);
+        let (metal_high, diffuse_high) = terms(1.0, [20.0; 3], 1.0, 0.35, 1.0, base);
+        assert_eq!(metal_low.map(f32::to_bits), metal_high.map(f32::to_bits));
+        assert_eq!(diffuse_low.to_bits(), 0.0_f32.to_bits());
+        assert_eq!(diffuse_high.to_bits(), 0.0_f32.to_bits());
+
+        let (water, _) = terms(0.020_059_312, [1.5, 0.5, 2.0], 0.75, 0.6, 0.0, base);
+        let (diamond, _) = terms(0.172_394_93, [1.5, 0.5, 2.0], 0.75, 0.6, 0.0, base);
+        assert_ne!(water.map(f32::to_bits), diamond.map(f32::to_bits));
     }
 
     #[test]

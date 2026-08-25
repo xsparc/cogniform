@@ -1051,6 +1051,151 @@ fn emissive_strength_scales_factor_and_texture_before_unit_clamp() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn material_specular_factors_compose_without_changing_renderer_topology() {
+    let center = (WIDTH / 2, HEIGHT / 2);
+    let omitted_unlit = material_frame(specular_fixture(None, None, None, 0.0, false), None, false);
+    for candidate in [
+        specular_fixture(Some(0.0), Some([3.0, 0.5, 2.0]), None, 0.0, false),
+        specular_fixture(Some(1.0), Some([20.0, 0.0, 0.5]), Some(2.42), 0.0, false),
+    ] {
+        assert_frames_equal(&material_frame(candidate, None, false), &omitted_unlit);
+    }
+
+    for light in [LightKind::Directional, LightKind::Point] {
+        assert_specular_light_response(light, center);
+    }
+
+    let combined_default =
+        material_frame_with_combined_lights(specular_fixture(None, None, None, 0.0, false));
+    let combined_tinted = material_frame_with_combined_lights(specular_fixture(
+        Some(0.6),
+        Some([2.0, 0.25, 0.5]),
+        None,
+        0.0,
+        false,
+    ));
+    assert_ne!(
+        combined_default.color_at(center.0, center.1),
+        combined_tinted.color_at(center.0, center.1)
+    );
+    assert_non_color_observations_equal(&combined_default, &combined_tinted);
+
+    let tinted = material_frame(
+        specular_fixture(Some(0.6), Some([2.0, 0.25, 0.5]), None, 0.0, false),
+        Some(LightKind::Directional),
+        false,
+    );
+    let tinted_emissive = material_frame(
+        specular_fixture(Some(0.6), Some([2.0, 0.25, 0.5]), None, 0.0, true),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_ne!(
+        tinted.color_at(center.0, center.1),
+        tinted_emissive.color_at(center.0, center.1)
+    );
+    assert_non_color_observations_equal(&tinted, &tinted_emissive);
+
+    let normal_emissive_default = material_frame(
+        normal_texture_specular_fixture([255, 128, 255, 255], 1.0, 1.0, [1.0; 3], 2.42, 2.0),
+        Some(LightKind::Directional),
+        false,
+    );
+    let normal_emissive_tinted = material_frame(
+        normal_texture_specular_fixture(
+            [255, 128, 255, 255],
+            1.0,
+            0.6,
+            [2.0, 0.25, 0.5],
+            2.42,
+            2.0,
+        ),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_ne!(
+        normal_emissive_default.color_at(center.0, center.1),
+        normal_emissive_tinted.color_at(center.0, center.1)
+    );
+    assert_non_color_observations_equal(&normal_emissive_default, &normal_emissive_tinted);
+}
+
+fn assert_specular_light_response(light: LightKind, center: (u32, u32)) {
+    let omitted = material_frame(
+        specular_fixture(None, None, Some(2.42), 0.0, false),
+        Some(light),
+        false,
+    );
+    let explicit_default = material_frame(
+        specular_fixture(Some(1.0), Some([1.0; 3]), Some(2.42), 0.0, false),
+        Some(light),
+        false,
+    );
+    assert_frames_equal(&explicit_default, &omitted);
+
+    let zero = material_frame(
+        specular_fixture(Some(0.0), Some([3.0, 2.0, 1.0]), Some(2.42), 0.0, false),
+        Some(light),
+        false,
+    );
+    let tinted = material_frame(
+        specular_fixture(Some(0.75), Some([2.0, 0.25, 0.5]), Some(2.42), 0.0, false),
+        Some(light),
+        false,
+    );
+    let high = material_frame(
+        specular_fixture(Some(0.75), Some([20.0, 20.0, 20.0]), Some(2.42), 0.0, false),
+        Some(light),
+        false,
+    );
+    let water = material_frame(
+        specular_fixture(Some(0.75), Some([2.0, 0.25, 0.5]), Some(1.33), 0.0, false),
+        Some(light),
+        false,
+    );
+    for candidate in [&zero, &tinted, &high, &water] {
+        assert_non_color_observations_equal(candidate, &omitted);
+        assert_ne!(
+            candidate.color_at(center.0, center.1),
+            omitted.color_at(center.0, center.1)
+        );
+    }
+    assert_ne!(
+        tinted.color_at(center.0, center.1),
+        high.color_at(center.0, center.1)
+    );
+    assert_ne!(
+        tinted.color_at(center.0, center.1),
+        water.color_at(center.0, center.1)
+    );
+
+    let metal_zero = material_frame(
+        specular_fixture(Some(0.0), Some([0.0; 3]), Some(1.0), 1.0, false),
+        Some(light),
+        false,
+    );
+    let metal_high = material_frame(
+        specular_fixture(Some(1.0), Some([20.0; 3]), Some(2.42), 1.0, false),
+        Some(light),
+        false,
+    );
+    assert_frames_equal(&metal_zero, &metal_high);
+
+    let override_zero = material_frame(
+        specular_fixture(Some(0.0), Some([0.0; 3]), Some(1.0), 0.0, false),
+        Some(light),
+        true,
+    );
+    let override_high = material_frame(
+        specular_fixture(Some(1.0), Some([20.0; 3]), Some(2.42), 0.0, false),
+        Some(light),
+        true,
+    );
+    assert_frames_equal(&override_zero, &override_high);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn material_ior_changes_only_imported_dielectric_direct_response() {
     let center = (WIDTH / 2, HEIGHT / 2);
     let unlit_default = material_frame(ior_fixture(None, 0.0, None), None, false);
@@ -2843,6 +2988,64 @@ fn ior_fixture(ior: Option<f32>, metallic_factor: f32, emissive_strength: Option
     glb_with_json(&json, &binary)
 }
 
+fn specular_fixture(
+    specular_factor: Option<f32>,
+    specular_color_factor: Option<[f32; 3]>,
+    ior: Option<f32>,
+    metallic_factor: f32,
+    emissive: bool,
+) -> Vec<u8> {
+    let mut binary = Vec::with_capacity(36);
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let mut declarations = Vec::new();
+    let mut material_extensions = Vec::new();
+    if specular_factor.is_some() || specular_color_factor.is_some() {
+        declarations.push(r#""KHR_materials_specular""#);
+        let mut fields = Vec::new();
+        if let Some(value) = specular_factor {
+            fields.push(format!(r#""specularFactor":{value}"#));
+        }
+        if let Some([red, green, blue]) = specular_color_factor {
+            fields.push(format!(r#""specularColorFactor":[{red},{green},{blue}]"#));
+        }
+        material_extensions.push(format!(
+            r#""KHR_materials_specular":{{{}}}"#,
+            fields.join(",")
+        ));
+    }
+    if let Some(value) = ior {
+        declarations.push(r#""KHR_materials_ior""#);
+        material_extensions.push(format!(r#""KHR_materials_ior":{{"ior":{value}}}"#));
+    }
+    let root_extensions = if declarations.is_empty() {
+        String::new()
+    } else {
+        format!(r#", "extensionsUsed":[{}]"#, declarations.join(","))
+    };
+    let material_extensions = if material_extensions.is_empty() {
+        String::new()
+    } else {
+        format!(r#", "extensions":{{{}}}"#, material_extensions.join(","))
+    };
+    let emissive = if emissive {
+        r#", "emissiveFactor":[0.02,0.01,0.0]"#
+    } else {
+        ""
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}}{root_extensions},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,0.4],"metallicFactor":{metallic_factor},"roughnessFactor":0.5}}{emissive}{material_extensions}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":0,"mode":4}}]}}]}}"#,
+    );
+    glb_with_json(&json, &binary)
+}
+
 fn primary_uv_fixture() -> Vec<u8> {
     let positions = [[-0.75_f32, -0.5, 0.0], [0.75, -0.5, 0.0], [0.0, 0.75, 0.0]];
     let texcoords = [[-0.25_f32, 1.25], [2.0, -3.0], [0.5, 0.75]];
@@ -2899,15 +3102,34 @@ fn textured_two_mesh_fixture() -> Vec<u8> {
 }
 
 fn normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
-    normal_texture_fixture_with_options(texel, scale, false, true, None)
+    normal_texture_fixture_with_options(texel, scale, false, true, None, None, None)
 }
 
 fn normal_texture_ior_fixture(texel: [u8; 4], scale: f32, ior: f32) -> Vec<u8> {
-    normal_texture_fixture_with_options(texel, scale, false, true, Some(ior))
+    normal_texture_fixture_with_options(texel, scale, false, true, Some(ior), None, None)
+}
+
+fn normal_texture_specular_fixture(
+    texel: [u8; 4],
+    scale: f32,
+    specular_factor: f32,
+    specular_color_factor: [f32; 3],
+    ior: f32,
+    emissive_strength: f32,
+) -> Vec<u8> {
+    normal_texture_fixture_with_options(
+        texel,
+        scale,
+        false,
+        true,
+        Some(ior),
+        Some((specular_factor, specular_color_factor)),
+        Some(emissive_strength),
+    )
 }
 
 fn generated_normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
-    normal_texture_fixture_with_options(texel, scale, false, false, None)
+    normal_texture_fixture_with_options(texel, scale, false, false, None, None, None)
 }
 
 fn mesh_quantized_generated_normal_texture_fixture(texel: [u8; 4], quantized: bool) -> Vec<u8> {
@@ -2972,7 +3194,7 @@ fn mesh_quantized_generated_normal_texture_fixture(texel: [u8; 4], quantized: bo
 }
 
 fn double_sided_normal_texture_fixture(texel: [u8; 4], scale: f32) -> Vec<u8> {
-    normal_texture_fixture_with_options(texel, scale, true, true, None)
+    normal_texture_fixture_with_options(texel, scale, true, true, None, None, None)
 }
 
 fn normal_texture_fixture_with_options(
@@ -2981,6 +3203,8 @@ fn normal_texture_fixture_with_options(
     double_sided: bool,
     include_tangents: bool,
     ior: Option<f32>,
+    specular: Option<(f32, [f32; 3])>,
+    emissive_strength: Option<f32>,
 ) -> Vec<u8> {
     let positions = [
         [-0.75_f32, -0.75, 0.0],
@@ -3024,14 +3248,37 @@ fn normal_texture_fixture_with_options(
     } else {
         ""
     };
-    let root_extension = ior.map_or_else(String::new, |_| {
-        r#", "extensionsUsed":["KHR_materials_ior"]"#.to_owned()
-    });
-    let material_extension = ior.map_or_else(String::new, |value| {
-        format!(r#", "extensions":{{"KHR_materials_ior":{{"ior":{value}}}}}"#)
-    });
+    let mut declarations = Vec::new();
+    let mut extensions = Vec::new();
+    if let Some(value) = ior {
+        declarations.push(r#""KHR_materials_ior""#);
+        extensions.push(format!(r#""KHR_materials_ior":{{"ior":{value}}}"#));
+    }
+    if let Some((factor, [red, green, blue])) = specular {
+        declarations.push(r#""KHR_materials_specular""#);
+        extensions.push(format!(
+            r#""KHR_materials_specular":{{"specularFactor":{factor},"specularColorFactor":[{red},{green},{blue}]}}"#
+        ));
+    }
+    if let Some(value) = emissive_strength {
+        declarations.push(r#""KHR_materials_emissive_strength""#);
+        extensions.push(format!(
+            r#""KHR_materials_emissive_strength":{{"emissiveStrength":{value}}}"#
+        ));
+    }
+    let root_extension = if declarations.is_empty() {
+        String::new()
+    } else {
+        format!(r#", "extensionsUsed":[{}]"#, declarations.join(","))
+    };
+    let material_extension = if extensions.is_empty() {
+        String::new()
+    } else {
+        format!(r#", "extensions":{{{}}}"#, extensions.join(","))
+    };
+    let emissive = emissive_strength.map_or("", |_| r#", "emissiveFactor":[0.02,0.01,0.0]"#);
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}}{root_extension},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_image_offset},"byteLength":{base_image_length}}},{{"buffer":0,"byteOffset":{normal_image_offset},"byteLength":{normal_image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5,"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"scale":{scale}}}{double_sided}{material_extension}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1{tangent_attribute},"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}}{root_extension},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{base_image_offset},"byteLength":{base_image_length}}},{{"buffer":0,"byteOffset":{normal_image_offset},"byteLength":{normal_image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5,"baseColorTexture":{{"index":0}}}},"normalTexture":{{"index":1,"scale":{scale}}}{emissive}{double_sided}{material_extension}}}],"textures":[{{"source":0}},{{"source":1}}],"images":[{{"bufferView":4,"mimeType":"image/png"}},{{"bufferView":5,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1{tangent_attribute},"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         base_image_length = base_png.len(),
         normal_image_length = normal_png.len(),
