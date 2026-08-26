@@ -366,6 +366,14 @@ model informs behavior coverage but no sample asset byte, license payload,
 texture role, binding, sampler, pipeline, decoder, network path, or supply-
 chain authority is added.
 
+CF076 changes no Cargo manifest, lock entry, vendored byte, feature, build
+script, unsafe/native boundary, workflow, or runtime dependency edge. The
+three clearcoat texture roles reuse the existing strict JSON, PNG, coordinate,
+transform, sampler, upload, and shader paths. Fixed first-party uniform and
+bind-group layouts grow without changing the sampler table or pipeline count.
+No draft clearcoat extension, sample asset byte, decoder, network path, or
+supply-chain authority is added.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

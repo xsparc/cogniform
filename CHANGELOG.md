@@ -118,6 +118,18 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   the exact 720-byte prefix in a fixed 736-byte uniform without changing the
   72-byte vertex, thirteen bindings, six texture roles, 36 samplers, two
   pipelines, resource accounting, or lifecycle;
+- bounded `KHR_materials_clearcoat` intensity, roughness, and normal textures
+  through the existing strict embedded-PNG, sampler, coordinate-set, and
+  transform contracts. Linear intensity red and roughness green multiply the
+  numeric values; an independently scaled tangent-space RGB normal affects
+  only the coat. Root image/texture/sampler bounds and role accounting grow
+  from six to nine, shared sources still decode once on CPU, and nine role-
+  keyed GPU resources reserve and evict atomically. Ambiguous generated
+  tangent bases return bounded unsupported. Six appended affine rows preserve
+  the exact 736-byte prefix in a fixed 832-byte uniform; the fixed bind group
+  grows from thirteen to nineteen entries with explicit nine-texture/sampler
+  preflight while retaining 72-byte vertices, 36 samplers, two pipelines,
+  dependencies, protocols, persistence, and release authority;
 - optional core glTF `OPAQUE` and `MASK` alpha coverage, with strict finite
   non-negative cutoff handling, multiplied factor/texture alpha, exact cutoff
   equality, pre-output discard across color/depth/identity/normal, opaque

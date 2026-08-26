@@ -22,10 +22,11 @@ sample, the configured target and readback limits, and render/copy usages for
 linear `Rgba8Unorm` color, `R32Uint` identity, `Rgba8Unorm` normal, and
 `Depth32Float` depth. It must also support copy-destination, sampled binding,
 and filterable sampling for `Rgba8UnormSrgb` asset textures.
-Linear `Rgba8Unorm` asset normal and metallic-roughness textures require the
+Linear `Rgba8Unorm` asset normal, metallic-roughness, clearcoat-intensity,
+clearcoat-roughness, and clearcoat-normal textures require the
 same sampled, copy-destination, and filterable usages.
-The fixed imported-material layout also requires at least six sampled
-textures, six samplers per shader stage, thirteen bindings per bind group, six
+The fixed imported-material layout also requires at least nine sampled
+textures, nine samplers per shader stage, nineteen bindings per bind group, six
 vertex attributes, and a 72-byte vertex-buffer stride.
 Narrow adapters fail structured capability preflight before pipeline creation.
 
@@ -138,15 +139,17 @@ factors retain the CF072 path, strength zero gives pure dielectric diffuse, and
 metallic one remains factor-independent. Linear specular-strength alpha and
 sRGB-decoded specular-color RGB multiply those factors independently;
 strength RGB and color alpha are ignored.
-Ratified numeric `KHR_materials_clearcoat` factor and roughness add a fixed-
+Ratified `KHR_materials_clearcoat` factor and roughness add a fixed-
 IOR `1.5` white GGX layer for selected imported metallic-roughness materials.
-The coat uses the geometric normal and absolute view-normal cosine for Schlick
-Fresnel, attenuates the complete existing response before adding its direct
+Linear clearcoat red and roughness green multiply the numeric values; their
+other channels are ignored. A finite-scaled tangent-space coat-normal texture
+may replace only the coat normal, while omission preserves the geometric coat
+normal even with a mapped base normal. The absolute view-normal cosine drives
+Schlick Fresnel, attenuates the complete existing response before adding its direct
 lobe for each active light, and attenuates the no-light compatibility response
 and surface emission exactly once. Exact factor zero preserves the complete
-prior shader path. The coat is visually absent for unlit, explicit scene
-materials, built-ins, fallbacks, and proxies. Its three texture members remain
-unsupported after strict asset validation.
+prior shader path and skips coat texture work. The coat is visually absent for
+unlit, explicit scene materials, built-ins, fallbacks, and proxies.
 Perceptual roughness is floored to `0.05` only in the GGX
 distribution to avoid a singular highlight. Each contribution and the shared
 sum are clamped in linear RGB; material alpha is preserved. If neither kind is
@@ -174,7 +177,7 @@ normal observation retain the
 geometric transformed direction. An imported metallic-roughness texture
 multiplies perceptual roughness by green and metallic by blue before both
 directional and point response; red and alpha are ignored. A scene material
-override disables all six imported texture roles.
+override disables all nine imported texture roles.
 
 Imported GLB alpha coverage is evaluated independently of lighting. OPAQUE
 ignores multiplied factor/texture alpha and emits one. MASK discards products
@@ -199,8 +202,9 @@ non-finite value. A fifth definition of either kind, a degenerate active
 directional positive-Z axis, or an active point or selected camera translation
 outside finite GPU f32 returns a typed error before submission.
 
-The existing bind group carries one fixed 736-byte per-draw uniform. The prior
-720-byte prefix remains exact; its 656-byte, 640-byte, 624-byte, 496-byte, and first 480-byte
+The existing bind group carries one fixed 832-byte per-draw uniform. The prior
+736-byte prefix remains exact; its 720-byte, 656-byte, 640-byte, 624-byte,
+496-byte, and first 480-byte
 prefixes remain model,
 view-projection, color, compact ID, directional
 count and four directional slots, point count and four point slots, camera
@@ -213,17 +217,23 @@ metallic-roughness, and emissive affine transforms. Material flag bit 4 selects
 imported unlit shading, bit 5 selects imported vertex color, and bits 6 through
 9 select secondary coordinates for base color, emissive, metallic-roughness,
 and normal respectively. Bits 10 and 11 select secondary coordinates for
-specular strength and color. The integer range through 4,095 remains exact in
+specular strength and color. Bits 12 through 14 select secondary coordinates
+for clearcoat intensity, roughness, and normal. The integer range through
+32,767 remains exact in
 the existing f32 flag lane. One optical `vec4` contains dielectric F0 and three
 exact-zero padding lanes. One factor `vec4` contains specular color RGB and
 strength; four rows carry strength then color affine transforms. One final
 `vec4` contains clearcoat factor and roughness followed by two exact-zero
-padding lanes.
+padding lanes. Six final rows carry clearcoat intensity, roughness, and normal
+affine transforms; the coat-normal padding lanes carry finite scale and role
+presence.
 Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 selects base-color sampling and bindings 6, 7, and 8 select normal,
 metallic-roughness, and emissive sampling. Bindings 9 and 11 select specular-
 strength and specular-color views; bindings 10 and 12 select their samplers.
+Bindings 13, 15, and 17 select clearcoat intensity, roughness, and normal
+views; bindings 14, 16, and 18 select their samplers.
 Inactive roles bind the
 linear/repeat table entry. This adds
 no light buffer, runtime-selected pipeline creation, runtime
@@ -306,8 +316,10 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture specular_textures_multiply_alpha_and_srgb_rgb_with_neutral_fallbacks --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture specular_texture_coordinates_transforms_and_samplers_are_independent --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_factors_layer_the_complete_imported_material_without_new_resources --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_textures_use_linear_r_g_channels_and_an_independent_scaled_normal --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact six_texture_roles_upload_evict_and_rehydrate_exactly
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact nine_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_draws_switch_pipelines_without_reordering_or_causality_changes
@@ -460,6 +472,10 @@ fixed bind-group growth, and capability preflight.
 See [ADR 0075](../adr/0075-bounded-gltf-material-clearcoat-factors.md) for
 strict numeric and deferred-texture admission, fixed-IOR geometric-normal
 layering, the appended factor row, and unchanged resource topology.
+See [ADR 0076](../adr/0076-bounded-gltf-material-clearcoat-textures.md) for
+linear channel semantics, independent scaled coat normals, generated-tangent
+agreement, nine-role accounting, appended affine rows, and capability
+preflight.
 See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for strict sampler
 decode, fixed-table indexing, independent role bindings, and the one-mip
 fallback.

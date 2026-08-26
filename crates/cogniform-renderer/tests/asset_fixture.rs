@@ -3,8 +3,8 @@
 #![cfg(any(target_os = "windows", target_os = "linux"))]
 
 use cogniform_assets::{
-    ASSET_VERTEX_BYTES, AssetMeshKey, AssetShadingModel, AssetState, AssetStore, AssetVertex,
-    content_hash,
+    ASSET_VERTEX_BYTES, AssetMeshKey, AssetShadingModel, AssetState, AssetStore, AssetUploadJob,
+    AssetVertex, content_hash,
 };
 use cogniform_protocol::{
     ApplyStatus, AssetMeshComponent, CameraComponent, ColorRgb, ColorRgba, ComponentValue,
@@ -1128,6 +1128,177 @@ fn clearcoat_factors_layer_the_complete_imported_material_without_new_resources(
     assert_clearcoat_composition_cases(center);
 }
 
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn clearcoat_textures_use_linear_r_g_channels_and_an_independent_scaled_normal() {
+    let center = (WIDTH / 2, HEIGHT / 2);
+    assert_clearcoat_texture_channel_cases(center);
+    assert_clearcoat_normal_texture_cases(center);
+}
+
+fn assert_clearcoat_texture_channel_cases(center: (u32, u32)) {
+    for light in [LightKind::Directional, LightKind::Point] {
+        let factor_only = material_frame(
+            clearcoat_texture_fixture(None, None, None, None, 0.8, 0.3, 1.0),
+            Some(light),
+            false,
+        );
+        let neutral = material_frame(
+            clearcoat_texture_fixture(
+                Some([255, 13, 29, 47]),
+                Some([31, 255, 43, 59]),
+                Some([128, 128, 255, 67]),
+                None,
+                0.8,
+                0.3,
+                1.0,
+            ),
+            Some(light),
+            false,
+        );
+        assert_color_near(
+            &neutral,
+            center,
+            factor_only.color_at(center.0, center.1).unwrap(),
+        );
+        assert_non_color_observations_equal(&neutral, &factor_only);
+
+        let channel_reference = material_frame(
+            clearcoat_texture_fixture(
+                Some([128, 1, 2, 3]),
+                Some([4, 64, 5, 6]),
+                None,
+                None,
+                0.8,
+                0.6,
+                1.0,
+            ),
+            Some(light),
+            false,
+        );
+        let ignored_channels = material_frame(
+            clearcoat_texture_fixture(
+                Some([128, 250, 240, 230]),
+                Some([220, 64, 210, 200]),
+                None,
+                None,
+                0.8,
+                0.6,
+                1.0,
+            ),
+            Some(light),
+            false,
+        );
+        assert_frames_equal(&ignored_channels, &channel_reference);
+
+        let scalar_equivalent = material_frame(
+            clearcoat_texture_fixture(
+                None,
+                None,
+                None,
+                None,
+                0.8 * f32::from(128_u8) / 255.0,
+                0.6 * f32::from(64_u8) / 255.0,
+                1.0,
+            ),
+            Some(light),
+            false,
+        );
+        assert_color_near(
+            &channel_reference,
+            center,
+            scalar_equivalent.color_at(center.0, center.1).unwrap(),
+        );
+        assert_non_color_observations_equal(&channel_reference, &scalar_equivalent);
+
+        let zero_factor_textured = material_frame(
+            clearcoat_texture_fixture(
+                Some([255, 0, 0, 0]),
+                Some([0, 0, 255, 255]),
+                Some([255, 0, 255, 255]),
+                None,
+                0.0,
+                1.0,
+                -4.0,
+            ),
+            Some(light),
+            false,
+        );
+        let zero_factor = material_frame(
+            clearcoat_texture_fixture(None, None, None, None, 0.0, 1.0, 1.0),
+            Some(light),
+            false,
+        );
+        assert_frames_equal(&zero_factor_textured, &zero_factor);
+    }
+}
+
+fn assert_clearcoat_normal_texture_cases(center: (u32, u32)) {
+    let geometric_coat = material_frame(
+        clearcoat_texture_fixture(None, None, None, Some([255, 128, 255, 255]), 1.0, 0.2, 1.0),
+        Some(LightKind::Directional),
+        false,
+    );
+    let tilted_coat = material_frame(
+        clearcoat_texture_fixture(
+            None,
+            None,
+            Some([255, 128, 255, 11]),
+            Some([255, 128, 255, 255]),
+            1.0,
+            0.2,
+            1.0,
+        ),
+        Some(LightKind::Directional),
+        false,
+    );
+    let tilted_coat_opaque_alpha = material_frame(
+        clearcoat_texture_fixture(
+            None,
+            None,
+            Some([255, 128, 255, 255]),
+            Some([255, 128, 255, 255]),
+            1.0,
+            0.2,
+            1.0,
+        ),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_frames_equal(&tilted_coat, &tilted_coat_opaque_alpha);
+    assert_ne!(
+        tilted_coat.color_at(center.0, center.1),
+        geometric_coat.color_at(center.0, center.1),
+        "the coat normal must be independent from the base normal"
+    );
+    assert_non_color_observations_equal(&tilted_coat, &geometric_coat);
+
+    let zero_scale = material_frame(
+        clearcoat_texture_fixture(
+            None,
+            None,
+            Some([255, 128, 255, 3]),
+            Some([128, 128, 255, 255]),
+            1.0,
+            0.2,
+            0.0,
+        ),
+        Some(LightKind::Directional),
+        false,
+    );
+    let neutral_normal = material_frame(
+        clearcoat_texture_fixture(None, None, None, Some([128, 128, 255, 255]), 1.0, 0.2, 1.0),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_color_near(
+        &zero_scale,
+        center,
+        neutral_normal.color_at(center.0, center.1).unwrap(),
+    );
+    assert_non_color_observations_equal(&zero_scale, &neutral_normal);
+}
+
 fn assert_clearcoat_direct_light_cases(center: (u32, u32)) {
     for light in [LightKind::Directional, LightKind::Point] {
         let omitted = material_frame(
@@ -2031,6 +2202,54 @@ fn six_texture_roles_upload_evict_and_rehydrate_exactly() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn nine_texture_roles_upload_evict_and_rehydrate_exactly() {
+    let bytes = nine_role_shared_image_fixture();
+    let content_hash = content_hash(&bytes);
+    let key = AssetMeshKey {
+        content_hash,
+        mesh_index: 0,
+    };
+    let mut assets = AssetStore::default();
+    assets.enqueue(content_hash, bytes).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    assert_eq!(assets.record(content_hash).unwrap().decoded_bytes, 220);
+    let upload = assets.upload_job(key).unwrap();
+    assert!(upload.base_color_texture().is_some());
+    assert!(upload.emissive_texture().is_some());
+    assert!(upload.metallic_roughness_texture().is_some());
+    assert!(upload.normal_texture().is_some());
+    assert!(upload.specular_texture().is_some());
+    assert!(upload.specular_color_texture().is_some());
+    assert!(upload.clearcoat_texture().is_some());
+    assert!(upload.clearcoat_roughness_texture().is_some());
+    assert!(upload.clearcoat_normal_texture().is_some());
+
+    let mut renderer =
+        pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
+            .expect("the declared reference adapter must initialize");
+    renderer.enqueue_asset_upload(upload.clone()).unwrap();
+    assert_eq!(renderer.asset_stats().pending_textures, 9);
+    assert_eq!(renderer.asset_stats().pending_texture_bytes, 36);
+    let uploaded = renderer.process_next_asset_upload().unwrap();
+    assert_eq!(uploaded.texture_byte_len, 36);
+    assert_eq!(renderer.asset_stats().resident_textures, 9);
+    assert_eq!(renderer.asset_stats().resident_texture_bytes, 36);
+    let eviction = renderer.evict_asset(content_hash);
+    assert_eq!(eviction.removed_resident_textures, 9);
+    assert_eq!(eviction.released_resident_texture_bytes, 36);
+    renderer.enqueue_asset_upload(upload).unwrap();
+    assert_eq!(
+        renderer
+            .process_next_asset_upload()
+            .unwrap()
+            .texture_byte_len,
+        36
+    );
+    assert_eq!(renderer.asset_stats().resident_textures, 9);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn content_hash_eviction_cancels_partial_uploads_and_preserves_submitted_work() {
     let bytes = textured_two_mesh_fixture();
     let content_hash = content_hash(&bytes);
@@ -2371,30 +2590,7 @@ fn oriented_material_frame_with_lights(
     assets.enqueue(content_hash, bytes).unwrap();
     assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
     let upload = assets.upload_job(key).unwrap();
-    let texture_count = [
-        upload.base_color_texture(),
-        upload.emissive_texture(),
-        upload.metallic_roughness_texture(),
-        upload.normal_texture(),
-        upload.specular_texture(),
-        upload.specular_color_texture(),
-    ]
-    .into_iter()
-    .flatten()
-    .count();
-    let texture_count = u32::try_from(texture_count).unwrap();
-    let texture_bytes = [
-        upload.base_color_texture(),
-        upload.emissive_texture(),
-        upload.metallic_roughness_texture(),
-        upload.normal_texture(),
-        upload.specular_texture(),
-        upload.specular_color_texture(),
-    ]
-    .into_iter()
-    .flatten()
-    .map(cogniform_assets::AssetTexture::byte_len)
-    .sum::<u64>();
+    let (texture_count, texture_bytes) = upload_texture_stats(&upload);
     let rehydration_upload = upload.clone();
 
     let mut renderer =
@@ -2460,6 +2656,27 @@ fn oriented_material_frame_with_lights(
     assert_eq!(world.revision(), revision_before_replay);
     assert_eq!(world.logical_hash().unwrap(), hash_before_replay);
     renderer.submit_scene(camera).unwrap().read().unwrap()
+}
+
+fn upload_texture_stats(upload: &AssetUploadJob) -> (u32, u64) {
+    let textures = [
+        upload.base_color_texture(),
+        upload.emissive_texture(),
+        upload.metallic_roughness_texture(),
+        upload.normal_texture(),
+        upload.specular_texture(),
+        upload.specular_color_texture(),
+        upload.clearcoat_texture(),
+        upload.clearcoat_roughness_texture(),
+        upload.clearcoat_normal_texture(),
+    ];
+    let count = textures.into_iter().flatten().count();
+    let bytes = textures
+        .into_iter()
+        .flatten()
+        .map(cogniform_assets::AssetTexture::byte_len)
+        .sum();
+    (u32::try_from(count).unwrap(), bytes)
 }
 
 fn fixture_light_patch(
@@ -2542,6 +2759,7 @@ fn upload_textured_meshes(
     assert_eq!(renderer.asset_stats().resident_texture_bytes, 16);
 }
 
+#[track_caller]
 fn assert_color_near(frame: &RenderedFrame, at: (u32, u32), expected_color: [u8; 4]) {
     let actual_color = frame.color_at(at.0, at.1).unwrap();
     for (actual, expected) in actual_color.into_iter().zip(expected_color) {
@@ -3464,6 +3682,105 @@ fn clearcoat_fixture(
     glb_with_json(&json, &binary)
 }
 
+fn clearcoat_texture_fixture(
+    clearcoat_texel: Option<[u8; 4]>,
+    roughness_texel: Option<[u8; 4]>,
+    clearcoat_normal_texel: Option<[u8; 4]>,
+    base_normal_texel: Option<[u8; 4]>,
+    clearcoat_factor: f32,
+    roughness_factor: f32,
+    clearcoat_normal_scale: f32,
+) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.5_f32, 0.5]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let mut image_views = Vec::new();
+    let mut images = Vec::new();
+    let mut textures = Vec::new();
+    let mut base_normal_field = String::new();
+    let mut clearcoat_texture_fields = Vec::new();
+    for (field, texel) in [
+        ("normalTexture", base_normal_texel),
+        ("clearcoatTexture", clearcoat_texel),
+        ("clearcoatRoughnessTexture", roughness_texel),
+        ("clearcoatNormalTexture", clearcoat_normal_texel),
+    ] {
+        let Some(texel) = texel else {
+            continue;
+        };
+        let png = encode_png(1, 1, &texel);
+        let offset = binary.len();
+        binary.extend_from_slice(&png);
+        let image_index = images.len();
+        image_views.push(format!(
+            r#"{{"buffer":0,"byteOffset":{offset},"byteLength":{}}}"#,
+            png.len()
+        ));
+        images.push(format!(
+            r#"{{"bufferView":{},"mimeType":"image/png"}}"#,
+            image_index + 4
+        ));
+        textures.push(format!(r#"{{"source":{image_index}}}"#));
+        let texture_index = textures.len() - 1;
+        if field == "normalTexture" {
+            base_normal_field = format!(r#", "normalTexture":{{"index":{texture_index}}}"#);
+        } else if field == "clearcoatNormalTexture" {
+            clearcoat_texture_fields.push(format!(
+                r#""{field}":{{"index":{texture_index},"scale":{clearcoat_normal_scale}}}"#
+            ));
+        } else {
+            clearcoat_texture_fields.push(format!(r#""{field}":{{"index":{texture_index}}}"#));
+        }
+    }
+    let image_views = if image_views.is_empty() {
+        String::new()
+    } else {
+        format!(",{}", image_views.join(","))
+    };
+    let texture_resources = if textures.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#", "textures":[{}],"images":[{}]"#,
+            textures.join(","),
+            images.join(",")
+        )
+    };
+    let clearcoat_texture_fields = if clearcoat_texture_fields.is_empty() {
+        String::new()
+    } else {
+        format!(",{}", clearcoat_texture_fields.join(","))
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_clearcoat"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}}{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5}}{base_normal_field},"extensions":{{"KHR_materials_clearcoat":{{"clearcoatFactor":{clearcoat_factor},"clearcoatRoughnessFactor":{roughness_factor}{clearcoat_texture_fields}}}}}}}]{texture_resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
 fn specular_texture_fixture(
     strength_texel: Option<[u8; 4]>,
     color_texel: Option<[u8; 4]>,
@@ -3917,6 +4234,19 @@ fn six_role_shared_image_fixture() -> Vec<u8> {
     binary.extend_from_slice(&png);
     let json = format!(
         r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_specular"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":0}}}},"normalTexture":{{"index":0}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":0}},"extensions":{{"KHR_materials_specular":{{"specularTexture":{{"index":0}},"specularColorTexture":{{"index":0}}}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+        png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn nine_role_shared_image_fixture() -> Vec<u8> {
+    let mut binary = four_role_fixture_geometry(false);
+    let png = encode_png(1, 1, &[128, 128, 255, 255]);
+    let image_offset = binary.len();
+    binary.extend_from_slice(&png);
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_specular","KHR_materials_clearcoat"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":0}}}},"normalTexture":{{"index":0}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":0}},"extensions":{{"KHR_materials_specular":{{"specularTexture":{{"index":0}},"specularColorTexture":{{"index":0}}}},"KHR_materials_clearcoat":{{"clearcoatFactor":1.0,"clearcoatTexture":{{"index":0}},"clearcoatRoughnessTexture":{{"index":0}},"clearcoatNormalTexture":{{"index":0}}}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary.len(),
         png.len(),
     );

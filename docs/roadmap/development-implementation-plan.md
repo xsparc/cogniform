@@ -1778,6 +1778,33 @@ lifecycle, revision, logical hash, replay, protocol, persistence, dependency,
 workflow, release, and deployment boundaries. See
 [ADR 0075](../adr/0075-bounded-gltf-material-clearcoat-factors.md).
 
+### PR 76 - CF076: Bounded glTF material clearcoat textures
+
+Outcome: supported imported metallic-roughness materials retain and render all
+three ratified clearcoat texture roles under fixed resource and tangent-space
+bounds.
+
+Gate: admit linear clearcoat red, linear roughness green, and tangent-space
+coat-normal RGB after the existing strict declaration, texture-info, selected-
+coordinate, transform, sampler, image, and PNG validation. Retain independent
+samplers, effective coordinate sets, affine transforms, and finite coat-normal
+scale. Raise root image, texture, and sampler caps from six to nine; decode a
+shared source once on CPU while reserving zero through nine content-hash-and-
+role GPU resources atomically. Reject a tenth resource.
+
+Generate missing tangents from the coat-normal coordinate stream when it is the
+only normal role. When both base and coat normals require generated tangents,
+require identical effective coordinate set and transform or return bounded
+unsupported; authored tangents permit independent selections. Append six
+affine rows after the exact 736-byte prefix for a fixed 832-byte uniform, use
+selector bits 12 through 14, and grow the fixed bind group from thirteen to
+nineteen entries. Require nine sampled textures and nine samplers per shader
+stage. Preserve the 72-byte vertex, 36-entry sampler table, two pipelines,
+attachments, observations, lifecycle, revision, logical hash, replay,
+protocol, persistence, dependency, workflow, release, and deployment
+boundaries. See
+[ADR 0076](../adr/0076-bounded-gltf-material-clearcoat-textures.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1790,7 +1817,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
-  -> CF072 -> CF073 -> CF074 -> CF075
+  -> CF072 -> CF073 -> CF074 -> CF075 -> CF076
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2176,6 +2203,19 @@ Validation expands with capability:
   override, emission, and unchanged non-color evidence; unchanged vertex,
   texture-role, binding, sampler, pipeline, lifecycle, logical, protocol,
   persistence, dependency, workflow, release, and deployment boundaries.
+- CF076: strict admission of the three ratified clearcoat texture roles;
+  linear intensity red and roughness green multiplication with unused channels
+  ignored; independent tangent-space coat normal and finite scale; independent
+  sampler, coordinate selector, and affine-transform retention; exact six-to-
+  nine root collection and role-accounting growth; shared/distinct CPU decode
+  accounting; atomic nine-role GPU reservation, eviction, and rehydration;
+  bounded generated-tangent coordinate agreement; exact 736-byte uniform
+  prefix plus six appended rows in an 832-byte layout; nineteen fixed bindings
+  with explicit nine-texture and nine-sampler preflight; neutral fallback,
+  directional/point, zero-factor, channel, factor-equivalence, independent-
+  normal, scale, and unchanged non-color Vulkan evidence; unchanged vertex,
+  sampler table, pipeline, logical, protocol, persistence, dependency,
+  workflow, release, and deployment boundaries.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

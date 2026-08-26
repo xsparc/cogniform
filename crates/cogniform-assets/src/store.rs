@@ -280,6 +280,18 @@ impl AssetStore {
                     .has_specular_color_texture()
                     .then(|| decoded.specular_color_texture.clone())
                     .flatten(),
+                mesh.material
+                    .has_clearcoat_texture()
+                    .then(|| decoded.clearcoat_texture.clone())
+                    .flatten(),
+                mesh.material
+                    .has_clearcoat_roughness_texture()
+                    .then(|| decoded.clearcoat_roughness_texture.clone())
+                    .flatten(),
+                mesh.material
+                    .has_clearcoat_normal_texture()
+                    .then(|| decoded.clearcoat_normal_texture.clone())
+                    .flatten(),
             ],
         ))
     }
