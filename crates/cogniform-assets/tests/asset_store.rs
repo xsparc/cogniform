@@ -2206,6 +2206,228 @@ fn wider_clearcoat_payload_proxies_only_after_supported_fields_validate() {
 }
 
 #[test]
+fn sheen_defaults_and_unit_factors_are_retained_without_accounting_growth() {
+    let cases = [
+        ("", r"[{}]", 0, [0.0_f32; 3], 0.0_f32),
+        (
+            r#""extensionsUsed":["KHR_materials_sheen"],"#,
+            r#"[{"extensions":{"KHR_materials_sheen":{}}}]"#,
+            0,
+            [0.0; 3],
+            0.0,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_sheen"],"extensionsRequired":["KHR_materials_sheen"],"#,
+            r#"[{"extensions":{"KHR_materials_sheen":{"sheenColorFactor":[0.25,0.5,1.0],"sheenRoughnessFactor":0.75}}}]"#,
+            0,
+            [0.25, 0.5, 1.0],
+            0.75,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_sheen"],"#,
+            r#"[{"extensions":{"KHR_materials_sheen":{"sheenColorFactor":[1.0,1.0,1.0],"sheenRoughnessFactor":1.0}}},{}]"#,
+            1,
+            [0.0; 3],
+            0.0,
+        ),
+    ];
+    let mut decoded_bytes = Vec::new();
+    let mut upload_bytes = Vec::new();
+    for (root_fields, materials, selected, expected_color, expected_roughness) in cases {
+        let bytes = triangle_glb_with_extension_materials(root_fields, materials, selected);
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        decoded_bytes.push(store.record(hash).unwrap().decoded_bytes);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert_eq!(
+            upload.material().sheen_color_factor().map(f32::to_bits),
+            expected_color.map(f32::to_bits)
+        );
+        assert_eq!(
+            upload.material().sheen_roughness_factor().to_bits(),
+            expected_roughness.to_bits()
+        );
+        upload_bytes.push(upload.byte_len());
+    }
+    assert!(decoded_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+    assert!(upload_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn malformed_or_forbidden_sheen_never_receives_a_proxy() {
+    let declared = r#""extensionsUsed":["KHR_materials_sheen"],"#;
+    let cases = [
+        ("", r#"[{"extensions":{"KHR_materials_sheen":{}}}]"#),
+        (declared, r#"[{"extensions":{"KHR_materials_sheen":null}}]"#),
+        (declared, r#"[{"extensions":{"KHR_materials_sheen":[]}}]"#),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_sheen":{"sheenColorFactor":null}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_sheen":{"sheenColorFactor":[1.0,1.0]}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_sheen":{"sheenColorFactor":[1.0,-0.1,1.0]}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_sheen":{"sheenColorFactor":[1.0,1.1,1.0]}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_sheen":{"sheenRoughnessFactor":1e100}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_sheen":{"sheenRoughnessFactor":-0.1}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_sheen":{"sheenColorTexture":null}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_sheen":{"sheenRoughnessTexture":{}}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_sheen":{"sheenColorTexture":{"index":"0"}}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_sheen","KHR_materials_unlit"],"#,
+            r#"[{"extensions":{"KHR_materials_sheen":{},"KHR_materials_unlit":{}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_sheen","KHR_materials_pbrSpecularGlossiness"],"#,
+            r#"[{"extensions":{"KHR_materials_sheen":{},"KHR_materials_pbrSpecularGlossiness":{}}}]"#,
+        ),
+    ];
+    for (root_fields, materials) in cases {
+        let bytes = triangle_glb_with_extension_materials(root_fields, materials, 0);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+}
+
+#[test]
+fn sheen_textures_proxy_only_after_info_root_and_uv_references_validate() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[255, 128, 64, 255],
+    );
+    let material = r#""extensions":{"KHR_materials_sheen":{"sheenColorFactor":[0.25,0.5,1.0],"sheenRoughnessFactor":0.75,"sheenColorTexture":{"index":0},"sheenRoughnessTexture":{"index":0}}}"#;
+    let fixture = |material: &str, include_texcoords| {
+        material_textured_triangle_glb(
+            &png,
+            material,
+            r#"{"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"}"#,
+            r#", "extensionsUsed":["KHR_materials_sheen"]"#,
+            include_texcoords,
+        )
+    };
+
+    let (store, hash) = process_with_proxy_policy(fixture(material, true));
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedExtension
+    );
+
+    let (store, hash) = process_with_proxy_policy(fixture(material, false));
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidTexcoord
+    );
+
+    let transformed = r#""extensions":{"KHR_materials_sheen":{"sheenColorTexture":{"index":0,"texCoord":1,"extensions":{"KHR_texture_transform":{"texCoord":0,"offset":[0.25,-0.5],"scale":[0.5,2.0]}}}}}"#;
+    let transformed = material_textured_triangle_glb(
+        &png,
+        transformed,
+        r#"{"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        r#", "extensionsUsed":["KHR_materials_sheen","KHR_texture_transform"]"#,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(transformed);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedExtension
+    );
+
+    let missing_transformed_coordinates = r#""extensions":{"KHR_materials_sheen":{"sheenRoughnessTexture":{"index":0,"extensions":{"KHR_texture_transform":{"texCoord":1}}}}}"#;
+    let missing_transformed_coordinates = material_textured_triangle_glb(
+        &png,
+        missing_transformed_coordinates,
+        r#"{"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        r#", "extensionsUsed":["KHR_materials_sheen","KHR_texture_transform"]"#,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(missing_transformed_coordinates);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidTexcoord
+    );
+
+    let dangling = material.replace(r#""index":0"#, r#""index":1"#);
+    let (store, hash) = process_with_proxy_policy(fixture(&dangling, true));
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidBufferRange
+    );
+}
+
+#[test]
+fn wider_sheen_payload_proxies_only_after_supported_fields_validate() {
+    let declared = r#""extensionsUsed":["KHR_materials_sheen"],"#;
+    let wider = triangle_glb_with_extension_materials(
+        declared,
+        r#"[{"extensions":{"KHR_materials_sheen":{"sheenColorFactor":[0.25,0.5,1.0],"sheenRoughnessFactor":0.75,"future":true}}}]"#,
+        0,
+    );
+    let (store, hash) = process_with_proxy_policy(wider);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedExtension
+    );
+
+    let invalid = triangle_glb_with_extension_materials(
+        declared,
+        r#"[{"extensions":{"KHR_materials_sheen":{"sheenColorFactor":[0.25,2.0,1.0],"future":true}}}]"#,
+        0,
+    );
+    let (store, hash) = process_with_proxy_policy(invalid);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+}
+
+#[test]
 fn malformed_or_forbidden_specular_never_receives_a_proxy() {
     let declared = r#""extensionsUsed":["KHR_materials_specular"],"#;
     let cases = [

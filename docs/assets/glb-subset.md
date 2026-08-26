@@ -48,6 +48,9 @@ factor row without changing texture or renderer resource accounting.
 CF076 admits those three clearcoat roles with ratified linear channel and
 tangent-space semantics, expands bounded role accounting from six to nine,
 and preserves the complete CF075 uniform as a fixed prefix.
+CF077 admits ratified numeric sheen color and roughness, validates but defers
+both sheen texture members, and appends one factor row without changing the
+nine-role renderer resource surface.
 
 ## Ownership and lifecycle
 
@@ -233,7 +236,7 @@ The importer accepts only the following baseline:
 - optional non-empty unique-string `extensionsUsed` and
   `extensionsRequired`, with required a subset of used. The recognized names
   are `KHR_materials_emissive_strength`, `KHR_materials_ior`,
-  `KHR_materials_specular`, `KHR_materials_clearcoat`,
+  `KHR_materials_specular`, `KHR_materials_clearcoat`, `KHR_materials_sheen`,
   `KHR_materials_unlit`,
   `KHR_mesh_quantization`, and `KHR_texture_transform`; every actual supported
   or unknown extension member
@@ -298,7 +301,19 @@ The importer accepts only the following baseline:
   coordinate selector, declared texture transform, root texture/sampler/
   source/image/PNG resources, and the selected primitive coordinate set;
   normal scale must also be finite. Malformed or dangling authority rejects
-  without proxy. The three well-formed roles are retained independently.
+  without proxy. The three well-formed roles are retained independently; and
+- optional material `extensions.KHR_materials_sheen` object. Optional
+  `sheenColorFactor` is exactly three finite unit f32 values with exact default
+  `[0,0,0]`; optional `sheenRoughnessFactor` is a finite unit f32 with exact
+  default zero. Null, scalar, malformed, undeclared, non-finite, negative, or
+  above-one values are invalid. The extension must not coexist with declared
+  unlit or legacy specular-glossiness. Supported numeric fields validate before
+  wider-payload classification. Optional `sheenColorTexture` and
+  `sheenRoughnessTexture` infos require valid shape, in-range indices, declared
+  transforms, root texture/sampler/source/image/PNG resources, and selected
+  primitive coordinates. Malformed or dangling authority rejects without
+  proxy; well-formed texture-bearing sheen remains unsupported and adds no
+  retained role.
 
 A valid texture-transform coordinate override above one or otherwise
 well-formed wider transform property remains an unsupported-extension/proxy
@@ -384,7 +399,7 @@ or out-of-range emissive factors, malformed alpha mode/cutoff values,
 malformed `doubleSided` or sampler values and indices, missing required mesh-
 quantization declarations, invalid accessor bounds or source-attribute counts,
 malformed, duplicate, empty, or inconsistent extension declarations, malformed
-or undeclared emissive-strength, IOR, specular, clearcoat, unlit, or texture-transform markers, negative
+or undeclared emissive-strength, IOR, specular, clearcoat, sheen, unlit, or texture-transform markers, negative
 or non-finite emissive strength, prohibited strength/unlit coexistence, non-finite
 or zero-to-one IOR, prohibited IOR/unlit or IOR/specular-glossiness
 coexistence, malformed specular factors or texture infos, prohibited
@@ -393,6 +408,9 @@ texture resources or missing selected coordinates,
 malformed clearcoat factors or texture infos, prohibited clearcoat/unlit or
 clearcoat/specular-glossiness coexistence, dangling clearcoat texture
 resources or missing selected coordinates,
+malformed sheen factors or texture infos, prohibited sheen/unlit or sheen/
+specular-glossiness coexistence, dangling sheen texture resources or missing
+selected coordinates,
 texture-transform inputs or expanded results,
 malformed emissive texture roles or missing
 coordinates, malformed or truncated PNG data, invalid
@@ -415,7 +433,7 @@ At draw time, a resident mesh uses its imported base-color factor, optional
 base-color, metallic-roughness, tangent-space normal, and emissive textures,
 metallic, roughness, normal scale, emissive RGB, emissive strength, IOR-derived
 dielectric F0, specular strength/color factors, and retained finite unit
-clearcoat factor and roughness unless
+clearcoat factor and roughness, sheen color, and sheen roughness unless
 the world entity has an explicit material,
 which overrides the imported material as a whole and uses renderer-owned
 white base-color/emissive, factor-one metallic-roughness, and neutral-normal
@@ -488,10 +506,24 @@ depth, identity, normal observation, unlit, explicit scene materials,
 built-ins, fallbacks, or proxies. Exact numeric factor zero skips coat texture
 and normal work.
 
+For imported sheen data, color is exactly three finite unit linear channels and
+roughness is finite unit. Active directional and point lights evaluate the
+Khronos Charlie distribution and fitted visibility through the selected base
+shading normal with a `1e-6` roughness floor. Cogniform caps the scalar BRDF at
+`1 / PI` before color multiplication, attenuates the complete base response by
+`1 - max(sheenColor)`, and adds the colored lobe. This deliberate conservative
+bound avoids the non-conserving grazing behavior of the non-normative sample
+shader without a lookup resource. Exact zero color preserves the prior path;
+clearcoat is applied above base plus sheen. Sheen does not alter no-light
+compatibility, emission, alpha, observations, unlit, scene overrides,
+built-ins, fallbacks, or proxies. Both sheen texture roles remain unsupported
+after complete validation.
+
 `AssetMaterial` carries validated numeric metadata including core emissive
 RGB, finite non-negative emissive strength, authored finite IOR, finite unit
 dielectric F0, finite unit specular strength, and finite non-negative specular
-RGB, finite unit clearcoat factor and roughness, typed alpha coverage/cutoff,
+RGB, finite unit clearcoat factor and roughness, finite unit sheen RGB and
+roughness, typed alpha coverage/cutoff,
 the retained double-sided value, typed
 shading model, immutable texture-role, sampler, and per-role affine-transform facts, and finite
 normal scale. `AssetUploadJob` exposes that material and
@@ -559,7 +591,7 @@ resident-byte limits.
 
 The default offline suite verifies exact hash admission, every truncated prefix
 of the checked fixture, malformed extension declarations, proxy eligibility,
-material, emissive, IOR, specular, and clearcoat retention/default/range/type/derivation/
+material, emissive, IOR, specular, clearcoat, and sheen retention/default/range/type/derivation/
 texture-precedence failures, normal and tangent
 normalization/count/value/range/handedness failures, primary/secondary-coordinate exact and indexed
 retention, zero defaults, full-source validation, embedded RGB/RGBA expansion,
@@ -597,6 +629,7 @@ cargo test --release -p cogniform-renderer --test asset_fixture specular_texture
 cargo test --release -p cogniform-renderer --test asset_fixture specular_texture_coordinates_transforms_and_samplers_are_independent --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_factors_layer_the_complete_imported_material_without_new_resources --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_textures_use_linear_r_g_channels_and_an_independent_scaled_normal --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture sheen_factors_bound_direct_light_and_preserve_compatibility_paths --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture nine_texture_roles_upload_evict_and_rehydrate_exactly --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
@@ -664,7 +697,11 @@ eviction/rehydration, and unchanged non-color output. The clearcoat comparison
 proves exact omitted/zero identity, fixed-IOR rough and smooth coat response
 over directional, point, and combined lights, IOR/specular/base-normal
 composition, no-light and emission attenuation, explicit scene override, and
-unchanged non-color output without resource growth. The four-role test proves exact
+unchanged non-color output without resource growth. The sheen comparison
+proves exact omitted/zero identity, color and roughness response under
+directional and point lights, combined-light composition below clearcoat,
+exact no-light and emission compatibility, scene-override suppression,
+unchanged non-color output, and no texture-role growth. The four-role test proves exact
 distinct-image CPU bytes plus GPU upload, eviction, and
 rehydration counts. The alpha checks prove factor-only, texture-only, and
 multiplied coverage, exact cutoff equality, cutoff-above-one discard, OPAQUE
@@ -745,3 +782,7 @@ See [ADR 0076](../adr/0076-bounded-gltf-material-clearcoat-textures.md) for
 ratified channel semantics, independent coat-normal behavior, generated-
 tangent agreement, nine-role accounting, appended transform rows, fixed bind-
 group growth, and adapter capability boundary.
+
+See [ADR 0077](../adr/0077-bounded-gltf-material-sheen-factors.md) for strict
+numeric and deferred-texture validation, conservative bounded Charlie
+layering, the appended factor row, and unchanged resource topology.

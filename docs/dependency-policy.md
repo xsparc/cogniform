@@ -374,6 +374,14 @@ bind-group layouts grow without changing the sampler table or pipeline count.
 No draft clearcoat extension, sample asset byte, decoder, network path, or
 supply-chain authority is added.
 
+CF077 changes no Cargo manifest, lock entry, vendored byte, feature, build
+script, unsafe/native boundary, workflow, or runtime dependency edge. Numeric
+sheen and deferred-texture preflight reuse existing JSON, finite-value,
+texture-resource, PNG, coordinate, and transform validation. The first-party
+Charlie/fitted-visibility implementation adds one private uniform row but no
+lookup texture, role, binding, sampler, pipeline, decoder, sample asset byte,
+network path, or supply-chain authority.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

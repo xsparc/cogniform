@@ -250,6 +250,14 @@ Windows/Vulkan profile on 2026-08-26. No vertex, sampler-table, pipeline,
 attachment, lifecycle, logical, observation, protocol, persistence,
 dependency, package, version, workflow, tag, release-asset, or release action
 changed.
+CF077 strict ratified sheen RGB/roughness retention, two-member deferred
+texture validation before proxy, selected-base-normal Charlie/fitted-
+visibility response with a pointwise `1 / PI` cap, analytic and midpoint-grid
+no-gain evidence, and exact 832-byte uniform-prefix preservation in an 848-
+byte layout were collected on the CPU and validated Windows/Vulkan profile on
+2026-08-27. No vertex, texture-role, binding, sampler, pipeline, attachment,
+lifecycle, logical, observation, protocol, persistence, dependency, package,
+version, workflow, tag, release-asset, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -259,7 +267,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, canonical scenario, and bounded 64x64/480x270 stdio child tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness, IOR-derived dielectric, specular, and fixed-IOR clearcoat factor plus linear-red/green intensity/roughness and independent scaled normal response, bounded surface-only core and strength-scaled emission with coat attenuation, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive/specular-color plus linear normal, packed metallic-roughness, specular-strength, and clearcoat texture response, independent nine-role core wrapping/filtering and one-mip fallback, nine-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness, IOR-derived dielectric, specular, bounded colored sheen, and fixed-IOR clearcoat factor plus linear-red/green intensity/roughness and independent scaled normal response, bounded surface-only core and strength-scaled emission with coat attenuation, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive/specular-color plus linear normal, packed metallic-roughness, specular-strength, and clearcoat texture response, independent nine-role core wrapping/filtering and one-mip fallback, nine-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -1843,6 +1851,68 @@ upload, eviction, and rehydration:
 ```text
 WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_textures_use_linear_r_g_channels_and_an_independent_scaled_normal --all-features --locked --offline -- --ignored --exact --nocapture
 WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture nine_texture_roles_upload_evict_and_rehydrate_exactly --all-features --locked --offline -- --ignored --exact --nocapture
+```
+
+No manifest, lockfile, vendored source, workflow, dependency, deny-policy,
+protocol, world, persistence, package, version, tag, release-asset, deployment,
+or publication authority changed.
+
+### CF077 bounded glTF material sheen factors
+
+CF077 admits ratified factor-only sheen after strict declaration, exact three-
+channel finite unit color, finite unit roughness, and unlit/specular-
+glossiness exclusion checks. Both optional sheen texture infos, transforms,
+root resources, and selected coordinates validate before well-formed texture-
+bearing sheen remains unsupported. Root collections, retained texture roles,
+and GPU resources remain fixed at nine.
+
+Direct directional and point lighting use the selected base shading normal,
+Khronos Charlie distribution, fitted visibility, and a `1e-6` roughness floor.
+The scalar BRDF is capped pointwise at `1 / PI`, the complete base response is
+scaled by `1 - max(sheenColor)`, and existing clearcoat is applied above the
+result. CPU vectors reproduce the uncapped grazing-energy regression and pin
+the conservative analytic and midpoint-grid bound. Exact zero color, no-light
+compatibility, emission, unlit, scene overrides, alpha, and non-color
+observations remain unchanged.
+
+The renderer appends one factor row after the exact CF076 layout. The fixed
+uniform is 848 bytes with an exact 832-byte prefix. The 72-byte vertex, nine
+texture roles, nineteen bind entries, 36-entry sampler table, two pipelines,
+attachments, observations, protocol, persistence, lifecycle, dependency
+graph, and release authority are unchanged.
+
+The following portable checks passed on 2026-08-27:
+
+```text
+cargo build --workspace --locked --offline
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test -p cogniform-assets --test asset_store sheen_ --all-features --locked --offline
+uv run --no-cache --no-project python tests/security/test_public_repo_check.py
+uv run --no-cache --no-project python tests/release/test_package_policy.py
+uv run --no-cache --no-project python scripts/check_public_repo.py --all
+uv run --no-cache --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-cache --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- Cargo.toml Cargo.lock deny.toml rust-toolchain.toml .github/workflows vendor
+git diff --check
+```
+
+`cargo deny check advisories bans licenses sources` could not start because
+Windows Application Control blocked the installed binary with OS error 4551.
+No manifest, lockfile, vendored source, workflow, dependency, or deny-policy
+input changed from the accepted CF066 audit, and the public-tree plus package-
+policy safeguards above passed.
+
+The focused optimized comparison passed on the approved NVIDIA GeForce RTX
+5070 Windows/Vulkan profile. It proves directional and point color/roughness
+response, exact zero identity, combined-light composition below clearcoat,
+exact no-light/emission compatibility, scene-override suppression, and
+unchanged non-color observations:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture sheen_factors_bound_direct_light_and_preserve_compatibility_paths --all-features --locked --offline -- --ignored --exact --nocapture
 ```
 
 No manifest, lockfile, vendored source, workflow, dependency, deny-policy,

@@ -430,6 +430,8 @@ pub struct AssetMaterial {
     specular_color_factor: [f32; 3],
     clearcoat_factor: f32,
     clearcoat_roughness_factor: f32,
+    sheen_color_factor: [f32; 3],
+    sheen_roughness_factor: f32,
     texture_roles: u16,
     texture_coordinate_sets: u16,
     texture_samplers: [AssetSampler; 9],
@@ -477,6 +479,8 @@ impl AssetMaterial {
             specular_color_factor: [1.0; 3],
             clearcoat_factor: 0.0,
             clearcoat_roughness_factor: 0.0,
+            sheen_color_factor: [0.0; 3],
+            sheen_roughness_factor: 0.0,
             texture_roles: 0,
             texture_coordinate_sets: 0,
             texture_samplers: [AssetSampler::LINEAR_REPEAT; 9],
@@ -572,6 +576,20 @@ impl AssetMaterial {
     ) -> Self {
         self.clearcoat_factor = factor.get();
         self.clearcoat_roughness_factor = roughness_factor.get();
+        self
+    }
+
+    pub(crate) const fn with_sheen(
+        mut self,
+        color_factor: [UnitF32; 3],
+        roughness_factor: UnitF32,
+    ) -> Self {
+        self.sheen_color_factor = [
+            color_factor[0].get(),
+            color_factor[1].get(),
+            color_factor[2].get(),
+        ];
+        self.sheen_roughness_factor = roughness_factor.get();
         self
     }
 
@@ -749,6 +767,18 @@ impl AssetMaterial {
     #[must_use]
     pub const fn clearcoat_roughness_factor(self) -> f32 {
         self.clearcoat_roughness_factor
+    }
+
+    /// Returns the finite unit linear sheen color multiplier.
+    #[must_use]
+    pub const fn sheen_color_factor(self) -> [f32; 3] {
+        self.sheen_color_factor
+    }
+
+    /// Returns the finite unit sheen perceptual roughness.
+    #[must_use]
+    pub const fn sheen_roughness_factor(self) -> f32 {
+        self.sheen_roughness_factor
     }
 
     /// Returns whether this material samples the asset's shared base-color texture.

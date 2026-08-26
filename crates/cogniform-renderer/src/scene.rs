@@ -323,6 +323,8 @@ impl RenderScene {
                     specular_factor: values.specular_factor,
                     clearcoat_factor: values.clearcoat_factor,
                     clearcoat_roughness_factor: values.clearcoat_roughness_factor,
+                    sheen_color_factor: values.sheen_color_factor,
+                    sheen_roughness_factor: values.sheen_roughness_factor,
                     normal_scale: 1.0,
                     clearcoat_normal_scale: 1.0,
                     imported_texture_roles: ImportedTextureRoles::NONE,
@@ -455,6 +457,8 @@ pub(crate) struct PreparedDraw {
     pub(crate) specular_factor: f32,
     pub(crate) clearcoat_factor: f32,
     pub(crate) clearcoat_roughness_factor: f32,
+    pub(crate) sheen_color_factor: [f32; 3],
+    pub(crate) sheen_roughness_factor: f32,
     pub(crate) normal_scale: f32,
     pub(crate) clearcoat_normal_scale: f32,
     pub(crate) imported_texture_roles: ImportedTextureRoles,
@@ -919,6 +923,8 @@ struct MaterialValues {
     specular_factor: f32,
     clearcoat_factor: f32,
     clearcoat_roughness_factor: f32,
+    sheen_color_factor: [f32; 3],
+    sheen_roughness_factor: f32,
 }
 
 fn material_values(
@@ -939,6 +945,8 @@ fn material_values(
                     specular_factor: 1.0,
                     clearcoat_factor: 0.0,
                     clearcoat_roughness_factor: 0.0,
+                    sheen_color_factor: [0.0; 3],
+                    sheen_roughness_factor: 0.0,
                 },
                 |material| MaterialValues {
                     color: material.base_color().map(cogniform_protocol::UnitF32::get),
@@ -951,6 +959,8 @@ fn material_values(
                     specular_factor: material.specular_factor(),
                     clearcoat_factor: material.clearcoat_factor(),
                     clearcoat_roughness_factor: material.clearcoat_roughness_factor(),
+                    sheen_color_factor: material.sheen_color_factor(),
+                    sheen_roughness_factor: material.sheen_roughness_factor(),
                 },
             )
         },
@@ -965,6 +975,8 @@ fn material_values(
             specular_factor: 1.0,
             clearcoat_factor: 0.0,
             clearcoat_roughness_factor: 0.0,
+            sheen_color_factor: [0.0; 3],
+            sheen_roughness_factor: 0.0,
         },
     )
 }
@@ -1812,6 +1824,11 @@ mod tests {
         assert_exact_f32(fallback.draws[0].dielectric_f0, 0.04);
         assert_exact_f32(fallback.draws[0].clearcoat_factor, 0.0);
         assert_exact_f32(fallback.draws[0].clearcoat_roughness_factor, 0.0);
+        assert_eq!(
+            fallback.draws[0].sheen_color_factor.map(f32::to_bits),
+            [0; 3]
+        );
+        assert_exact_f32(fallback.draws[0].sheen_roughness_factor, 0.0);
         assert!(!fallback.draws[0].imported_vertex_color);
         assert_exact_f32(fallback.draws[0].model[0], 2.0);
         assert_exact_f32(fallback.draws[0].model[5], 3.0);
@@ -1915,6 +1932,11 @@ mod tests {
         assert_exact_f32(overridden.draws[0].dielectric_f0, 0.04);
         assert_exact_f32(overridden.draws[0].clearcoat_factor, 0.0);
         assert_exact_f32(overridden.draws[0].clearcoat_roughness_factor, 0.0);
+        assert_eq!(
+            overridden.draws[0].sheen_color_factor.map(f32::to_bits),
+            [0; 3]
+        );
+        assert_exact_f32(overridden.draws[0].sheen_roughness_factor, 0.0);
         assert_eq!(
             overridden.draws[0].imported_alpha_coverage,
             ImportedAlphaCoverage::Disabled

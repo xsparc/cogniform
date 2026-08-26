@@ -368,6 +368,8 @@ impl HeadlessRenderer {
                 specular_factor: 1.0,
                 clearcoat_factor: 0.0,
                 clearcoat_roughness_factor: 0.0,
+                sheen_color_factor: [0.0; 3],
+                sheen_roughness_factor: 0.0,
                 normal_scale: 1.0,
                 clearcoat_normal_scale: 1.0,
                 imported_texture_roles: ImportedTextureRoles::NONE,
@@ -1787,6 +1789,7 @@ fn encode_draw_uniform(
     const OPTICAL_FLOATS: usize = 8;
     const CLEARCOAT_FLOATS: usize = 4;
     const CLEARCOAT_TEXTURE_TRANSFORM_FLOATS: usize = 3 * 2 * 4;
+    const SHEEN_FLOATS: usize = 4;
     const UNIFORM_BYTES: usize = (BASE_FLOATS
         + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT
         + POINT_COUNT_FLOATS
@@ -1796,7 +1799,8 @@ fn encode_draw_uniform(
         + OPTICAL_FLOATS
         + SPECULAR_TEXTURE_TRANSFORM_FLOATS
         + CLEARCOAT_FLOATS
-        + CLEARCOAT_TEXTURE_TRANSFORM_FLOATS)
+        + CLEARCOAT_TEXTURE_TRANSFORM_FLOATS
+        + SHEEN_FLOATS)
         * 4;
     debug_assert!(directional_lights.len() <= MAX_DIRECTIONAL_LIGHTS);
     debug_assert!(point_lights.len() <= MAX_POINT_LIGHTS);
@@ -1947,6 +1951,10 @@ fn append_material_uniform(bytes: &mut Vec<u8>, draw: &PreparedDraw) {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
     }
+    for value in draw.sheen_color_factor {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&draw.sheen_roughness_factor.to_le_bytes());
 }
 
 fn create_target_texture(
@@ -2266,6 +2274,8 @@ mod tests {
             specular_factor: 0.75,
             clearcoat_factor: 0.6,
             clearcoat_roughness_factor: 0.35,
+            sheen_color_factor: [0.2, 0.4, 0.8],
+            sheen_roughness_factor: 0.55,
             normal_scale: 1.0,
             clearcoat_normal_scale: -0.75,
             imported_texture_roles: ImportedTextureRoles::CLEARCOAT_NORMAL_ONLY,
@@ -2280,7 +2290,7 @@ mod tests {
     }
 
     #[test]
-    fn draw_uniform_preserves_prefix_and_appends_exact_optical_specular_and_clearcoat_rows() {
+    fn draw_uniform_preserves_prefix_and_appends_exact_material_rows() {
         let draw = optical_specular_uniform_draw();
         let lights = [
             PreparedDirectionalLight {
@@ -2301,7 +2311,7 @@ mod tests {
         }];
 
         let bytes = encode_draw_uniform(&draw, &lights, &point_lights);
-        assert_eq!(bytes.len(), 832);
+        assert_eq!(bytes.len(), 848);
         let words = bytes
             .chunks_exact(4)
             .map(|word| <[u8; 4]>::try_from(word).unwrap())
@@ -2375,6 +2385,10 @@ mod tests {
             (200..208).map(float).collect::<Vec<_>>(),
             vec![1.0, 0.0, 0.0, -0.75, 0.0, 1.0, 0.0, 1.0]
         );
+        assert_eq!(
+            (208..212).map(float).collect::<Vec<_>>(),
+            vec![0.2, 0.4, 0.8, 0.55]
+        );
     }
 
     #[test]
@@ -2394,6 +2408,8 @@ mod tests {
             specular_factor: 1.0,
             clearcoat_factor: 0.0,
             clearcoat_roughness_factor: 0.0,
+            sheen_color_factor: [0.0; 3],
+            sheen_roughness_factor: 0.0,
             normal_scale: 1.0,
             clearcoat_normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NORMAL_ONLY,
@@ -2407,7 +2423,7 @@ mod tests {
         };
 
         let bytes = encode_draw_uniform(&draw, &[], &[]);
-        assert_eq!(bytes.len(), 832);
+        assert_eq!(bytes.len(), 848);
         let float_at =
             |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
         assert_eq!(float_at(119).to_bits(), 32_767.0_f32.to_bits());
@@ -2535,6 +2551,136 @@ mod tests {
         assert_eq!(
             coated_emission.map(f32::to_bits),
             [0.048, 0.096, 0.192].map(f32::to_bits)
+        );
+    }
+
+    fn sheen_numeric_helper(direction: f64, alpha: f64) -> f64 {
+        let blend = (1.0 - alpha).powi(2);
+        let mix = |left: f64, right: f64| left + (right - left) * blend;
+        let coefficient_a = mix(21.5473, 25.3245);
+        let coefficient_b = mix(3.82987, 3.32435);
+        let coefficient_c = mix(0.19823, 0.16801);
+        let coefficient_d = mix(-1.97760, -1.27393);
+        let coefficient_e = mix(-4.32054, -4.85967);
+        coefficient_a / (1.0 + coefficient_b * direction.powf(coefficient_c))
+            + coefficient_d * direction
+            + coefficient_e
+    }
+
+    fn sheen_lambda(normal_direction: f64, alpha: f64) -> f64 {
+        if normal_direction < 0.5 {
+            sheen_numeric_helper(normal_direction, alpha).exp()
+        } else {
+            (2.0 * sheen_numeric_helper(0.5, alpha)
+                - sheen_numeric_helper(1.0 - normal_direction, alpha))
+            .exp()
+        }
+    }
+
+    fn sheen_terms(
+        roughness: f64,
+        normal_view: f64,
+        normal_light: f64,
+        normal_half: f64,
+    ) -> (f64, f64, f64, f64) {
+        let bounded_roughness = roughness.max(1.0e-6);
+        let alpha = bounded_roughness * bounded_roughness;
+        let inverse_alpha = alpha.recip();
+        let distribution = (2.0 + inverse_alpha)
+            * (1.0 - normal_half * normal_half)
+                .max(0.0)
+                .powf(inverse_alpha * 0.5)
+            / (2.0 * core::f64::consts::PI);
+        let visibility = (1.0
+            / ((1.0 + sheen_lambda(normal_view, alpha) + sheen_lambda(normal_light, alpha))
+                * (4.0 * normal_view * normal_light)))
+            .clamp(0.0, 1.0);
+        let raw = distribution * visibility;
+        let response = raw.min(1.0 / core::f64::consts::PI) * normal_light;
+        (distribution, visibility, raw, response)
+    }
+
+    fn sheen_directional_albedo(roughness: f64, normal_view: f64, bounded: bool) -> f64 {
+        const POLAR_STEPS: u32 = 96;
+        const AZIMUTH_STEPS: u32 = 192;
+        let polar_step = core::f64::consts::FRAC_PI_2 / f64::from(POLAR_STEPS);
+        let azimuth_step = 2.0 * core::f64::consts::PI / f64::from(AZIMUTH_STEPS);
+        let surface_to_view = [(1.0 - normal_view * normal_view).sqrt(), 0.0, normal_view];
+        let mut integral = 0.0;
+        for polar_index in 0..POLAR_STEPS {
+            let polar = (f64::from(polar_index) + 0.5) * polar_step;
+            let normal_light = polar.cos();
+            let radial = polar.sin();
+            for azimuth_index in 0..AZIMUTH_STEPS {
+                let azimuth = (f64::from(azimuth_index) + 0.5) * azimuth_step;
+                let surface_to_light =
+                    [radial * azimuth.cos(), radial * azimuth.sin(), normal_light];
+                let half = [
+                    surface_to_view[0] + surface_to_light[0],
+                    surface_to_view[1] + surface_to_light[1],
+                    surface_to_view[2] + surface_to_light[2],
+                ];
+                let half_length = half.iter().map(|value| value * value).sum::<f64>().sqrt();
+                let normal_half = half[2] / half_length;
+                let (_, _, raw, _) = sheen_terms(roughness, normal_view, normal_light, normal_half);
+                let brdf = if bounded {
+                    raw.min(1.0 / core::f64::consts::PI)
+                } else {
+                    raw
+                };
+                integral += brdf * normal_light * radial * polar_step * azimuth_step;
+            }
+        }
+        integral
+    }
+
+    fn assert_f64_near(actual: f64, expected: f64, tolerance: f64) {
+        assert!(
+            (actual - expected).abs() <= tolerance,
+            "expected {expected:.12}, received {actual:.12}"
+        );
+    }
+
+    #[test]
+    fn sheen_reference_vectors_pin_bounded_charlie_layering_and_no_gain() {
+        let midpoint = sheen_terms(0.5, 0.5, 0.5, 0.5);
+        assert_f64_near(midpoint.0, 0.537_147_932_935, 1.0e-12);
+        assert_f64_near(midpoint.1, 0.266_123_686_807, 1.0e-12);
+        assert_f64_near(midpoint.2, 0.142_947_788_274, 1.0e-12);
+        assert_f64_near(midpoint.3, 0.071_473_894_136_8, 1.0e-12);
+
+        let bounded = sheen_terms(1.0, 0.2, 0.2, 0.2);
+        assert!(bounded.2 > 1.0 / core::f64::consts::PI);
+        assert_f64_near(bounded.3, 0.063_661_977_236_8, 1.0e-13);
+        let grazing = sheen_terms(0.05, 0.02, 0.02, 0.02);
+        assert!(grazing.2 > 50.0);
+        assert_f64_near(grazing.3, 0.006_366_197_723_68, 1.0e-14);
+
+        let base = [0.2_f64, 0.4, 0.8];
+        let zero_color = [0.0_f64; 3];
+        let layer = |color: [f64; 3], response: f64| {
+            let maximum = color.into_iter().fold(0.0, f64::max);
+            if maximum == 0.0 {
+                return base;
+            }
+            core::array::from_fn(|index| base[index] * (1.0 - maximum) + color[index] * response)
+        };
+        assert_eq!(
+            layer(zero_color, f64::MAX).map(f64::to_bits),
+            base.map(f64::to_bits),
+            "zero sheen color preserves the exact accepted base path"
+        );
+
+        assert!(sheen_directional_albedo(0.05, 0.02, false) > 1.0);
+        for roughness in [0.05, 0.25, 0.5, 1.0] {
+            for normal_view in [0.02, 0.2, 0.5, 1.0] {
+                assert!(sheen_directional_albedo(roughness, normal_view, true) <= 1.0);
+            }
+        }
+        assert_f64_near(
+            core::f64::consts::PI * (1.0 / core::f64::consts::PI),
+            1.0,
+            f64::EPSILON,
         );
     }
 

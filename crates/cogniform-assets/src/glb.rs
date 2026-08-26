@@ -36,6 +36,7 @@ const KHR_MATERIALS_CLEARCOAT: &str = "KHR_materials_clearcoat";
 const KHR_MATERIALS_EMISSIVE_STRENGTH: &str = "KHR_materials_emissive_strength";
 const KHR_MATERIALS_IOR: &str = "KHR_materials_ior";
 const KHR_MATERIALS_PBR_SPECULAR_GLOSSINESS: &str = "KHR_materials_pbrSpecularGlossiness";
+const KHR_MATERIALS_SHEEN: &str = "KHR_materials_sheen";
 const KHR_MATERIALS_SPECULAR: &str = "KHR_materials_specular";
 const KHR_MATERIALS_UNLIT: &str = "KHR_materials_unlit";
 const KHR_MESH_QUANTIZATION: &str = "KHR_mesh_quantization";
@@ -51,6 +52,7 @@ struct ExtensionPreflight {
     material_optics: Vec<MaterialOptics>,
     material_specular: Vec<MaterialSpecular>,
     material_clearcoat: Vec<MaterialClearcoat>,
+    material_sheen: Vec<MaterialSheen>,
     texture_transforms: Vec<MaterialTextureTransforms>,
 }
 
@@ -75,6 +77,14 @@ struct MaterialClearcoat {
     texture: Option<PendingTextureInfo>,
     roughness_texture: Option<PendingTextureInfo>,
     normal_texture: Option<PendingTextureInfo>,
+}
+
+#[derive(Clone, Copy)]
+struct MaterialSheen {
+    color_factor: [UnitF32; 3],
+    roughness_factor: UnitF32,
+    color_texture: Option<PendingTextureInfo>,
+    roughness_texture: Option<PendingTextureInfo>,
 }
 
 #[derive(Clone, Copy)]
@@ -236,6 +246,7 @@ fn remove_declared_extensions_and_features(
                 KHR_MATERIALS_CLEARCOAT
                     | KHR_MATERIALS_EMISSIVE_STRENGTH
                     | KHR_MATERIALS_IOR
+                    | KHR_MATERIALS_SHEEN
                     | KHR_MATERIALS_SPECULAR
                     | KHR_MATERIALS_UNLIT
                     | KHR_MESH_QUANTIZATION
@@ -272,6 +283,8 @@ fn remove_declared_extensions_and_features(
         &unlit_extension_members,
         &mut unsupported,
     )?;
+    let material_sheen =
+        remove_material_sheen_extensions(value, &used, &unlit_extension_members, &mut unsupported)?;
     let texture_transforms =
         remove_material_texture_transform_extensions(value, &used, &mut unsupported)?;
     remove_nested_extensions(value, &used, &mut unsupported)?;
@@ -284,6 +297,7 @@ fn remove_declared_extensions_and_features(
         material_optics,
         material_specular,
         material_clearcoat,
+        material_sheen,
         texture_transforms,
     })
 }
@@ -980,6 +994,156 @@ fn decode_material_clearcoat(
     })
 }
 
+fn default_material_sheen() -> MaterialSheen {
+    MaterialSheen {
+        color_factor: [UnitF32::new(0.0).expect("zero is in range"); 3],
+        roughness_factor: UnitF32::new(0.0).expect("zero is in range"),
+        color_texture: None,
+        roughness_texture: None,
+    }
+}
+
+fn remove_material_sheen_extensions(
+    value: &mut serde_json::Value,
+    used: &BTreeSet<String>,
+    unlit_extension_members: &[bool],
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<Vec<MaterialSheen>, AssetDiagnostic> {
+    let Some(materials) = value
+        .as_object_mut()
+        .and_then(|root| root.get_mut("materials"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(Vec::new());
+    };
+    let default = default_material_sheen();
+    let mut retained = Vec::with_capacity(materials.len());
+    for (material_index, material) in materials.iter_mut().enumerate() {
+        let Some(material) = material.as_object_mut() else {
+            retained.push(default);
+            continue;
+        };
+        let Some(mut extensions) = material.remove("extensions") else {
+            retained.push(default);
+            continue;
+        };
+        let Some(extensions) = extensions.as_object_mut() else {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.materials.extensions",
+                None,
+            ));
+        };
+        let specular_glossiness_member =
+            extensions.contains_key(KHR_MATERIALS_PBR_SPECULAR_GLOSSINESS);
+        let sheen = extensions
+            .remove(KHR_MATERIALS_SHEEN)
+            .map(|payload| {
+                decode_material_sheen(
+                    payload,
+                    used,
+                    unlit_extension_members.get(material_index).copied() == Some(true)
+                        || specular_glossiness_member,
+                    unsupported,
+                )
+            })
+            .transpose()?
+            .unwrap_or(default);
+        if !extensions.is_empty() {
+            material.insert(
+                "extensions".to_owned(),
+                serde_json::Value::Object(core::mem::take(extensions)),
+            );
+        }
+        retained.push(sheen);
+    }
+    Ok(retained)
+}
+
+fn decode_material_sheen(
+    mut value: serde_json::Value,
+    used: &BTreeSet<String>,
+    forbidden_coexistence: bool,
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<MaterialSheen, AssetDiagnostic> {
+    const LOCATION: &str = "glb.json.materials.extensions.KHR_materials_sheen";
+    if !used.contains(KHR_MATERIALS_SHEEN) {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    }
+    let Some(payload) = value.as_object_mut() else {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    };
+    let default = default_material_sheen();
+    let color_factor = remove_sheen_color_factor(payload, default.color_factor, LOCATION)?;
+    let roughness_factor = payload
+        .remove("sheenRoughnessFactor")
+        .map(|value| {
+            serde_json::from_value::<f32>(value)
+                .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None))
+                .and_then(|value| {
+                    UnitF32::new(value)
+                        .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None))
+                })
+        })
+        .transpose()?
+        .unwrap_or(default.roughness_factor);
+    let color_texture = remove_pending_texture_info(
+        payload,
+        "sheenColorTexture",
+        used,
+        unsupported,
+        "glb.json.materials.extensions.KHR_materials_sheen.sheenColorTexture",
+        false,
+    )?;
+    let roughness_texture = remove_pending_texture_info(
+        payload,
+        "sheenRoughnessTexture",
+        used,
+        unsupported,
+        "glb.json.materials.extensions.KHR_materials_sheen.sheenRoughnessTexture",
+        false,
+    )?;
+    if color_texture.is_some() || roughness_texture.is_some() {
+        unsupported.get_or_insert_with(|| {
+            diagnostic(AssetDiagnosticCode::UnsupportedExtension, LOCATION, None)
+        });
+    }
+    if forbidden_coexistence {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    }
+    if !payload.is_empty() {
+        let mut remainder = serde_json::Value::Object(core::mem::take(payload));
+        remove_nested_extensions(&mut remainder, used, unsupported)?;
+        unsupported.get_or_insert_with(|| {
+            diagnostic(AssetDiagnosticCode::UnsupportedExtension, LOCATION, None)
+        });
+    }
+    Ok(MaterialSheen {
+        color_factor,
+        roughness_factor,
+        color_texture,
+        roughness_texture,
+    })
+}
+
+fn remove_sheen_color_factor(
+    payload: &mut serde_json::Map<String, serde_json::Value>,
+    default: [UnitF32; 3],
+    location: &'static str,
+) -> Result<[UnitF32; 3], AssetDiagnostic> {
+    let Some(value) = payload.remove("sheenColorFactor") else {
+        return Ok(default);
+    };
+    let values = serde_json::from_value::<[f32; 3]>(value)
+        .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, location, None))?;
+    let mut retained = default;
+    for (target, value) in retained.iter_mut().zip(values) {
+        *target = UnitF32::new(value)
+            .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, location, None))?;
+    }
+    Ok(retained)
+}
+
 fn remove_material_texture_transform_extensions(
     value: &mut serde_json::Value,
     used: &BTreeSet<String>,
@@ -1266,6 +1430,7 @@ fn validate_root(
         &extensions.texture_transforms,
         &extensions.material_specular,
         &extensions.material_clearcoat,
+        &extensions.material_sheen,
     )?;
     let mut decoded_bytes = textures.byte_len;
     let mut meshes = Vec::with_capacity(root.meshes.len());
@@ -1422,6 +1587,22 @@ fn validate_deferred_extension_texture_references(
                 &root.textures,
                 texture.index,
                 "glb.json.materials.extensions.KHR_materials_clearcoat.texture.index",
+            )
+            .map_err(|mut error| {
+                error.index = Some(stable_index(material_index));
+                error
+            })?;
+        }
+    }
+    for (material_index, sheen) in extensions.material_sheen.iter().enumerate() {
+        for texture in [sheen.color_texture, sheen.roughness_texture]
+            .into_iter()
+            .flatten()
+        {
+            get(
+                &root.textures,
+                texture.index,
+                "glb.json.materials.extensions.KHR_materials_sheen.texture.index",
             )
             .map_err(|mut error| {
                 error.index = Some(stable_index(material_index));
@@ -1631,6 +1812,40 @@ struct DecodedTextures {
     unsupported: Option<AssetDiagnostic>,
 }
 
+fn empty_decoded_textures(unsupported: Option<AssetDiagnostic>) -> DecodedTextures {
+    DecodedTextures {
+        base_color: None,
+        emissive: None,
+        metallic_roughness: None,
+        normal: None,
+        specular: None,
+        specular_color: None,
+        clearcoat: None,
+        clearcoat_roughness: None,
+        clearcoat_normal: None,
+        byte_len: 0,
+        unsupported,
+    }
+}
+
+fn referenced_texture_indices(
+    role_indices: &[Option<u32>; 9],
+    material_sheen: &[MaterialSheen],
+) -> BTreeSet<u32> {
+    role_indices
+        .iter()
+        .copied()
+        .flatten()
+        .chain(
+            material_sheen
+                .iter()
+                .flat_map(|sheen| [sheen.color_texture, sheen.roughness_texture])
+                .flatten()
+                .map(|info| info.index),
+        )
+        .collect()
+}
+
 fn decode_textures(
     root: &Root,
     binary: &[u8],
@@ -1638,6 +1853,7 @@ fn decode_textures(
     texture_transforms: &[MaterialTextureTransforms],
     material_specular: &[MaterialSpecular],
     material_clearcoat: &[MaterialClearcoat],
+    material_sheen: &[MaterialSheen],
 ) -> Result<DecodedTextures, AssetDiagnostic> {
     let resources = validate_texture_resources(root, binary, limits)?;
     let mut unsupported = resources.unsupported;
@@ -1668,21 +1884,10 @@ fn decode_textures(
         clearcoat_roughness_index,
         clearcoat_normal_index,
     ];
-    if role_indices.iter().all(Option::is_none) {
+    let referenced_textures = referenced_texture_indices(&role_indices, material_sheen);
+    if referenced_textures.is_empty() {
         if root.textures.is_empty() && root.images.is_empty() {
-            return Ok(DecodedTextures {
-                base_color: None,
-                emissive: None,
-                metallic_roughness: None,
-                normal: None,
-                specular: None,
-                specular_color: None,
-                clearcoat: None,
-                clearcoat_roughness: None,
-                clearcoat_normal: None,
-                byte_len: 0,
-                unsupported,
-            });
+            return Ok(empty_decoded_textures(unsupported));
         }
         remember_unsupported(
             &mut unsupported,
@@ -1698,7 +1903,6 @@ fn decode_textures(
         material_clearcoat,
         &mut unsupported,
     );
-    let referenced_textures: BTreeSet<_> = role_indices.into_iter().flatten().collect();
     if referenced_textures.len() != root.textures.len() {
         remember_unsupported(
             &mut unsupported,
@@ -2751,6 +2955,22 @@ fn validate_material_texture_coordinate_sets(
                     .roughness_texture
                     .map(|info| info.texture_coordinate_set),
                 value.normal_texture.map(|info| info.texture_coordinate_set),
+            ]
+        }),
+        available_set_count,
+        mesh_index,
+    )?;
+    let sheen = primitive
+        .material
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| extensions.material_sheen.get(index));
+    validate_selected_texture_coordinates(
+        sheen.map_or([None, None], |value| {
+            [
+                value.color_texture.map(|info| info.texture_coordinate_set),
+                value
+                    .roughness_texture
+                    .map(|info| info.texture_coordinate_set),
             ]
         }),
         available_set_count,
@@ -4516,6 +4736,11 @@ fn decode_material(
         .and_then(|index| extensions.material_clearcoat.get(index))
         .copied()
         .unwrap_or_else(default_material_clearcoat);
+    let sheen = material_index
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| extensions.material_sheen.get(index))
+        .copied()
+        .unwrap_or_else(default_material_sheen);
     let material = AssetMaterial::new(
         color,
         material_scalar(metallic_value)?,
@@ -4525,7 +4750,8 @@ fn decode_material(
     .with_emissive_strength(emissive_strength)
     .with_ior(optics.ior, optics.dielectric_f0)
     .with_specular(specular.factor, specular.color_factor)
-    .with_clearcoat(clearcoat.factor, clearcoat.roughness_factor);
+    .with_clearcoat(clearcoat.factor, clearcoat.roughness_factor)
+    .with_sheen(sheen.color_factor, sheen.roughness_factor);
     let material = apply_unlit(material_index, &extensions.unlit_materials, &material);
     let material = apply_double_sided(root, material_index, &material);
     let material = apply_alpha_coverage(root, material_index, &material)?;

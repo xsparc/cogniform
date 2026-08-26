@@ -80,5 +80,6 @@ earlier one and links the history.
 | [0074](0074-bounded-gltf-material-specular-textures.md) | Accepted | Sample bounded ratified material specular strength and color textures through two new roles |
 | [0075](0075-bounded-gltf-material-clearcoat-factors.md) | Accepted | Apply bounded ratified material clearcoat factors as a fixed direct-light layer |
 | [0076](0076-bounded-gltf-material-clearcoat-textures.md) | Accepted | Admit bounded ratified clearcoat intensity, roughness, and normal textures |
+| [0077](0077-bounded-gltf-material-sheen-factors.md) | Accepted | Apply bounded ratified material sheen factors without new texture roles |
 
 New records use four sections: context, decision, consequences, and status.
