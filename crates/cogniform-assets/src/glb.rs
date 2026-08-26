@@ -32,6 +32,7 @@ const PNG_IHDR_LENGTH: u32 = 13;
 const PNG_IEND: [u8; 12] = [0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xae, 0x42, 0x60, 0x82];
 const PNG_RGB: u8 = 2;
 const PNG_RGBA: u8 = 6;
+const KHR_MATERIALS_CLEARCOAT: &str = "KHR_materials_clearcoat";
 const KHR_MATERIALS_EMISSIVE_STRENGTH: &str = "KHR_materials_emissive_strength";
 const KHR_MATERIALS_IOR: &str = "KHR_materials_ior";
 const KHR_MATERIALS_PBR_SPECULAR_GLOSSINESS: &str = "KHR_materials_pbrSpecularGlossiness";
@@ -49,6 +50,7 @@ struct ExtensionPreflight {
     emissive_strengths: Vec<NonNegativeF32>,
     material_optics: Vec<MaterialOptics>,
     material_specular: Vec<MaterialSpecular>,
+    material_clearcoat: Vec<MaterialClearcoat>,
     texture_transforms: Vec<MaterialTextureTransforms>,
 }
 
@@ -64,6 +66,15 @@ struct MaterialSpecular {
     color_factor: [NonNegativeF32; 3],
     texture: Option<PendingTextureInfo>,
     color_texture: Option<PendingTextureInfo>,
+}
+
+#[derive(Clone, Copy)]
+struct MaterialClearcoat {
+    factor: UnitF32,
+    roughness_factor: UnitF32,
+    texture: Option<PendingTextureInfo>,
+    roughness_texture: Option<PendingTextureInfo>,
+    normal_texture: Option<PendingTextureInfo>,
 }
 
 #[derive(Clone, Copy)]
@@ -221,7 +232,8 @@ fn remove_declared_extensions_and_features(
         .any(|name| {
             !matches!(
                 name.as_str(),
-                KHR_MATERIALS_EMISSIVE_STRENGTH
+                KHR_MATERIALS_CLEARCOAT
+                    | KHR_MATERIALS_EMISSIVE_STRENGTH
                     | KHR_MATERIALS_IOR
                     | KHR_MATERIALS_SPECULAR
                     | KHR_MATERIALS_UNLIT
@@ -236,6 +248,49 @@ fn remove_declared_extensions_and_features(
                 None,
             )
         });
+    remove_unsupported_root_features(root, &mut unsupported)?;
+    let (unlit_materials, unlit_extension_members) =
+        remove_material_unlit_extensions(value, &used, &mut unsupported)?;
+    let emissive_strengths = remove_material_emissive_strength_extensions(
+        value,
+        &used,
+        &unlit_extension_members,
+        &mut unsupported,
+    )?;
+    let material_optics =
+        remove_material_ior_extensions(value, &used, &unlit_extension_members, &mut unsupported)?;
+    let material_specular = remove_material_specular_extensions(
+        value,
+        &used,
+        &unlit_extension_members,
+        &mut unsupported,
+    )?;
+    let material_clearcoat = remove_material_clearcoat_extensions(
+        value,
+        &used,
+        &unlit_extension_members,
+        &mut unsupported,
+    )?;
+    let texture_transforms =
+        remove_material_texture_transform_extensions(value, &used, &mut unsupported)?;
+    remove_nested_extensions(value, &used, &mut unsupported)?;
+    remove_unsupported_material_features(value, &mut unsupported)?;
+    Ok(ExtensionPreflight {
+        unsupported,
+        mesh_quantization_required: required.contains(KHR_MESH_QUANTIZATION),
+        unlit_materials,
+        emissive_strengths,
+        material_optics,
+        material_specular,
+        material_clearcoat,
+        texture_transforms,
+    })
+}
+
+fn remove_unsupported_root_features(
+    root: &mut serde_json::Map<String, serde_json::Value>,
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<(), AssetDiagnostic> {
     for field in ["animations", "cameras", "nodes", "scenes", "skins"] {
         if let Some(feature) = root.remove(field) {
             if !feature.is_array() {
@@ -270,35 +325,7 @@ fn remove_declared_extensions_and_features(
             )
         });
     }
-    let (unlit_materials, unlit_extension_members) =
-        remove_material_unlit_extensions(value, &used, &mut unsupported)?;
-    let emissive_strengths = remove_material_emissive_strength_extensions(
-        value,
-        &used,
-        &unlit_extension_members,
-        &mut unsupported,
-    )?;
-    let material_optics =
-        remove_material_ior_extensions(value, &used, &unlit_extension_members, &mut unsupported)?;
-    let material_specular = remove_material_specular_extensions(
-        value,
-        &used,
-        &unlit_extension_members,
-        &mut unsupported,
-    )?;
-    let texture_transforms =
-        remove_material_texture_transform_extensions(value, &used, &mut unsupported)?;
-    remove_nested_extensions(value, &used, &mut unsupported)?;
-    remove_unsupported_material_features(value, &mut unsupported)?;
-    Ok(ExtensionPreflight {
-        unsupported,
-        mesh_quantization_required: required.contains(KHR_MESH_QUANTIZATION),
-        unlit_materials,
-        emissive_strengths,
-        material_optics,
-        material_specular,
-        texture_transforms,
-    })
+    Ok(())
 }
 
 fn remove_extension_names(
@@ -691,19 +718,21 @@ fn decode_material_specular(
         .transpose()?
         .unwrap_or(default.factor);
     let color_factor = remove_specular_color_factor(payload, default.color_factor, LOCATION)?;
-    let texture = remove_pending_specular_texture_info(
+    let texture = remove_pending_texture_info(
         payload,
         "specularTexture",
         used,
         unsupported,
         "glb.json.materials.extensions.KHR_materials_specular.specularTexture",
+        false,
     )?;
-    let color_texture = remove_pending_specular_texture_info(
+    let color_texture = remove_pending_texture_info(
         payload,
         "specularColorTexture",
         used,
         unsupported,
         "glb.json.materials.extensions.KHR_materials_specular.specularColorTexture",
+        false,
     )?;
     if forbidden_coexistence {
         return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
@@ -741,12 +770,13 @@ fn remove_specular_color_factor(
     Ok(retained)
 }
 
-fn remove_pending_specular_texture_info(
+fn remove_pending_texture_info(
     payload: &mut serde_json::Map<String, serde_json::Value>,
     field: &str,
     used: &BTreeSet<String>,
     unsupported: &mut Option<AssetDiagnostic>,
     location: &'static str,
+    normal_info: bool,
 ) -> Result<Option<PendingTextureInfo>, AssetDiagnostic> {
     let Some(mut value) = payload.remove(field) else {
         return Ok(None);
@@ -771,6 +801,19 @@ fn remove_pending_specular_texture_info(
         })
         .transpose()?
         .unwrap_or(0);
+    if normal_info {
+        info.remove("scale")
+            .map(|value| {
+                serde_json::from_value::<f32>(value)
+                    .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, location, None))
+                    .and_then(|value| {
+                        FiniteF32::new(value).map(|_| ()).map_err(|_| {
+                            diagnostic(AssetDiagnosticCode::InvalidJson, location, None)
+                        })
+                    })
+            })
+            .transpose()?;
+    }
     let wider = !info.is_empty();
     if wider {
         let mut remainder = serde_json::Value::Object(core::mem::take(info));
@@ -788,6 +831,171 @@ fn remove_pending_specular_texture_info(
             .unwrap_or(texture_coordinate_set),
         transform: transform.map_or(AssetTextureTransform::IDENTITY, |value| value.transform),
     }))
+}
+
+fn default_material_clearcoat() -> MaterialClearcoat {
+    MaterialClearcoat {
+        factor: UnitF32::new(0.0).expect("zero is in range"),
+        roughness_factor: UnitF32::new(0.0).expect("zero is in range"),
+        texture: None,
+        roughness_texture: None,
+        normal_texture: None,
+    }
+}
+
+fn remove_material_clearcoat_extensions(
+    value: &mut serde_json::Value,
+    used: &BTreeSet<String>,
+    unlit_extension_members: &[bool],
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<Vec<MaterialClearcoat>, AssetDiagnostic> {
+    let Some(materials) = value
+        .as_object_mut()
+        .and_then(|root| root.get_mut("materials"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(Vec::new());
+    };
+    let default = default_material_clearcoat();
+    let mut retained = Vec::with_capacity(materials.len());
+    for (material_index, material) in materials.iter_mut().enumerate() {
+        let Some(material) = material.as_object_mut() else {
+            retained.push(default);
+            continue;
+        };
+        let Some(mut extensions) = material.remove("extensions") else {
+            retained.push(default);
+            continue;
+        };
+        let Some(extensions) = extensions.as_object_mut() else {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.materials.extensions",
+                None,
+            ));
+        };
+        let specular_glossiness_member =
+            extensions.contains_key(KHR_MATERIALS_PBR_SPECULAR_GLOSSINESS);
+        let clearcoat = extensions
+            .remove(KHR_MATERIALS_CLEARCOAT)
+            .map(|payload| {
+                decode_material_clearcoat(
+                    payload,
+                    used,
+                    unlit_extension_members.get(material_index).copied() == Some(true)
+                        || specular_glossiness_member,
+                    unsupported,
+                )
+            })
+            .transpose()?
+            .unwrap_or(default);
+        if !extensions.is_empty() {
+            material.insert(
+                "extensions".to_owned(),
+                serde_json::Value::Object(core::mem::take(extensions)),
+            );
+        }
+        retained.push(clearcoat);
+    }
+    Ok(retained)
+}
+
+fn decode_material_clearcoat(
+    mut value: serde_json::Value,
+    used: &BTreeSet<String>,
+    forbidden_coexistence: bool,
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<MaterialClearcoat, AssetDiagnostic> {
+    const LOCATION: &str = "glb.json.materials.extensions.KHR_materials_clearcoat";
+    if !used.contains(KHR_MATERIALS_CLEARCOAT) {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    }
+    let Some(payload) = value.as_object_mut() else {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    };
+    let default = default_material_clearcoat();
+    let unit = |value| {
+        serde_json::from_value::<f32>(value)
+            .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None))
+            .and_then(|value| {
+                UnitF32::new(value)
+                    .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None))
+            })
+    };
+    let factor = payload
+        .remove("clearcoatFactor")
+        .map(unit)
+        .transpose()?
+        .unwrap_or(default.factor);
+    let roughness_factor = payload
+        .remove("clearcoatRoughnessFactor")
+        .map(unit)
+        .transpose()?
+        .unwrap_or(default.roughness_factor);
+    let texture = remove_pending_texture_info(
+        payload,
+        "clearcoatTexture",
+        used,
+        unsupported,
+        "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatTexture",
+        false,
+    )?;
+    let roughness_texture = remove_pending_texture_info(
+        payload,
+        "clearcoatRoughnessTexture",
+        used,
+        unsupported,
+        "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatRoughnessTexture",
+        false,
+    )?;
+    let normal_texture = remove_pending_texture_info(
+        payload,
+        "clearcoatNormalTexture",
+        used,
+        unsupported,
+        "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatNormalTexture",
+        true,
+    )?;
+    if forbidden_coexistence {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    }
+    if !payload.is_empty() {
+        let mut remainder = serde_json::Value::Object(core::mem::take(payload));
+        remove_nested_extensions(&mut remainder, used, unsupported)?;
+        unsupported.get_or_insert_with(|| {
+            diagnostic(AssetDiagnosticCode::UnsupportedExtension, LOCATION, None)
+        });
+    }
+    for (texture, location) in [
+        (
+            texture,
+            "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatTexture",
+        ),
+        (
+            roughness_texture,
+            "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatRoughnessTexture",
+        ),
+        (
+            normal_texture,
+            "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatNormalTexture",
+        ),
+    ] {
+        if texture.is_some() {
+            remember_unsupported(
+                unsupported,
+                AssetDiagnosticCode::UnsupportedExtension,
+                location,
+                None,
+            );
+        }
+    }
+    Ok(MaterialClearcoat {
+        factor,
+        roughness_factor,
+        texture,
+        roughness_texture,
+        normal_texture,
+    })
 }
 
 fn remove_material_texture_transform_extensions(
@@ -1067,7 +1275,7 @@ fn validate_root(
     validate_sampler_resources(root)?;
     validate_root_header(root, binary, limits)?;
     validate_material_values(root)?;
-    validate_specular_texture_references(root, extensions)?;
+    validate_deferred_extension_texture_references(root, extensions)?;
     let alpha_unsupported = validate_alpha_coverage(root)?;
     let textures = decode_textures(
         root,
@@ -1174,7 +1382,7 @@ fn validate_selected_texture_roles(
     Ok(())
 }
 
-fn validate_specular_texture_references(
+fn validate_deferred_extension_texture_references(
     root: &Root,
     extensions: &ExtensionPreflight,
 ) -> Result<(), AssetDiagnostic> {
@@ -1187,6 +1395,26 @@ fn validate_specular_texture_references(
                 &root.textures,
                 texture.index,
                 "glb.json.materials.extensions.KHR_materials_specular.texture.index",
+            )
+            .map_err(|mut error| {
+                error.index = Some(stable_index(material_index));
+                error
+            })?;
+        }
+    }
+    for (material_index, clearcoat) in extensions.material_clearcoat.iter().enumerate() {
+        for texture in [
+            clearcoat.texture,
+            clearcoat.roughness_texture,
+            clearcoat.normal_texture,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            get(
+                &root.textures,
+                texture.index,
+                "glb.json.materials.extensions.KHR_materials_clearcoat.texture.index",
             )
             .map_err(|mut error| {
                 error.index = Some(stable_index(material_index));
@@ -2393,6 +2621,23 @@ fn validate_material_texture_coordinate_sets(
             [
                 value.texture.map(|info| info.texture_coordinate_set),
                 value.color_texture.map(|info| info.texture_coordinate_set),
+            ]
+        }),
+        available_set_count,
+        mesh_index,
+    )?;
+    let clearcoat = primitive
+        .material
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| extensions.material_clearcoat.get(index));
+    validate_selected_texture_coordinates(
+        clearcoat.map_or([None, None, None], |value| {
+            [
+                value.texture.map(|info| info.texture_coordinate_set),
+                value
+                    .roughness_texture
+                    .map(|info| info.texture_coordinate_set),
+                value.normal_texture.map(|info| info.texture_coordinate_set),
             ]
         }),
         available_set_count,
@@ -4153,6 +4398,11 @@ fn decode_material(
         .and_then(|index| extensions.material_specular.get(index))
         .copied()
         .unwrap_or_else(default_material_specular);
+    let clearcoat = material_index
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| extensions.material_clearcoat.get(index))
+        .copied()
+        .unwrap_or_else(default_material_clearcoat);
     let material = AssetMaterial::new(
         color,
         material_scalar(metallic_value)?,
@@ -4161,7 +4411,8 @@ fn decode_material(
     .with_emissive(emissive)
     .with_emissive_strength(emissive_strength)
     .with_ior(optics.ior, optics.dielectric_f0)
-    .with_specular(specular.factor, specular.color_factor);
+    .with_specular(specular.factor, specular.color_factor)
+    .with_clearcoat(clearcoat.factor, clearcoat.roughness_factor);
     let material = apply_unlit(material_index, &extensions.unlit_materials, &material);
     let material = apply_double_sided(root, material_index, &material);
     let material = apply_alpha_coverage(root, material_index, &material)?;

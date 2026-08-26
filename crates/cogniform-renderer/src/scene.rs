@@ -306,30 +306,23 @@ impl RenderScene {
                     model[8 + row] *= dimensions[2];
                 }
             }
-            let MaterialValues {
-                color,
-                metallic,
-                roughness,
-                emissive,
-                emissive_strength,
-                dielectric_f0,
-                specular_color_factor,
-                specular_factor,
-            } = material_values(entity.material(), imported_material.as_ref());
+            let values = material_values(entity.material(), imported_material.as_ref());
             draws.push(
                 PreparedDraw {
                     geometry,
                     model,
                     view_projection,
-                    color,
+                    color: values.color,
                     camera_position,
-                    metallic,
-                    roughness,
-                    emissive,
-                    emissive_strength,
-                    dielectric_f0,
-                    specular_color_factor,
-                    specular_factor,
+                    metallic: values.metallic,
+                    roughness: values.roughness,
+                    emissive: values.emissive,
+                    emissive_strength: values.emissive_strength,
+                    dielectric_f0: values.dielectric_f0,
+                    specular_color_factor: values.specular_color_factor,
+                    specular_factor: values.specular_factor,
+                    clearcoat_factor: values.clearcoat_factor,
+                    clearcoat_roughness_factor: values.clearcoat_roughness_factor,
                     normal_scale: 1.0,
                     imported_texture_roles: ImportedTextureRoles::NONE,
                     imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -459,6 +452,8 @@ pub(crate) struct PreparedDraw {
     pub(crate) dielectric_f0: f32,
     pub(crate) specular_color_factor: [f32; 3],
     pub(crate) specular_factor: f32,
+    pub(crate) clearcoat_factor: f32,
+    pub(crate) clearcoat_roughness_factor: f32,
     pub(crate) normal_scale: f32,
     pub(crate) imported_texture_roles: ImportedTextureRoles,
     pub(crate) imported_texture_transforms: ImportedTextureTransforms,
@@ -846,6 +841,8 @@ struct MaterialValues {
     dielectric_f0: f32,
     specular_color_factor: [f32; 3],
     specular_factor: f32,
+    clearcoat_factor: f32,
+    clearcoat_roughness_factor: f32,
 }
 
 fn material_values(
@@ -864,6 +861,8 @@ fn material_values(
                     dielectric_f0: 0.04,
                     specular_color_factor: [1.0; 3],
                     specular_factor: 1.0,
+                    clearcoat_factor: 0.0,
+                    clearcoat_roughness_factor: 0.0,
                 },
                 |material| MaterialValues {
                     color: material.base_color().map(cogniform_protocol::UnitF32::get),
@@ -874,6 +873,8 @@ fn material_values(
                     dielectric_f0: material.dielectric_f0(),
                     specular_color_factor: material.specular_color_factor(),
                     specular_factor: material.specular_factor(),
+                    clearcoat_factor: material.clearcoat_factor(),
+                    clearcoat_roughness_factor: material.clearcoat_roughness_factor(),
                 },
             )
         },
@@ -886,6 +887,8 @@ fn material_values(
             dielectric_f0: 0.04,
             specular_color_factor: [1.0; 3],
             specular_factor: 1.0,
+            clearcoat_factor: 0.0,
+            clearcoat_roughness_factor: 0.0,
         },
     )
 }
@@ -1731,6 +1734,8 @@ mod tests {
         assert_eq!(fallback.draws[0].emissive.map(f32::to_bits), [0; 3]);
         assert_exact_f32(fallback.draws[0].emissive_strength, 1.0);
         assert_exact_f32(fallback.draws[0].dielectric_f0, 0.04);
+        assert_exact_f32(fallback.draws[0].clearcoat_factor, 0.0);
+        assert_exact_f32(fallback.draws[0].clearcoat_roughness_factor, 0.0);
         assert!(!fallback.draws[0].imported_vertex_color);
         assert_exact_f32(fallback.draws[0].model[0], 2.0);
         assert_exact_f32(fallback.draws[0].model[5], 3.0);
@@ -1782,6 +1787,8 @@ mod tests {
         assert_eq!(prepared.draws[0].emissive.map(f32::to_bits), [0; 3]);
         assert_exact_f32(prepared.draws[0].emissive_strength, 1.0);
         assert_exact_f32(prepared.draws[0].dielectric_f0, 0.04);
+        assert_exact_f32(prepared.draws[0].clearcoat_factor, 0.0);
+        assert_exact_f32(prepared.draws[0].clearcoat_roughness_factor, 0.0);
         assert_eq!(
             prepared.draws[0].imported_alpha_coverage,
             ImportedAlphaCoverage::Opaque
@@ -1830,6 +1837,8 @@ mod tests {
         assert_eq!(overridden.draws[0].emissive.map(f32::to_bits), [0; 3]);
         assert_exact_f32(overridden.draws[0].emissive_strength, 1.0);
         assert_exact_f32(overridden.draws[0].dielectric_f0, 0.04);
+        assert_exact_f32(overridden.draws[0].clearcoat_factor, 0.0);
+        assert_exact_f32(overridden.draws[0].clearcoat_roughness_factor, 0.0);
         assert_eq!(
             overridden.draws[0].imported_alpha_coverage,
             ImportedAlphaCoverage::Disabled

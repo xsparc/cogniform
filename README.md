@@ -78,7 +78,12 @@ scene revision that produced it.
 > ratified material specular strength and unbounded non-negative RGB factors
 > then scale and tint the imported dielectric direct response. Their bounded
 > extension textures independently multiply linear strength alpha and sRGB-
-> decoded color RGB; the other channels are ignored. Refraction,
+> decoded color RGB; the other channels are ignored. Optional ratified
+> material clearcoat factor and roughness then add a bounded fixed-IOR white
+> GGX direct-light layer over that complete response. The coat uses the
+> geometric normal, attenuates base response and emission by its view-normal
+> Schlick weight, and preserves the exact prior path at factor zero; its three
+> extension textures remain validated but unsupported. Refraction,
 > transmission, and volume remain excluded.
 > Imported core glTF materials now apply
 > deterministic OPAQUE or cutoff-based MASK coverage; blending and sorting
@@ -157,7 +162,7 @@ implementations arrive:
 | `cogniform-mcp` | Bounded stable MCP stdio query/imagination/patch/observation translation and one retained canonical observation resource over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/coordinate/texture-transform/material/emissive-strength/IOR/specular/embedded-PNG decoding, immutable six-role-textured upload jobs, and explicit CPU-state eviction |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/coordinate/texture-transform/material/emissive-strength/IOR/specular/clearcoat/embedded-PNG decoding, immutable six-role-textured upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |

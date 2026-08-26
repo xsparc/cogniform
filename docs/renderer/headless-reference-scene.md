@@ -138,6 +138,15 @@ factors retain the CF072 path, strength zero gives pure dielectric diffuse, and
 metallic one remains factor-independent. Linear specular-strength alpha and
 sRGB-decoded specular-color RGB multiply those factors independently;
 strength RGB and color alpha are ignored.
+Ratified numeric `KHR_materials_clearcoat` factor and roughness add a fixed-
+IOR `1.5` white GGX layer for selected imported metallic-roughness materials.
+The coat uses the geometric normal and absolute view-normal cosine for Schlick
+Fresnel, attenuates the complete existing response before adding its direct
+lobe for each active light, and attenuates the no-light compatibility response
+and surface emission exactly once. Exact factor zero preserves the complete
+prior shader path. The coat is visually absent for unlit, explicit scene
+materials, built-ins, fallbacks, and proxies. Its three texture members remain
+unsupported after strict asset validation.
 Perceptual roughness is floored to `0.05` only in the GGX
 distribution to avoid a singular highlight. Each contribution and the shared
 sum are clamped in linear RGB; material alpha is preserved. If neither kind is
@@ -190,8 +199,8 @@ non-finite value. A fifth definition of either kind, a degenerate active
 directional positive-Z axis, or an active point or selected camera translation
 outside finite GPU f32 returns a typed error before submission.
 
-The existing bind group carries one fixed 720-byte per-draw uniform. The prior
-656-byte prefix remains exact; its 640-byte, 624-byte, 496-byte, and first 480-byte
+The existing bind group carries one fixed 736-byte per-draw uniform. The prior
+720-byte prefix remains exact; its 656-byte, 640-byte, 624-byte, 496-byte, and first 480-byte
 prefixes remain model,
 view-projection, color, compact ID, directional
 count and four directional slots, point count and four point slots, camera
@@ -207,7 +216,9 @@ and normal respectively. Bits 10 and 11 select secondary coordinates for
 specular strength and color. The integer range through 4,095 remains exact in
 the existing f32 flag lane. One optical `vec4` contains dielectric F0 and three
 exact-zero padding lanes. One factor `vec4` contains specular color RGB and
-strength; four final rows carry strength then color affine transforms.
+strength; four rows carry strength then color affine transforms. One final
+`vec4` contains clearcoat factor and roughness followed by two exact-zero
+padding lanes.
 Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 selects base-color sampling and bindings 6, 7, and 8 select normal,
@@ -294,6 +305,7 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact material_specular_factors_compose_without_changing_renderer_topology
 cargo test --release -p cogniform-renderer --test asset_fixture specular_textures_multiply_alpha_and_srgb_rgb_with_neutral_fallbacks --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture specular_texture_coordinates_transforms_and_samplers_are_independent --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_factors_layer_the_complete_imported_material_without_new_resources --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact six_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
@@ -359,6 +371,11 @@ directional/point composition, complete scene override, independent patterned
 coordinate-set overrides/transforms/authored samplers, exact six-role GPU
 upload/eviction/rehydration, and unchanged depth, identity, and geometric-
 normal observations.
+The clearcoat contract proves exact omitted/zero identity, fixed-IOR rough and
+smooth coat response over directional, point, and combined lights, retained
+base IOR/specular and base-normal composition, no-light and emission
+attenuation, complete scene override, unchanged non-color observations, and
+no renderer resource growth.
 The alpha-coverage contract distinguishes factor, texture, and product alpha;
 pins equality, cutoff-above-one, OPAQUE, and scene-override behavior; verifies
 discard across every attachment; and preserves revision, logical hash, and
@@ -440,6 +457,9 @@ appended factor row, and unchanged resource topology.
 See [ADR 0074](../adr/0074-bounded-gltf-material-specular-textures.md) for
 strength-alpha/color-RGB sampling, six-role accounting, appended affine rows,
 fixed bind-group growth, and capability preflight.
+See [ADR 0075](../adr/0075-bounded-gltf-material-clearcoat-factors.md) for
+strict numeric and deferred-texture admission, fixed-IOR geometric-normal
+layering, the appended factor row, and unchanged resource topology.
 See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for strict sampler
 decode, fixed-table indexing, independent role bindings, and the one-mip
 fallback.

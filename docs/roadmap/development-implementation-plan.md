@@ -1751,6 +1751,33 @@ revision, logical hash, replay, protocol, persistence, dependency, workflow,
 release, and deployment boundaries. See
 [ADR 0074](../adr/0074-bounded-gltf-material-specular-textures.md).
 
+### PR 75 - CF075: Bounded glTF material clearcoat factors
+
+Outcome: supported imported metallic-roughness materials may add ratified
+numeric clearcoat factor and roughness as one bounded fixed direct-light layer
+over the complete existing material response.
+
+Gate: recognize `KHR_materials_clearcoat` through the strict unique declaration
+contract. Require an object payload. Retain optional finite unit
+`clearcoatFactor` and `clearcoatRoughnessFactor`, both with exact default zero.
+Reject malformed, undeclared, non-finite, out-of-range, unlit-combined, or
+legacy specular-glossiness-combined members without proxy. Fully type-check
+optional `clearcoatTexture`, `clearcoatRoughnessTexture`, and
+`clearcoatNormalTexture`, including normal scale, declared transforms, root
+texture/sampler/source/image/PNG resources, and selected coordinates, then
+classify well-formed texture authority as unsupported/proxy because all three
+roles remain deferred.
+
+Apply one fixed independent IOR `1.5` white GGX coat with the geometric normal
+and view-normal Schlick weight. Attenuate the complete direct or no-light base
+response and surface emission exactly once, and preserve exact prior behavior
+at factor zero. Append `[factor,roughness,0,0]` after the preserved 720-byte
+prefix for a fixed 736-byte uniform. Preserve the 72-byte vertex, thirteen-
+entry bind group, six texture roles, 36 samplers, two pipelines, observations,
+lifecycle, revision, logical hash, replay, protocol, persistence, dependency,
+workflow, release, and deployment boundaries. See
+[ADR 0075](../adr/0075-bounded-gltf-material-clearcoat-factors.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1763,7 +1790,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
-  -> CF072 -> CF073 -> CF074
+  -> CF072 -> CF073 -> CF074 -> CF075
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2138,6 +2165,17 @@ Validation expands with capability:
   Vulkan evidence; unchanged vertex, sampler table, pipeline, logical,
   protocol, persistence, dependency, workflow, release, and deployment
   boundaries.
+- CF075: strict ratified clearcoat declaration, exact zero-default finite unit
+  factor/roughness retention, malformed/unused/coexistence/wider-payload
+  precedence, and complete validation of all three deferred texture infos and
+  root resources before proxy classification; fixed IOR `1.5`, white GGX,
+  geometric-normal, view-Schlick layering over the complete direct response;
+  exact no-light and emission attenuation; exact factor-zero identity; exact
+  720-byte prefix plus one appended row in a 736-byte uniform; controlled
+  directional, point, combined-light, base-normal, IOR/specular, scene-
+  override, emission, and unchanged non-color evidence; unchanged vertex,
+  texture-role, binding, sampler, pipeline, lifecycle, logical, protocol,
+  persistence, dependency, workflow, release, and deployment boundaries.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

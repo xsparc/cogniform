@@ -366,6 +366,8 @@ impl HeadlessRenderer {
                 dielectric_f0: 0.04,
                 specular_color_factor: [1.0; 3],
                 specular_factor: 1.0,
+                clearcoat_factor: 0.0,
+                clearcoat_roughness_factor: 0.0,
                 normal_scale: 1.0,
                 imported_texture_roles: ImportedTextureRoles::NONE,
                 imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -1728,6 +1730,7 @@ fn encode_draw_uniform(
     const TEXTURE_TRANSFORM_FLOATS: usize = 4 * 2 * 4;
     const SPECULAR_TEXTURE_TRANSFORM_FLOATS: usize = 4 * 2 * 2;
     const OPTICAL_FLOATS: usize = 8;
+    const CLEARCOAT_FLOATS: usize = 4;
     const UNIFORM_BYTES: usize = (BASE_FLOATS
         + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT
         + POINT_COUNT_FLOATS
@@ -1735,7 +1738,8 @@ fn encode_draw_uniform(
         + MATERIAL_VIEW_EMISSIVE_FLOATS
         + TEXTURE_TRANSFORM_FLOATS
         + OPTICAL_FLOATS
-        + SPECULAR_TEXTURE_TRANSFORM_FLOATS)
+        + SPECULAR_TEXTURE_TRANSFORM_FLOATS
+        + CLEARCOAT_FLOATS)
         * 4;
     debug_assert!(directional_lights.len() <= MAX_DIRECTIONAL_LIGHTS);
     debug_assert!(point_lights.len() <= MAX_POINT_LIGHTS);
@@ -1861,6 +1865,10 @@ fn append_material_uniform(bytes: &mut Vec<u8>, draw: &PreparedDraw) {
             }
         }
     }
+    bytes.extend_from_slice(&draw.clearcoat_factor.to_le_bytes());
+    bytes.extend_from_slice(&draw.clearcoat_roughness_factor.to_le_bytes());
+    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
 }
 
 fn create_target_texture(
@@ -2178,6 +2186,8 @@ mod tests {
             dielectric_f0: 0.25,
             specular_color_factor: [1.5, 0.5, 2.0],
             specular_factor: 0.75,
+            clearcoat_factor: 0.6,
+            clearcoat_roughness_factor: 0.35,
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NONE,
             imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -2191,7 +2201,7 @@ mod tests {
     }
 
     #[test]
-    fn draw_uniform_preserves_prefix_and_appends_exact_optical_and_specular_rows() {
+    fn draw_uniform_preserves_prefix_and_appends_exact_optical_specular_and_clearcoat_rows() {
         let draw = optical_specular_uniform_draw();
         let lights = [
             PreparedDirectionalLight {
@@ -2212,7 +2222,7 @@ mod tests {
         }];
 
         let bytes = encode_draw_uniform(&draw, &lights, &point_lights);
-        assert_eq!(bytes.len(), 720);
+        assert_eq!(bytes.len(), 736);
         let words = bytes
             .chunks_exact(4)
             .map(|word| <[u8; 4]>::try_from(word).unwrap())
@@ -2274,6 +2284,10 @@ mod tests {
             (164..180).map(float).collect::<Vec<_>>(),
             [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0].repeat(2)
         );
+        assert_eq!(
+            (180..184).map(float).collect::<Vec<_>>(),
+            vec![0.6, 0.35, 0.0, 0.0]
+        );
     }
 
     #[test]
@@ -2291,6 +2305,8 @@ mod tests {
             dielectric_f0: 0.04,
             specular_color_factor: [1.0; 3],
             specular_factor: 1.0,
+            clearcoat_factor: 0.0,
+            clearcoat_roughness_factor: 0.0,
             normal_scale: 1.0,
             imported_texture_roles: ImportedTextureRoles::NORMAL_ONLY,
             imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
@@ -2303,7 +2319,7 @@ mod tests {
         };
 
         let bytes = encode_draw_uniform(&draw, &[], &[]);
-        assert_eq!(bytes.len(), 720);
+        assert_eq!(bytes.len(), 736);
         let float_at =
             |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
         assert_eq!(float_at(119).to_bits(), 4_095.0_f32.to_bits());
@@ -2355,6 +2371,83 @@ mod tests {
         let (water, _) = terms(0.020_059_312, [1.5, 0.5, 2.0], 0.75, 0.6, 0.0, base);
         let (diamond, _) = terms(0.172_394_93, [1.5, 0.5, 2.0], 0.75, 0.6, 0.0, base);
         assert_ne!(water.map(f32::to_bits), diamond.map(f32::to_bits));
+    }
+
+    #[test]
+    fn clearcoat_reference_vectors_pin_fixed_fresnel_layering_and_zero_identity() {
+        fn weight(factor: f32, normal_view: f32) -> f32 {
+            factor * (0.04 + 0.96 * (1.0 - normal_view.abs().clamp(0.0, 1.0)).powi(5))
+        }
+
+        fn coat_response(
+            normal_view: f32,
+            normal_light: f32,
+            normal_half: f32,
+            roughness: f32,
+        ) -> f32 {
+            let bounded_roughness = roughness.max(0.05);
+            let alpha = bounded_roughness * bounded_roughness;
+            let alpha_squared = alpha * alpha;
+            let denominator_term = normal_half * normal_half * (alpha_squared - 1.0) + 1.0;
+            let distribution = alpha_squared
+                / (core::f32::consts::PI * denominator_term * denominator_term).max(1.0e-12);
+            let geometry = |normal_direction: f32| {
+                let remapped = roughness + 1.0;
+                let k = remapped * remapped / 8.0;
+                normal_direction / (normal_direction * (1.0 - k) + k).max(1.0e-6)
+            };
+            distribution * geometry(normal_view) * geometry(normal_light)
+                / (4.0 * normal_view * normal_light).max(1.0e-6)
+                * normal_light
+        }
+
+        fn layer(base: [f32; 3], coat: f32, factor: f32, normal_view: f32) -> [f32; 3] {
+            if factor == 0.0 {
+                return base;
+            }
+            let weight = weight(factor, normal_view);
+            base.map(|value| value * (1.0 - weight) + coat * weight)
+        }
+
+        let base = [0.2, 0.4, 0.8];
+        assert_eq!(
+            layer(base, f32::MAX, 0.0, 0.0).map(f32::to_bits),
+            base.map(f32::to_bits),
+            "zero intensity preserves the exact accepted base path"
+        );
+        assert_eq!(weight(1.0, 1.0).to_bits(), 0.04_f32.to_bits());
+        assert_eq!(weight(1.0, 0.0).to_bits(), 1.0_f32.to_bits());
+        assert_eq!(weight(0.5, 1.0).to_bits(), 0.02_f32.to_bits());
+
+        let smooth = coat_response(1.0, 1.0, 1.0, 0.25);
+        let rough = coat_response(1.0, 1.0, 1.0, 1.0);
+        assert!(smooth.is_finite() && rough.is_finite());
+        assert_ne!(smooth.to_bits(), rough.to_bits());
+
+        let coat_from_geometric_normal = coat_response(0.8, 0.7, 0.9, 0.3);
+        let base_normal_a = [0.1, 0.3, 0.5];
+        let base_normal_b = [0.7, 0.2, 0.05];
+        let coated_a = layer(base_normal_a, coat_from_geometric_normal, 0.75, 0.8);
+        let coated_b = layer(base_normal_b, coat_from_geometric_normal, 0.75, 0.8);
+        assert_ne!(coated_a.map(f32::to_bits), coated_b.map(f32::to_bits));
+        assert_eq!(
+            coat_from_geometric_normal.to_bits(),
+            coat_response(0.8, 0.7, 0.9, 0.3).to_bits(),
+            "base-layer normal changes cannot alter the geometric-normal coat lobe"
+        );
+
+        let no_light_weight = weight(1.0, 1.0);
+        let no_light_base = base.map(|value| value * (1.0 - no_light_weight));
+        let emission = [0.05, 0.1, 0.2];
+        let coated_emission = emission.map(|value| value * (1.0 - no_light_weight));
+        assert_eq!(
+            no_light_base.map(f32::to_bits),
+            [0.192, 0.384, 0.768].map(f32::to_bits)
+        );
+        assert_eq!(
+            coated_emission.map(f32::to_bits),
+            [0.048, 0.096, 0.192].map(f32::to_bits)
+        );
     }
 
     #[test]

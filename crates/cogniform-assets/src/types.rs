@@ -428,6 +428,8 @@ pub struct AssetMaterial {
     dielectric_f0: f32,
     specular_factor: f32,
     specular_color_factor: [f32; 3],
+    clearcoat_factor: f32,
+    clearcoat_roughness_factor: f32,
     texture_roles: u8,
     texture_coordinate_sets: u8,
     texture_samplers: [AssetSampler; 6],
@@ -466,6 +468,8 @@ impl AssetMaterial {
             dielectric_f0: 0.04,
             specular_factor: 1.0,
             specular_color_factor: [1.0; 3],
+            clearcoat_factor: 0.0,
+            clearcoat_roughness_factor: 0.0,
             texture_roles: 0,
             texture_coordinate_sets: 0,
             texture_samplers: [AssetSampler::LINEAR_REPEAT; 6],
@@ -547,6 +551,16 @@ impl AssetMaterial {
             color_factor[1].get(),
             color_factor[2].get(),
         ];
+        self
+    }
+
+    pub(crate) const fn with_clearcoat(
+        mut self,
+        factor: UnitF32,
+        roughness_factor: UnitF32,
+    ) -> Self {
+        self.clearcoat_factor = factor.get();
+        self.clearcoat_roughness_factor = roughness_factor.get();
         self
     }
 
@@ -662,6 +676,18 @@ impl AssetMaterial {
     #[must_use]
     pub const fn specular_color_factor(self) -> [f32; 3] {
         self.specular_color_factor
+    }
+
+    /// Returns the finite unit clearcoat-layer intensity.
+    #[must_use]
+    pub const fn clearcoat_factor(self) -> f32 {
+        self.clearcoat_factor
+    }
+
+    /// Returns the finite unit clearcoat-layer roughness.
+    #[must_use]
+    pub const fn clearcoat_roughness_factor(self) -> f32 {
+        self.clearcoat_roughness_factor
     }
 
     /// Returns whether this material samples the asset's shared base-color texture.
