@@ -35,6 +35,12 @@ struct DrawUniform {
     specular_color_uv_row_0: vec4<f32>,
     specular_color_uv_row_1: vec4<f32>,
     clearcoat: vec4<f32>,
+    clearcoat_uv_row_0: vec4<f32>,
+    clearcoat_uv_row_1: vec4<f32>,
+    clearcoat_roughness_uv_row_0: vec4<f32>,
+    clearcoat_roughness_uv_row_1: vec4<f32>,
+    clearcoat_normal_uv_row_0: vec4<f32>,
+    clearcoat_normal_uv_row_1: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -75,6 +81,24 @@ var specular_color_texture: texture_2d<f32>;
 
 @group(0) @binding(12)
 var specular_color_sampler: sampler;
+
+@group(0) @binding(13)
+var clearcoat_texture: texture_2d<f32>;
+
+@group(0) @binding(14)
+var clearcoat_sampler: sampler;
+
+@group(0) @binding(15)
+var clearcoat_roughness_texture: texture_2d<f32>;
+
+@group(0) @binding(16)
+var clearcoat_roughness_sampler: sampler;
+
+@group(0) @binding(17)
+var clearcoat_normal_texture: texture_2d<f32>;
+
+@group(0) @binding(18)
+var clearcoat_normal_sampler: sampler;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -389,10 +413,63 @@ fn fs_main(
             }
         }
     }
+    var source_clearcoat_world_normal = source_geometric_world_normal;
+    if draw.clearcoat.x != 0.0 && draw.clearcoat_normal_uv_row_1.w != 0.0 {
+        let tangent_rejected = input.world_tangent.xyz
+            - source_geometric_world_normal
+                * dot(source_geometric_world_normal, input.world_tangent.xyz);
+        let tangent_length_squared = dot(tangent_rejected, tangent_rejected);
+        if tangent_length_squared > 1e-12 {
+            let world_tangent = tangent_rejected * inverseSqrt(tangent_length_squared);
+            let handedness = select(-1.0, 1.0, input.world_tangent.w >= 0.0);
+            let world_bitangent = cross(source_geometric_world_normal, world_tangent) * handedness;
+            let clearcoat_normal_uv = transform_uv(
+                select(
+                    input.texcoord_0,
+                    input.texcoord_1,
+                    (material_flags & 16384u) != 0u,
+                ),
+                draw.clearcoat_normal_uv_row_0,
+                draw.clearcoat_normal_uv_row_1,
+            );
+            let sampled = textureSample(
+                clearcoat_normal_texture,
+                clearcoat_normal_sampler,
+                clearcoat_normal_uv,
+            ).rgb;
+            let tangent_normal = vec3(
+                (sampled.r * 2.0 - 1.0) * draw.clearcoat_normal_uv_row_0.w,
+                (sampled.g * 2.0 - 1.0) * draw.clearcoat_normal_uv_row_0.w,
+                sampled.b * 2.0 - 1.0,
+            );
+            let tangent_normal_scale = max(
+                abs(tangent_normal.x),
+                max(abs(tangent_normal.y), abs(tangent_normal.z)),
+            );
+            if tangent_normal_scale > 0.0 {
+                let scaled_tangent_normal = tangent_normal / tangent_normal_scale;
+                let tangent_normal_length_squared = dot(
+                    scaled_tangent_normal,
+                    scaled_tangent_normal,
+                );
+                let unit_tangent_normal = scaled_tangent_normal
+                    * inverseSqrt(tangent_normal_length_squared);
+                let candidate = world_tangent * unit_tangent_normal.x
+                    + world_bitangent * unit_tangent_normal.y
+                    + source_geometric_world_normal * unit_tangent_normal.z;
+                let candidate_length_squared = dot(candidate, candidate);
+                if candidate_length_squared > 1e-12 {
+                    source_clearcoat_world_normal = candidate
+                        * inverseSqrt(candidate_length_squared);
+                }
+            }
+        }
+    }
     let double_sided = (material_flags & 8u) != 0u;
     let face_sign = select(-1.0, 1.0, front_facing || !double_sided);
     let geometric_world_normal = source_geometric_world_normal * face_sign;
     let shaded_world_normal = source_shaded_world_normal * face_sign;
+    let clearcoat_world_normal = source_clearcoat_world_normal * face_sign;
     let sampled_material = textureSample(
         metallic_roughness_texture,
         metallic_roughness_sampler,
@@ -446,13 +523,43 @@ fn fs_main(
             has_view = true;
         }
     }
-    var clearcoat_weight = 0.0;
+    var clearcoat_factor = 0.0;
+    var clearcoat_roughness = draw.clearcoat.y;
     if !unlit && draw.clearcoat.x != 0.0 {
+        clearcoat_factor = draw.clearcoat.x * textureSample(
+            clearcoat_texture,
+            clearcoat_sampler,
+            transform_uv(
+                select(
+                    input.texcoord_0,
+                    input.texcoord_1,
+                    (material_flags & 4096u) != 0u,
+                ),
+                draw.clearcoat_uv_row_0,
+                draw.clearcoat_uv_row_1,
+            ),
+        ).r;
+        clearcoat_roughness = clamp(draw.clearcoat.y * textureSample(
+            clearcoat_roughness_texture,
+            clearcoat_roughness_sampler,
+            transform_uv(
+                select(
+                    input.texcoord_0,
+                    input.texcoord_1,
+                    (material_flags & 8192u) != 0u,
+                ),
+                draw.clearcoat_roughness_uv_row_0,
+                draw.clearcoat_roughness_uv_row_1,
+            ),
+        ).g, 0.0, 1.0);
+    }
+    var clearcoat_weight = 0.0;
+    if !unlit && clearcoat_factor != 0.0 {
         clearcoat_weight = clearcoat_fresnel_weight(
-            geometric_world_normal,
+            clearcoat_world_normal,
             surface_to_view,
             has_view,
-            draw.clearcoat.x,
+            clearcoat_factor,
         );
     }
     var shaded_color = base_color.rgb;
@@ -473,13 +580,13 @@ fn fs_main(
                 specular_factor,
             );
             var response = base_response;
-            if draw.clearcoat.x != 0.0 {
+            if clearcoat_factor != 0.0 {
                 let coat_response = clearcoat_direct_response(
-                    geometric_world_normal,
+                    clearcoat_world_normal,
                     light.surface_to_light.xyz,
                     surface_to_view,
                     has_view,
-                    draw.clearcoat.y,
+                    clearcoat_roughness,
                 );
                 response = mix(base_response, coat_response, clearcoat_weight);
             }
@@ -517,13 +624,13 @@ fn fs_main(
                         specular_factor,
                     );
                     var response = base_response;
-                    if draw.clearcoat.x != 0.0 {
+                    if clearcoat_factor != 0.0 {
                         let coat_response = clearcoat_direct_response(
-                            geometric_world_normal,
+                            clearcoat_world_normal,
                             surface_to_light,
                             surface_to_view,
                             has_view,
-                            draw.clearcoat.y,
+                            clearcoat_roughness,
                         );
                         response = mix(base_response, coat_response, clearcoat_weight);
                     }
@@ -535,7 +642,7 @@ fn fs_main(
                 }
             }
         }
-    } else if !unlit && draw.clearcoat.x != 0.0 {
+    } else if !unlit && clearcoat_factor != 0.0 {
         shaded_color = shaded_color * (1.0 - clearcoat_weight);
     }
     if !unlit {
@@ -554,7 +661,7 @@ fn fs_main(
         ).rgb
             * draw.emissive.rgb
             * draw.camera_position.w;
-        if draw.clearcoat.x != 0.0 {
+        if clearcoat_factor != 0.0 {
             emissive = emissive * (1.0 - clearcoat_weight);
         }
         shaded_color = min(shaded_color + emissive, vec3(1.0));

@@ -430,11 +430,12 @@ pub struct AssetMaterial {
     specular_color_factor: [f32; 3],
     clearcoat_factor: f32,
     clearcoat_roughness_factor: f32,
-    texture_roles: u8,
-    texture_coordinate_sets: u8,
-    texture_samplers: [AssetSampler; 6],
-    texture_transforms: [AssetTextureTransform; 6],
+    texture_roles: u16,
+    texture_coordinate_sets: u16,
+    texture_samplers: [AssetSampler; 9],
+    texture_transforms: [AssetTextureTransform; 9],
     normal_scale: f32,
+    clearcoat_normal_scale: f32,
     alpha_mode: AssetAlphaMode,
     alpha_cutoff: f32,
     double_sided: bool,
@@ -442,18 +443,24 @@ pub struct AssetMaterial {
 }
 
 impl AssetMaterial {
-    const BASE_COLOR_TEXTURE: u8 = 1 << 0;
-    const EMISSIVE_TEXTURE: u8 = 1 << 1;
-    const METALLIC_ROUGHNESS_TEXTURE: u8 = 1 << 2;
-    const NORMAL_TEXTURE: u8 = 1 << 3;
-    const SPECULAR_TEXTURE: u8 = 1 << 4;
-    const SPECULAR_COLOR_TEXTURE: u8 = 1 << 5;
+    const BASE_COLOR_TEXTURE: u16 = 1 << 0;
+    const EMISSIVE_TEXTURE: u16 = 1 << 1;
+    const METALLIC_ROUGHNESS_TEXTURE: u16 = 1 << 2;
+    const NORMAL_TEXTURE: u16 = 1 << 3;
+    const SPECULAR_TEXTURE: u16 = 1 << 4;
+    const SPECULAR_COLOR_TEXTURE: u16 = 1 << 5;
+    const CLEARCOAT_TEXTURE: u16 = 1 << 6;
+    const CLEARCOAT_ROUGHNESS_TEXTURE: u16 = 1 << 7;
+    const CLEARCOAT_NORMAL_TEXTURE: u16 = 1 << 8;
     const BASE_COLOR_SAMPLER: usize = 0;
     const EMISSIVE_SAMPLER: usize = 1;
     const METALLIC_ROUGHNESS_SAMPLER: usize = 2;
     const NORMAL_SAMPLER: usize = 3;
     const SPECULAR_SAMPLER: usize = 4;
     const SPECULAR_COLOR_SAMPLER: usize = 5;
+    const CLEARCOAT_SAMPLER: usize = 6;
+    const CLEARCOAT_ROUGHNESS_SAMPLER: usize = 7;
+    const CLEARCOAT_NORMAL_SAMPLER: usize = 8;
 
     /// Creates one validated linear metallic-roughness material with zero emission.
     #[must_use]
@@ -472,9 +479,10 @@ impl AssetMaterial {
             clearcoat_roughness_factor: 0.0,
             texture_roles: 0,
             texture_coordinate_sets: 0,
-            texture_samplers: [AssetSampler::LINEAR_REPEAT; 6],
-            texture_transforms: [AssetTextureTransform::IDENTITY; 6],
+            texture_samplers: [AssetSampler::LINEAR_REPEAT; 9],
+            texture_transforms: [AssetTextureTransform::IDENTITY; 9],
             normal_scale: 1.0,
+            clearcoat_normal_scale: 1.0,
             alpha_mode: AssetAlphaMode::Opaque,
             alpha_cutoff: 0.5,
             double_sided: false,
@@ -490,7 +498,8 @@ impl AssetMaterial {
     ) -> Self {
         debug_assert!(texture_coordinate_set <= 1);
         self.texture_roles |= Self::BASE_COLOR_TEXTURE;
-        self.texture_coordinate_sets |= texture_coordinate_set * Self::BASE_COLOR_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::BASE_COLOR_TEXTURE;
         self.texture_samplers[Self::BASE_COLOR_SAMPLER] = sampler;
         self.texture_transforms[Self::BASE_COLOR_SAMPLER] = transform;
         self
@@ -504,7 +513,8 @@ impl AssetMaterial {
     ) -> Self {
         debug_assert!(texture_coordinate_set <= 1);
         self.texture_roles |= Self::METALLIC_ROUGHNESS_TEXTURE;
-        self.texture_coordinate_sets |= texture_coordinate_set * Self::METALLIC_ROUGHNESS_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::METALLIC_ROUGHNESS_TEXTURE;
         self.texture_samplers[Self::METALLIC_ROUGHNESS_SAMPLER] = sampler;
         self.texture_transforms[Self::METALLIC_ROUGHNESS_SAMPLER] = transform;
         self
@@ -518,7 +528,8 @@ impl AssetMaterial {
     ) -> Self {
         debug_assert!(texture_coordinate_set <= 1);
         self.texture_roles |= Self::EMISSIVE_TEXTURE;
-        self.texture_coordinate_sets |= texture_coordinate_set * Self::EMISSIVE_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::EMISSIVE_TEXTURE;
         self.texture_samplers[Self::EMISSIVE_SAMPLER] = sampler;
         self.texture_transforms[Self::EMISSIVE_SAMPLER] = transform;
         self
@@ -572,7 +583,8 @@ impl AssetMaterial {
     ) -> Self {
         debug_assert!(texture_coordinate_set <= 1);
         self.texture_roles |= Self::SPECULAR_TEXTURE;
-        self.texture_coordinate_sets |= texture_coordinate_set * Self::SPECULAR_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::SPECULAR_TEXTURE;
         self.texture_samplers[Self::SPECULAR_SAMPLER] = sampler;
         self.texture_transforms[Self::SPECULAR_SAMPLER] = transform;
         self
@@ -586,7 +598,8 @@ impl AssetMaterial {
     ) -> Self {
         debug_assert!(texture_coordinate_set <= 1);
         self.texture_roles |= Self::SPECULAR_COLOR_TEXTURE;
-        self.texture_coordinate_sets |= texture_coordinate_set * Self::SPECULAR_COLOR_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::SPECULAR_COLOR_TEXTURE;
         self.texture_samplers[Self::SPECULAR_COLOR_SAMPLER] = sampler;
         self.texture_transforms[Self::SPECULAR_COLOR_SAMPLER] = transform;
         self
@@ -601,10 +614,58 @@ impl AssetMaterial {
     ) -> Self {
         debug_assert!(texture_coordinate_set <= 1);
         self.texture_roles |= Self::NORMAL_TEXTURE;
-        self.texture_coordinate_sets |= texture_coordinate_set * Self::NORMAL_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::NORMAL_TEXTURE;
         self.texture_samplers[Self::NORMAL_SAMPLER] = sampler;
         self.texture_transforms[Self::NORMAL_SAMPLER] = transform;
         self.normal_scale = scale.get();
+        self
+    }
+
+    pub(crate) const fn with_clearcoat_texture(
+        mut self,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
+    ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
+        self.texture_roles |= Self::CLEARCOAT_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::CLEARCOAT_TEXTURE;
+        self.texture_samplers[Self::CLEARCOAT_SAMPLER] = sampler;
+        self.texture_transforms[Self::CLEARCOAT_SAMPLER] = transform;
+        self
+    }
+
+    pub(crate) const fn with_clearcoat_roughness_texture(
+        mut self,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
+    ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
+        self.texture_roles |= Self::CLEARCOAT_ROUGHNESS_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::CLEARCOAT_ROUGHNESS_TEXTURE;
+        self.texture_samplers[Self::CLEARCOAT_ROUGHNESS_SAMPLER] = sampler;
+        self.texture_transforms[Self::CLEARCOAT_ROUGHNESS_SAMPLER] = transform;
+        self
+    }
+
+    pub(crate) const fn with_clearcoat_normal_texture(
+        mut self,
+        scale: FiniteF32,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
+    ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
+        self.texture_roles |= Self::CLEARCOAT_NORMAL_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::CLEARCOAT_NORMAL_TEXTURE;
+        self.texture_samplers[Self::CLEARCOAT_NORMAL_SAMPLER] = sampler;
+        self.texture_transforms[Self::CLEARCOAT_NORMAL_SAMPLER] = transform;
+        self.clearcoat_normal_scale = scale.get();
         self
     }
 
@@ -727,7 +788,25 @@ impl AssetMaterial {
         self.texture_roles & Self::SPECULAR_COLOR_TEXTURE != 0
     }
 
-    const fn texture_coordinate_set(self, role: u8) -> Option<u32> {
+    /// Returns whether this material samples the linear clearcoat-intensity texture.
+    #[must_use]
+    pub const fn has_clearcoat_texture(self) -> bool {
+        self.texture_roles & Self::CLEARCOAT_TEXTURE != 0
+    }
+
+    /// Returns whether this material samples the linear clearcoat-roughness texture.
+    #[must_use]
+    pub const fn has_clearcoat_roughness_texture(self) -> bool {
+        self.texture_roles & Self::CLEARCOAT_ROUGHNESS_TEXTURE != 0
+    }
+
+    /// Returns whether this material samples the tangent-space clearcoat normal texture.
+    #[must_use]
+    pub const fn has_clearcoat_normal_texture(self) -> bool {
+        self.texture_roles & Self::CLEARCOAT_NORMAL_TEXTURE != 0
+    }
+
+    const fn texture_coordinate_set(self, role: u16) -> Option<u32> {
         if self.texture_roles & role == 0 {
             None
         } else if self.texture_coordinate_sets & role == 0 {
@@ -771,6 +850,24 @@ impl AssetMaterial {
     #[must_use]
     pub const fn specular_color_texture_coordinate_set(self) -> Option<u32> {
         self.texture_coordinate_set(Self::SPECULAR_COLOR_TEXTURE)
+    }
+
+    /// Returns the effective clearcoat-intensity texture-coordinate set when present.
+    #[must_use]
+    pub const fn clearcoat_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::CLEARCOAT_TEXTURE)
+    }
+
+    /// Returns the effective clearcoat-roughness texture-coordinate set when present.
+    #[must_use]
+    pub const fn clearcoat_roughness_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::CLEARCOAT_ROUGHNESS_TEXTURE)
+    }
+
+    /// Returns the effective clearcoat-normal texture-coordinate set when present.
+    #[must_use]
+    pub const fn clearcoat_normal_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::CLEARCOAT_NORMAL_TEXTURE)
     }
 
     /// Returns the retained base-color sampler when that role is present.
@@ -828,6 +925,36 @@ impl AssetMaterial {
     pub const fn specular_color_sampler(self) -> Option<AssetSampler> {
         if self.has_specular_color_texture() {
             Some(self.texture_samplers[Self::SPECULAR_COLOR_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained clearcoat-intensity sampler when present.
+    #[must_use]
+    pub const fn clearcoat_sampler(self) -> Option<AssetSampler> {
+        if self.has_clearcoat_texture() {
+            Some(self.texture_samplers[Self::CLEARCOAT_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained clearcoat-roughness sampler when present.
+    #[must_use]
+    pub const fn clearcoat_roughness_sampler(self) -> Option<AssetSampler> {
+        if self.has_clearcoat_roughness_texture() {
+            Some(self.texture_samplers[Self::CLEARCOAT_ROUGHNESS_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained clearcoat-normal sampler when present.
+    #[must_use]
+    pub const fn clearcoat_normal_sampler(self) -> Option<AssetSampler> {
+        if self.has_clearcoat_normal_texture() {
+            Some(self.texture_samplers[Self::CLEARCOAT_NORMAL_SAMPLER])
         } else {
             None
         }
@@ -893,10 +1020,46 @@ impl AssetMaterial {
         }
     }
 
+    /// Returns the retained clearcoat-intensity UV transform when present.
+    #[must_use]
+    pub const fn clearcoat_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_clearcoat_texture() {
+            Some(self.texture_transforms[Self::CLEARCOAT_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained clearcoat-roughness UV transform when present.
+    #[must_use]
+    pub const fn clearcoat_roughness_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_clearcoat_roughness_texture() {
+            Some(self.texture_transforms[Self::CLEARCOAT_ROUGHNESS_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained clearcoat-normal UV transform when present.
+    #[must_use]
+    pub const fn clearcoat_normal_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_clearcoat_normal_texture() {
+            Some(self.texture_transforms[Self::CLEARCOAT_NORMAL_SAMPLER])
+        } else {
+            None
+        }
+    }
+
     /// Returns the finite glTF normal-texture XY scale.
     #[must_use]
     pub const fn normal_scale(self) -> f32 {
         self.normal_scale
+    }
+
+    /// Returns the finite glTF clearcoat-normal XY scale.
+    #[must_use]
+    pub const fn clearcoat_normal_scale(self) -> f32 {
+        self.clearcoat_normal_scale
     }
 
     /// Returns the imported deterministic alpha-coverage mode.
@@ -981,6 +1144,9 @@ pub struct AssetUploadJob {
     normal_texture: Option<AssetTexture>,
     specular_texture: Option<AssetTexture>,
     specular_color_texture: Option<AssetTexture>,
+    clearcoat_texture: Option<AssetTexture>,
+    clearcoat_roughness_texture: Option<AssetTexture>,
+    clearcoat_normal_texture: Option<AssetTexture>,
 }
 
 impl AssetUploadJob {
@@ -988,7 +1154,7 @@ impl AssetUploadJob {
         key: AssetMeshKey,
         vertices: Arc<[AssetVertex]>,
         material: &AssetMaterial,
-        textures: [Option<AssetTexture>; 6],
+        textures: [Option<AssetTexture>; 9],
     ) -> Self {
         let [
             base_color_texture,
@@ -997,6 +1163,9 @@ impl AssetUploadJob {
             normal_texture,
             specular_texture,
             specular_color_texture,
+            clearcoat_texture,
+            clearcoat_roughness_texture,
+            clearcoat_normal_texture,
         ] = textures;
         Self {
             key,
@@ -1008,6 +1177,9 @@ impl AssetUploadJob {
             normal_texture,
             specular_texture,
             specular_color_texture,
+            clearcoat_texture,
+            clearcoat_roughness_texture,
+            clearcoat_normal_texture,
         }
     }
 
@@ -1072,6 +1244,24 @@ impl AssetUploadJob {
         self.specular_color_texture.as_ref()
     }
 
+    /// Returns the immutable shared linear clearcoat-intensity texture when referenced.
+    #[must_use]
+    pub const fn clearcoat_texture(&self) -> Option<&AssetTexture> {
+        self.clearcoat_texture.as_ref()
+    }
+
+    /// Returns the immutable shared linear clearcoat-roughness texture when referenced.
+    #[must_use]
+    pub const fn clearcoat_roughness_texture(&self) -> Option<&AssetTexture> {
+        self.clearcoat_roughness_texture.as_ref()
+    }
+
+    /// Returns the immutable shared clearcoat-normal texture when referenced.
+    #[must_use]
+    pub const fn clearcoat_normal_texture(&self) -> Option<&AssetTexture> {
+        self.clearcoat_normal_texture.as_ref()
+    }
+
     /// Returns exact GPU vertex bytes required by this interleaved mesh.
     #[must_use]
     pub fn byte_len(&self) -> u64 {
@@ -1096,6 +1286,9 @@ pub(crate) struct DecodedAsset {
     pub(crate) normal_texture: Option<AssetTexture>,
     pub(crate) specular_texture: Option<AssetTexture>,
     pub(crate) specular_color_texture: Option<AssetTexture>,
+    pub(crate) clearcoat_texture: Option<AssetTexture>,
+    pub(crate) clearcoat_roughness_texture: Option<AssetTexture>,
+    pub(crate) clearcoat_normal_texture: Option<AssetTexture>,
     pub(crate) byte_len: u64,
 }
 
@@ -1107,6 +1300,9 @@ impl DecodedAsset {
             + u32::from(self.normal_texture.is_some())
             + u32::from(self.specular_texture.is_some())
             + u32::from(self.specular_color_texture.is_some())
+            + u32::from(self.clearcoat_texture.is_some())
+            + u32::from(self.clearcoat_roughness_texture.is_some())
+            + u32::from(self.clearcoat_normal_texture.is_some())
     }
 }
 
@@ -1185,7 +1381,7 @@ pub struct AssetStoreEviction {
     pub released_resident_cpu_bytes: u64,
     /// Decoded mesh records released.
     pub removed_meshes: u32,
-    /// Role-separated decoded textures released; currently zero to six.
+    /// Role-separated decoded textures released; currently zero to nine.
     pub removed_textures: u32,
 }
 

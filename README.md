@@ -80,10 +80,10 @@ scene revision that produced it.
 > extension textures independently multiply linear strength alpha and sRGB-
 > decoded color RGB; the other channels are ignored. Optional ratified
 > material clearcoat factor and roughness then add a bounded fixed-IOR white
-> GGX direct-light layer over that complete response. The coat uses the
-> geometric normal, attenuates base response and emission by its view-normal
-> Schlick weight, and preserves the exact prior path at factor zero; its three
-> extension textures remain validated but unsupported. Refraction,
+> GGX direct-light layer over that complete response. Linear intensity red and
+> roughness green multiply the numeric values, while an independently scaled
+> tangent-space normal affects only the coat. Omission keeps the geometric coat
+> normal, and factor zero preserves the exact prior path. Refraction,
 > transmission, and volume remain excluded.
 > Imported core glTF materials now apply
 > deterministic OPAQUE or cutoff-based MASK coverage; blending and sorting
@@ -93,15 +93,16 @@ scene revision that produced it.
 > its existing alpha and unculled face semantics. Strictly declared exact
 > `KHR_materials_unlit` materials preserve sampled base color independently of
 > direct lights while retaining the same bounded fallback-resource lifecycle.
-> All six imported texture roles now retain strict core glTF nearest/linear
+> All nine imported texture roles now retain strict core glTF nearest/linear
 > filtering and repeat/mirrored/clamp S/T wrapping independently, backed by a
 > fixed renderer-owned sampler table and a documented one-mip fallback.
 > Ratified `KHR_texture_transform` offset, rotation, and scale now apply
-> independently to those same six roles under strict finite validation and
+> independently to those same nine roles under strict finite validation and
 > one fixed prefix-compatible draw uniform. Each role selects coordinate set
 > zero or one, with the extension selector overriding the core selector.
-> Generated normal-map tangents use the selected transformed normal
-> coordinates; retained coordinates and explicit tangents remain unchanged.
+> Generated normal-map tangents use the sole selected transformed normal
+> coordinates; dual base/coat normal roles must agree when generation is
+> required, while retained coordinates and explicit tangents remain unchanged.
 > Core normalized integer coordinates and a bounded declared
 > `KHR_mesh_quantization` POSITION/NORMAL/TANGENT/TEXCOORD_n matrix now decode
 > into one fixed 72-byte CPU/GPU vertex ABI whose accepted 64-byte prefix is
@@ -162,7 +163,7 @@ implementations arrive:
 | `cogniform-mcp` | Bounded stable MCP stdio query/imagination/patch/observation translation and one retained canonical observation resource over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/coordinate/texture-transform/material/emissive-strength/IOR/specular/clearcoat/embedded-PNG decoding, immutable six-role-textured upload jobs, and explicit CPU-state eviction |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/coordinate/texture-transform/material/emissive-strength/IOR/specular/clearcoat/embedded-PNG decoding, immutable nine-role-textured upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |

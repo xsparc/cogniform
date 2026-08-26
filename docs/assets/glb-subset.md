@@ -45,6 +45,9 @@ bounded role accounting from four to six, and preserves every prior byte as a
 fixed uniform prefix. CF075 admits ratified numeric clearcoat factor and
 roughness, validates but defers its three texture members, and appends one
 factor row without changing texture or renderer resource accounting.
+CF076 admits those three clearcoat roles with ratified linear channel and
+tangent-space semantics, expands bounded role accounting from six to nine,
+and preserves the complete CF075 uniform as a fixed prefix.
 
 ## Ownership and lifecycle
 
@@ -93,7 +96,7 @@ original source is retained only while queued. Ready records retain expanded
 triangle positions, unit normals, primary and secondary coordinates, one typed immutable
 source or generated tangent and unit primary color per vertex, one typed immutable numeric
 material per mesh, and
-at most six role-separated immutable RGBA8 textures. A PNG referenced by
+at most nine role-separated immutable RGBA8 textures. A PNG referenced by
 multiple roles shares its decoded CPU allocation.
 Proxy records have no texture. `AssetStore::evict` removes one hash's queued
 source or terminal CPU record, decoded meshes, and decoded role textures.
@@ -175,10 +178,11 @@ The importer accepts only the following baseline:
   VEC3 synthesizes alpha one. Every declared color set must be canonical,
   consecutive from zero, valid, and same-count before a valid `COLOR_1` or
   later set may receive unsupported/proxy classification;
-- at most six root textures and six referenced root images across one shared
+- at most nine root textures and nine referenced root images across one shared
   base-color index, one shared metallic-roughness index, one shared normal
   index, one shared emissive index, one shared specular-strength index, and one
-  shared specular-color index. Every referencing material
+  shared specular-color index, one shared clearcoat-intensity index, one shared
+  clearcoat-roughness index, and one shared clearcoat-normal index. Every referencing material
   must select coordinate set zero or one, and each referencing primitive must
   provide the selected set plus every preceding set. Each texture info may carry a declared
   `KHR_texture_transform` object with omitted or finite two-component `offset`,
@@ -206,7 +210,18 @@ The importer accepts only the following baseline:
   coordinate contract and sRGB texels; decoded RGB multiplies numeric
   `specularColorFactor`, while alpha is ignored. Omission uses an sRGB-white
   fallback;
-- at most six strict root sampler objects. Each optional `magFilter`,
+- `KHR_materials_clearcoat.clearcoatTexture` uses the same selected-coordinate
+  contract and linear texels; red multiplies numeric clearcoat factor while
+  green, blue, and alpha are ignored. Omission uses a linear-white fallback;
+- `KHR_materials_clearcoat.clearcoatRoughnessTexture` uses the same selected-
+  coordinate contract and linear texels; green multiplies numeric coat
+  roughness while red, blue, and alpha are ignored. Omission uses a linear-
+  white fallback;
+- `KHR_materials_clearcoat.clearcoatNormalTexture` uses the same selected-
+  coordinate contract and linear tangent-space RGB. Finite scale multiplies X
+  and Y before guarded normalization; alpha is ignored. Omission preserves the
+  geometric coat normal independently of the base normal map;
+- at most nine strict root sampler objects. Each optional `magFilter`,
   `minFilter`, `wrapS`, and `wrapT` must be one core integer enum; explicit
   null and every other field or type are invalid. Every texture must reference
   an in-range image and optional in-range sampler. Omitted filters default to
@@ -283,8 +298,7 @@ The importer accepts only the following baseline:
   coordinate selector, declared texture transform, root texture/sampler/
   source/image/PNG resources, and the selected primitive coordinate set;
   normal scale must also be finite. Malformed or dangling authority rejects
-  without proxy. Well-formed texture authority remains unsupported after all
-  three infos and their referenced resources validate.
+  without proxy. The three well-formed roles are retained independently.
 
 A valid texture-transform coordinate override above one or otherwise
 well-formed wider transform property remains an unsupported-extension/proxy
@@ -305,6 +319,12 @@ XYZ are normalized deterministically from f64 decoded values. When `NORMAL` is
 absent, each expanded triangle receives one unit cross-product normal following
 its winding; degenerate triangles reject before tangent generation. A normal-
 textured primitive generates tangents whenever `TANGENT` or `NORMAL` is absent.
+If only the coat-normal role needs a tangent basis, generation uses its
+effective transformed coordinate stream. If both base and coat normal roles
+need generated tangents, their effective coordinate set and transform must
+match exactly or admission returns bounded unsupported at
+`glb.decoded.generated_tangent_space`. Authored tangents permit independent
+normal-role coordinate streams.
 Before library entry, a checked ordered-map preflight requires the sum of cubed
 exact position/normal/transformed-normal-coordinate key multiplicities to be at most `268435456`,
 and a library-equivalent repeated-position classification, including f32
@@ -454,16 +474,19 @@ CF072 response. Strength zero produces pure dielectric diffuse, and metallic-
 one output remains independent of both factors and texture multipliers.
 
 For imported clearcoat data, factor and roughness are independent finite unit
-values. A non-zero factor adds a white GGX direct-light layer with fixed IOR
-`1.5`, fixed normal reflectance `0.04`, and the geometric rather than tangent-
-mapped normal. The absolute view-normal cosine drives its Schlick weight. Each
+values. Linear clearcoat red and roughness green multiply those factors; their
+other channels are ignored. A non-zero combined factor adds a white GGX
+direct-light layer with fixed IOR `1.5` and fixed normal reflectance `0.04`.
+A separately scaled linear tangent-space normal may replace the geometric coat
+normal without changing the base normal. The absolute view-normal cosine
+drives its Schlick weight. Each
 active directional or point contribution attenuates the complete existing
 material response and adds the coat lobe; the same weight attenuates the no-
 light compatibility response and surface emission exactly once. Exact factor
 zero preserves the complete prior result. The coat does not affect alpha,
-depth, identity, normal observation, resource accounting, unlit, explicit
-scene materials, built-ins, fallbacks, or proxies. Clearcoat factor,
-roughness, and normal textures remain unsupported after strict validation.
+depth, identity, normal observation, unlit, explicit scene materials,
+built-ins, fallbacks, or proxies. Exact numeric factor zero skips coat texture
+and normal work.
 
 `AssetMaterial` carries validated numeric metadata including core emissive
 RGB, finite non-negative emissive strength, authored finite IOR, finite unit
@@ -473,7 +496,8 @@ the retained double-sided value, typed
 shading model, immutable texture-role, sampler, and per-role affine-transform facts, and finite
 normal scale. `AssetUploadJob` exposes that material and
 separate optional base-color, metallic-roughness, normal, emissive, specular-
-strength, and specular-color `AssetTexture` values; the compatible
+strength, specular-color, clearcoat-intensity, clearcoat-roughness, and
+clearcoat-normal `AssetTexture` values; the compatible
 `base_color` accessor remains. A source image shared by multiple roles counts once
 in CPU asset residency, while GPU bytes count once per content-hash-and-role
 resource because role semantics differ. All roles are reserved atomically.
@@ -572,6 +596,8 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture specular_textures_multiply_alpha_and_srgb_rgb_with_neutral_fallbacks --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture specular_texture_coordinates_transforms_and_samplers_are_independent --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_factors_layer_the_complete_imported_material_without_new_resources --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_textures_use_linear_r_g_channels_and_an_independent_scaled_normal --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture nine_texture_roles_upload_evict_and_rehydrate_exactly --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
@@ -714,3 +740,8 @@ rows, fixed bind-group growth, and adapter capability boundary.
 See [ADR 0075](../adr/0075-bounded-gltf-material-clearcoat-factors.md) for
 strict numeric and deferred-texture admission, fixed-IOR geometric-normal
 layering, appended factor row, and unchanged resource topology.
+
+See [ADR 0076](../adr/0076-bounded-gltf-material-clearcoat-textures.md) for
+ratified channel semantics, independent coat-normal behavior, generated-
+tangent agreement, nine-role accounting, appended transform rows, fixed bind-
+group growth, and adapter capability boundary.

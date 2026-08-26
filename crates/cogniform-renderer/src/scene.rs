@@ -324,6 +324,7 @@ impl RenderScene {
                     clearcoat_factor: values.clearcoat_factor,
                     clearcoat_roughness_factor: values.clearcoat_roughness_factor,
                     normal_scale: 1.0,
+                    clearcoat_normal_scale: 1.0,
                     imported_texture_roles: ImportedTextureRoles::NONE,
                     imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
                     imported_texture_coordinate_sets: ImportedTextureCoordinateSets::PRIMARY,
@@ -455,6 +456,7 @@ pub(crate) struct PreparedDraw {
     pub(crate) clearcoat_factor: f32,
     pub(crate) clearcoat_roughness_factor: f32,
     pub(crate) normal_scale: f32,
+    pub(crate) clearcoat_normal_scale: f32,
     pub(crate) imported_texture_roles: ImportedTextureRoles,
     pub(crate) imported_texture_transforms: ImportedTextureTransforms,
     pub(crate) imported_texture_coordinate_sets: ImportedTextureCoordinateSets,
@@ -475,6 +477,7 @@ impl PreparedDraw {
             roles,
             transforms,
             normal_scale,
+            clearcoat_normal_scale,
             alpha_coverage,
             face_policy,
             shading_model,
@@ -484,6 +487,7 @@ impl PreparedDraw {
         self.imported_texture_transforms = transforms;
         self.imported_texture_coordinate_sets = texture_coordinate_sets;
         self.normal_scale = normal_scale;
+        self.clearcoat_normal_scale = clearcoat_normal_scale;
         self.imported_alpha_coverage = alpha_coverage;
         self.imported_face_policy = face_policy;
         self.imported_shading_model = shading_model;
@@ -501,6 +505,9 @@ pub(crate) struct ImportedTextureTransforms {
     pub(crate) emissive: AssetTextureTransform,
     pub(crate) specular: AssetTextureTransform,
     pub(crate) specular_color: AssetTextureTransform,
+    pub(crate) clearcoat: AssetTextureTransform,
+    pub(crate) clearcoat_roughness: AssetTextureTransform,
+    pub(crate) clearcoat_normal: AssetTextureTransform,
 }
 
 impl ImportedTextureTransforms {
@@ -511,19 +518,22 @@ impl ImportedTextureTransforms {
         emissive: AssetTextureTransform::IDENTITY,
         specular: AssetTextureTransform::IDENTITY,
         specular_color: AssetTextureTransform::IDENTITY,
+        clearcoat: AssetTextureTransform::IDENTITY,
+        clearcoat_roughness: AssetTextureTransform::IDENTITY,
+        clearcoat_normal: AssetTextureTransform::IDENTITY,
     };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ImportedTextureCoordinateSets(u8);
+pub(crate) struct ImportedTextureCoordinateSets(u16);
 
 impl ImportedTextureCoordinateSets {
     pub(crate) const PRIMARY: Self = Self(0);
     #[cfg(test)]
-    pub(crate) const ALL_SECONDARY: Self = Self(0b11_1111);
+    pub(crate) const ALL_SECONDARY: Self = Self(0b1_1111_1111);
 
     pub(crate) fn flags(self) -> u16 {
-        u16::from(self.0) << 6
+        self.0 << 6
     }
 }
 
@@ -594,18 +604,23 @@ impl ImportedAlphaCoverage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ImportedTextureRoles(u8);
+pub(crate) struct ImportedTextureRoles(u16);
 
 impl ImportedTextureRoles {
     pub(crate) const NONE: Self = Self(0);
     #[cfg(test)]
     pub(crate) const NORMAL_ONLY: Self = Self(Self::NORMAL);
-    const BASE_COLOR: u8 = 1 << 0;
-    const EMISSIVE: u8 = 1 << 1;
-    const METALLIC_ROUGHNESS: u8 = 1 << 2;
-    const NORMAL: u8 = 1 << 3;
-    const SPECULAR: u8 = 1 << 4;
-    const SPECULAR_COLOR: u8 = 1 << 5;
+    #[cfg(test)]
+    pub(crate) const CLEARCOAT_NORMAL_ONLY: Self = Self(Self::CLEARCOAT_NORMAL);
+    const BASE_COLOR: u16 = 1 << 0;
+    const EMISSIVE: u16 = 1 << 1;
+    const METALLIC_ROUGHNESS: u16 = 1 << 2;
+    const NORMAL: u16 = 1 << 3;
+    const SPECULAR: u16 = 1 << 4;
+    const SPECULAR_COLOR: u16 = 1 << 5;
+    const CLEARCOAT: u16 = 1 << 6;
+    const CLEARCOAT_ROUGHNESS: u16 = 1 << 7;
+    const CLEARCOAT_NORMAL: u16 = 1 << 8;
 
     pub(crate) const fn base_color(self) -> bool {
         self.0 & Self::BASE_COLOR != 0
@@ -629,6 +644,18 @@ impl ImportedTextureRoles {
 
     pub(crate) const fn specular_color(self) -> bool {
         self.0 & Self::SPECULAR_COLOR != 0
+    }
+
+    pub(crate) const fn clearcoat(self) -> bool {
+        self.0 & Self::CLEARCOAT != 0
+    }
+
+    pub(crate) const fn clearcoat_roughness(self) -> bool {
+        self.0 & Self::CLEARCOAT_ROUGHNESS != 0
+    }
+
+    pub(crate) const fn clearcoat_normal(self) -> bool {
+        self.0 & Self::CLEARCOAT_NORMAL != 0
     }
 }
 
@@ -654,6 +681,7 @@ fn imported_material_selection(
 ) -> (
     ImportedTextureRoles,
     ImportedTextureTransforms,
+    f32,
     f32,
     ImportedAlphaCoverage,
     ImportedFacePolicy,
@@ -686,18 +714,35 @@ fn imported_material_selection(
     let use_specular_color = use_imported_material
         && use_lit_roles
         && material.is_some_and(|material| material.has_specular_color_texture());
+    let use_clearcoat = use_imported_material
+        && use_lit_roles
+        && material.is_some_and(|material| material.has_clearcoat_texture());
+    let use_clearcoat_roughness = use_imported_material
+        && use_lit_roles
+        && material.is_some_and(|material| material.has_clearcoat_roughness_texture());
+    let use_clearcoat_normal = use_imported_material
+        && use_lit_roles
+        && material.is_some_and(|material| material.has_clearcoat_normal_texture());
     let normal_scale = if use_normal {
         material.map_or(1.0, |material| material.normal_scale())
     } else {
         1.0
     };
+    let clearcoat_normal_scale = if use_clearcoat_normal {
+        material.map_or(1.0, |material| material.clearcoat_normal_scale())
+    } else {
+        1.0
+    };
     let mut roles = 0;
-    roles |= u8::from(use_base_color) * ImportedTextureRoles::BASE_COLOR;
-    roles |= u8::from(use_emissive) * ImportedTextureRoles::EMISSIVE;
-    roles |= u8::from(use_metallic_roughness) * ImportedTextureRoles::METALLIC_ROUGHNESS;
-    roles |= u8::from(use_normal) * ImportedTextureRoles::NORMAL;
-    roles |= u8::from(use_specular) * ImportedTextureRoles::SPECULAR;
-    roles |= u8::from(use_specular_color) * ImportedTextureRoles::SPECULAR_COLOR;
+    roles |= u16::from(use_base_color) * ImportedTextureRoles::BASE_COLOR;
+    roles |= u16::from(use_emissive) * ImportedTextureRoles::EMISSIVE;
+    roles |= u16::from(use_metallic_roughness) * ImportedTextureRoles::METALLIC_ROUGHNESS;
+    roles |= u16::from(use_normal) * ImportedTextureRoles::NORMAL;
+    roles |= u16::from(use_specular) * ImportedTextureRoles::SPECULAR;
+    roles |= u16::from(use_specular_color) * ImportedTextureRoles::SPECULAR_COLOR;
+    roles |= u16::from(use_clearcoat) * ImportedTextureRoles::CLEARCOAT;
+    roles |= u16::from(use_clearcoat_roughness) * ImportedTextureRoles::CLEARCOAT_ROUGHNESS;
+    roles |= u16::from(use_clearcoat_normal) * ImportedTextureRoles::CLEARCOAT_NORMAL;
     let roles = ImportedTextureRoles(roles);
     let transforms = imported_texture_transforms(material, roles);
     let coordinate_sets = imported_texture_coordinate_sets(material, roles);
@@ -730,6 +775,7 @@ fn imported_material_selection(
         roles,
         transforms,
         normal_scale,
+        clearcoat_normal_scale,
         alpha_coverage,
         face_policy,
         shading_model,
@@ -780,6 +826,21 @@ fn imported_texture_transforms(
             material.and_then(|material| material.specular_color_texture_transform()),
             "selected specular-color role retains a transform",
         ),
+        clearcoat: selected_transform(
+            roles.clearcoat(),
+            material.and_then(|material| material.clearcoat_texture_transform()),
+            "selected clearcoat role retains a transform",
+        ),
+        clearcoat_roughness: selected_transform(
+            roles.clearcoat_roughness(),
+            material.and_then(|material| material.clearcoat_roughness_texture_transform()),
+            "selected clearcoat-roughness role retains a transform",
+        ),
+        clearcoat_normal: selected_transform(
+            roles.clearcoat_normal(),
+            material.and_then(|material| material.clearcoat_normal_texture_transform()),
+            "selected clearcoat-normal role retains a transform",
+        ),
     }
 }
 
@@ -818,12 +879,27 @@ fn imported_texture_coordinate_sets(
             material.and_then(|material| material.specular_color_texture_coordinate_set()),
             ImportedTextureRoles::SPECULAR_COLOR,
         ),
+        (
+            roles.clearcoat(),
+            material.and_then(|material| material.clearcoat_texture_coordinate_set()),
+            ImportedTextureRoles::CLEARCOAT,
+        ),
+        (
+            roles.clearcoat_roughness(),
+            material.and_then(|material| material.clearcoat_roughness_texture_coordinate_set()),
+            ImportedTextureRoles::CLEARCOAT_ROUGHNESS,
+        ),
+        (
+            roles.clearcoat_normal(),
+            material.and_then(|material| material.clearcoat_normal_texture_coordinate_set()),
+            ImportedTextureRoles::CLEARCOAT_NORMAL,
+        ),
     ];
     ImportedTextureCoordinateSets(
         selected
             .into_iter()
             .fold(0, |sets, (enabled, selector, role)| {
-                sets | (u8::from(enabled && selector == Some(1)) * role)
+                sets | (u16::from(enabled && selector == Some(1)) * role)
             }),
     )
 }
@@ -1861,25 +1937,25 @@ mod tests {
 
         let material = asset_material([0.1, 0.2, 0.3, 1.0], 0.0, 0.8);
         assert_eq!(
-            imported_material_selection(true, Some(&material)).4,
+            imported_material_selection(true, Some(&material)).5,
             ImportedFacePolicy::SingleSided
         );
         assert_eq!(
-            imported_material_selection(false, Some(&material)).4,
+            imported_material_selection(false, Some(&material)).5,
             ImportedFacePolicy::Disabled
         );
         assert_eq!(
-            imported_material_selection(true, None).4,
+            imported_material_selection(true, None).5,
             ImportedFacePolicy::Disabled
         );
         assert_eq!(ImportedShadingModel::MetallicRoughness.flags(), 0);
         assert_eq!(ImportedShadingModel::Unlit.flags(), 16);
         assert_eq!(
-            imported_material_selection(true, Some(&material)).5,
+            imported_material_selection(true, Some(&material)).6,
             ImportedShadingModel::MetallicRoughness
         );
         assert_eq!(
-            imported_material_selection(false, Some(&material)).5,
+            imported_material_selection(false, Some(&material)).6,
             ImportedShadingModel::MetallicRoughness
         );
     }

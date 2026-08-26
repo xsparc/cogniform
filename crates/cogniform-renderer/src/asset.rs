@@ -79,11 +79,11 @@ pub struct RendererAssetEviction {
     pub removed_resident_meshes: u32,
     /// Exact resident vertex-buffer bytes released from renderer ownership.
     pub released_resident_bytes: u64,
-    /// Unique pending role-texture reservations removed; currently zero to six.
+    /// Unique pending role-texture reservations removed; currently zero to nine.
     pub removed_pending_textures: u32,
     /// Exact pending RGBA8 texture bytes released.
     pub released_pending_texture_bytes: u64,
-    /// Unique resident role textures removed; currently zero to six.
+    /// Unique resident role textures removed; currently zero to nine.
     pub removed_resident_textures: u32,
     /// Exact resident RGBA8 texture bytes released from renderer ownership.
     pub released_resident_texture_bytes: u64,
@@ -125,6 +125,9 @@ pub(crate) enum AssetTextureRole {
     Normal,
     Specular,
     SpecularColor,
+    Clearcoat,
+    ClearcoatRoughness,
+    ClearcoatNormal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -185,6 +188,18 @@ impl PendingAssetUpload {
         self.job.specular_color_texture()
     }
 
+    fn clearcoat_texture(&self) -> Option<&AssetTexture> {
+        self.job.clearcoat_texture()
+    }
+
+    fn clearcoat_roughness_texture(&self) -> Option<&AssetTexture> {
+        self.job.clearcoat_roughness_texture()
+    }
+
+    fn clearcoat_normal_texture(&self) -> Option<&AssetTexture> {
+        self.job.clearcoat_normal_texture()
+    }
+
     fn texture(&self, role: AssetTextureRole) -> Option<&AssetTexture> {
         match role {
             AssetTextureRole::BaseColor => self.base_color_texture(),
@@ -193,6 +208,9 @@ impl PendingAssetUpload {
             AssetTextureRole::Normal => self.normal_texture(),
             AssetTextureRole::Specular => self.specular_texture(),
             AssetTextureRole::SpecularColor => self.specular_color_texture(),
+            AssetTextureRole::Clearcoat => self.clearcoat_texture(),
+            AssetTextureRole::ClearcoatRoughness => self.clearcoat_roughness_texture(),
+            AssetTextureRole::ClearcoatNormal => self.clearcoat_normal_texture(),
         }
     }
 }
@@ -326,7 +344,7 @@ impl RendererAssets {
         config: &RendererConfig,
     ) -> Result<(), RendererError> {
         let mesh_key = job.key();
-        let mut reservations = Vec::with_capacity(6);
+        let mut reservations = Vec::with_capacity(9);
         for (role, texture) in [
             (AssetTextureRole::BaseColor, job.base_color_texture()),
             (AssetTextureRole::Emissive, job.emissive_texture()),
@@ -339,6 +357,15 @@ impl RendererAssets {
             (
                 AssetTextureRole::SpecularColor,
                 job.specular_color_texture(),
+            ),
+            (AssetTextureRole::Clearcoat, job.clearcoat_texture()),
+            (
+                AssetTextureRole::ClearcoatRoughness,
+                job.clearcoat_roughness_texture(),
+            ),
+            (
+                AssetTextureRole::ClearcoatNormal,
+                job.clearcoat_normal_texture(),
             ),
         ] {
             let Some(texture) = texture else {
@@ -418,6 +445,40 @@ impl RendererAssets {
         }
         buffer.unmap();
         let material = job.material();
+        let (texture_uploaded, texture_byte_len) = self.upload_job_textures(device, queue, &job);
+        let previous = self.resident.insert(
+            key,
+            GpuAssetMesh {
+                buffer,
+                vertex_count,
+                material,
+                byte_len,
+            },
+        );
+        debug_assert!(
+            previous.is_none(),
+            "duplicate uploads are rejected at admission"
+        );
+        self.resident_bytes = self
+            .resident_bytes
+            .checked_add(byte_len)
+            .expect("admission reserved resident bytes");
+        Some(AssetUploadOutcome {
+            key,
+            vertex_count,
+            byte_len,
+            texture_uploaded,
+            texture_byte_len,
+        })
+    }
+
+    fn upload_job_textures(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        job: &AssetUploadJob,
+    ) -> (bool, u64) {
+        let key = job.key();
         let mut texture_uploaded = false;
         let mut texture_byte_len = 0_u64;
         for (role, texture) in [
@@ -432,6 +493,15 @@ impl RendererAssets {
             (
                 AssetTextureRole::SpecularColor,
                 job.specular_color_texture(),
+            ),
+            (AssetTextureRole::Clearcoat, job.clearcoat_texture()),
+            (
+                AssetTextureRole::ClearcoatRoughness,
+                job.clearcoat_roughness_texture(),
+            ),
+            (
+                AssetTextureRole::ClearcoatNormal,
+                job.clearcoat_normal_texture(),
             ),
         ] {
             let Some(texture) = texture else {
@@ -463,30 +533,7 @@ impl RendererAssets {
                 .checked_add(uploaded_bytes)
                 .expect("admission bounded aggregate texture upload bytes");
         }
-        let previous = self.resident.insert(
-            key,
-            GpuAssetMesh {
-                buffer,
-                vertex_count,
-                material,
-                byte_len,
-            },
-        );
-        debug_assert!(
-            previous.is_none(),
-            "duplicate uploads are rejected at admission"
-        );
-        self.resident_bytes = self
-            .resident_bytes
-            .checked_add(byte_len)
-            .expect("admission reserved resident bytes");
-        Some(AssetUploadOutcome {
-            key,
-            vertex_count,
-            byte_len,
-            texture_uploaded,
-            texture_byte_len,
-        })
+        (texture_uploaded, texture_byte_len)
     }
 
     pub(crate) fn evict(&mut self, content_hash: ContentHash) -> RendererAssetEviction {
@@ -497,7 +544,7 @@ impl RendererAssets {
             .filter(|key| key.content_hash == content_hash)
             .collect();
         let removed_pending_textures =
-            u32::try_from(pending_texture_keys.len()).expect("at most six roles are reserved");
+            u32::try_from(pending_texture_keys.len()).expect("at most nine roles are reserved");
         let pending_texture_bytes = pending_texture_keys
             .iter()
             .map(|key| {
@@ -564,7 +611,7 @@ impl RendererAssets {
             .filter(|key| key.content_hash == content_hash)
             .collect();
         let removed_resident_textures =
-            u32::try_from(resident_texture_keys.len()).expect("at most six roles are resident");
+            u32::try_from(resident_texture_keys.len()).expect("at most nine roles are resident");
         let resident_texture_bytes = resident_texture_keys
             .into_iter()
             .map(|key| {
@@ -685,6 +732,21 @@ fn validate_texture_role_consistency(job: &AssetUploadJob) -> Result<(), Rendere
             job.specular_color_texture().is_some(),
             "specular-color-textured material and immutable image must be present together",
         ),
+        (
+            material.has_clearcoat_texture(),
+            job.clearcoat_texture().is_some(),
+            "clearcoat-textured material and immutable image must be present together",
+        ),
+        (
+            material.has_clearcoat_roughness_texture(),
+            job.clearcoat_roughness_texture().is_some(),
+            "clearcoat-roughness-textured material and immutable image must be present together",
+        ),
+        (
+            material.has_clearcoat_normal_texture(),
+            job.clearcoat_normal_texture().is_some(),
+            "clearcoat-normal-textured material and immutable image must be present together",
+        ),
     ];
     if let Some((_, _, reason)) = roles
         .into_iter()
@@ -748,6 +810,9 @@ fn create_texture(
             AssetTextureRole::Normal => "cogniform-asset-normal",
             AssetTextureRole::Specular => "cogniform-asset-specular",
             AssetTextureRole::SpecularColor => "cogniform-asset-specular-color",
+            AssetTextureRole::Clearcoat => "cogniform-asset-clearcoat",
+            AssetTextureRole::ClearcoatRoughness => "cogniform-asset-clearcoat-roughness",
+            AssetTextureRole::ClearcoatNormal => "cogniform-asset-clearcoat-normal",
         }),
         size,
         mip_level_count: 1,
@@ -759,7 +824,10 @@ fn create_texture(
             | AssetTextureRole::SpecularColor => wgpu::TextureFormat::Rgba8UnormSrgb,
             AssetTextureRole::MetallicRoughness
             | AssetTextureRole::Normal
-            | AssetTextureRole::Specular => wgpu::TextureFormat::Rgba8Unorm,
+            | AssetTextureRole::Specular
+            | AssetTextureRole::Clearcoat
+            | AssetTextureRole::ClearcoatRoughness
+            | AssetTextureRole::ClearcoatNormal => wgpu::TextureFormat::Rgba8Unorm,
         },
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
@@ -1186,6 +1254,48 @@ mod tests {
     }
 
     #[test]
+    fn nine_role_texture_reservations_are_atomic_exact_and_role_keyed() {
+        let upload = nine_textured_upload([128, 64, 255, 7]);
+        assert!(upload.base_color_texture().is_some());
+        assert!(upload.emissive_texture().is_some());
+        assert!(upload.metallic_roughness_texture().is_some());
+        assert!(upload.normal_texture().is_some());
+        assert!(upload.specular_texture().is_some());
+        assert!(upload.specular_color_texture().is_some());
+        assert!(upload.clearcoat_texture().is_some());
+        assert!(upload.clearcoat_roughness_texture().is_some());
+        assert!(upload.clearcoat_normal_texture().is_some());
+        for config in [
+            RendererConfig::new(64, 64)
+                .with_max_pending_asset_texture_bytes(NonZeroU64::new(35).unwrap()),
+            RendererConfig::new(64, 64)
+                .with_max_resident_asset_textures(NonZeroU32::new(8).unwrap()),
+            RendererConfig::new(64, 64)
+                .with_max_resident_asset_texture_bytes(NonZeroU64::new(35).unwrap()),
+        ] {
+            let mut assets = RendererAssets::new();
+            assert!(assets.enqueue(upload.clone(), &config).is_err());
+            assert_eq!(assets.stats().pending_uploads, 0);
+            assert_eq!(assets.stats().pending_bytes, 0);
+            assert_eq!(assets.stats().pending_textures, 0);
+            assert_eq!(assets.stats().pending_texture_bytes, 0);
+        }
+
+        let mut assets = RendererAssets::new();
+        assets
+            .enqueue(upload.clone(), &RendererConfig::new(64, 64))
+            .unwrap();
+        assert_eq!(assets.stats().pending_uploads, 1);
+        assert_eq!(assets.stats().pending_textures, 9);
+        assert_eq!(assets.stats().pending_texture_bytes, 36);
+        let eviction = assets.evict(upload.key().content_hash);
+        assert_eq!(eviction.removed_pending_uploads, 1);
+        assert_eq!(eviction.removed_pending_textures, 9);
+        assert_eq!(eviction.released_pending_texture_bytes, 36);
+        assert_eq!(assets.stats().pending_textures, 0);
+    }
+
+    #[test]
     fn pending_eviction_releases_exact_reservations_and_preserves_other_fifo_work() {
         let selected = textured_upload([255, 0, 0, 255]);
         let selected_key = selected.key();
@@ -1284,27 +1394,45 @@ mod tests {
     }
 
     fn dual_textured_upload(texel: [u8; 4]) -> AssetUploadJob {
-        multi_textured_upload(texel, false, false, false)
+        multi_textured_upload(texel, TexturedRoles::NORMAL)
     }
 
     fn triple_textured_upload(texel: [u8; 4]) -> AssetUploadJob {
-        multi_textured_upload(texel, true, false, false)
+        multi_textured_upload(texel, TexturedRoles::METALLIC_ROUGHNESS)
     }
 
     fn four_textured_upload(texel: [u8; 4]) -> AssetUploadJob {
-        multi_textured_upload(texel, true, true, false)
+        multi_textured_upload(texel, TexturedRoles::EMISSIVE)
     }
 
     fn six_textured_upload(texel: [u8; 4]) -> AssetUploadJob {
-        multi_textured_upload(texel, true, true, true)
+        multi_textured_upload(texel, TexturedRoles::SPECULAR)
     }
 
-    fn multi_textured_upload(
-        texel: [u8; 4],
-        include_metallic_roughness: bool,
-        include_emissive: bool,
-        include_specular: bool,
-    ) -> AssetUploadJob {
+    fn nine_textured_upload(texel: [u8; 4]) -> AssetUploadJob {
+        multi_textured_upload(texel, TexturedRoles::CLEARCOAT)
+    }
+
+    #[derive(Clone, Copy)]
+    struct TexturedRoles(u8);
+
+    impl TexturedRoles {
+        const METALLIC_ROUGHNESS_BIT: u8 = 1 << 0;
+        const EMISSIVE_BIT: u8 = 1 << 1;
+        const SPECULAR_BIT: u8 = 1 << 2;
+        const CLEARCOAT_BIT: u8 = 1 << 3;
+        const NORMAL: Self = Self(0);
+        const METALLIC_ROUGHNESS: Self = Self(Self::METALLIC_ROUGHNESS_BIT);
+        const EMISSIVE: Self = Self(Self::METALLIC_ROUGHNESS_BIT | Self::EMISSIVE_BIT);
+        const SPECULAR: Self = Self(Self::EMISSIVE.0 | Self::SPECULAR_BIT);
+        const CLEARCOAT: Self = Self(Self::SPECULAR.0 | Self::CLEARCOAT_BIT);
+
+        const fn includes(self, role: u8) -> bool {
+            self.0 & role != 0
+        }
+    }
+
+    fn multi_textured_upload(texel: [u8; 4], roles: TexturedRoles) -> AssetUploadJob {
         let mut binary = Vec::new();
         for position in [
             [-0.75_f32, -0.75, 0.0],
@@ -1340,28 +1468,38 @@ mod tests {
         }
         let image_offset = binary.len();
         binary.extend_from_slice(&png_bytes);
-        let metallic_roughness = if include_metallic_roughness {
+        let metallic_roughness = if roles.includes(TexturedRoles::METALLIC_ROUGHNESS_BIT) {
             r#","metallicRoughnessTexture":{"index":0}"#
         } else {
             ""
         };
-        let emissive = if include_emissive {
+        let emissive = if roles.includes(TexturedRoles::EMISSIVE_BIT) {
             r#", "emissiveTexture":{"index":0}"#
         } else {
             ""
         };
-        let specular = if include_specular {
-            r#", "extensions":{"KHR_materials_specular":{"specularTexture":{"index":0},"specularColorTexture":{"index":0}}}"#
+        let mut extensions = Vec::new();
+        let mut declarations = Vec::new();
+        if roles.includes(TexturedRoles::SPECULAR_BIT) {
+            declarations.push(r#""KHR_materials_specular""#);
+            extensions.push(r#""KHR_materials_specular":{"specularTexture":{"index":0},"specularColorTexture":{"index":0}}"#);
+        }
+        if roles.includes(TexturedRoles::CLEARCOAT_BIT) {
+            declarations.push(r#""KHR_materials_clearcoat""#);
+            extensions.push(r#""KHR_materials_clearcoat":{"clearcoatTexture":{"index":0},"clearcoatRoughnessTexture":{"index":0},"clearcoatNormalTexture":{"index":0}}"#);
+        }
+        let material_extensions = if extensions.is_empty() {
+            String::new()
         } else {
-            ""
+            format!(r#", "extensions":{{{}}}"#, extensions.join(","))
         };
-        let root_fields = if include_specular {
-            r#", "extensionsUsed":["KHR_materials_specular"]"#
+        let root_fields = if declarations.is_empty() {
+            String::new()
         } else {
-            ""
+            format!(r#", "extensionsUsed":[{}]"#, declarations.join(","))
         };
         let json = format!(
-            r#"{{"asset":{{"version":"2.0"}}{root_fields},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}{metallic_roughness}}},"normalTexture":{{"index":0}}{emissive}{specular}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0}}]}}]}}"#,
+            r#"{{"asset":{{"version":"2.0"}}{root_fields},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}}{metallic_roughness}}},"normalTexture":{{"index":0}}{emissive}{material_extensions}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0}}]}}]}}"#,
             binary_length = binary.len(),
             image_length = png_bytes.len(),
         );

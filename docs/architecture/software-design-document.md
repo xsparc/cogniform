@@ -514,25 +514,33 @@ The fixed independent coat uses IOR `1.5`, white GGX, the geometric normal, and
 a Schlick weight from the absolute view-normal cosine. For each active direct
 light it attenuates the complete base response and adds the coat lobe; the same
 view weight attenuates the no-light compatibility response and emission exactly
-once. Factor zero preserves the complete prior path. Unlit, explicit scene
+once. Factor zero preserves the complete prior path. Linear clearcoat-texture
+red multiplies factor, linear roughness-texture green multiplies coat
+roughness, and a separately scaled tangent-space coat-normal texture replaces
+only the coat normal. Other intensity/roughness channels and coat-normal alpha
+are ignored. A missing coat normal remains geometric even when the base normal
+is mapped. Unlit, explicit scene
 materials, built-ins, fallbacks, proxies, and legacy specular-glossiness do not
-gain coat authority. Clearcoat, roughness, and normal texture infos are fully
-validated through their referenced root resources but remain unsupported. The
+gain coat authority. The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source or bounded generated-tangent TBN perturbs only direct-light response.
-Each of the six texture roles independently selects `TEXCOORD_0` or
+Each of the nine texture roles independently selects `TEXCOORD_0` or
 `TEXCOORD_1` and applies its retained finite `KHR_texture_transform` affine
 rows. The extension selector overrides the core texture-info selector.
-Generated tangents use the selected transformed normal-role coordinates while
-explicit tangents and retained coordinates remain authored values. Emissive texture RGB
+Generated tangents use the sole selected transformed normal-role coordinates.
+When base and coat normal roles both need generated tangents, their effective
+selector and transform must match exactly or the material is bounded
+unsupported. Explicit tangents permit independent retained coordinates.
+Emissive texture RGB
 is decoded from sRGB, multiplied by the numeric linear emissive factor and
 retained strength, then added
 after the ordinary metallic-roughness response, and clamped to one without
 changing alpha; texture alpha is ignored. Untextured draws use sRGB white
 base-color/emissive/specular-color, linear white metallic-roughness/specular-
-strength, and neutral-normal fallbacks. A scene `MaterialComponent` overrides
-the whole imported material, disables all six imported texture roles, and
+strength/clearcoat/clearcoat-roughness, and neutral-normal fallbacks. A scene
+`MaterialComponent` overrides the whole imported material, disables all nine
+imported texture roles, and
 selects zero imported emission.
 A built-in or material-free
 asset without a scene material uses its existing fallback color with neutral
@@ -540,8 +548,8 @@ dielectric parameters `metallic = 0`, `roughness = 0.8`. Cross-surface
 emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
-fixed 736-byte per-draw uniform preserves the complete prior 720-byte prefix,
-which in turn preserves the 656-byte, 640-byte, 624-byte, 496-byte, and 480-byte model,
+fixed 832-byte per-draw uniform preserves the complete prior 736-byte prefix,
+which preserves the 720-byte, 656-byte, 640-byte, 624-byte, 496-byte, and 480-byte model,
 view-projection, material-color, identity, directional, point-light,
 camera-position, and metallic/roughness/normal-scale/material-flag prefix and
 uses the prior camera-position padding lane for emissive strength, appends one
@@ -550,16 +558,19 @@ then appends eight padded affine rows in base-color, normal,
 metallic-roughness, and emissive order. One optical row carries dielectric F0
 followed by three exact-zero padding lanes, and one factor row carries specular
 color RGB followed by strength. Four final padded affine rows carry strength
-then color texture transforms. One final factor row carries clearcoat factor
-and roughness followed by two exact-zero padding lanes.
+then color texture transforms. One factor row carries clearcoat factor and
+roughness followed by two exact-zero padding lanes. Six final padded affine
+rows carry clearcoat intensity, roughness, and normal transforms; the coat-
+normal padding lanes carry finite scale and role presence. Selector bits 12
+through 14 choose secondary coordinates for the three coat roles.
 A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU
 submission.
 
-The fixed imported-material bind group contains six texture views and six
-samplers in thirteen total entries. Adapter preflight requires at least six
-sampled textures, six samplers per shader stage, and thirteen bindings per group,
+The fixed imported-material bind group contains nine texture views and nine
+samplers in nineteen total entries. Adapter preflight requires at least nine
+sampled textures, nine samplers per shader stage, and nineteen bindings per group,
 six vertex attributes, and a 72-byte vertex-buffer stride, so an insufficient
 adapter fails as structured `UnsupportedCapabilities` before pipeline
 construction.
@@ -604,17 +615,17 @@ mutually exclusive with the supported unlit marker. Material IOR, specular,
 and clearcoat objects retain their bounded numeric fields after strict
 declaration and coexistence checks. Clearcoat factor and roughness have exact
 zero defaults; all three clearcoat texture infos and their root resources are
-validated before remaining unsupported, so authored texture authority is
-never silently discarded. Texture transform
+validated and retained with their ratified channel semantics. Texture transform
 retains finite offset, rotation, and scale with exact defaults and Khronos
-translation-rotation-scale order for the six existing texture-info roles.
+translation-rotation-scale order for the nine texture-info roles.
 Each role retains effective selector zero or one, with extension `texCoord`
 overriding core `texCoord`, and requires the selected set on the primitive. The subset also retains
 one shared embedded PNG per base-color, metallic-roughness, normal, emissive,
-specular-strength, or specular-color role. The image subset
+specular-strength, specular-color, clearcoat-intensity, clearcoat-roughness, or
+clearcoat-normal role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
 retained-byte, decoder-working-byte, per-asset, and aggregate CPU limits into
-at most six immutable RGBA8 role values; a source shared by roles counts once
+at most nine immutable RGBA8 role values; a source shared by roles counts once
 on CPU. Decoders verify declared and decoded sizes before allocation; expanded
 upload vertices always reserve exactly 72 bytes: the accepted 64-byte position,
 unit-normal, primary-coordinate, unit-tangent-plus-handedness, and unit-RGBA-
@@ -627,9 +638,11 @@ normal and cause any validated source tangent to be overwritten. Two checked
 pre-library guards cap the sum of cubed exact welded-key multiplicities at
 268,435,456 and nine times degenerate-face count times good-face count at
 16,777,216. Missing or unsuitable generated output rejects before immutable
-adoption. Generated tangent work keys and MikkTSpace input use the selected
-transformed normal-role coordinates, while both stored coordinates and explicit
-source tangents stay unchanged. Every active role's affine evaluation is
+adoption. Generated tangent work keys and MikkTSpace input use the sole
+selected transformed normal-role coordinates. Base and coat normal roles must
+select the same effective coordinate stream when source tangents are absent;
+otherwise admission is bounded unsupported. Both stored coordinates and
+explicit source tangents stay unchanged. Every active role's affine evaluation is
 checked over all expanded coordinates; a non-finite product or sum rejects
 before immutable adoption. The local service
 owns bounded CPU asset state and explicitly forwards immutable upload jobs into

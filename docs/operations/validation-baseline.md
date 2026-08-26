@@ -241,6 +241,15 @@ CPU and validated Windows/Vulkan profile on 2026-08-26. No vertex, texture-
 role, binding, sampler, pipeline, attachment, lifecycle, logical, observation,
 protocol, persistence, dependency, package, version, workflow, tag, release-
 asset, or release action changed.
+CF076 strict ratified clearcoat intensity-red, roughness-green, and scaled
+tangent-space normal textures, generated-tangent coordinate agreement, exact
+shared/distinct nine-role accounting, 736-byte uniform-prefix preservation in
+an 832-byte layout, fixed nineteen-entry bind group, and explicit nine-
+texture/sampler adapter preflight were collected on the CPU and validated
+Windows/Vulkan profile on 2026-08-26. No vertex, sampler-table, pipeline,
+attachment, lifecycle, logical, observation, protocol, persistence,
+dependency, package, version, workflow, tag, release-asset, or release action
+changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -250,7 +259,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, canonical scenario, and bounded 64x64/480x270 stdio child tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness, IOR-derived dielectric, specular, and fixed-IOR geometric-normal clearcoat response, bounded surface-only core and strength-scaled emission with coat attenuation, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive/specular-color plus linear normal, packed metallic-roughness, and specular-strength texture response, independent six-role core wrapping/filtering and one-mip fallback, six-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness, IOR-derived dielectric, specular, and fixed-IOR clearcoat factor plus linear-red/green intensity/roughness and independent scaled normal response, bounded surface-only core and strength-scaled emission with coat attenuation, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive/specular-color plus linear normal, packed metallic-roughness, specular-strength, and clearcoat texture response, independent nine-role core wrapping/filtering and one-mip fallback, nine-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -261,12 +270,12 @@ The renderer is capability based. An adapter must satisfy the configured target
 dimensions, buffer bounds, attachment count, and render/copy usage for RGBA8
 color, Depth32Float depth, R32Uint identity, and RGBA8 signed normal targets
 before device creation, plus copy-destination, sampled binding, and filterable
-sampling for sRGB RGBA8 base-color textures and linear RGBA8 normal and
-metallic-roughness textures.
+sampling for sRGB RGBA8 base-color textures and linear RGBA8 normal,
+metallic-roughness, and clearcoat textures.
 The normal path requires three color attachments and twelve color-attachment
 bytes per sample.
-Imported texture sampling additionally requires at least six sampled textures,
-six samplers per shader stage, and thirteen bindings per bind group.
+Imported texture sampling additionally requires at least nine sampled textures,
+nine samplers per shader stage, and nineteen bindings per bind group.
 Imported secondary coordinates require at least six vertex attributes and a
 72-byte vertex-buffer stride; the same fixed layout carries imported vertex
 colors and preserves the accepted 64-byte prefix.
@@ -1774,6 +1783,71 @@ because Windows Application Control blocked the installed binary with OS error
 policy input changed from the accepted CF066 audit. No protocol, world,
 persistence, package, version, tag, release-asset, deployment, or publication
 action changed.
+
+### CF076 bounded glTF material clearcoat textures
+
+CF076 admits the three ratified clearcoat texture roles after strict existing
+declaration, texture-info, coordinate, transform, sampler, image, and PNG
+validation. Linear intensity red and roughness green multiply their numeric
+factors while other channels are ignored. Linear tangent-space coat-normal RGB
+uses finite authored scale on X and Y and remains independent of the base
+normal; omission retains the geometric coat normal. Exact numeric factor zero
+skips coat texture and normal work.
+
+Root texture, image, and sampler caps grow from six to nine. Shared source
+images decode once on CPU while zero through nine content-hash-and-role GPU
+resources reserve, evict, and rehydrate atomically. Missing tangents use the
+sole effective normal-role coordinates. Dual base/coat normal roles must agree
+on effective selector and transform when generation is required, otherwise
+admission returns bounded unsupported. Authored tangents permit independent
+coordinates.
+
+The renderer appends six affine rows after the exact CF075 layout. The fixed
+uniform is 832 bytes with an exact 736-byte prefix; selector bits 12 through 14
+remain exactly representable. The bind group grows to nineteen entries and
+preflight requires nine sampled textures and nine samplers per stage. The 72-
+byte vertex, 36-entry sampler table, two pipelines, attachments, observations,
+protocol, persistence, lifecycle, dependency graph, and release authority are
+unchanged.
+
+The following portable checks passed on 2026-08-26:
+
+```text
+cargo build --workspace --locked --offline
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test -p cogniform-assets --test asset_store clearcoat --all-features --locked --offline
+uv run --no-cache --no-project python tests/security/test_public_repo_check.py
+uv run --no-cache --no-project python tests/release/test_package_policy.py
+uv run --no-cache --no-project python scripts/check_public_repo.py --all
+uv run --no-cache --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- Cargo.toml Cargo.lock deny.toml rust-toolchain.toml .github/workflows vendor
+git diff --check
+```
+
+`cargo deny check advisories bans licenses sources` could not start because
+Windows Application Control blocked the installed binary with OS error 4551.
+No manifest, lockfile, vendored source, workflow, dependency, or deny-policy
+input changed from the accepted CF066 audit, and the public-tree plus package-
+policy safeguards above passed.
+
+Focused optimized comparisons passed on the approved NVIDIA GeForce RTX 5070
+Windows/Vulkan profile. They prove linear red/green channel selection, neutral
+fallback and numeric-factor equivalence, zero-factor identity, independent
+scaled coat normals, unchanged non-color observations, and exact nine-role
+upload, eviction, and rehydration:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_textures_use_linear_r_g_channels_and_an_independent_scaled_normal --all-features --locked --offline -- --ignored --exact --nocapture
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture nine_texture_roles_upload_evict_and_rehydrate_exactly --all-features --locked --offline -- --ignored --exact --nocapture
+```
+
+No manifest, lockfile, vendored source, workflow, dependency, deny-policy,
+protocol, world, persistence, package, version, tag, release-asset, deployment,
+or publication authority changed.
 
 ## Deterministic source-candidate commands
 
