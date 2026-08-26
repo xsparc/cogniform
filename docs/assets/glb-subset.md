@@ -42,7 +42,9 @@ ratified numeric specular strength and color, validates but defers both
 extension texture roles, and appends one more private uniform row. CF074
 admits those two roles as linear strength alpha and sRGB color RGB, expands
 bounded role accounting from four to six, and preserves every prior byte as a
-fixed uniform prefix.
+fixed uniform prefix. CF075 admits ratified numeric clearcoat factor and
+roughness, validates but defers its three texture members, and appends one
+factor row without changing texture or renderer resource accounting.
 
 ## Ownership and lifecycle
 
@@ -216,7 +218,7 @@ The importer accepts only the following baseline:
 - optional non-empty unique-string `extensionsUsed` and
   `extensionsRequired`, with required a subset of used. The recognized names
   are `KHR_materials_emissive_strength`, `KHR_materials_ior`,
-  `KHR_materials_specular`,
+  `KHR_materials_specular`, `KHR_materials_clearcoat`,
   `KHR_materials_unlit`,
   `KHR_mesh_quantization`, and `KHR_texture_transform`; every actual supported
   or unknown extension member
@@ -269,7 +271,20 @@ The importer accepts only the following baseline:
   texture transform, root texture/sampler/source/image/PNG resources, and the
   selected primitive coordinate set. Malformed or dangling authority rejects
   without proxy; wider extension data remains unsupported only after these
-  supported roles validate.
+  supported roles validate; and
+- optional material `extensions.KHR_materials_clearcoat` object. Optional
+  `clearcoatFactor` and `clearcoatRoughnessFactor` are finite unit f32 values
+  with exact default zero. Null, scalar, array, malformed, undeclared, non-
+  finite, negative, or above-one values are invalid. The extension must not
+  coexist with any declared unlit or legacy specular-glossiness member.
+  Supported numeric fields validate before a wider payload becomes
+  unsupported. Optional `clearcoatTexture`, `clearcoatRoughnessTexture`, and
+  `clearcoatNormalTexture` infos require an in-range role index, optional
+  coordinate selector, declared texture transform, root texture/sampler/
+  source/image/PNG resources, and the selected primitive coordinate set;
+  normal scale must also be finite. Malformed or dangling authority rejects
+  without proxy. Well-formed texture authority remains unsupported after all
+  three infos and their referenced resources validate.
 
 A valid texture-transform coordinate override above one or otherwise
 well-formed wider transform property remains an unsupported-extension/proxy
@@ -349,12 +364,15 @@ or out-of-range emissive factors, malformed alpha mode/cutoff values,
 malformed `doubleSided` or sampler values and indices, missing required mesh-
 quantization declarations, invalid accessor bounds or source-attribute counts,
 malformed, duplicate, empty, or inconsistent extension declarations, malformed
-or undeclared emissive-strength, IOR, specular, unlit, or texture-transform markers, negative
+or undeclared emissive-strength, IOR, specular, clearcoat, unlit, or texture-transform markers, negative
 or non-finite emissive strength, prohibited strength/unlit coexistence, non-finite
 or zero-to-one IOR, prohibited IOR/unlit or IOR/specular-glossiness
 coexistence, malformed specular factors or texture infos, prohibited
 specular/unlit or specular/specular-glossiness coexistence, dangling specular
 texture resources or missing selected coordinates,
+malformed clearcoat factors or texture infos, prohibited clearcoat/unlit or
+clearcoat/specular-glossiness coexistence, dangling clearcoat texture
+resources or missing selected coordinates,
 texture-transform inputs or expanded results,
 malformed emissive texture roles or missing
 coordinates, malformed or truncated PNG data, invalid
@@ -376,7 +394,8 @@ same hardware back-cull rule as another imported false material.
 At draw time, a resident mesh uses its imported base-color factor, optional
 base-color, metallic-roughness, tangent-space normal, and emissive textures,
 metallic, roughness, normal scale, emissive RGB, emissive strength, IOR-derived
-dielectric F0, and specular strength/color factors unless
+dielectric F0, specular strength/color factors, and retained finite unit
+clearcoat factor and roughness unless
 the world entity has an explicit material,
 which overrides the imported material as a whole and uses renderer-owned
 white base-color/emissive, factor-one metallic-roughness, and neutral-normal
@@ -434,10 +453,23 @@ is the scalar diffuse-energy term. Exact default factors preserve the accepted
 CF072 response. Strength zero produces pure dielectric diffuse, and metallic-
 one output remains independent of both factors and texture multipliers.
 
+For imported clearcoat data, factor and roughness are independent finite unit
+values. A non-zero factor adds a white GGX direct-light layer with fixed IOR
+`1.5`, fixed normal reflectance `0.04`, and the geometric rather than tangent-
+mapped normal. The absolute view-normal cosine drives its Schlick weight. Each
+active directional or point contribution attenuates the complete existing
+material response and adds the coat lobe; the same weight attenuates the no-
+light compatibility response and surface emission exactly once. Exact factor
+zero preserves the complete prior result. The coat does not affect alpha,
+depth, identity, normal observation, resource accounting, unlit, explicit
+scene materials, built-ins, fallbacks, or proxies. Clearcoat factor,
+roughness, and normal textures remain unsupported after strict validation.
+
 `AssetMaterial` carries validated numeric metadata including core emissive
 RGB, finite non-negative emissive strength, authored finite IOR, finite unit
 dielectric F0, finite unit specular strength, and finite non-negative specular
-RGB, typed alpha coverage/cutoff, the retained double-sided value, typed
+RGB, finite unit clearcoat factor and roughness, typed alpha coverage/cutoff,
+the retained double-sided value, typed
 shading model, immutable texture-role, sampler, and per-role affine-transform facts, and finite
 normal scale. `AssetUploadJob` exposes that material and
 separate optional base-color, metallic-roughness, normal, emissive, specular-
@@ -503,7 +535,7 @@ resident-byte limits.
 
 The default offline suite verifies exact hash admission, every truncated prefix
 of the checked fixture, malformed extension declarations, proxy eligibility,
-material, emissive, IOR, and specular retention/default/range/type/derivation/
+material, emissive, IOR, specular, and clearcoat retention/default/range/type/derivation/
 texture-precedence failures, normal and tangent
 normalization/count/value/range/handedness failures, primary/secondary-coordinate exact and indexed
 retention, zero defaults, full-source validation, embedded RGB/RGBA expansion,
@@ -539,6 +571,7 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact material_specular_factors_compose_without_changing_renderer_topology
 cargo test --release -p cogniform-renderer --test asset_fixture specular_textures_multiply_alpha_and_srgb_rgb_with_neutral_fallbacks --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture specular_texture_coordinates_transforms_and_samplers_are_independent --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_factors_layer_the_complete_imported_material_without_new_resources --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
@@ -601,7 +634,11 @@ output. The specular-texture comparisons prove neutral fallback identity,
 linear strength-alpha and sRGB color-RGB multiplication, ignored peer
 channels, directional/point composition, explicit scene override, independent
 coordinate selectors/transforms/authored samplers, exact six-role residency,
-eviction/rehydration, and unchanged non-color output. The four-role test proves exact
+eviction/rehydration, and unchanged non-color output. The clearcoat comparison
+proves exact omitted/zero identity, fixed-IOR rough and smooth coat response
+over directional, point, and combined lights, IOR/specular/base-normal
+composition, no-light and emission attenuation, explicit scene override, and
+unchanged non-color output without resource growth. The four-role test proves exact
 distinct-image CPU bytes plus GPU upload, eviction, and
 rehydration counts. The alpha checks prove factor-only, texture-only, and
 multiplied coverage, exact cutoff equality, cutoff-above-one discard, OPAQUE
@@ -673,3 +710,7 @@ dielectric energy, appended factor row, and unchanged resource topology.
 See [ADR 0074](../adr/0074-bounded-gltf-material-specular-textures.md) for the
 two role channel/color-space rules, six-role accounting, appended transform
 rows, fixed bind-group growth, and adapter capability boundary.
+
+See [ADR 0075](../adr/0075-bounded-gltf-material-clearcoat-factors.md) for
+strict numeric and deferred-texture admission, fixed-IOR geometric-normal
+layering, appended factor row, and unchanged resource topology.

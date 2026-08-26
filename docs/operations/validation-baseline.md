@@ -233,6 +233,14 @@ were collected on the CPU and validated Windows/Vulkan profile on 2026-08-25.
 No vertex, sampler-table, pipeline, attachment, lifecycle, logical,
 observation, protocol, persistence, dependency, package, version, workflow,
 tag, release-asset, or release action changed.
+CF075 strict ratified clearcoat declaration, finite unit factor/roughness
+retention, three-member deferred texture validation before proxy, exact 720-
+byte uniform-prefix preservation in a 736-byte layout, fixed-IOR geometric-
+normal GGX layering, and no-light/emission attenuation were collected on the
+CPU and validated Windows/Vulkan profile on 2026-08-26. No vertex, texture-
+role, binding, sampler, pipeline, attachment, lifecycle, logical, observation,
+protocol, persistence, dependency, package, version, workflow, tag, release-
+asset, or release action changed.
 This document names
 what was reproduced and what remains unsupported; it is not a promise for
 untested hardware.
@@ -242,7 +250,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, canonical scenario, and bounded 64x64/480x270 stdio child tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness and IOR-derived dielectric response, bounded surface-only core and strength-scaled emission, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive/specular-color plus linear normal, packed metallic-roughness, and specular-strength texture response, independent six-role core wrapping/filtering and one-mip fallback, six-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness, IOR-derived dielectric, specular, and fixed-IOR geometric-normal clearcoat response, bounded surface-only core and strength-scaled emission with coat attenuation, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive/specular-color plus linear normal, packed metallic-roughness, and specular-strength texture response, independent six-role core wrapping/filtering and one-mip fallback, six-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -1703,6 +1711,69 @@ No manifest, lockfile, vendored source, workflow, dependency, or deny-policy
 input changed from the accepted CF066 audit. No protocol, world, persistence,
 package, version, tag, release-asset, deployment, or publication action
 changed.
+
+### CF075 bounded glTF material clearcoat factors
+
+CF075 recognizes ratified `KHR_materials_clearcoat` through the existing strict
+unique declaration contract. Its optional factor and roughness are finite unit
+f32 values with exact zero defaults. Malformed, undeclared, non-finite, out-of-
+range, unlit-coexisting, and legacy specular-glossiness-coexisting members
+reject without proxy, including unused materials. All three optional texture
+infos, normal scale, effective coordinate selector, root texture/source/
+sampler/image/PNG resources, and selected primitive coordinate availability
+validate before otherwise well-formed texture authority receives explicit
+unsupported/proxy classification.
+
+The renderer retains both numeric factors and appends one exact
+`[factor,roughness,0,0]` row after the complete CF074 layout. The resulting
+uniform is 736 bytes with an exact 720-byte prefix. A white fixed-IOR `1.5`
+coat uses the face-corrected geometric normal, bounded GGX helpers, and view-
+normal Schlick weight independently of base IOR, specular controls, and base
+normal maps. Active directional and point contributions layer the coat over
+the complete base; the no-light compatibility response and surface emission
+are attenuated exactly once. Exact factor zero retains the accepted CF074
+path. The 72-byte vertex, thirteen bindings, six texture roles, 36 samplers,
+two pipelines, attachments, resource accounting, lifecycle, observations,
+revision, hash, replay, protocols, and persistence are unchanged.
+
+The following portable checks passed on 2026-08-26:
+
+```text
+cargo build --workspace --locked --offline
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test -p cogniform-assets --test asset_store clearcoat --all-features --locked --offline
+uv run --no-cache --no-project python tests/security/test_public_repo_check.py
+uv run --no-cache --no-project python tests/release/test_package_policy.py
+uv run --no-cache --no-project python scripts/check_public_repo.py --all
+uv run --no-cache --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- Cargo.toml Cargo.lock deny.toml rust-toolchain.toml .github/workflows vendor
+git diff --check
+```
+
+The focused optimized comparison passed on the approved NVIDIA GeForce RTX
+5070 Windows/Vulkan profile. It proves exact omitted/zero identity, factor and
+roughness response, directional, point, and combined lights, independent base
+IOR/specular controls, base-normal composition with a geometric coat normal,
+no-light and emission attenuation, explicit scene override, exact resource
+accounting and rehydration, idempotent replay, and unchanged depth, identity,
+and geometric-normal output:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_factors_layer_the_complete_imported_material_without_new_resources --all-features --locked --offline -- --ignored --exact --nocapture
+```
+
+The changed-public-Markdown check resolved all 318 relative targets across the
+fourteen modified Markdown files; the new ADR adds only official external
+links. `cargo deny check advisories bans licenses sources` could not start
+because Windows Application Control blocked the installed binary with OS error
+4551. No manifest, lockfile, vendored source, workflow, dependency, or deny-
+policy input changed from the accepted CF066 audit. No protocol, world,
+persistence, package, version, tag, release-asset, deployment, or publication
+action changed.
 
 ## Deterministic source-candidate commands
 

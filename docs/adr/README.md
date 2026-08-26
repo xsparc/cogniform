@@ -78,5 +78,6 @@ earlier one and links the history.
 | [0072](0072-bounded-gltf-material-ior.md) | Accepted | Apply one bounded ratified material IOR to imported direct dielectric response |
 | [0073](0073-bounded-gltf-material-specular-factors.md) | Accepted | Apply bounded ratified material specular strength and color factors to imported direct response |
 | [0074](0074-bounded-gltf-material-specular-textures.md) | Accepted | Sample bounded ratified material specular strength and color textures through two new roles |
+| [0075](0075-bounded-gltf-material-clearcoat-factors.md) | Accepted | Apply bounded ratified material clearcoat factors as a fixed direct-light layer |
 
 New records use four sections: context, decision, consequences, and status.

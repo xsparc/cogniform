@@ -357,6 +357,15 @@ in first-party code; the sampler table and pipeline count stay fixed. The
 Khronos SpecularTest model informs behavior coverage but no sample asset byte,
 license payload, decoder, network path, or supply-chain authority is added.
 
+CF075 changes no Cargo manifest, lock entry, vendored byte, feature, build
+script, unsafe/native boundary, workflow, or runtime dependency edge. Numeric
+clearcoat preflight reuses existing JSON, finite-value, texture-resource, PNG,
+coordinate, and transform validation. The appended fixed uniform row and
+fixed-IOR GGX layering use first-party code only. The Khronos ClearCoatTest
+model informs behavior coverage but no sample asset byte, license payload,
+texture role, binding, sampler, pipeline, decoder, network path, or supply-
+chain authority is added.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

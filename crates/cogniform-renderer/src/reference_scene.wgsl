@@ -34,6 +34,7 @@ struct DrawUniform {
     specular_uv_row_1: vec4<f32>,
     specular_color_uv_row_0: vec4<f32>,
     specular_color_uv_row_1: vec4<f32>,
+    clearcoat: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -214,6 +215,54 @@ fn direct_material_response(
     return (diffuse + specular) * normal_light;
 }
 
+fn clearcoat_fresnel_weight(
+    world_normal: vec3<f32>,
+    surface_to_view: vec3<f32>,
+    has_view: bool,
+    clearcoat_factor: f32,
+) -> f32 {
+    if clearcoat_factor == 0.0 {
+        return 0.0;
+    }
+    var normal_view = 1.0;
+    if has_view {
+        normal_view = clamp(abs(dot(world_normal, surface_to_view)), 0.0, 1.0);
+    }
+    let fresnel = 0.04 + 0.96 * pow(1.0 - normal_view, 5.0);
+    return clearcoat_factor * fresnel;
+}
+
+fn clearcoat_direct_response(
+    world_normal: vec3<f32>,
+    surface_to_light: vec3<f32>,
+    surface_to_view: vec3<f32>,
+    has_view: bool,
+    clearcoat_roughness: f32,
+) -> vec3<f32> {
+    let normal_light = clamp(dot(world_normal, surface_to_light), 0.0, 1.0);
+    if normal_light <= 0.0 || !has_view {
+        return vec3(0.0);
+    }
+    let normal_view = clamp(dot(world_normal, surface_to_view), 0.0, 1.0);
+    let half_vector = surface_to_view + surface_to_light;
+    let half_length_squared = dot(half_vector, half_vector);
+    if normal_view <= 0.0 || half_length_squared <= 0.0 {
+        return vec3(0.0);
+    }
+    let inverse_half_length = inverseSqrt(half_length_squared);
+    if inverse_half_length <= 0.0 {
+        return vec3(0.0);
+    }
+    let surface_to_half = half_vector * inverse_half_length;
+    let normal_half = clamp(dot(world_normal, surface_to_half), 0.0, 1.0);
+    let distribution = distribution_ggx(normal_half, clearcoat_roughness);
+    let geometry = geometry_schlick_ggx(normal_view, clearcoat_roughness)
+        * geometry_schlick_ggx(normal_light, clearcoat_roughness);
+    let response = distribution * geometry
+        / max(4.0 * normal_view * normal_light, 1e-6);
+    return vec3(response * normal_light);
+}
+
 @vertex
 fn vs_main(
     @location(0) position: vec3<f32>,
@@ -386,23 +435,32 @@ fn fs_main(
         ),
     ).rgb;
     let unlit = (material_flags & 16u) != 0u;
+    let to_view = draw.camera_position.xyz - input.world_position;
+    let view_distance_squared = dot(to_view, to_view);
+    var surface_to_view = vec3(0.0);
+    var has_view = false;
+    if view_distance_squared > 0.0 {
+        let inverse_view_distance = inverseSqrt(view_distance_squared);
+        if inverse_view_distance > 0.0 {
+            surface_to_view = to_view * inverse_view_distance;
+            has_view = true;
+        }
+    }
+    var clearcoat_weight = 0.0;
+    if !unlit && draw.clearcoat.x != 0.0 {
+        clearcoat_weight = clearcoat_fresnel_weight(
+            geometric_world_normal,
+            surface_to_view,
+            has_view,
+            draw.clearcoat.x,
+        );
+    }
     var shaded_color = base_color.rgb;
     if !unlit && (draw.directional_light_count.x > 0u || draw.point_light_count.x > 0u) {
         shaded_color = vec3(0.0);
-        let to_view = draw.camera_position.xyz - input.world_position;
-        let view_distance_squared = dot(to_view, to_view);
-        var surface_to_view = vec3(0.0);
-        var has_view = false;
-        if view_distance_squared > 0.0 {
-            let inverse_view_distance = inverseSqrt(view_distance_squared);
-            if inverse_view_distance > 0.0 {
-                surface_to_view = to_view * inverse_view_distance;
-                has_view = true;
-            }
-        }
         for (var index = 0u; index < draw.directional_light_count.x; index = index + 1u) {
             let light = draw.directional_lights[index];
-            let response = direct_material_response(
+            let base_response = direct_material_response(
                 shaded_world_normal,
                 light.surface_to_light.xyz,
                 surface_to_view,
@@ -414,6 +472,17 @@ fn fs_main(
                 specular_color_factor,
                 specular_factor,
             );
+            var response = base_response;
+            if draw.clearcoat.x != 0.0 {
+                let coat_response = clearcoat_direct_response(
+                    geometric_world_normal,
+                    light.surface_to_light.xyz,
+                    surface_to_view,
+                    has_view,
+                    draw.clearcoat.y,
+                );
+                response = mix(base_response, coat_response, clearcoat_weight);
+            }
             let contribution = min(
                 response * min(
                     light.color_intensity.rgb * light.color_intensity.a,
@@ -435,7 +504,7 @@ fn fs_main(
                         light.color_intensity.a / max(distance_squared, 1e-6),
                         1.0,
                     );
-                    let response = direct_material_response(
+                    let base_response = direct_material_response(
                         shaded_world_normal,
                         surface_to_light,
                         surface_to_view,
@@ -447,6 +516,17 @@ fn fs_main(
                         specular_color_factor,
                         specular_factor,
                     );
+                    var response = base_response;
+                    if draw.clearcoat.x != 0.0 {
+                        let coat_response = clearcoat_direct_response(
+                            geometric_world_normal,
+                            surface_to_light,
+                            surface_to_view,
+                            has_view,
+                            draw.clearcoat.y,
+                        );
+                        response = mix(base_response, coat_response, clearcoat_weight);
+                    }
                     let contribution = min(
                         response * light.color_intensity.rgb * attenuated_intensity,
                         vec3(1.0),
@@ -455,9 +535,11 @@ fn fs_main(
                 }
             }
         }
+    } else if !unlit && draw.clearcoat.x != 0.0 {
+        shaded_color = shaded_color * (1.0 - clearcoat_weight);
     }
     if !unlit {
-        let emissive = textureSample(
+        var emissive = textureSample(
             emissive_texture,
             emissive_sampler,
             transform_uv(
@@ -472,6 +554,9 @@ fn fs_main(
         ).rgb
             * draw.emissive.rgb
             * draw.camera_position.w;
+        if draw.clearcoat.x != 0.0 {
+            emissive = emissive * (1.0 - clearcoat_weight);
+        }
         shaded_color = min(shaded_color + emissive, vec3(1.0));
     }
     let output_alpha = select(base_color.a, 1.0, (material_flags & 2u) != 0u);

@@ -108,6 +108,16 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   group grows from nine to thirteen entries with explicit six-texture/sampler
   adapter preflight while retaining 72-byte vertices, 36 samplers, two
   pipelines, dependencies, protocols, persistence, and release authority;
+- ratified `KHR_materials_clearcoat` numeric factor and roughness through
+  strict declarations, exact zero defaults, finite unit bounds, forbidden
+  unlit and legacy specular-glossiness coexistence, and fully validated-but-
+  unsupported clearcoat, roughness, and normal texture authority. A fixed-IOR
+  white GGX layer uses the geometric normal and view-normal Schlick weight,
+  attenuates the complete base response and emission exactly once, and leaves
+  the prior path equivalent at factor zero. One appended factor row preserves
+  the exact 720-byte prefix in a fixed 736-byte uniform without changing the
+  72-byte vertex, thirteen bindings, six texture roles, 36 samplers, two
+  pipelines, resource accounting, or lifecycle;
 - optional core glTF `OPAQUE` and `MASK` alpha coverage, with strict finite
   non-negative cutoff handling, multiplied factor/texture alpha, exact cutoff
   equality, pre-output discard across color/depth/identity/normal, opaque

@@ -507,7 +507,17 @@ Dielectric F0 clamps `IOR_F0 * color` per channel before strength
 multiplication, f90 equals strength, RGB Schlick drives the lobe, and the
 maximum dielectric Fresnel channel controls scalar diffuse energy. Omission,
 explicit scene materials, built-ins, missing-asset fallbacks, and proxies
-preserve exact dielectric `0.04` and neutral specular factors. The
+preserve exact dielectric `0.04` and neutral specular factors. A declared
+ratified `KHR_materials_clearcoat` object may retain finite unit
+`clearcoatFactor` and `clearcoatRoughnessFactor`, both with exact zero defaults.
+The fixed independent coat uses IOR `1.5`, white GGX, the geometric normal, and
+a Schlick weight from the absolute view-normal cosine. For each active direct
+light it attenuates the complete base response and adds the coat lobe; the same
+view weight attenuates the no-light compatibility response and emission exactly
+once. Factor zero preserves the complete prior path. Unlit, explicit scene
+materials, built-ins, fallbacks, proxies, and legacy specular-glossiness do not
+gain coat authority. Clearcoat, roughness, and normal texture infos are fully
+validated through their referenced root resources but remain unsupported. The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source or bounded generated-tangent TBN perturbs only direct-light response.
@@ -530,8 +540,8 @@ dielectric parameters `metallic = 0`, `roughness = 0.8`. Cross-surface
 emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
-fixed 720-byte per-draw uniform preserves the complete prior 656-byte prefix,
-which in turn preserves the 496-byte and 480-byte model,
+fixed 736-byte per-draw uniform preserves the complete prior 720-byte prefix,
+which in turn preserves the 656-byte, 640-byte, 624-byte, 496-byte, and 480-byte model,
 view-projection, material-color, identity, directional, point-light,
 camera-position, and metallic/roughness/normal-scale/material-flag prefix and
 uses the prior camera-position padding lane for emissive strength, appends one
@@ -540,7 +550,8 @@ then appends eight padded affine rows in base-color, normal,
 metallic-roughness, and emissive order. One optical row carries dielectric F0
 followed by three exact-zero padding lanes, and one factor row carries specular
 color RGB followed by strength. Four final padded affine rows carry strength
-then color texture transforms.
+then color texture transforms. One final factor row carries clearcoat factor
+and roughness followed by two exact-zero padding lanes.
 A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU
@@ -576,7 +587,8 @@ plus an optional three-channel unit-bounded core emissive factor, optional
 finite non-negative ratified emissive strength, and bounded
 OPAQUE/MASK alpha coverage plus a strict optional boolean `doubleSided` per
 mesh material. The ratified `KHR_materials_emissive_strength`,
-`KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_unlit`,
+`KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_clearcoat`,
+`KHR_materials_unlit`,
 `KHR_texture_transform`, and `KHR_mesh_quantization`
 extensions are the sole
 supported extensions. Mesh quantization admits only the declared integer
@@ -588,7 +600,12 @@ and unsigned-short coordinate sets do not require the extension. Unlit
 retains one typed shading model only after strict declaration,
 selected/unused material, and fallback-resource validation. Emissive strength
 defaults to one, is retained for selected and unused materials, and is
-mutually exclusive with the supported unlit marker. Texture transform
+mutually exclusive with the supported unlit marker. Material IOR, specular,
+and clearcoat objects retain their bounded numeric fields after strict
+declaration and coexistence checks. Clearcoat factor and roughness have exact
+zero defaults; all three clearcoat texture infos and their root resources are
+validated before remaining unsupported, so authored texture authority is
+never silently discarded. Texture transform
 retains finite offset, rotation, and scale with exact defaults and Khronos
 translation-rotation-scale order for the six existing texture-info roles.
 Each role retains effective selector zero or one, with extension `texCoord`
