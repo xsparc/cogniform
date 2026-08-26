@@ -24,8 +24,8 @@ linear `Rgba8Unorm` color, `R32Uint` identity, `Rgba8Unorm` normal, and
 and filterable sampling for `Rgba8UnormSrgb` asset textures.
 Linear `Rgba8Unorm` asset normal and metallic-roughness textures require the
 same sampled, copy-destination, and filterable usages.
-The fixed imported-material layout also requires at least four sampled
-textures, four samplers per shader stage, nine bindings per bind group, six
+The fixed imported-material layout also requires at least six sampled
+textures, six samplers per shader stage, thirteen bindings per bind group, six
 vertex attributes, and a 72-byte vertex-buffer stride.
 Narrow adapters fail structured capability preflight before pipeline creation.
 
@@ -82,16 +82,17 @@ Core normalized integer coordinates and admitted required
 before upload, so no packed source format, binding, stride, or pipeline reaches
 the renderer;
 missing asset values, built-ins, and proxies use white. A mesh may sample one approved embedded PNG
-for each base-color, metallic-roughness, normal, and emissive role. The renderer
-decodes base and emissive RGB as sRGB and the data roles as linear, ignores
-emissive/normal alpha and metallic-roughness red/alpha, and preserves glTF
+for each base-color, metallic-roughness, normal, emissive, specular-strength,
+and specular-color role. The renderer decodes base, emissive, and specular-
+color RGB as sRGB and the data roles as linear, ignores emissive/normal/color-
+specular alpha, strength-specular RGB, and metallic-roughness red/alpha, and preserves glTF
 top-to-bottom rows. Each role independently indexes one renderer-owned table
 of exactly 36 initialization-created samplers: three U wraps by three V wraps
 by two magnification filters by two effective one-mip minification filters.
 Omitted sampling remains linear/repeat. Nearest-family mip filters use nearest
 and linear-family mip filters use linear without generating another image
-level. White base-color/emissive, factor-one metallic-roughness, and
-neutral-normal fallbacks bind on every draw.
+level. White base-color/emissive/specular-color, factor-one metallic-
+roughness/specular-strength, and neutral-normal fallbacks bind on every draw.
 Each active role independently selects primary or secondary coordinates, then
 applies its retained finite `KHR_texture_transform` offset/rotation/scale
 affine rows before sampling. An extension selector overrides the core selector.
@@ -134,8 +135,9 @@ dielectric normal reflectance is
 reflectance is strength; RGB Schlick drives the lobe; and the maximum
 dielectric Fresnel channel controls scalar diffuse energy. Exact default
 factors retain the CF072 path, strength zero gives pure dielectric diffuse, and
-metallic one remains factor-independent. Both extension texture infos are
-fully validated but remain unsupported/proxy candidates and are not sampled.
+metallic one remains factor-independent. Linear specular-strength alpha and
+sRGB-decoded specular-color RGB multiply those factors independently;
+strength RGB and color alpha are ignored.
 Perceptual roughness is floored to `0.05` only in the GGX
 distribution to avoid a singular highlight. Each contribution and the shared
 sum are clamped in linear RGB; material alpha is preserved. If neither kind is
@@ -163,7 +165,7 @@ normal observation retain the
 geometric transformed direction. An imported metallic-roughness texture
 multiplies perceptual roughness by green and metallic by blue before both
 directional and point response; red and alpha are ignored. A scene material
-override disables all four imported texture roles.
+override disables all six imported texture roles.
 
 Imported GLB alpha coverage is evaluated independently of lighting. OPAQUE
 ignores multiplied factor/texture alpha and emits one. MASK discards products
@@ -188,8 +190,8 @@ non-finite value. A fifth definition of either kind, a degenerate active
 directional positive-Z axis, or an active point or selected camera translation
 outside finite GPU f32 returns a typed error before submission.
 
-The existing bind group carries one fixed 656-byte per-draw uniform. The prior
-640-byte prefix remains exact; its 624-byte, 496-byte, and first 480-byte
+The existing bind group carries one fixed 720-byte per-draw uniform. The prior
+656-byte prefix remains exact; its 640-byte, 624-byte, 496-byte, and first 480-byte
 prefixes remain model,
 view-projection, color, compact ID, directional
 count and four directional slots, point count and four point slots, camera
@@ -201,13 +203,17 @@ cutoff. Eight appended `vec4` rows carry base-color, normal,
 metallic-roughness, and emissive affine transforms. Material flag bit 4 selects
 imported unlit shading, bit 5 selects imported vertex color, and bits 6 through
 9 select secondary coordinates for base color, emissive, metallic-roughness,
-and normal respectively. The integer range through 1,023 remains exact in the
-existing f32 flag lane. One optical `vec4` contains dielectric F0 and three
-exact-zero padding lanes. One final `vec4` contains specular color RGB and
-strength. Bindings 1, 3, 4, and 5 select
+and normal respectively. Bits 10 and 11 select secondary coordinates for
+specular strength and color. The integer range through 4,095 remains exact in
+the existing f32 flag lane. One optical `vec4` contains dielectric F0 and three
+exact-zero padding lanes. One factor `vec4` contains specular color RGB and
+strength; four final rows carry strength then color affine transforms.
+Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 selects base-color sampling and bindings 6, 7, and 8 select normal,
-metallic-roughness, and emissive sampling. Inactive roles bind the
+metallic-roughness, and emissive sampling. Bindings 9 and 11 select specular-
+strength and specular-color views; bindings 10 and 12 select their samplers.
+Inactive roles bind the
 linear/repeat table entry. This adds
 no light buffer, runtime-selected pipeline creation, runtime
 configuration, or observation payload. Point range/cutoff/radius, spot lights,
@@ -284,7 +290,12 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_decodes_srgb_ignores_alpha_and_uses_white_fallback
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_texture_adds_after_direct_light_and_scene_override_disables_it
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_strength_scales_factor_and_texture_before_unit_clamp
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact material_ior_changes_only_imported_dielectric_direct_response
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact material_specular_factors_compose_without_changing_renderer_topology
+cargo test --release -p cogniform-renderer --test asset_fixture specular_textures_multiply_alpha_and_srgb_rgb_with_neutral_fallbacks --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture specular_texture_coordinates_transforms_and_samplers_are_independent --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact six_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_draws_switch_pipelines_without_reordering_or_causality_changes
@@ -342,6 +353,12 @@ accounting, eviction/rehydration, and unchanged non-color observations.
 The emissive-strength contract proves the exact one default, zero neutrality,
 factor-only and textured scaling before the unit clamp, saturation, explicit
 scene-material suppression, and unchanged non-color observations.
+The specular-texture contracts prove role-correct white fallbacks, linear
+strength-alpha and sRGB color-RGB multiplication, ignored peer channels,
+directional/point composition, complete scene override, independent patterned
+coordinate-set overrides/transforms/authored samplers, exact six-role GPU
+upload/eviction/rehydration, and unchanged depth, identity, and geometric-
+normal observations.
 The alpha-coverage contract distinguishes factor, texture, and product alpha;
 pins equality, cutoff-above-one, OPAQUE, and scene-override behavior; verifies
 discard across every attachment; and preserves revision, logical hash, and
@@ -420,6 +437,9 @@ light compatibility.
 See [ADR 0073](../adr/0073-bounded-gltf-material-specular-factors.md) for
 strict numeric and deferred-texture admission, IOR/Fresnel composition, the
 appended factor row, and unchanged resource topology.
+See [ADR 0074](../adr/0074-bounded-gltf-material-specular-textures.md) for
+strength-alpha/color-RGB sampling, six-role accounting, appended affine rows,
+fixed bind-group growth, and capability preflight.
 See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for strict sampler
 decode, fixed-table indexing, independent role bindings, and the one-mip
 fallback.

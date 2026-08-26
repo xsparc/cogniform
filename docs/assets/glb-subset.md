@@ -39,7 +39,10 @@ surface-only emissive path, and preserves all renderer resource counts. CF072
 admits ratified material IOR, derives one bounded dielectric Fresnel base, and
 appends one private uniform row without adding a resource. CF073 admits
 ratified numeric specular strength and color, validates but defers both
-extension texture roles, and appends one more private uniform row.
+extension texture roles, and appends one more private uniform row. CF074
+admits those two roles as linear strength alpha and sRGB color RGB, expands
+bounded role accounting from four to six, and preserves every prior byte as a
+fixed uniform prefix.
 
 ## Ownership and lifecycle
 
@@ -88,7 +91,7 @@ original source is retained only while queued. Ready records retain expanded
 triangle positions, unit normals, primary and secondary coordinates, one typed immutable
 source or generated tangent and unit primary color per vertex, one typed immutable numeric
 material per mesh, and
-at most four role-separated immutable RGBA8 textures. A PNG referenced by
+at most six role-separated immutable RGBA8 textures. A PNG referenced by
 multiple roles shares its decoded CPU allocation.
 Proxy records have no texture. `AssetStore::evict` removes one hash's queued
 source or terminal CPU record, decoded meshes, and decoded role textures.
@@ -170,9 +173,10 @@ The importer accepts only the following baseline:
   VEC3 synthesizes alpha one. Every declared color set must be canonical,
   consecutive from zero, valid, and same-count before a valid `COLOR_1` or
   later set may receive unsupported/proxy classification;
-- at most four root textures and four referenced root images across one shared
+- at most six root textures and six referenced root images across one shared
   base-color index, one shared metallic-roughness index, one shared normal
-  index, and one shared emissive index. Every referencing material
+  index, one shared emissive index, one shared specular-strength index, and one
+  shared specular-color index. Every referencing material
   must select coordinate set zero or one, and each referencing primitive must
   provide the selected set plus every preceding set. Each texture info may carry a declared
   `KHR_texture_transform` object with omitted or finite two-component `offset`,
@@ -193,7 +197,14 @@ The importer accepts only the following baseline:
   RGB multiplied by the numeric linear `emissiveFactor` and retained emissive
   strength, and ignored alpha;
   omission uses a white fallback;
-- at most four strict root sampler objects. Each optional `magFilter`,
+- `KHR_materials_specular.specularTexture` uses the same selected-coordinate
+  contract and linear texels; alpha multiplies numeric `specularFactor`, while
+  RGB is ignored. Omission uses a linear-white fallback;
+- `KHR_materials_specular.specularColorTexture` uses the same selected-
+  coordinate contract and sRGB texels; decoded RGB multiplies numeric
+  `specularColorFactor`, while alpha is ignored. Omission uses an sRGB-white
+  fallback;
+- at most six strict root sampler objects. Each optional `magFilter`,
   `minFilter`, `wrapS`, and `wrapT` must be one core integer enum; explicit
   null and every other field or type are invalid. Every texture must reference
   an in-range image and optional in-range sampler. Omitted filters default to
@@ -254,11 +265,11 @@ The importer accepts only the following baseline:
   extension must not coexist with any declared unlit or legacy specular-
   glossiness member. Supported numeric fields validate before a wider payload
   becomes unsupported. Optional `specularTexture` and `specularColorTexture`
-  infos fully validate their required index, optional coordinate selector,
-  declared texture transform, root texture/sampler/source/image/PNG resources,
-  and selected primitive coordinate set before the material becomes an
-  unsupported-extension/proxy candidate. Neither texture is rendered in this
-  slice.
+  infos require an in-range role index, optional coordinate selector, declared
+  texture transform, root texture/sampler/source/image/PNG resources, and the
+  selected primitive coordinate set. Malformed or dangling authority rejects
+  without proxy; wider extension data remains unsupported only after these
+  supported roles validate.
 
 A valid texture-transform coordinate override above one or otherwise
 well-formed wider transform property remains an unsupported-extension/proxy
@@ -305,7 +316,7 @@ declarations are classified. External buffers or images, data URIs, additional
 GLB chunks, sparse accessors, other normal or coordinate encodings,
 node-based position dequantization transforms, rendered `TEXCOORD_2` or later,
 wider rendered color sets, morph
-targets, more than four images/textures/samplers, unused image or texture
+targets, more than six images/textures/samplers, unused image or texture
 records, valid unused sampler records, JPEG and wider PNG forms, coordinate selectors above one,
 occlusion texture roles, `BLEND` alpha coverage, nodes, scenes, cameras, animations,
 skins, and all other or wider extensions
@@ -412,13 +423,16 @@ derived `((ior - 1) / (ior + 1))^2`. Omission, explicit scene materials,
 built-ins, fallbacks, and proxies select exact `0.04`. Metallic-one output is
 independent of IOR. IOR does not refract, transmit, or illuminate light.
 
-For non-default imported specular factors, dielectric normal reflectance is
-`min(IOR_F0 * specularColorFactor, 1) * specularFactor`, with the clamp applied
-before strength. Dielectric grazing reflectance is the scalar strength, RGB
+For imported specular data, linear strength-texture alpha multiplies
+`specularFactor` and sRGB-decoded color-texture RGB multiplies
+`specularColorFactor`; strength RGB and color alpha are ignored. Dielectric
+normal reflectance is `min(IOR_F0 * combinedColor, 1) * combinedStrength`, with
+the clamp applied before strength. Dielectric grazing reflectance is the
+combined scalar strength, RGB
 Schlick drives the lobe, and one minus the maximum dielectric Fresnel channel
 is the scalar diffuse-energy term. Exact default factors preserve the accepted
 CF072 response. Strength zero produces pure dielectric diffuse, and metallic-
-one output remains independent of both factors. No specular texture is sampled.
+one output remains independent of both factors and texture multipliers.
 
 `AssetMaterial` carries validated numeric metadata including core emissive
 RGB, finite non-negative emissive strength, authored finite IOR, finite unit
@@ -426,8 +440,8 @@ dielectric F0, finite unit specular strength, and finite non-negative specular
 RGB, typed alpha coverage/cutoff, the retained double-sided value, typed
 shading model, immutable texture-role, sampler, and per-role affine-transform facts, and finite
 normal scale. `AssetUploadJob` exposes that material and
-separate optional base-color, metallic-roughness, normal, and emissive `AssetTexture`
-values; the compatible
+separate optional base-color, metallic-roughness, normal, emissive, specular-
+strength, and specular-color `AssetTexture` values; the compatible
 `base_color` accessor remains. A source image shared by multiple roles counts once
 in CPU asset residency, while GPU bytes count once per content-hash-and-role
 resource because role semantics differ. All roles are reserved atomically.
@@ -523,6 +537,8 @@ cargo test --release -p cogniform-renderer --test asset_fixture --all-features -
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact emissive_strength_scales_factor_and_texture_before_unit_clamp
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact material_ior_changes_only_imported_dielectric_direct_response
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact material_specular_factors_compose_without_changing_renderer_topology
+cargo test --release -p cogniform-renderer --test asset_fixture specular_textures_multiply_alpha_and_srgb_rgb_with_neutral_fallbacks --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture specular_texture_coordinates_transforms_and_samplers_are_independent --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
@@ -581,7 +597,11 @@ strength composition, and unchanged non-color output. The specular-factor
 comparison proves exact omitted/default identity, zero/tinted/high-color and
 IOR composition under directional, point, and combined lights, metallic-one
 invariance, scene override, emission composition, and unchanged non-color
-output. The four-role test proves exact
+output. The specular-texture comparisons prove neutral fallback identity,
+linear strength-alpha and sRGB color-RGB multiplication, ignored peer
+channels, directional/point composition, explicit scene override, independent
+coordinate selectors/transforms/authored samplers, exact six-role residency,
+eviction/rehydration, and unchanged non-color output. The four-role test proves exact
 distinct-image CPU bytes plus GPU upload, eviction, and
 rehydration counts. The alpha checks prove factor-only, texture-only, and
 multiplied coverage, exact cutoff equality, cutoff-above-one discard, OPAQUE
@@ -649,3 +669,7 @@ direct-light compatibility boundary.
 See [ADR 0073](../adr/0073-bounded-gltf-material-specular-factors.md) for
 strict numeric and deferred-texture admission, IOR composition, scalar
 dielectric energy, appended factor row, and unchanged resource topology.
+
+See [ADR 0074](../adr/0074-bounded-gltf-material-specular-textures.md) for the
+two role channel/color-space rules, six-role accounting, appended transform
+rows, fixed bind-group growth, and adapter capability boundary.

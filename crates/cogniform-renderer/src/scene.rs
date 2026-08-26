@@ -315,7 +315,7 @@ impl RenderScene {
                 dielectric_f0,
                 specular_color_factor,
                 specular_factor,
-            } = material_values(entity.material(), imported_material);
+            } = material_values(entity.material(), imported_material.as_ref());
             draws.push(
                 PreparedDraw {
                     geometry,
@@ -340,7 +340,7 @@ impl RenderScene {
                     imported_vertex_color: false,
                     compact_id: compact_id.get(),
                 }
-                .with_imported_material(entity.material().is_none(), imported_material),
+                .with_imported_material(entity.material().is_none(), imported_material.as_ref()),
             );
             id_lookup.insert(compact_id.get(), entity_id);
         }
@@ -474,7 +474,7 @@ impl PreparedDraw {
     fn with_imported_material(
         mut self,
         use_imported_material: bool,
-        material: Option<AssetMaterial>,
+        material: Option<&AssetMaterial>,
     ) -> Self {
         let (
             roles,
@@ -504,6 +504,8 @@ pub(crate) struct ImportedTextureTransforms {
     pub(crate) normal: AssetTextureTransform,
     pub(crate) metallic_roughness: AssetTextureTransform,
     pub(crate) emissive: AssetTextureTransform,
+    pub(crate) specular: AssetTextureTransform,
+    pub(crate) specular_color: AssetTextureTransform,
 }
 
 impl ImportedTextureTransforms {
@@ -512,6 +514,8 @@ impl ImportedTextureTransforms {
         normal: AssetTextureTransform::IDENTITY,
         metallic_roughness: AssetTextureTransform::IDENTITY,
         emissive: AssetTextureTransform::IDENTITY,
+        specular: AssetTextureTransform::IDENTITY,
+        specular_color: AssetTextureTransform::IDENTITY,
     };
 }
 
@@ -521,7 +525,7 @@ pub(crate) struct ImportedTextureCoordinateSets(u8);
 impl ImportedTextureCoordinateSets {
     pub(crate) const PRIMARY: Self = Self(0);
     #[cfg(test)]
-    pub(crate) const ALL_SECONDARY: Self = Self(0b1111);
+    pub(crate) const ALL_SECONDARY: Self = Self(0b11_1111);
 
     pub(crate) fn flags(self) -> u16 {
         u16::from(self.0) << 6
@@ -605,6 +609,8 @@ impl ImportedTextureRoles {
     const EMISSIVE: u8 = 1 << 1;
     const METALLIC_ROUGHNESS: u8 = 1 << 2;
     const NORMAL: u8 = 1 << 3;
+    const SPECULAR: u8 = 1 << 4;
+    const SPECULAR_COLOR: u8 = 1 << 5;
 
     pub(crate) const fn base_color(self) -> bool {
         self.0 & Self::BASE_COLOR != 0
@@ -620,6 +626,14 @@ impl ImportedTextureRoles {
 
     pub(crate) const fn normal(self) -> bool {
         self.0 & Self::NORMAL != 0
+    }
+
+    pub(crate) const fn specular(self) -> bool {
+        self.0 & Self::SPECULAR != 0
+    }
+
+    pub(crate) const fn specular_color(self) -> bool {
+        self.0 & Self::SPECULAR_COLOR != 0
     }
 }
 
@@ -641,7 +655,7 @@ fn primitive_geometry(shape: cogniform_protocol::PrimitiveShape) -> PreparedGeom
 
 fn imported_material_selection(
     use_imported_material: bool,
-    material: Option<AssetMaterial>,
+    material: Option<&AssetMaterial>,
 ) -> (
     ImportedTextureRoles,
     ImportedTextureTransforms,
@@ -661,18 +675,24 @@ fn imported_material_selection(
     };
     let use_lit_roles = matches!(shading_model, ImportedShadingModel::MetallicRoughness);
     let use_base_color =
-        use_imported_material && material.is_some_and(AssetMaterial::has_base_color_texture);
+        use_imported_material && material.is_some_and(|material| material.has_base_color_texture());
     let use_normal = use_imported_material
         && use_lit_roles
-        && material.is_some_and(AssetMaterial::has_normal_texture);
+        && material.is_some_and(|material| material.has_normal_texture());
     let use_emissive = use_imported_material
         && use_lit_roles
-        && material.is_some_and(AssetMaterial::has_emissive_texture);
+        && material.is_some_and(|material| material.has_emissive_texture());
     let use_metallic_roughness = use_imported_material
         && use_lit_roles
-        && material.is_some_and(AssetMaterial::has_metallic_roughness_texture);
+        && material.is_some_and(|material| material.has_metallic_roughness_texture());
+    let use_specular = use_imported_material
+        && use_lit_roles
+        && material.is_some_and(|material| material.has_specular_texture());
+    let use_specular_color = use_imported_material
+        && use_lit_roles
+        && material.is_some_and(|material| material.has_specular_color_texture());
     let normal_scale = if use_normal {
-        material.map_or(1.0, AssetMaterial::normal_scale)
+        material.map_or(1.0, |material| material.normal_scale())
     } else {
         1.0
     };
@@ -681,37 +701,10 @@ fn imported_material_selection(
     roles |= u8::from(use_emissive) * ImportedTextureRoles::EMISSIVE;
     roles |= u8::from(use_metallic_roughness) * ImportedTextureRoles::METALLIC_ROUGHNESS;
     roles |= u8::from(use_normal) * ImportedTextureRoles::NORMAL;
+    roles |= u8::from(use_specular) * ImportedTextureRoles::SPECULAR;
+    roles |= u8::from(use_specular_color) * ImportedTextureRoles::SPECULAR_COLOR;
     let roles = ImportedTextureRoles(roles);
-    let transforms = ImportedTextureTransforms {
-        base_color: if use_base_color {
-            material
-                .and_then(AssetMaterial::base_color_texture_transform)
-                .expect("selected base-color role retains a transform")
-        } else {
-            AssetTextureTransform::IDENTITY
-        },
-        normal: if use_normal {
-            material
-                .and_then(AssetMaterial::normal_texture_transform)
-                .expect("selected normal role retains a transform")
-        } else {
-            AssetTextureTransform::IDENTITY
-        },
-        metallic_roughness: if use_metallic_roughness {
-            material
-                .and_then(AssetMaterial::metallic_roughness_texture_transform)
-                .expect("selected metallic-roughness role retains a transform")
-        } else {
-            AssetTextureTransform::IDENTITY
-        },
-        emissive: if use_emissive {
-            material
-                .and_then(AssetMaterial::emissive_texture_transform)
-                .expect("selected emissive role retains a transform")
-        } else {
-            AssetTextureTransform::IDENTITY
-        },
-    };
+    let transforms = imported_texture_transforms(material, roles);
     let coordinate_sets = imported_texture_coordinate_sets(material, roles);
     let alpha_coverage = if use_imported_material {
         material.map_or(ImportedAlphaCoverage::Disabled, |material| {
@@ -749,30 +742,86 @@ fn imported_material_selection(
     )
 }
 
+fn imported_texture_transforms(
+    material: Option<&AssetMaterial>,
+    roles: ImportedTextureRoles,
+) -> ImportedTextureTransforms {
+    let selected_transform =
+        |enabled: bool, transform: Option<AssetTextureTransform>, role: &str| {
+            if enabled {
+                transform.expect(role)
+            } else {
+                AssetTextureTransform::IDENTITY
+            }
+        };
+    ImportedTextureTransforms {
+        base_color: selected_transform(
+            roles.base_color(),
+            material.and_then(|material| material.base_color_texture_transform()),
+            "selected base-color role retains a transform",
+        ),
+        normal: selected_transform(
+            roles.normal(),
+            material.and_then(|material| material.normal_texture_transform()),
+            "selected normal role retains a transform",
+        ),
+        metallic_roughness: selected_transform(
+            roles.metallic_roughness(),
+            material.and_then(|material| material.metallic_roughness_texture_transform()),
+            "selected metallic-roughness role retains a transform",
+        ),
+        emissive: selected_transform(
+            roles.emissive(),
+            material.and_then(|material| material.emissive_texture_transform()),
+            "selected emissive role retains a transform",
+        ),
+        specular: selected_transform(
+            roles.specular(),
+            material.and_then(|material| material.specular_texture_transform()),
+            "selected specular role retains a transform",
+        ),
+        specular_color: selected_transform(
+            roles.specular_color(),
+            material.and_then(|material| material.specular_color_texture_transform()),
+            "selected specular-color role retains a transform",
+        ),
+    }
+}
+
 fn imported_texture_coordinate_sets(
-    material: Option<AssetMaterial>,
+    material: Option<&AssetMaterial>,
     roles: ImportedTextureRoles,
 ) -> ImportedTextureCoordinateSets {
     let selected = [
         (
             roles.base_color(),
-            material.and_then(AssetMaterial::base_color_texture_coordinate_set),
+            material.and_then(|material| material.base_color_texture_coordinate_set()),
             ImportedTextureRoles::BASE_COLOR,
         ),
         (
             roles.emissive(),
-            material.and_then(AssetMaterial::emissive_texture_coordinate_set),
+            material.and_then(|material| material.emissive_texture_coordinate_set()),
             ImportedTextureRoles::EMISSIVE,
         ),
         (
             roles.metallic_roughness(),
-            material.and_then(AssetMaterial::metallic_roughness_texture_coordinate_set),
+            material.and_then(|material| material.metallic_roughness_texture_coordinate_set()),
             ImportedTextureRoles::METALLIC_ROUGHNESS,
         ),
         (
             roles.normal(),
-            material.and_then(AssetMaterial::normal_texture_coordinate_set),
+            material.and_then(|material| material.normal_texture_coordinate_set()),
             ImportedTextureRoles::NORMAL,
+        ),
+        (
+            roles.specular(),
+            material.and_then(|material| material.specular_texture_coordinate_set()),
+            ImportedTextureRoles::SPECULAR,
+        ),
+        (
+            roles.specular_color(),
+            material.and_then(|material| material.specular_color_texture_coordinate_set()),
+            ImportedTextureRoles::SPECULAR_COLOR,
         ),
     ];
     ImportedTextureCoordinateSets(
@@ -801,7 +850,7 @@ struct MaterialValues {
 
 fn material_values(
     scene_material: Option<MaterialComponent>,
-    imported_material: Option<AssetMaterial>,
+    imported_material: Option<&AssetMaterial>,
 ) -> MaterialValues {
     scene_material.map_or_else(
         || {
@@ -1803,11 +1852,11 @@ mod tests {
 
         let material = asset_material([0.1, 0.2, 0.3, 1.0], 0.0, 0.8);
         assert_eq!(
-            imported_material_selection(true, Some(material)).4,
+            imported_material_selection(true, Some(&material)).4,
             ImportedFacePolicy::SingleSided
         );
         assert_eq!(
-            imported_material_selection(false, Some(material)).4,
+            imported_material_selection(false, Some(&material)).4,
             ImportedFacePolicy::Disabled
         );
         assert_eq!(
@@ -1817,11 +1866,11 @@ mod tests {
         assert_eq!(ImportedShadingModel::MetallicRoughness.flags(), 0);
         assert_eq!(ImportedShadingModel::Unlit.flags(), 16);
         assert_eq!(
-            imported_material_selection(true, Some(material)).5,
+            imported_material_selection(true, Some(&material)).5,
             ImportedShadingModel::MetallicRoughness
         );
         assert_eq!(
-            imported_material_selection(false, Some(material)).5,
+            imported_material_selection(false, Some(&material)).5,
             ImportedShadingModel::MetallicRoughness
         );
     }

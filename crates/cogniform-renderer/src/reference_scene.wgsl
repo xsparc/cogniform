@@ -30,6 +30,10 @@ struct DrawUniform {
     emissive_uv_row_1: vec4<f32>,
     optical: vec4<f32>,
     specular: vec4<f32>,
+    specular_uv_row_0: vec4<f32>,
+    specular_uv_row_1: vec4<f32>,
+    specular_color_uv_row_0: vec4<f32>,
+    specular_color_uv_row_1: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -58,6 +62,18 @@ var metallic_roughness_sampler: sampler;
 
 @group(0) @binding(8)
 var emissive_sampler: sampler;
+
+@group(0) @binding(9)
+var specular_texture: texture_2d<f32>;
+
+@group(0) @binding(10)
+var specular_sampler: sampler;
+
+@group(0) @binding(11)
+var specular_color_texture: texture_2d<f32>;
+
+@group(0) @binding(12)
+var specular_color_sampler: sampler;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -343,6 +359,32 @@ fn fs_main(
     ).gb;
     let roughness = clamp(draw.material.y * sampled_material.x, 0.0, 1.0);
     let metallic = clamp(draw.material.x * sampled_material.y, 0.0, 1.0);
+    let specular_factor = draw.specular.w * textureSample(
+        specular_texture,
+        specular_sampler,
+        transform_uv(
+            select(
+                input.texcoord_0,
+                input.texcoord_1,
+                (material_flags & 1024u) != 0u,
+            ),
+            draw.specular_uv_row_0,
+            draw.specular_uv_row_1,
+        ),
+    ).a;
+    let specular_color_factor = draw.specular.xyz * textureSample(
+        specular_color_texture,
+        specular_color_sampler,
+        transform_uv(
+            select(
+                input.texcoord_0,
+                input.texcoord_1,
+                (material_flags & 2048u) != 0u,
+            ),
+            draw.specular_color_uv_row_0,
+            draw.specular_color_uv_row_1,
+        ),
+    ).rgb;
     let unlit = (material_flags & 16u) != 0u;
     var shaded_color = base_color.rgb;
     if !unlit && (draw.directional_light_count.x > 0u || draw.point_light_count.x > 0u) {
@@ -369,8 +411,8 @@ fn fs_main(
                 metallic,
                 roughness,
                 draw.optical.x,
-                draw.specular.xyz,
-                draw.specular.w,
+                specular_color_factor,
+                specular_factor,
             );
             let contribution = min(
                 response * min(
@@ -402,8 +444,8 @@ fn fs_main(
                         metallic,
                         roughness,
                         draw.optical.x,
-                        draw.specular.xyz,
-                        draw.specular.w,
+                        specular_color_factor,
+                        specular_factor,
                     );
                     let contribution = min(
                         response * light.color_intensity.rgb * attenuated_intensity,

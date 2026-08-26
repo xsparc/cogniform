@@ -1725,6 +1725,32 @@ observations, lifecycle, revision, logical hash, replay, protocol, persistence,
 dependency, workflow, release, and deployment boundaries. See
 [ADR 0073](../adr/0073-bounded-gltf-material-specular-factors.md).
 
+### PR 74 - CF074: Bounded glTF material specular textures
+
+Outcome: supported imported metallic-roughness materials multiply ratified
+dielectric specular strength by a bounded linear-alpha texture and color by a
+bounded sRGB-RGB texture through two new role resources.
+
+Gate: adopt the CF073-validated `specularTexture` and
+`specularColorTexture` infos under the existing strict embedded-PNG, authored
+core-sampler, coordinate-set-zero-or-one, and `KHR_texture_transform`
+contracts. Ignore strength RGB and color alpha. Preserve exact numeric-factor
+behavior through role-correct white fallbacks and explicit neutral textures.
+Keep unlit roles visually inert and let an explicit scene material disable
+both with the rest of imported material authority.
+
+Raise strict root image, texture, and sampler bounds from four to six. Decode
+each shared source once on CPU while retaining and atomically reserving zero
+through six content-hash-and-role GPU resources. Preserve exact eviction and
+rehydration accounting. Append strength and color affine rows after the exact
+656-byte prefix for a fixed 720-byte uniform, add selector bits 10 and 11, and
+grow the fixed bind group from nine to thirteen entries. Require six sampled
+textures and six samplers per shader stage. Preserve the 72-byte vertex,
+36-entry sampler table, two pipelines, attachments, observations, lifecycle,
+revision, logical hash, replay, protocol, persistence, dependency, workflow,
+release, and deployment boundaries. See
+[ADR 0074](../adr/0074-bounded-gltf-material-specular-textures.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1737,7 +1763,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
-  -> CF072 -> CF073
+  -> CF072 -> CF073 -> CF074
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2100,6 +2126,18 @@ Validation expands with capability:
   uniform; directional, point, combined-light, scene-override, emission, and
   observation evidence; unchanged vertex, texture, sampler, bind-group,
   pipeline, lifecycle, revision, logical-hash, replay, and rehydration behavior.
+- CF074: strict admission of the two deferred ratified specular texture roles;
+  linear strength alpha and sRGB color RGB multiplication with unused channels
+  ignored; independent sampler, coordinate selector, and affine-transform
+  retention; exact four-to-six root collection and role-accounting growth;
+  shared/distinct CPU decode accounting; atomic six-role GPU reservation,
+  eviction, and rehydration; exact 656-byte uniform prefix plus four appended
+  rows in a 720-byte layout; thirteen fixed bindings with explicit six-texture
+  and six-sampler adapter preflight; neutral fallback, directional/point,
+  scene-override, patterned selector/transform/sampler, and unchanged non-color
+  Vulkan evidence; unchanged vertex, sampler table, pipeline, logical,
+  protocol, persistence, dependency, workflow, release, and deployment
+  boundaries.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

@@ -254,23 +254,33 @@ impl AssetStore {
         Ok(AssetUploadJob::new(
             key,
             mesh.vertices.clone(),
-            mesh.material,
-            mesh.material
-                .has_base_color_texture()
-                .then(|| decoded.base_color_texture.clone())
-                .flatten(),
-            mesh.material
-                .has_emissive_texture()
-                .then(|| decoded.emissive_texture.clone())
-                .flatten(),
-            mesh.material
-                .has_metallic_roughness_texture()
-                .then(|| decoded.metallic_roughness_texture.clone())
-                .flatten(),
-            mesh.material
-                .has_normal_texture()
-                .then(|| decoded.normal_texture.clone())
-                .flatten(),
+            &mesh.material,
+            [
+                mesh.material
+                    .has_base_color_texture()
+                    .then(|| decoded.base_color_texture.clone())
+                    .flatten(),
+                mesh.material
+                    .has_emissive_texture()
+                    .then(|| decoded.emissive_texture.clone())
+                    .flatten(),
+                mesh.material
+                    .has_metallic_roughness_texture()
+                    .then(|| decoded.metallic_roughness_texture.clone())
+                    .flatten(),
+                mesh.material
+                    .has_normal_texture()
+                    .then(|| decoded.normal_texture.clone())
+                    .flatten(),
+                mesh.material
+                    .has_specular_texture()
+                    .then(|| decoded.specular_texture.clone())
+                    .flatten(),
+                mesh.material
+                    .has_specular_color_texture()
+                    .then(|| decoded.specular_color_texture.clone())
+                    .flatten(),
+            ],
         ))
     }
 

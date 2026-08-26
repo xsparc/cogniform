@@ -76,9 +76,10 @@ scene revision that produced it.
 > only the imported direct dielectric Fresnel base through an exact zero-or-at-
 > least-one finite value and deterministic bounded derivation. Optional
 > ratified material specular strength and unbounded non-negative RGB factors
-> then scale and tint the imported dielectric direct response; texture members
-> remain explicit proxy candidates rather than being ignored. Refraction,
-> transmission, volume, and specular textures remain excluded.
+> then scale and tint the imported dielectric direct response. Their bounded
+> extension textures independently multiply linear strength alpha and sRGB-
+> decoded color RGB; the other channels are ignored. Refraction,
+> transmission, and volume remain excluded.
 > Imported core glTF materials now apply
 > deterministic OPAQUE or cutoff-based MASK coverage; blending and sorting
 > remain excluded. Imported materials now follow the glTF single-sided
@@ -87,11 +88,11 @@ scene revision that produced it.
 > its existing alpha and unculled face semantics. Strictly declared exact
 > `KHR_materials_unlit` materials preserve sampled base color independently of
 > direct lights while retaining the same bounded fallback-resource lifecycle.
-> All four imported texture roles now retain strict core glTF nearest/linear
+> All six imported texture roles now retain strict core glTF nearest/linear
 > filtering and repeat/mirrored/clamp S/T wrapping independently, backed by a
 > fixed renderer-owned sampler table and a documented one-mip fallback.
 > Ratified `KHR_texture_transform` offset, rotation, and scale now apply
-> independently to those same four roles under strict finite validation and
+> independently to those same six roles under strict finite validation and
 > one fixed prefix-compatible draw uniform. Each role selects coordinate set
 > zero or one, with the extension selector overriding the core selector.
 > Generated normal-map tangents use the selected transformed normal
@@ -156,7 +157,7 @@ implementations arrive:
 | `cogniform-mcp` | Bounded stable MCP stdio query/imagination/patch/observation translation and one retained canonical observation resource over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/coordinate/texture-transform/material/emissive-strength/IOR/specular-factor/embedded-PNG decoding, immutable role-textured upload jobs, and explicit CPU-state eviction |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/coordinate/texture-transform/material/emissive-strength/IOR/specular/embedded-PNG decoding, immutable six-role-textured upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |

@@ -98,6 +98,16 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   while metallic-one output remains independent. One appended factor row
   preserves the exact 640-byte prefix in a fixed 656-byte uniform without
   adding a texture role, binding, sampler, pipeline, or dependency;
+- bounded `KHR_materials_specular` strength and color textures through the
+  existing strict embedded-PNG, sampler, coordinate-set, and transform
+  contracts. Strength samples only linear alpha; color samples only sRGB-
+  decoded RGB. Root image/texture/sampler bounds and role accounting grow from
+  four to six, shared sources still decode once on CPU, and six role-keyed GPU
+  resources reserve and evict atomically. Four appended affine rows preserve
+  the exact 656-byte uniform prefix in a fixed 720-byte layout; the fixed bind
+  group grows from nine to thirteen entries with explicit six-texture/sampler
+  adapter preflight while retaining 72-byte vertices, 36 samplers, two
+  pipelines, dependencies, protocols, persistence, and release authority;
 - optional core glTF `OPAQUE` and `MASK` alpha coverage, with strict finite
   non-negative cutoff handling, multiplied factor/texture alpha, exact cutoff
   equality, pre-output discard across color/depth/identity/normal, opaque

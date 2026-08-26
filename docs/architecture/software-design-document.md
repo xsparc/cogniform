@@ -499,17 +499,19 @@ roughness direct lighting uses retained IOR. A material may additionally select
 ratified `KHR_materials_specular`. Its optional finite unit strength defaults
 to one and its exact three-channel finite non-negative color defaults to
 `[1,1,1]` without an upper bound. It may not coexist with unlit or legacy
-specular-glossiness. Dielectric F0 clamps `IOR_F0 * color` per channel before
-strength multiplication, f90 equals strength, RGB Schlick drives the lobe, and
-the maximum dielectric Fresnel channel controls scalar diffuse energy. Well-
-formed specular texture infos are fully reference-validated but remain
-unsupported/proxy candidates until a separate texture slice. Omission,
+specular-glossiness. Linear `specularTexture` alpha multiplies strength and
+sRGB-decoded `specularColorTexture` RGB multiplies color; strength RGB and
+color alpha are ignored. Each role follows the same bounded embedded-PNG,
+sampler, coordinate-set, and texture-transform contract as existing textures.
+Dielectric F0 clamps `IOR_F0 * color` per channel before strength
+multiplication, f90 equals strength, RGB Schlick drives the lobe, and the
+maximum dielectric Fresnel channel controls scalar diffuse energy. Omission,
 explicit scene materials, built-ins, missing-asset fallbacks, and proxies
 preserve exact dielectric `0.04` and neutral specular factors. The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source or bounded generated-tangent TBN perturbs only direct-light response.
-Each of the four texture roles independently selects `TEXCOORD_0` or
+Each of the six texture roles independently selects `TEXCOORD_0` or
 `TEXCOORD_1` and applies its retained finite `KHR_texture_transform` affine
 rows. The extension selector overrides the core texture-info selector.
 Generated tangents use the selected transformed normal-role coordinates while
@@ -517,17 +519,18 @@ explicit tangents and retained coordinates remain authored values. Emissive text
 is decoded from sRGB, multiplied by the numeric linear emissive factor and
 retained strength, then added
 after the ordinary metallic-roughness response, and clamped to one without
-changing alpha; texture alpha is ignored. Untextured draws use white
-base-color/emissive, factor-one metallic-roughness, and neutral-normal
-fallbacks. A scene `MaterialComponent` overrides the whole imported material,
-disables all four imported texture roles, and selects zero imported emission.
+changing alpha; texture alpha is ignored. Untextured draws use sRGB white
+base-color/emissive/specular-color, linear white metallic-roughness/specular-
+strength, and neutral-normal fallbacks. A scene `MaterialComponent` overrides
+the whole imported material, disables all six imported texture roles, and
+selects zero imported emission.
 A built-in or material-free
 asset without a scene material uses its existing fallback color with neutral
 dielectric parameters `metallic = 0`, `roughness = 0.8`. Cross-surface
 emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
-fixed 656-byte per-draw uniform preserves the complete prior 640-byte prefix,
+fixed 720-byte per-draw uniform preserves the complete prior 656-byte prefix,
 which in turn preserves the 496-byte and 480-byte model,
 view-projection, material-color, identity, directional, point-light,
 camera-position, and metallic/roughness/normal-scale/material-flag prefix and
@@ -535,16 +538,17 @@ uses the prior camera-position padding lane for emissive strength, appends one
 emissive slot whose padding lane carries the imported mask cutoff,
 then appends eight padded affine rows in base-color, normal,
 metallic-roughness, and emissive order. One optical row carries dielectric F0
-followed by three exact-zero padding lanes, and one final row carries specular
-color RGB followed by strength.
+followed by three exact-zero padding lanes, and one factor row carries specular
+color RGB followed by strength. Four final padded affine rows carry strength
+then color texture transforms.
 A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU
 submission.
 
-The fixed imported-material bind group contains four texture views and four
-samplers in nine total entries. Adapter preflight requires at least four
-sampled textures, four samplers per shader stage, and nine bindings per group,
+The fixed imported-material bind group contains six texture views and six
+samplers in thirteen total entries. Adapter preflight requires at least six
+sampled textures, six samplers per shader stage, and thirteen bindings per group,
 six vertex attributes, and a 72-byte vertex-buffer stride, so an insufficient
 adapter fails as structured `UnsupportedCapabilities` before pipeline
 construction.
@@ -572,7 +576,8 @@ plus an optional three-channel unit-bounded core emissive factor, optional
 finite non-negative ratified emissive strength, and bounded
 OPAQUE/MASK alpha coverage plus a strict optional boolean `doubleSided` per
 mesh material. The ratified `KHR_materials_emissive_strength`,
-`KHR_materials_unlit`, `KHR_texture_transform`, and `KHR_mesh_quantization`
+`KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_unlit`,
+`KHR_texture_transform`, and `KHR_mesh_quantization`
 extensions are the sole
 supported extensions. Mesh quantization admits only the declared integer
 POSITION/NORMAL/TANGENT/TEXCOORD_n matrix, requires extension-only accessors to
@@ -585,14 +590,14 @@ selected/unused material, and fallback-resource validation. Emissive strength
 defaults to one, is retained for selected and unused materials, and is
 mutually exclusive with the supported unlit marker. Texture transform
 retains finite offset, rotation, and scale with exact defaults and Khronos
-translation-rotation-scale order for the four existing texture-info roles.
+translation-rotation-scale order for the six existing texture-info roles.
 Each role retains effective selector zero or one, with extension `texCoord`
 overriding core `texCoord`, and requires the selected set on the primitive. The subset also retains
-one shared embedded PNG per base-color, metallic-roughness, normal, or
-emissive role. The image subset
+one shared embedded PNG per base-color, metallic-roughness, normal, emissive,
+specular-strength, or specular-color role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
 retained-byte, decoder-working-byte, per-asset, and aggregate CPU limits into
-at most four immutable RGBA8 role values; a source shared by roles counts once
+at most six immutable RGBA8 role values; a source shared by roles counts once
 on CPU. Decoders verify declared and decoded sizes before allocation; expanded
 upload vertices always reserve exactly 72 bytes: the accepted 64-byte position,
 unit-normal, primary-coordinate, unit-tangent-plus-handedness, and unit-RGBA-
