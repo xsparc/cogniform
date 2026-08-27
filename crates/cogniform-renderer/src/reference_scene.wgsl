@@ -42,6 +42,10 @@ struct DrawUniform {
     clearcoat_normal_uv_row_0: vec4<f32>,
     clearcoat_normal_uv_row_1: vec4<f32>,
     sheen: vec4<f32>,
+    sheen_color_uv_row_0: vec4<f32>,
+    sheen_color_uv_row_1: vec4<f32>,
+    sheen_roughness_uv_row_0: vec4<f32>,
+    sheen_roughness_uv_row_1: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -100,6 +104,18 @@ var clearcoat_normal_texture: texture_2d<f32>;
 
 @group(0) @binding(18)
 var clearcoat_normal_sampler: sampler;
+
+@group(0) @binding(19)
+var sheen_color_texture: texture_2d<f32>;
+
+@group(0) @binding(20)
+var sheen_color_sampler: sampler;
+
+@group(0) @binding(21)
+var sheen_roughness_texture: texture_2d<f32>;
+
+@group(0) @binding(22)
+var sheen_roughness_sampler: sampler;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -599,6 +615,36 @@ fn fs_main(
         ),
     ).rgb;
     let unlit = (material_flags & 16u) != 0u;
+    var sheen_color = draw.sheen.xyz;
+    var sheen_roughness = draw.sheen.w;
+    if !unlit && any(sheen_color != vec3(0.0)) {
+        sheen_color = sheen_color * textureSample(
+            sheen_color_texture,
+            sheen_color_sampler,
+            transform_uv(
+                select(
+                    input.texcoord_0,
+                    input.texcoord_1,
+                    (material_flags & 32768u) != 0u,
+                ),
+                draw.sheen_color_uv_row_0,
+                draw.sheen_color_uv_row_1,
+            ),
+        ).rgb;
+        sheen_roughness = clamp(sheen_roughness * textureSample(
+            sheen_roughness_texture,
+            sheen_roughness_sampler,
+            transform_uv(
+                select(
+                    input.texcoord_0,
+                    input.texcoord_1,
+                    (material_flags & 65536u) != 0u,
+                ),
+                draw.sheen_roughness_uv_row_0,
+                draw.sheen_roughness_uv_row_1,
+            ),
+        ).a, 0.0, 1.0);
+    }
     let to_view = draw.camera_position.xyz - input.world_position;
     let view_distance_squared = dot(to_view, to_view);
     var surface_to_view = vec3(0.0);
@@ -672,8 +718,8 @@ fn fs_main(
                 light.surface_to_light.xyz,
                 surface_to_view,
                 has_view,
-                draw.sheen.xyz,
-                draw.sheen.w,
+                sheen_color,
+                sheen_roughness,
             );
             var response = layered_base;
             if clearcoat_factor != 0.0 {
@@ -725,8 +771,8 @@ fn fs_main(
                         surface_to_light,
                         surface_to_view,
                         has_view,
-                        draw.sheen.xyz,
-                        draw.sheen.w,
+                        sheen_color,
+                        sheen_roughness,
                     );
                     var response = layered_base;
                     if clearcoat_factor != 0.0 {

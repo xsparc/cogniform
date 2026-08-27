@@ -25,8 +25,8 @@ and filterable sampling for `Rgba8UnormSrgb` asset textures.
 Linear `Rgba8Unorm` asset normal, metallic-roughness, clearcoat-intensity,
 clearcoat-roughness, and clearcoat-normal textures require the
 same sampled, copy-destination, and filterable usages.
-The fixed imported-material layout also requires at least nine sampled
-textures, nine samplers per shader stage, nineteen bindings per bind group, six
+The fixed imported-material layout also requires at least eleven sampled
+textures, eleven samplers per shader stage, twenty-three bindings per bind group, six
 vertex attributes, and a 72-byte vertex-buffer stride.
 Narrow adapters fail structured capability preflight before pipeline creation.
 
@@ -150,7 +150,7 @@ lobe for each active light, and attenuates the no-light compatibility response
 and surface emission exactly once. Exact factor zero preserves the complete
 prior shader path and skips coat texture work. The coat is visually absent for
 unlit, explicit scene materials, built-ins, fallbacks, and proxies.
-Ratified `KHR_materials_sheen` color and roughness add one factor-only colored
+Ratified `KHR_materials_sheen` color and roughness add one bounded colored
 direct-light lobe for selected imported metallic-roughness materials. The
 selected base shading normal drives the Khronos Charlie distribution and
 fitted visibility under a `1e-6` roughness floor. Cogniform caps the scalar
@@ -160,7 +160,9 @@ deviation from the non-normative sample shader guarantees a unit directional-
 albedo bound without a lookup texture. Exact zero color preserves the prior
 path. Clearcoat is applied above base plus sheen. No-light compatibility,
 emission, unlit, explicit scene materials, built-ins, fallbacks, and proxies
-remain sheen-free; both sheen texture roles remain validated but unsupported.
+remain sheen-free. sRGB sheen-color RGB and linear sheen-roughness alpha
+multiply the retained numeric factors; color alpha and roughness RGB are
+ignored. Role-correct white fallbacks preserve factor-only behavior.
 Perceptual roughness is floored to `0.05` only in the GGX
 distribution to avoid a singular highlight. Each contribution and the shared
 sum are clamped in linear RGB; material alpha is preserved. If neither kind is
@@ -188,7 +190,7 @@ normal observation retain the
 geometric transformed direction. An imported metallic-roughness texture
 multiplies perceptual roughness by green and metallic by blue before both
 directional and point response; red and alpha are ignored. A scene material
-override disables all nine imported texture roles.
+override disables all eleven imported texture roles.
 
 Imported GLB alpha coverage is evaluated independently of lighting. OPAQUE
 ignores multiplied factor/texture alpha and emits one. MASK discards products
@@ -213,8 +215,8 @@ non-finite value. A fifth definition of either kind, a degenerate active
 directional positive-Z axis, or an active point or selected camera translation
 outside finite GPU f32 returns a typed error before submission.
 
-The existing bind group carries one fixed 848-byte per-draw uniform. The prior
-832-byte prefix remains exact; its 736-byte, 720-byte, 656-byte, 640-byte, 624-byte,
+The existing bind group carries one fixed 912-byte per-draw uniform. The prior
+848-byte prefix remains exact; its 832-byte, 736-byte, 720-byte, 656-byte, 640-byte, 624-byte,
 496-byte, and first 480-byte
 prefixes remain model,
 view-projection, color, compact ID, directional
@@ -229,15 +231,17 @@ imported unlit shading, bit 5 selects imported vertex color, and bits 6 through
 9 select secondary coordinates for base color, emissive, metallic-roughness,
 and normal respectively. Bits 10 and 11 select secondary coordinates for
 specular strength and color. Bits 12 through 14 select secondary coordinates
-for clearcoat intensity, roughness, and normal. The integer range through
-32,767 remains exact in
+for clearcoat intensity, roughness, and normal. Bits 15 and 16 select
+secondary coordinates for sheen color and roughness. The integer range through
+131,071 remains exact in
 the existing f32 flag lane. One optical `vec4` contains dielectric F0 and three
 exact-zero padding lanes. One factor `vec4` contains specular color RGB and
 strength; four rows carry strength then color affine transforms. One final
 `vec4` contains clearcoat factor and roughness followed by two exact-zero
 padding lanes. Six final rows carry clearcoat intensity, roughness, and normal
 affine transforms; the coat-normal padding lanes carry finite scale and role
-presence. One final `vec4` contains sheen color RGB and roughness.
+presence. One `vec4` contains sheen color RGB and roughness. Four final rows
+carry sheen-color then sheen-roughness affine transforms.
 Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 selects base-color sampling and bindings 6, 7, and 8 select normal,
@@ -245,6 +249,8 @@ metallic-roughness, and emissive sampling. Bindings 9 and 11 select specular-
 strength and specular-color views; bindings 10 and 12 select their samplers.
 Bindings 13, 15, and 17 select clearcoat intensity, roughness, and normal
 views; bindings 14, 16, and 18 select their samplers.
+Bindings 19 and 21 select sheen color and roughness views; bindings 20 and 22
+select their samplers.
 Inactive roles bind the
 linear/repeat table entry. This adds
 no light buffer, runtime-selected pipeline creation, runtime
@@ -329,9 +335,11 @@ cargo test --release -p cogniform-renderer --test asset_fixture specular_texture
 cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_factors_layer_the_complete_imported_material_without_new_resources --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_textures_use_linear_r_g_channels_and_an_independent_scaled_normal --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture sheen_factors_bound_direct_light_and_preserve_compatibility_paths --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture sheen_textures_multiply_srgb_rgb_and_linear_alpha_with_neutral_fallbacks --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture sheen_texture_coordinates_transforms_and_samplers_are_independent --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact six_texture_roles_upload_evict_and_rehydrate_exactly
-cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact nine_texture_roles_upload_evict_and_rehydrate_exactly
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact eleven_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_draws_switch_pipelines_without_reordering_or_causality_changes
@@ -403,9 +411,12 @@ no renderer resource growth.
 The sheen contract proves exact omitted/zero identity, color and roughness
 response under directional and point lights, combined-light composition below
 clearcoat, exact no-light and emission compatibility, complete scene override,
-unchanged non-color observations, and no renderer resource growth. Independent
-CPU vectors reproduce the uncapped grazing-energy regression and pin the
-conservative analytic and midpoint-grid bound.
+unchanged non-color observations, sRGB color-RGB and linear roughness-alpha
+multiplication, ignored peer channels, role-correct white fallbacks,
+independent patterned coordinate-set overrides/transforms/authored samplers,
+and exact eleven-role GPU upload/eviction/rehydration. Independent CPU vectors
+reproduce the uncapped grazing-energy regression and pin the conservative
+analytic and midpoint-grid bound.
 The alpha-coverage contract distinguishes factor, texture, and product alpha;
 pins equality, cutoff-above-one, OPAQUE, and scene-override behavior; verifies
 discard across every attachment; and preserves revision, logical hash, and
@@ -497,6 +508,9 @@ preflight.
 See [ADR 0077](../adr/0077-bounded-gltf-material-sheen-factors.md) for strict
 factor and deferred-texture admission, bounded Charlie layering, the appended
 factor row, and unchanged resource topology.
+See [ADR 0078](../adr/0078-bounded-gltf-material-sheen-textures.md) for
+color-space/channel semantics, independent sampling authority, eleven-role
+accounting, appended affine rows, and capability preflight.
 See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for strict sampler
 decode, fixed-table indexing, independent role bindings, and the one-mip
 fallback.

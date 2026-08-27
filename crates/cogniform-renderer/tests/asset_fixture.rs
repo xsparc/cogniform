@@ -1210,6 +1210,153 @@ fn sheen_factors_bound_direct_light_and_preserve_compatibility_paths() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn sheen_textures_multiply_srgb_rgb_and_linear_alpha_with_neutral_fallbacks() {
+    let center = (WIDTH / 2, HEIGHT / 2);
+    for light in [LightKind::Directional, LightKind::Point] {
+        let factor_only = material_frame(
+            sheen_texture_fixture(None, None, [0.8, 0.6, 0.4], 0.75),
+            Some(light),
+            false,
+        );
+        let neutral = material_frame(
+            sheen_texture_fixture(
+                Some([255, 255, 255, 13]),
+                Some([7, 11, 17, 255]),
+                [0.8, 0.6, 0.4],
+                0.75,
+            ),
+            Some(light),
+            false,
+        );
+        assert_frames_equal(&neutral, &factor_only);
+
+        let ignored_channels = material_frame(
+            sheen_texture_fixture(
+                Some([255, 255, 255, 241]),
+                Some([250, 3, 99, 255]),
+                [0.8, 0.6, 0.4],
+                0.75,
+            ),
+            Some(light),
+            false,
+        );
+        assert_frames_equal(&ignored_channels, &neutral);
+
+        let tinted = material_frame(
+            sheen_texture_fixture(
+                Some([128, 64, 32, 0]),
+                Some([255, 0, 255, 64]),
+                [1.0; 3],
+                1.0,
+            ),
+            Some(light),
+            false,
+        );
+        assert_ne!(
+            tinted.color_at(center.0, center.1),
+            neutral.color_at(center.0, center.1)
+        );
+        assert_non_color_observations_equal(&tinted, &neutral);
+    }
+
+    let srgb_texture = material_frame(
+        sheen_texture_fixture(Some([128, 128, 128, 0]), None, [1.0; 3], 0.5),
+        Some(LightKind::Directional),
+        false,
+    );
+    let linear_factor = material_frame(
+        sheen_texture_fixture(None, None, [0.215_860_53; 3], 0.5),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_color_near(
+        &srgb_texture,
+        center,
+        linear_factor.color_at(center.0, center.1).unwrap(),
+    );
+    assert_non_color_observations_equal(&srgb_texture, &linear_factor);
+
+    let overridden_texture = material_frame(
+        sheen_texture_fixture(
+            Some([0, 255, 0, 255]),
+            Some([255, 0, 255, 0]),
+            [1.0, 0.0, 0.5],
+            1.0,
+        ),
+        Some(LightKind::Directional),
+        true,
+    );
+    let overridden_factor = material_frame(
+        sheen_texture_fixture(None, None, [1.0; 3], 1.0),
+        Some(LightKind::Directional),
+        true,
+    );
+    assert_frames_equal(&overridden_texture, &overridden_factor);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn sheen_texture_coordinates_transforms_and_samplers_are_independent() {
+    let roughness_reference = material_frame(
+        sheen_texture_fixture(
+            Some([255, 255, 255, 17]),
+            Some([9, 8, 7, 0]),
+            [0.5, 0.25, 0.125],
+            1.0,
+        ),
+        Some(LightKind::Directional),
+        false,
+    );
+    let roughness_selected = material_frame(
+        patterned_sheen_texture_fixture(0b11, 0, [255, 255, 255]),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_frames_equal(&roughness_selected, &roughness_reference);
+    let roughness_wrong_coordinate = material_frame(
+        patterned_sheen_texture_fixture(0b10, 0, [255, 255, 255]),
+        Some(LightKind::Directional),
+        false,
+    );
+
+    assert_ne!(
+        roughness_wrong_coordinate.color(),
+        roughness_selected.color(),
+        "the sheen-roughness role must independently select its transformed coordinate set"
+    );
+    assert_non_color_observations_equal(&roughness_wrong_coordinate, &roughness_selected);
+
+    let color_reference = material_frame(
+        sheen_texture_fixture(
+            Some([0, 0, 0, 17]),
+            Some([9, 8, 7, 255]),
+            [0.5, 0.25, 0.125],
+            1.0,
+        ),
+        Some(LightKind::Directional),
+        false,
+    );
+    let color_selected = material_frame(
+        patterned_sheen_texture_fixture(0b11, 255, [0, 0, 0]),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_frames_equal(&color_selected, &color_reference);
+    let color_wrong_coordinate = material_frame(
+        patterned_sheen_texture_fixture(0b01, 255, [0, 0, 0]),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_ne!(
+        color_wrong_coordinate.color(),
+        color_selected.color(),
+        "the sheen-color role must independently select its transformed coordinate set"
+    );
+    assert_non_color_observations_equal(&color_wrong_coordinate, &color_selected);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn clearcoat_textures_use_linear_r_g_channels_and_an_independent_scaled_normal() {
     let center = (WIDTH / 2, HEIGHT / 2);
     assert_clearcoat_texture_channel_cases(center);
@@ -2282,8 +2429,8 @@ fn six_texture_roles_upload_evict_and_rehydrate_exactly() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
-fn nine_texture_roles_upload_evict_and_rehydrate_exactly() {
-    let bytes = nine_role_shared_image_fixture();
+fn eleven_texture_roles_upload_evict_and_rehydrate_exactly() {
+    let bytes = eleven_role_shared_image_fixture();
     let content_hash = content_hash(&bytes);
     let key = AssetMeshKey {
         content_hash,
@@ -2303,29 +2450,31 @@ fn nine_texture_roles_upload_evict_and_rehydrate_exactly() {
     assert!(upload.clearcoat_texture().is_some());
     assert!(upload.clearcoat_roughness_texture().is_some());
     assert!(upload.clearcoat_normal_texture().is_some());
+    assert!(upload.sheen_color_texture().is_some());
+    assert!(upload.sheen_roughness_texture().is_some());
 
     let mut renderer =
         pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
             .expect("the declared reference adapter must initialize");
     renderer.enqueue_asset_upload(upload.clone()).unwrap();
-    assert_eq!(renderer.asset_stats().pending_textures, 9);
-    assert_eq!(renderer.asset_stats().pending_texture_bytes, 36);
+    assert_eq!(renderer.asset_stats().pending_textures, 11);
+    assert_eq!(renderer.asset_stats().pending_texture_bytes, 44);
     let uploaded = renderer.process_next_asset_upload().unwrap();
-    assert_eq!(uploaded.texture_byte_len, 36);
-    assert_eq!(renderer.asset_stats().resident_textures, 9);
-    assert_eq!(renderer.asset_stats().resident_texture_bytes, 36);
+    assert_eq!(uploaded.texture_byte_len, 44);
+    assert_eq!(renderer.asset_stats().resident_textures, 11);
+    assert_eq!(renderer.asset_stats().resident_texture_bytes, 44);
     let eviction = renderer.evict_asset(content_hash);
-    assert_eq!(eviction.removed_resident_textures, 9);
-    assert_eq!(eviction.released_resident_texture_bytes, 36);
+    assert_eq!(eviction.removed_resident_textures, 11);
+    assert_eq!(eviction.released_resident_texture_bytes, 44);
     renderer.enqueue_asset_upload(upload).unwrap();
     assert_eq!(
         renderer
             .process_next_asset_upload()
             .unwrap()
             .texture_byte_len,
-        36
+        44
     );
-    assert_eq!(renderer.asset_stats().resident_textures, 9);
+    assert_eq!(renderer.asset_stats().resident_textures, 11);
 }
 
 #[test]
@@ -2749,6 +2898,8 @@ fn upload_texture_stats(upload: &AssetUploadJob) -> (u32, u64) {
         upload.clearcoat_texture(),
         upload.clearcoat_roughness_texture(),
         upload.clearcoat_normal_texture(),
+        upload.sheen_color_texture(),
+        upload.sheen_roughness_texture(),
     ];
     let count = textures.into_iter().flatten().count();
     let bytes = textures
@@ -3816,6 +3967,84 @@ fn sheen_fixture(
     glb_with_json(&json, &binary)
 }
 
+fn sheen_texture_fixture(
+    color_texel: Option<[u8; 4]>,
+    roughness_texel: Option<[u8; 4]>,
+    color_factor: [f32; 3],
+    roughness_factor: f32,
+) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.5_f32, 0.5]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let mut image_views = Vec::new();
+    let mut image_defs = Vec::new();
+    let mut texture_defs = Vec::new();
+    let mut texture_fields = Vec::new();
+    for (field, texel) in [
+        ("sheenColorTexture", color_texel),
+        ("sheenRoughnessTexture", roughness_texel),
+    ] {
+        let Some(texel) = texel else {
+            continue;
+        };
+        let png = encode_png(1, 1, &texel);
+        let offset = binary.len();
+        binary.extend_from_slice(&png);
+        let image_index = image_defs.len();
+        image_views.push(format!(
+            r#"{{"buffer":0,"byteOffset":{offset},"byteLength":{}}}"#,
+            png.len()
+        ));
+        image_defs.push(format!(
+            r#"{{"bufferView":{},"mimeType":"image/png"}}"#,
+            image_index + 2
+        ));
+        texture_defs.push(format!(r#"{{"source":{image_index}}}"#));
+        texture_fields.push(format!(
+            r#""{field}":{{"index":{}}}"#,
+            texture_defs.len() - 1
+        ));
+    }
+    let image_views = if image_views.is_empty() {
+        String::new()
+    } else {
+        format!(",{}", image_views.join(","))
+    };
+    let texture_resources = if texture_defs.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#", "textures":[{}],"images":[{}]"#,
+            texture_defs.join(","),
+            image_defs.join(",")
+        )
+    };
+    let texture_fields = if texture_fields.is_empty() {
+        String::new()
+    } else {
+        format!(",{}", texture_fields.join(","))
+    };
+    let [red, green, blue] = color_factor;
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_sheen"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}}{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5}},"extensions":{{"KHR_materials_sheen":{{"sheenColorFactor":[{red},{green},{blue}],"sheenRoughnessFactor":{roughness_factor}{texture_fields}}}}}}}]{texture_resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
 fn clearcoat_texture_fixture(
     clearcoat_texel: Option<[u8; 4]>,
     roughness_texel: Option<[u8; 4]>,
@@ -4050,6 +4279,62 @@ fn patterned_specular_texture_fixture(
         r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_specular","KHR_texture_transform"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}},{{"buffer":0,"byteOffset":60,"byteLength":24}},{{"buffer":0,"byteOffset":{strength_offset},"byteLength":{}}},{{"buffer":0,"byteOffset":{color_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5}},"extensions":{{"KHR_materials_specular":{{"specularFactor":1.0,"specularColorFactor":[1.0,1.0,1.0],"specularTexture":{{"index":0,"texCoord":0,"extensions":{{"KHR_texture_transform":{{{strength_override}"offset":[0.25,0.0]}}}}}},"specularColorTexture":{{"index":1,"texCoord":1,"extensions":{{"KHR_texture_transform":{{{color_override}"offset":[-0.25,0.25]}}}}}}}}}}}}],"textures":[{{"sampler":0,"source":0}},{{"sampler":1,"source":1}}],"images":[{{"bufferView":3,"mimeType":"image/png"}},{{"bufferView":4,"mimeType":"image/png"}}],"samplers":[{{"magFilter":9728,"minFilter":9728,"wrapS":10497,"wrapT":33071}},{{"magFilter":9728,"minFilter":9728,"wrapS":33648,"wrapT":33071}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1,"TEXCOORD_1":2}},"material":0,"mode":4}}]}}]}}"#,
         binary.len(),
         strength_png.len(),
+        color_png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn patterned_sheen_texture_fixture(
+    selected_roles: u8,
+    roughness_alpha: u8,
+    color_rgb: [u8; 3],
+) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.125_f32, 0.125]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.875_f32, 0.875]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let mut roughness_pixels = vec![255_u8; 4 * 4 * 4];
+    roughness_pixels[(3 * 4) * 4..(3 * 4) * 4 + 4].copy_from_slice(&[9, 8, 7, roughness_alpha]);
+    let mut color_pixels = vec![255_u8; 4 * 4 * 4];
+    color_pixels[16..20].copy_from_slice(&[color_rgb[0], color_rgb[1], color_rgb[2], 17]);
+    let roughness_png = encode_png(4, 4, &roughness_pixels);
+    let color_png = encode_png(4, 4, &color_pixels);
+    let roughness_offset = binary.len();
+    binary.extend_from_slice(&roughness_png);
+    let color_offset = binary.len();
+    binary.extend_from_slice(&color_png);
+
+    let roughness_override = if selected_roles & 0b01 != 0 {
+        r#""texCoord":1,"#
+    } else {
+        ""
+    };
+    let color_override = if selected_roles & 0b10 != 0 {
+        r#""texCoord":0,"#
+    } else {
+        ""
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_sheen","KHR_texture_transform"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":24}},{{"buffer":0,"byteOffset":60,"byteLength":24}},{{"buffer":0,"byteOffset":{roughness_offset},"byteLength":{}}},{{"buffer":0,"byteOffset":{color_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.0,"roughnessFactor":0.5}},"extensions":{{"KHR_materials_sheen":{{"sheenColorFactor":[0.5,0.25,0.125],"sheenRoughnessFactor":1.0,"sheenRoughnessTexture":{{"index":0,"texCoord":0,"extensions":{{"KHR_texture_transform":{{{roughness_override}"offset":[0.25,0.0]}}}}}},"sheenColorTexture":{{"index":1,"texCoord":1,"extensions":{{"KHR_texture_transform":{{{color_override}"offset":[-0.25,0.25]}}}}}}}}}}}}],"textures":[{{"sampler":0,"source":0}},{{"sampler":1,"source":1}}],"images":[{{"bufferView":3,"mimeType":"image/png"}},{{"bufferView":4,"mimeType":"image/png"}}],"samplers":[{{"magFilter":9728,"minFilter":9728,"wrapS":10497,"wrapT":33071}},{{"magFilter":9728,"minFilter":9728,"wrapS":33648,"wrapT":33071}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"TEXCOORD_0":1,"TEXCOORD_1":2}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+        roughness_png.len(),
         color_png.len(),
     );
     glb_with_json(&json, &binary)
@@ -4374,13 +4659,13 @@ fn six_role_shared_image_fixture() -> Vec<u8> {
     glb_with_json(&json, &binary)
 }
 
-fn nine_role_shared_image_fixture() -> Vec<u8> {
+fn eleven_role_shared_image_fixture() -> Vec<u8> {
     let mut binary = four_role_fixture_geometry(false);
     let png = encode_png(1, 1, &[128, 128, 255, 255]);
     let image_offset = binary.len();
     binary.extend_from_slice(&png);
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_specular","KHR_materials_clearcoat"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":0}}}},"normalTexture":{{"index":0}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":0}},"extensions":{{"KHR_materials_specular":{{"specularTexture":{{"index":0}},"specularColorTexture":{{"index":0}}}},"KHR_materials_clearcoat":{{"clearcoatFactor":1.0,"clearcoatTexture":{{"index":0}},"clearcoatRoughnessTexture":{{"index":0}},"clearcoatNormalTexture":{{"index":0}}}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_specular","KHR_materials_clearcoat","KHR_materials_sheen"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":0}}}},"normalTexture":{{"index":0}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":0}},"extensions":{{"KHR_materials_specular":{{"specularTexture":{{"index":0}},"specularColorTexture":{{"index":0}}}},"KHR_materials_clearcoat":{{"clearcoatFactor":1.0,"clearcoatTexture":{{"index":0}},"clearcoatRoughnessTexture":{{"index":0}},"clearcoatNormalTexture":{{"index":0}}}},"KHR_materials_sheen":{{"sheenColorFactor":[0.8,0.4,0.2],"sheenRoughnessFactor":0.5,"sheenColorTexture":{{"index":0}},"sheenRoughnessTexture":{{"index":0}}}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary.len(),
         png.len(),
     );

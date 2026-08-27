@@ -292,6 +292,14 @@ impl AssetStore {
                     .has_clearcoat_normal_texture()
                     .then(|| decoded.clearcoat_normal_texture.clone())
                     .flatten(),
+                mesh.material
+                    .has_sheen_color_texture()
+                    .then(|| decoded.sheen_color_texture.clone())
+                    .flatten(),
+                mesh.material
+                    .has_sheen_roughness_texture()
+                    .then(|| decoded.sheen_roughness_texture.clone())
+                    .flatten(),
             ],
         ))
     }
