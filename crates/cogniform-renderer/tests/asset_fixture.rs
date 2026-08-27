@@ -1130,6 +1130,86 @@ fn clearcoat_factors_layer_the_complete_imported_material_without_new_resources(
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn sheen_factors_bound_direct_light_and_preserve_compatibility_paths() {
+    let center = (WIDTH / 2, HEIGHT / 2);
+    for light in [LightKind::Directional, LightKind::Point] {
+        let omitted = material_frame(sheen_fixture(None, None, None, None), Some(light), false);
+        let explicit_zero = material_frame(
+            sheen_fixture(Some([0.0; 3]), Some(1.0), None, None),
+            Some(light),
+            false,
+        );
+        assert_frames_equal(&explicit_zero, &omitted);
+
+        let red_smooth = material_frame(
+            sheen_fixture(Some([0.8, 0.1, 0.05]), Some(0.1), None, None),
+            Some(light),
+            false,
+        );
+        let blue_rough = material_frame(
+            sheen_fixture(Some([0.05, 0.1, 0.8]), Some(0.9), None, None),
+            Some(light),
+            false,
+        );
+        let red_rough = material_frame(
+            sheen_fixture(Some([0.8, 0.1, 0.05]), Some(0.9), None, None),
+            Some(light),
+            false,
+        );
+        assert_ne!(red_rough.color(), blue_rough.color());
+        assert_ne!(red_smooth.color(), red_rough.color());
+        assert_non_color_observations_equal(&red_smooth, &omitted);
+        assert_non_color_observations_equal(&blue_rough, &omitted);
+        assert_non_color_observations_equal(&red_rough, &omitted);
+
+        let overridden = material_frame(
+            sheen_fixture(Some([0.8, 0.1, 0.05]), Some(0.1), None, None),
+            Some(light),
+            true,
+        );
+        let overridden_baseline =
+            material_frame(sheen_fixture(None, None, None, None), Some(light), true);
+        assert_frames_equal(&overridden, &overridden_baseline);
+    }
+
+    let no_light = material_frame(
+        sheen_fixture(None, None, None, Some([0.2, 0.1, 0.05])),
+        None,
+        false,
+    );
+    let no_light_sheen = material_frame(
+        sheen_fixture(
+            Some([0.8, 0.1, 0.05]),
+            Some(0.5),
+            None,
+            Some([0.2, 0.1, 0.05]),
+        ),
+        None,
+        false,
+    );
+    assert_frames_equal(&no_light_sheen, &no_light);
+
+    let sheen = material_frame_with_combined_lights(sheen_fixture(
+        Some([0.8, 0.1, 0.05]),
+        Some(0.5),
+        None,
+        None,
+    ));
+    let coated_sheen = material_frame_with_combined_lights(sheen_fixture(
+        Some([0.8, 0.1, 0.05]),
+        Some(0.5),
+        Some((0.75, 0.25)),
+        None,
+    ));
+    assert_ne!(
+        sheen.color_at(center.0, center.1),
+        coated_sheen.color_at(center.0, center.1)
+    );
+    assert_non_color_observations_equal(&sheen, &coated_sheen);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn clearcoat_textures_use_linear_r_g_channels_and_an_independent_scaled_normal() {
     let center = (WIDTH / 2, HEIGHT / 2);
     assert_clearcoat_texture_channel_cases(center);
@@ -3661,6 +3741,60 @@ fn clearcoat_fixture(
         declarations.push(r#""KHR_materials_specular""#);
         material_extensions.push(format!(
             r#""KHR_materials_specular":{{"specularFactor":{factor},"specularColorFactor":[{red},{green},{blue}]}}"#
+        ));
+    }
+    let root_extensions = if declarations.is_empty() {
+        String::new()
+    } else {
+        format!(r#", "extensionsUsed":[{}]"#, declarations.join(","))
+    };
+    let material_extensions = if material_extensions.is_empty() {
+        String::new()
+    } else {
+        format!(r#", "extensions":{{{}}}"#, material_extensions.join(","))
+    };
+    let emissive_field = emissive.map_or_else(String::new, |[red, green, blue]| {
+        format!(r#", "emissiveFactor":[{red},{green},{blue}]"#)
+    });
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}}{root_extensions},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,0.4],"metallicFactor":0.0,"roughnessFactor":0.5}}{emissive_field}{material_extensions}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":0,"mode":4}}]}}]}}"#,
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn sheen_fixture(
+    sheen_color: Option<[f32; 3]>,
+    sheen_roughness: Option<f32>,
+    clearcoat: Option<(f32, f32)>,
+    emissive: Option<[f32; 3]>,
+) -> Vec<u8> {
+    let mut binary = Vec::with_capacity(36);
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let mut declarations = Vec::new();
+    let mut material_extensions = Vec::new();
+    if sheen_color.is_some() || sheen_roughness.is_some() {
+        declarations.push(r#""KHR_materials_sheen""#);
+        let mut fields = Vec::new();
+        if let Some([red, green, blue]) = sheen_color {
+            fields.push(format!(r#""sheenColorFactor":[{red},{green},{blue}]"#));
+        }
+        if let Some(value) = sheen_roughness {
+            fields.push(format!(r#""sheenRoughnessFactor":{value}"#));
+        }
+        material_extensions.push(format!(r#""KHR_materials_sheen":{{{}}}"#, fields.join(",")));
+    }
+    if let Some((factor, roughness)) = clearcoat {
+        declarations.push(r#""KHR_materials_clearcoat""#);
+        material_extensions.push(format!(
+            r#""KHR_materials_clearcoat":{{"clearcoatFactor":{factor},"clearcoatRoughnessFactor":{roughness}}}"#
         ));
     }
     let root_extensions = if declarations.is_empty() {

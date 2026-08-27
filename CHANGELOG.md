@@ -130,6 +130,18 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   grows from thirteen to nineteen entries with explicit nine-texture/sampler
   preflight while retaining 72-byte vertices, 36 samplers, two pipelines,
   dependencies, protocols, persistence, and release authority;
+- ratified `KHR_materials_sheen` numeric RGB and roughness through strict
+  declarations, exact zero defaults, finite unit bounds, forbidden unlit and
+  legacy specular-glossiness coexistence, and fully validated-but-unsupported
+  sheen texture authority. Direct lighting uses the selected base normal,
+  Khronos Charlie distribution and fitted visibility, a `1e-6` roughness
+  floor, pointwise `1 / PI` scalar cap, and maximum-channel base attenuation;
+  clearcoat remains the outer layer. Exact zero color, no-light compatibility,
+  emission, scene overrides, and non-color observations remain unchanged. One
+  appended factor row preserves the exact 832-byte prefix in a fixed 848-byte
+  uniform without changing the 72-byte vertex, nine texture roles, nineteen
+  bindings, 36 samplers, two pipelines, dependencies, protocols, persistence,
+  or release authority;
 - optional core glTF `OPAQUE` and `MASK` alpha coverage, with strict finite
   non-negative cutoff handling, multiplied factor/texture alpha, exact cutoff
   equality, pre-output discard across color/depth/identity/normal, opaque

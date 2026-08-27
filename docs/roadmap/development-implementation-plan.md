@@ -1805,6 +1805,35 @@ protocol, persistence, dependency, workflow, release, and deployment
 boundaries. See
 [ADR 0076](../adr/0076-bounded-gltf-material-clearcoat-textures.md).
 
+### PR 77 - CF077: Bounded glTF material sheen factors
+
+Outcome: supported imported metallic-roughness materials may add ratified
+numeric sheen color and roughness as one bounded colored direct-light lobe
+without expanding renderer resource topology.
+
+Gate: recognize `KHR_materials_sheen` through the strict unique declaration
+contract. Require an object payload. Retain exact three-channel finite unit
+`sheenColorFactor`, default `[0,0,0]`, and finite unit
+`sheenRoughnessFactor`, default zero. Reject malformed, undeclared, non-finite,
+out-of-range, unlit-combined, or legacy specular-glossiness-combined members
+without proxy. Fully type-check optional `sheenColorTexture` and
+`sheenRoughnessTexture`, declared transforms, root resources, and selected
+coordinates, then classify well-formed texture authority as unsupported/proxy
+because both roles remain deferred and root caps remain nine.
+
+Evaluate the Khronos Charlie distribution and fitted visibility through the
+selected base shading normal with a `1e-6` roughness floor. Cap the scalar BRDF
+pointwise at `1 / PI`, scale the complete base response by
+`1 - max(sheenColor)`, and add the colored lobe before existing clearcoat.
+Preserve exact zero-color identity, no-light compatibility, emission, scene
+overrides, and unlit behavior. Append sheen RGB plus roughness after the exact
+832-byte prefix for a fixed 848-byte uniform. Preserve the 72-byte vertex,
+nine texture roles, nineteen-entry bind group, 36 samplers, two pipelines,
+attachments, observations, lifecycle, revision, logical hash, replay,
+protocol, persistence, dependency, workflow, release, and deployment
+boundaries. See
+[ADR 0077](../adr/0077-bounded-gltf-material-sheen-factors.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1817,7 +1846,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
-  -> CF072 -> CF073 -> CF074 -> CF075 -> CF076
+  -> CF072 -> CF073 -> CF074 -> CF075 -> CF076 -> CF077
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2216,6 +2245,18 @@ Validation expands with capability:
   normal, scale, and unchanged non-color Vulkan evidence; unchanged vertex,
   sampler table, pipeline, logical, protocol, persistence, dependency,
   workflow, release, and deployment boundaries.
+- CF077: strict ratified sheen declaration, exact zero-default finite unit RGB
+  and roughness retention, malformed/unused/coexistence/wider-payload
+  precedence, and complete validation of both deferred texture infos and root
+  resources before proxy classification; selected-base-normal Charlie
+  distribution and fitted visibility with a `1e-6` floor, explicit pointwise
+  `1 / PI` cap, maximum-channel base attenuation, analytic and midpoint-grid
+  no-gain evidence, exact zero-color identity, and clearcoat-above-sheen
+  composition; exact 832-byte prefix plus one appended row in an 848-byte
+  uniform; directional, point, combined-light, scene-override, no-light,
+  emission, and unchanged non-color Vulkan evidence; unchanged vertex,
+  texture-role, binding, sampler, pipeline, lifecycle, logical, protocol,
+  persistence, dependency, workflow, release, and deployment boundaries.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

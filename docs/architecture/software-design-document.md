@@ -521,7 +521,20 @@ only the coat normal. Other intensity/roughness channels and coat-normal alpha
 are ignored. A missing coat normal remains geometric even when the base normal
 is mapped. Unlit, explicit scene
 materials, built-ins, fallbacks, proxies, and legacy specular-glossiness do not
-gain coat authority. The
+gain coat authority. A declared ratified `KHR_materials_sheen` object may
+retain exact three-channel finite unit `sheenColorFactor`, default `[0,0,0]`,
+and finite unit `sheenRoughnessFactor`, default zero. Direct directional and
+point lighting use the selected base shading normal, Khronos Charlie
+distribution, fitted visibility, and a `1e-6` roughness floor. The scalar
+sheen BRDF is capped pointwise at `1 / PI` before color multiplication; the
+complete base response is scaled by `1 - max(sheenColor)` before the colored
+lobe is added. This conservative bound deliberately differs from the non-
+normative sample renderer and avoids a directional-albedo lookup resource.
+Exact zero color preserves the prior path. Clearcoat is applied above the
+completed base-plus-sheen response. No-light compatibility, emission, unlit,
+scene overrides, built-ins, fallbacks, and proxies gain no sheen effect.
+Optional sheen texture infos and referenced resources validate before their
+still-unsupported texture authority becomes a proxy candidate. The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source or bounded generated-tangent TBN perturbs only direct-light response.
@@ -548,8 +561,9 @@ dielectric parameters `metallic = 0`, `roughness = 0.8`. Cross-surface
 emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
-fixed 832-byte per-draw uniform preserves the complete prior 736-byte prefix,
-which preserves the 720-byte, 656-byte, 640-byte, 624-byte, 496-byte, and 480-byte model,
+fixed 848-byte per-draw uniform preserves the complete prior 832-byte prefix,
+which preserves the complete 736-byte, 720-byte, 656-byte, 640-byte, 624-byte,
+496-byte, and 480-byte model,
 view-projection, material-color, identity, directional, point-light,
 camera-position, and metallic/roughness/normal-scale/material-flag prefix and
 uses the prior camera-position padding lane for emissive strength, appends one
@@ -561,7 +575,8 @@ color RGB followed by strength. Four final padded affine rows carry strength
 then color texture transforms. One factor row carries clearcoat factor and
 roughness followed by two exact-zero padding lanes. Six final padded affine
 rows carry clearcoat intensity, roughness, and normal transforms; the coat-
-normal padding lanes carry finite scale and role presence. Selector bits 12
+normal padding lanes carry finite scale and role presence. One final factor
+row carries sheen color RGB and roughness. Selector bits 12
 through 14 choose secondary coordinates for the three coat roles.
 A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
@@ -599,6 +614,7 @@ finite non-negative ratified emissive strength, and bounded
 OPAQUE/MASK alpha coverage plus a strict optional boolean `doubleSided` per
 mesh material. The ratified `KHR_materials_emissive_strength`,
 `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_clearcoat`,
+`KHR_materials_sheen`,
 `KHR_materials_unlit`,
 `KHR_texture_transform`, and `KHR_mesh_quantization`
 extensions are the sole
@@ -612,11 +628,14 @@ retains one typed shading model only after strict declaration,
 selected/unused material, and fallback-resource validation. Emissive strength
 defaults to one, is retained for selected and unused materials, and is
 mutually exclusive with the supported unlit marker. Material IOR, specular,
-and clearcoat objects retain their bounded numeric fields after strict
+clearcoat, and sheen objects retain their bounded numeric fields after strict
 declaration and coexistence checks. Clearcoat factor and roughness have exact
 zero defaults; all three clearcoat texture infos and their root resources are
-validated and retained with their ratified channel semantics. Texture transform
-retains finite offset, rotation, and scale with exact defaults and Khronos
+validated and retained with their ratified channel semantics. Sheen color and
+roughness have exact zero defaults; both sheen texture infos and their root
+resources validate before texture-bearing authority remains unsupported,
+without increasing the nine retained texture roles. Texture transform retains
+finite offset, rotation, and scale with exact defaults and Khronos
 translation-rotation-scale order for the nine texture-info roles.
 Each role retains effective selector zero or one, with extension `texCoord`
 overriding core `texCoord`, and requires the selected set on the primitive. The subset also retains

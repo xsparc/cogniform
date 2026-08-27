@@ -41,6 +41,7 @@ struct DrawUniform {
     clearcoat_roughness_uv_row_1: vec4<f32>,
     clearcoat_normal_uv_row_0: vec4<f32>,
     clearcoat_normal_uv_row_1: vec4<f32>,
+    sheen: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -118,6 +119,7 @@ struct FragmentOutput {
 
 const PI: f32 = 3.141592653589793;
 const MINIMUM_ROUGHNESS: f32 = 0.05;
+const SHEEN_MINIMUM_ROUGHNESS: f32 = 1e-6;
 
 fn transform_uv(uv: vec2<f32>, row_0: vec4<f32>, row_1: vec4<f32>) -> vec2<f32> {
     let homogeneous = vec3(uv, 1.0);
@@ -237,6 +239,91 @@ fn direct_material_response(
     );
     let diffuse = diffuse_weight * base_color / PI;
     return (diffuse + specular) * normal_light;
+}
+
+fn lambda_sheen_numeric_helper(direction: f32, alpha: f32) -> f32 {
+    let one_minus_alpha_squared = (1.0 - alpha) * (1.0 - alpha);
+    let a = mix(21.5473, 25.3245, one_minus_alpha_squared);
+    let b = mix(3.82987, 3.32435, one_minus_alpha_squared);
+    let c = mix(0.19823, 0.16801, one_minus_alpha_squared);
+    let d = mix(-1.97760, -1.27393, one_minus_alpha_squared);
+    let e = mix(-4.32054, -4.85967, one_minus_alpha_squared);
+    return a / (1.0 + b * pow(direction, c)) + d * direction + e;
+}
+
+fn lambda_sheen(normal_direction: f32, alpha: f32) -> f32 {
+    if normal_direction < 0.5 {
+        return exp(lambda_sheen_numeric_helper(normal_direction, alpha));
+    }
+    return exp(
+        2.0 * lambda_sheen_numeric_helper(0.5, alpha)
+            - lambda_sheen_numeric_helper(1.0 - normal_direction, alpha),
+    );
+}
+
+fn sheen_direct_response(
+    world_normal: vec3<f32>,
+    surface_to_light: vec3<f32>,
+    surface_to_view: vec3<f32>,
+    has_view: bool,
+    roughness: f32,
+) -> f32 {
+    let normal_light = clamp(dot(world_normal, surface_to_light), 0.0, 1.0);
+    if normal_light <= 0.0 || !has_view {
+        return 0.0;
+    }
+    let normal_view = clamp(dot(world_normal, surface_to_view), 0.0, 1.0);
+    let half_vector = surface_to_view + surface_to_light;
+    let half_length_squared = dot(half_vector, half_vector);
+    if normal_view <= 0.0 || half_length_squared <= 0.0 {
+        return 0.0;
+    }
+    let inverse_half_length = inverseSqrt(half_length_squared);
+    if inverse_half_length <= 0.0 {
+        return 0.0;
+    }
+    let surface_to_half = half_vector * inverse_half_length;
+    let normal_half = clamp(dot(world_normal, surface_to_half), 0.0, 1.0);
+    let bounded_roughness = max(roughness, SHEEN_MINIMUM_ROUGHNESS);
+    let alpha = bounded_roughness * bounded_roughness;
+    let inverse_alpha = 1.0 / alpha;
+    let sine_half_squared = max(1.0 - normal_half * normal_half, 0.0);
+    let distribution = (2.0 + inverse_alpha)
+        * pow(sine_half_squared, inverse_alpha * 0.5)
+        / (2.0 * PI);
+    let visibility = clamp(
+        1.0 / (
+            (1.0 + lambda_sheen(normal_view, alpha) + lambda_sheen(normal_light, alpha))
+                * (4.0 * normal_view * normal_light)
+        ),
+        0.0,
+        1.0,
+    );
+    let bounded_brdf = min(distribution * visibility, 1.0 / PI);
+    return bounded_brdf * normal_light;
+}
+
+fn sheen_layered_response(
+    base_response: vec3<f32>,
+    world_normal: vec3<f32>,
+    surface_to_light: vec3<f32>,
+    surface_to_view: vec3<f32>,
+    has_view: bool,
+    color: vec3<f32>,
+    roughness: f32,
+) -> vec3<f32> {
+    let maximum_color = max(max(color.r, color.g), color.b);
+    if maximum_color == 0.0 {
+        return base_response;
+    }
+    let sheen_response = sheen_direct_response(
+        world_normal,
+        surface_to_light,
+        surface_to_view,
+        has_view,
+        roughness,
+    );
+    return base_response * (1.0 - maximum_color) + color * sheen_response;
 }
 
 fn clearcoat_fresnel_weight(
@@ -579,7 +666,16 @@ fn fs_main(
                 specular_color_factor,
                 specular_factor,
             );
-            var response = base_response;
+            let layered_base = sheen_layered_response(
+                base_response,
+                shaded_world_normal,
+                light.surface_to_light.xyz,
+                surface_to_view,
+                has_view,
+                draw.sheen.xyz,
+                draw.sheen.w,
+            );
+            var response = layered_base;
             if clearcoat_factor != 0.0 {
                 let coat_response = clearcoat_direct_response(
                     clearcoat_world_normal,
@@ -588,7 +684,7 @@ fn fs_main(
                     has_view,
                     clearcoat_roughness,
                 );
-                response = mix(base_response, coat_response, clearcoat_weight);
+                response = mix(layered_base, coat_response, clearcoat_weight);
             }
             let contribution = min(
                 response * min(
@@ -623,7 +719,16 @@ fn fs_main(
                         specular_color_factor,
                         specular_factor,
                     );
-                    var response = base_response;
+                    let layered_base = sheen_layered_response(
+                        base_response,
+                        shaded_world_normal,
+                        surface_to_light,
+                        surface_to_view,
+                        has_view,
+                        draw.sheen.xyz,
+                        draw.sheen.w,
+                    );
+                    var response = layered_base;
                     if clearcoat_factor != 0.0 {
                         let coat_response = clearcoat_direct_response(
                             clearcoat_world_normal,
@@ -632,7 +737,7 @@ fn fs_main(
                             has_view,
                             clearcoat_roughness,
                         );
-                        response = mix(base_response, coat_response, clearcoat_weight);
+                        response = mix(layered_base, coat_response, clearcoat_weight);
                     }
                     let contribution = min(
                         response * light.color_intensity.rgb * attenuated_intensity,
