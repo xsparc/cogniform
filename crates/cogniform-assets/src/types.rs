@@ -434,8 +434,8 @@ pub struct AssetMaterial {
     sheen_roughness_factor: f32,
     texture_roles: u16,
     texture_coordinate_sets: u16,
-    texture_samplers: [AssetSampler; 9],
-    texture_transforms: [AssetTextureTransform; 9],
+    texture_samplers: [AssetSampler; 11],
+    texture_transforms: [AssetTextureTransform; 11],
     normal_scale: f32,
     clearcoat_normal_scale: f32,
     alpha_mode: AssetAlphaMode,
@@ -454,6 +454,8 @@ impl AssetMaterial {
     const CLEARCOAT_TEXTURE: u16 = 1 << 6;
     const CLEARCOAT_ROUGHNESS_TEXTURE: u16 = 1 << 7;
     const CLEARCOAT_NORMAL_TEXTURE: u16 = 1 << 8;
+    const SHEEN_COLOR_TEXTURE: u16 = 1 << 9;
+    const SHEEN_ROUGHNESS_TEXTURE: u16 = 1 << 10;
     const BASE_COLOR_SAMPLER: usize = 0;
     const EMISSIVE_SAMPLER: usize = 1;
     const METALLIC_ROUGHNESS_SAMPLER: usize = 2;
@@ -463,6 +465,8 @@ impl AssetMaterial {
     const CLEARCOAT_SAMPLER: usize = 6;
     const CLEARCOAT_ROUGHNESS_SAMPLER: usize = 7;
     const CLEARCOAT_NORMAL_SAMPLER: usize = 8;
+    const SHEEN_COLOR_SAMPLER: usize = 9;
+    const SHEEN_ROUGHNESS_SAMPLER: usize = 10;
 
     /// Creates one validated linear metallic-roughness material with zero emission.
     #[must_use]
@@ -483,8 +487,8 @@ impl AssetMaterial {
             sheen_roughness_factor: 0.0,
             texture_roles: 0,
             texture_coordinate_sets: 0,
-            texture_samplers: [AssetSampler::LINEAR_REPEAT; 9],
-            texture_transforms: [AssetTextureTransform::IDENTITY; 9],
+            texture_samplers: [AssetSampler::LINEAR_REPEAT; 11],
+            texture_transforms: [AssetTextureTransform::IDENTITY; 11],
             normal_scale: 1.0,
             clearcoat_normal_scale: 1.0,
             alpha_mode: AssetAlphaMode::Opaque,
@@ -687,6 +691,36 @@ impl AssetMaterial {
         self
     }
 
+    pub(crate) const fn with_sheen_color_texture(
+        mut self,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
+    ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
+        self.texture_roles |= Self::SHEEN_COLOR_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::SHEEN_COLOR_TEXTURE;
+        self.texture_samplers[Self::SHEEN_COLOR_SAMPLER] = sampler;
+        self.texture_transforms[Self::SHEEN_COLOR_SAMPLER] = transform;
+        self
+    }
+
+    pub(crate) const fn with_sheen_roughness_texture(
+        mut self,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
+    ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
+        self.texture_roles |= Self::SHEEN_ROUGHNESS_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::SHEEN_ROUGHNESS_TEXTURE;
+        self.texture_samplers[Self::SHEEN_ROUGHNESS_SAMPLER] = sampler;
+        self.texture_transforms[Self::SHEEN_ROUGHNESS_SAMPLER] = transform;
+        self
+    }
+
     pub(crate) fn with_alpha_mask(mut self, cutoff: FiniteF32) -> Self {
         self.alpha_mode = AssetAlphaMode::Mask;
         self.alpha_cutoff = cutoff.get();
@@ -836,6 +870,18 @@ impl AssetMaterial {
         self.texture_roles & Self::CLEARCOAT_NORMAL_TEXTURE != 0
     }
 
+    /// Returns whether this material samples the sRGB sheen-color texture.
+    #[must_use]
+    pub const fn has_sheen_color_texture(self) -> bool {
+        self.texture_roles & Self::SHEEN_COLOR_TEXTURE != 0
+    }
+
+    /// Returns whether this material samples the linear sheen-roughness texture.
+    #[must_use]
+    pub const fn has_sheen_roughness_texture(self) -> bool {
+        self.texture_roles & Self::SHEEN_ROUGHNESS_TEXTURE != 0
+    }
+
     const fn texture_coordinate_set(self, role: u16) -> Option<u32> {
         if self.texture_roles & role == 0 {
             None
@@ -898,6 +944,18 @@ impl AssetMaterial {
     #[must_use]
     pub const fn clearcoat_normal_texture_coordinate_set(self) -> Option<u32> {
         self.texture_coordinate_set(Self::CLEARCOAT_NORMAL_TEXTURE)
+    }
+
+    /// Returns the effective sheen-color texture-coordinate set when present.
+    #[must_use]
+    pub const fn sheen_color_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::SHEEN_COLOR_TEXTURE)
+    }
+
+    /// Returns the effective sheen-roughness texture-coordinate set when present.
+    #[must_use]
+    pub const fn sheen_roughness_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::SHEEN_ROUGHNESS_TEXTURE)
     }
 
     /// Returns the retained base-color sampler when that role is present.
@@ -990,6 +1048,26 @@ impl AssetMaterial {
         }
     }
 
+    /// Returns the retained sheen-color sampler when present.
+    #[must_use]
+    pub const fn sheen_color_sampler(self) -> Option<AssetSampler> {
+        if self.has_sheen_color_texture() {
+            Some(self.texture_samplers[Self::SHEEN_COLOR_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained sheen-roughness sampler when present.
+    #[must_use]
+    pub const fn sheen_roughness_sampler(self) -> Option<AssetSampler> {
+        if self.has_sheen_roughness_texture() {
+            Some(self.texture_samplers[Self::SHEEN_ROUGHNESS_SAMPLER])
+        } else {
+            None
+        }
+    }
+
     /// Returns the retained base-color UV transform when that role is present.
     #[must_use]
     pub const fn base_color_texture_transform(self) -> Option<AssetTextureTransform> {
@@ -1075,6 +1153,26 @@ impl AssetMaterial {
     pub const fn clearcoat_normal_texture_transform(self) -> Option<AssetTextureTransform> {
         if self.has_clearcoat_normal_texture() {
             Some(self.texture_transforms[Self::CLEARCOAT_NORMAL_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained sheen-color UV transform when present.
+    #[must_use]
+    pub const fn sheen_color_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_sheen_color_texture() {
+            Some(self.texture_transforms[Self::SHEEN_COLOR_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained sheen-roughness UV transform when present.
+    #[must_use]
+    pub const fn sheen_roughness_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_sheen_roughness_texture() {
+            Some(self.texture_transforms[Self::SHEEN_ROUGHNESS_SAMPLER])
         } else {
             None
         }
@@ -1177,6 +1275,8 @@ pub struct AssetUploadJob {
     clearcoat_texture: Option<AssetTexture>,
     clearcoat_roughness_texture: Option<AssetTexture>,
     clearcoat_normal_texture: Option<AssetTexture>,
+    sheen_color_texture: Option<AssetTexture>,
+    sheen_roughness_texture: Option<AssetTexture>,
 }
 
 impl AssetUploadJob {
@@ -1184,7 +1284,7 @@ impl AssetUploadJob {
         key: AssetMeshKey,
         vertices: Arc<[AssetVertex]>,
         material: &AssetMaterial,
-        textures: [Option<AssetTexture>; 9],
+        textures: [Option<AssetTexture>; 11],
     ) -> Self {
         let [
             base_color_texture,
@@ -1196,6 +1296,8 @@ impl AssetUploadJob {
             clearcoat_texture,
             clearcoat_roughness_texture,
             clearcoat_normal_texture,
+            sheen_color_texture,
+            sheen_roughness_texture,
         ] = textures;
         Self {
             key,
@@ -1210,6 +1312,8 @@ impl AssetUploadJob {
             clearcoat_texture,
             clearcoat_roughness_texture,
             clearcoat_normal_texture,
+            sheen_color_texture,
+            sheen_roughness_texture,
         }
     }
 
@@ -1292,6 +1396,18 @@ impl AssetUploadJob {
         self.clearcoat_normal_texture.as_ref()
     }
 
+    /// Returns the immutable shared sRGB sheen-color texture when referenced.
+    #[must_use]
+    pub const fn sheen_color_texture(&self) -> Option<&AssetTexture> {
+        self.sheen_color_texture.as_ref()
+    }
+
+    /// Returns the immutable shared linear sheen-roughness texture when referenced.
+    #[must_use]
+    pub const fn sheen_roughness_texture(&self) -> Option<&AssetTexture> {
+        self.sheen_roughness_texture.as_ref()
+    }
+
     /// Returns exact GPU vertex bytes required by this interleaved mesh.
     #[must_use]
     pub fn byte_len(&self) -> u64 {
@@ -1319,6 +1435,8 @@ pub(crate) struct DecodedAsset {
     pub(crate) clearcoat_texture: Option<AssetTexture>,
     pub(crate) clearcoat_roughness_texture: Option<AssetTexture>,
     pub(crate) clearcoat_normal_texture: Option<AssetTexture>,
+    pub(crate) sheen_color_texture: Option<AssetTexture>,
+    pub(crate) sheen_roughness_texture: Option<AssetTexture>,
     pub(crate) byte_len: u64,
 }
 
@@ -1333,6 +1451,8 @@ impl DecodedAsset {
             + u32::from(self.clearcoat_texture.is_some())
             + u32::from(self.clearcoat_roughness_texture.is_some())
             + u32::from(self.clearcoat_normal_texture.is_some())
+            + u32::from(self.sheen_color_texture.is_some())
+            + u32::from(self.sheen_roughness_texture.is_some())
     }
 }
 

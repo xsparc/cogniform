@@ -1834,6 +1834,30 @@ protocol, persistence, dependency, workflow, release, and deployment
 boundaries. See
 [ADR 0077](../adr/0077-bounded-gltf-material-sheen-factors.md).
 
+### PR 78 - CF078: Bounded glTF material sheen textures
+
+Outcome: supported imported metallic-roughness materials retain and render
+both ratified sheen texture roles under fixed portable resource bounds.
+
+Gate: admit sRGB sheen-color RGB and linear sheen-roughness alpha after the
+existing strict declaration, texture-info, selected-coordinate, transform,
+sampler, image, and embedded-PNG validation. Ignore color alpha and roughness
+RGB. Retain independent samplers, effective coordinate sets, and affine
+transforms. Raise root image, texture, and sampler caps from nine to eleven;
+decode a shared source once on CPU while reserving zero through eleven
+content-hash-and-role GPU resources atomically. Reject a twelfth resource.
+
+Multiply both sampled values into the retained factors before the accepted
+bounded Charlie response, use role-correct white fallbacks, and preserve exact
+zero-color identity. Append four affine rows after the exact 848-byte prefix
+for a fixed 912-byte uniform, use selector bits 15 and 16, and grow the fixed
+bind group from nineteen to twenty-three entries. Require eleven sampled
+textures and eleven samplers per shader stage. Preserve the 72-byte vertex,
+36-entry sampler table, two pipelines, attachments, observations, lifecycle,
+revision, logical hash, replay, protocol, persistence, dependency, workflow,
+release, and deployment boundaries. See
+[ADR 0078](../adr/0078-bounded-gltf-material-sheen-textures.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1846,7 +1870,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
-  -> CF072 -> CF073 -> CF074 -> CF075 -> CF076 -> CF077
+  -> CF072 -> CF073 -> CF074 -> CF075 -> CF076 -> CF077 -> CF078
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2257,6 +2281,18 @@ Validation expands with capability:
   emission, and unchanged non-color Vulkan evidence; unchanged vertex,
   texture-role, binding, sampler, pipeline, lifecycle, logical, protocol,
   persistence, dependency, workflow, release, and deployment boundaries.
+- CF078: strict admission of the two ratified sheen texture roles; sRGB color
+  RGB and linear roughness alpha multiplication with unused channels ignored;
+  independent sampler, coordinate selector, and affine-transform retention;
+  exact nine-to-eleven root collection and role-accounting growth; shared CPU
+  image accounting; atomic eleven-role GPU reservation, eviction, and
+  rehydration; exact 848-byte uniform prefix plus four appended rows in a
+  912-byte layout; twenty-three fixed bindings with explicit eleven-texture
+  and eleven-sampler adapter preflight; neutral fallback, directional/point,
+  factor-equivalence, scene-override, patterned selector/transform/sampler,
+  and unchanged non-color Vulkan evidence; unchanged vertex, sampler table,
+  pipeline, logical, protocol, persistence, dependency, workflow, release,
+  and deployment boundaries.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

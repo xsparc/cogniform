@@ -142,6 +142,17 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   uniform without changing the 72-byte vertex, nine texture roles, nineteen
   bindings, 36 samplers, two pipelines, dependencies, protocols, persistence,
   or release authority;
+- bounded `KHR_materials_sheen` color and roughness textures through the
+  existing strict embedded-PNG, sampler, coordinate-set, and transform
+  contracts. Color samples sRGB-decoded RGB and ignores alpha; roughness
+  samples linear alpha and ignores RGB. Root image/texture/sampler bounds and
+  role accounting grow from nine to eleven, shared sources still decode once
+  on CPU, and eleven role-keyed GPU resources reserve and evict atomically.
+  Four appended affine rows preserve the exact 848-byte uniform prefix in a
+  fixed 912-byte layout; the fixed bind group grows from nineteen to twenty-
+  three entries with explicit eleven-texture/sampler adapter preflight while
+  retaining 72-byte vertices, 36 samplers, two pipelines, dependencies,
+  protocols, persistence, and release authority;
 - optional core glTF `OPAQUE` and `MASK` alpha coverage, with strict finite
   non-negative cutoff handling, multiplied factor/texture alpha, exact cutoff
   equality, pre-output discard across color/depth/identity/normal, opaque

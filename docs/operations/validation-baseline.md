@@ -267,7 +267,7 @@ untested hardware.
 | Environment | Evidence | Classification |
 |---|---|---|
 | Windows 11 Pro 10.0.26200, x86_64 | Full release-mode engine, gateway, observation, replay, GLB render, four-buffer readback pressure, canonical scenario, and bounded 64x64/480x270 stdio child tests passed | Validated local source profile |
-| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness, IOR-derived dielectric, specular, bounded colored sheen, and fixed-IOR clearcoat factor plus linear-red/green intensity/roughness and independent scaled normal response, bounded surface-only core and strength-scaled emission with coat attenuation, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive/specular-color plus linear normal, packed metallic-roughness, specular-strength, and clearcoat texture response, independent nine-role core wrapping/filtering and one-mip fallback, nine-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
+| NVIDIA GeForce RTX 5070, Vulkan, discrete GPU, WebGPU-compliant downlevel report | Exact entity ID and culled visibility, exact no-active-light and imported-unlit sampled color, interpolated primary vertex color, tolerant directional/point direct-material color and depth, distinct scene/imported/overridden metallic-roughness, IOR-derived dielectric, specular, bounded colored sheen, and fixed-IOR clearcoat factor plus linear-red/green intensity/roughness and independent scaled normal response, bounded surface-only core and strength-scaled emission with coat attenuation, deterministic imported OPAQUE/MASK coverage, fixed single/double-sided face selection with face-oriented back normals, bounded sRGB base-color/emissive/specular-color/sheen-color plus linear normal, packed metallic-roughness, specular-strength, clearcoat, and sheen-roughness texture response, independent eleven-role core wrapping/filtering and one-mip fallback, eleven-role residency with exact eviction and reupload, content-hash eviction with submitted-readback safety, outward cuboid and positive-Z plane quantized unit normals, sphere curved-depth/radial-normal output, position-only GLB winding, imported-normal inverse-transpose, and geometric-normal causality probes passed at 64x64 | Validated adapter entry, not a vendor minimum |
 | `ubuntu-latest` x86_64 standard GitHub runner | Offline format, Clippy, workspace tests, public-tree safeguards, and rustdoc pass in the single PR job | CPU build/test evidence only; no GPU runtime claim |
 | Windows DX12 | Backend is compiled, but CF009 did not force and reproduce this adapter path | Not release-supported yet |
 | Linux Vulkan | Code and unit tests compile on the standard runner; no controlled GPU result is recorded | Not release-supported yet |
@@ -278,12 +278,13 @@ The renderer is capability based. An adapter must satisfy the configured target
 dimensions, buffer bounds, attachment count, and render/copy usage for RGBA8
 color, Depth32Float depth, R32Uint identity, and RGBA8 signed normal targets
 before device creation, plus copy-destination, sampled binding, and filterable
-sampling for sRGB RGBA8 base-color textures and linear RGBA8 normal,
-metallic-roughness, and clearcoat textures.
+sampling for sRGB RGBA8 base-color, specular-color, and sheen-color textures
+and linear RGBA8 normal, metallic-roughness, clearcoat, specular-strength, and
+sheen-roughness textures.
 The normal path requires three color attachments and twelve color-attachment
 bytes per sample.
-Imported texture sampling additionally requires at least nine sampled textures,
-nine samplers per shader stage, and nineteen bindings per bind group.
+Imported texture sampling additionally requires at least eleven sampled textures,
+eleven samplers per shader stage, and twenty-three bindings per bind group.
 Imported secondary coordinates require at least six vertex attributes and a
 72-byte vertex-buffer stride; the same fixed layout carries imported vertex
 colors and preserves the accepted 64-byte prefix.
@@ -1764,6 +1765,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --lock
 cargo test -p cogniform-assets --test asset_store clearcoat --all-features --locked --offline
 uv run --no-cache --no-project python tests/security/test_public_repo_check.py
 uv run --no-cache --no-project python tests/release/test_package_policy.py
+uv run --no-cache --no-project python tests/release/test_source_candidate.py
 uv run --no-cache --no-project python scripts/check_public_repo.py --all
 uv run --no-cache --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
 uv run --no-project python scripts/agent_workflow.py validate
@@ -1913,6 +1915,69 @@ unchanged non-color observations:
 
 ```text
 WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --test asset_fixture sheen_factors_bound_direct_light_and_preserve_compatibility_paths --all-features --locked --offline -- --ignored --exact --nocapture
+```
+
+No manifest, lockfile, vendored source, workflow, dependency, deny-policy,
+protocol, world, persistence, package, version, tag, release-asset, deployment,
+or publication authority changed.
+
+## CF078 bounded glTF material sheen-texture evidence
+
+CF078 admits ratified sheen-color and sheen-roughness textures after strict
+texture-info, selected-coordinate, transform, sampler, image, and embedded-PNG
+validation. sRGB color RGB and linear roughness alpha multiply the retained
+numeric factors; color alpha and roughness RGB are ignored. Root
+image/texture/sampler caps and immutable role accounting rise from nine to
+eleven while a shared source still counts once on CPU. GPU reservations,
+upload, eviction, and rehydration remain atomic by content hash and role.
+
+Four affine rows append after the exact CF077 layout. The fixed uniform is 912
+bytes with an exact 848-byte prefix; selector bits 15 and 16 produce a maximum
+131,071 value that remains exactly representable. The fixed bind group grows
+to twenty-three entries, and adapter preflight requires eleven sampled
+textures and eleven samplers per shader stage. The 72-byte vertex, 36-entry
+sampler table, two pipelines, observations, protocol, persistence, and release
+authority remain unchanged.
+
+The following portable checks passed on 2026-08-27:
+
+```text
+rustup show active-toolchain
+cargo build --workspace --locked --offline
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test -p cogniform-assets --locked --offline
+uv run --no-cache --no-project python tests/security/test_public_repo_check.py
+uv run --no-cache --no-project python tests/release/test_package_policy.py
+uv run --no-cache --no-project python scripts/check_public_repo.py --all
+uv run --no-cache --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- Cargo.toml Cargo.lock deny.toml rust-toolchain.toml .github/workflows vendor
+git diff --check
+```
+
+`cargo deny check advisories bans licenses sources` could not start because
+Windows Application Control blocked the installed binary with OS error 4551.
+No manifest, lockfile, vendored source, workflow, dependency, or deny-policy
+input changed, and the public-tree plus package-policy safeguards above passed.
+
+The changed-public-Markdown check resolved all 330 relative targets across the
+fourteen modified Markdown files; the new ADR adds only official external
+links.
+
+The complete optimized renderer conformance matrix passed on the approved
+NVIDIA GeForce RTX 5070 Windows/Vulkan profile: all 41 asset fixtures and all
+nine headless-reference tests. The new probes prove role-correct color space
+and channels, neutral fallbacks, factor equivalence, scene override,
+independent sampler/coordinate/transform selection, unchanged non-color
+observations, and exact eleven-role residency. The focused engine rehydration
+regression also passed:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --tests --all-features --locked --offline -- --ignored --nocapture
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-engine --test service_assets exact_hash_rehydration_restores_a_textured_asset_only_after_explicit_work --all-features --locked --offline -- --ignored --exact --nocapture
 ```
 
 No manifest, lockfile, vendored source, workflow, dependency, deny-policy,

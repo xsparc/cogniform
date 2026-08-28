@@ -2324,7 +2324,7 @@ fn malformed_or_forbidden_sheen_never_receives_a_proxy() {
 }
 
 #[test]
-fn sheen_textures_proxy_only_after_info_root_and_uv_references_validate() {
+fn sheen_textures_are_retained_after_info_root_and_uv_references_validate() {
     let png = encode_png(
         1,
         1,
@@ -2345,11 +2345,8 @@ fn sheen_textures_proxy_only_after_info_root_and_uv_references_validate() {
     };
 
     let (store, hash) = process_with_proxy_policy(fixture(material, true));
-    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
-    assert_eq!(
-        store.record(hash).unwrap().diagnostics[0].code,
-        AssetDiagnosticCode::UnsupportedExtension
-    );
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Ready);
+    assert_retained_sheen_textures(&store, hash);
 
     let (store, hash) = process_with_proxy_policy(fixture(material, false));
     assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
@@ -2368,10 +2365,21 @@ fn sheen_textures_proxy_only_after_info_root_and_uv_references_validate() {
         true,
     );
     let (store, hash) = process_with_proxy_policy(transformed);
-    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Ready);
+    let transformed = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap()
+        .material();
+    assert_eq!(transformed.sheen_color_texture_coordinate_set(), Some(0));
     assert_eq!(
-        store.record(hash).unwrap().diagnostics[0].code,
-        AssetDiagnosticCode::UnsupportedExtension
+        transformed
+            .sheen_color_texture_transform()
+            .unwrap()
+            .affine_rows(),
+        [[0.5, 0.0, 0.25, 0.0], [0.0, 2.0, -0.5, 0.0]]
     );
 
     let missing_transformed_coordinates = r#""extensions":{"KHR_materials_sheen":{"sheenRoughnessTexture":{"index":0,"extensions":{"KHR_texture_transform":{"texCoord":1}}}}}"#;
@@ -2396,6 +2404,50 @@ fn sheen_textures_proxy_only_after_info_root_and_uv_references_validate() {
     assert_eq!(
         store.record(hash).unwrap().diagnostics[0].code,
         AssetDiagnosticCode::InvalidBufferRange
+    );
+}
+
+fn assert_retained_sheen_textures(store: &AssetStore, hash: cogniform_protocol::ContentHash) {
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_eq!(
+        upload.sheen_color_texture().unwrap().rgba8(),
+        &[255, 128, 64, 255]
+    );
+    assert_eq!(
+        upload.sheen_roughness_texture().unwrap().rgba8(),
+        &[255, 128, 64, 255]
+    );
+    let retained = upload.material();
+    assert_eq!(
+        retained.sheen_color_factor().map(f32::to_bits),
+        [0.25, 0.5, 1.0].map(f32::to_bits)
+    );
+    assert_eq!(
+        retained.sheen_roughness_factor().to_bits(),
+        0.75_f32.to_bits()
+    );
+    assert_eq!(retained.sheen_color_texture_coordinate_set(), Some(0));
+    assert_eq!(retained.sheen_roughness_texture_coordinate_set(), Some(0));
+    assert_eq!(
+        retained.sheen_color_sampler(),
+        Some(AssetSampler::LINEAR_REPEAT)
+    );
+    assert_eq!(
+        retained.sheen_roughness_sampler(),
+        Some(AssetSampler::LINEAR_REPEAT)
+    );
+    assert_eq!(
+        retained.sheen_color_texture_transform(),
+        Some(AssetTextureTransform::IDENTITY)
+    );
+    assert_eq!(
+        retained.sheen_roughness_texture_transform(),
+        Some(AssetTextureTransform::IDENTITY)
     );
 }
 
@@ -5005,19 +5057,34 @@ fn malformed_sampler_indices_counts_and_precedence_fail_closed() {
         }
     }
 
-    let ten_records = textured_triangle_glb(
+    let twelve_records = textured_triangle_glb(
         &png,
         r#""baseColorTexture":{"index":0}"#,
         r#"{"sampler":0,"source":0}"#,
         r#"{"bufferView":2,"mimeType":"image/png"}"#,
-        r#","samplers":[{},{},{},{},{},{},{},{},{},{}]"#,
+        r#","samplers":[{},{},{},{},{},{},{},{},{},{},{},{}]"#,
         true,
     );
-    let (store, hash) = process_with_proxy_policy(ten_records);
+    let (store, hash) = process_with_proxy_policy(twelve_records);
     assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
     assert_eq!(
         store.record(hash).unwrap().diagnostics[0].code,
         AssetDiagnosticCode::CollectionLimitExceeded
+    );
+
+    let eleven_records = textured_triangle_glb(
+        &png,
+        r#""baseColorTexture":{"index":0}"#,
+        r#"{"sampler":0,"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        r#","samplers":[{},{},{},{},{},{},{},{},{},{},{}]"#,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(eleven_records);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedFeature
     );
 
     let valid_unused = textured_triangle_glb(
@@ -5214,13 +5281,13 @@ fn explicit_default_sampler_is_supported_and_retained() {
 }
 
 #[test]
-fn more_than_nine_texture_or_image_resources_fail_closed() {
+fn more_than_eleven_texture_or_image_resources_fail_closed() {
     let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
     for bytes in [
         textured_triangle_glb(
             &png,
             r#""baseColorTexture":{"index":0}"#,
-            r#"{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0}"#,
+            r#"{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0}"#,
             r#"{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
@@ -5229,7 +5296,7 @@ fn more_than_nine_texture_or_image_resources_fail_closed() {
             &png,
             r#""baseColorTexture":{"index":0}"#,
             r#"{"source":0}"#,
-            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
         ),
@@ -5239,6 +5306,32 @@ fn more_than_nine_texture_or_image_resources_fail_closed() {
         assert_eq!(
             store.record(hash).unwrap().diagnostics[0].code,
             AssetDiagnosticCode::CollectionLimitExceeded
+        );
+    }
+
+    for bytes in [
+        textured_triangle_glb(
+            &png,
+            r#""baseColorTexture":{"index":0}"#,
+            r#"{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"}"#,
+            "",
+            true,
+        ),
+        textured_triangle_glb(
+            &png,
+            r#""baseColorTexture":{"index":0}"#,
+            r#"{"source":0}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
+            "",
+            true,
+        ),
+    ] {
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::UnsupportedFeature
         );
     }
 }

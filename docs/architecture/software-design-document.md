@@ -533,12 +533,12 @@ normative sample renderer and avoids a directional-albedo lookup resource.
 Exact zero color preserves the prior path. Clearcoat is applied above the
 completed base-plus-sheen response. No-light compatibility, emission, unlit,
 scene overrides, built-ins, fallbacks, and proxies gain no sheen effect.
-Optional sheen texture infos and referenced resources validate before their
-still-unsupported texture authority becomes a proxy candidate. The
+Optional sheen-color sRGB RGB and sheen-roughness linear alpha multiply the
+retained numeric factors; color alpha and roughness RGB are ignored. The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source or bounded generated-tangent TBN perturbs only direct-light response.
-Each of the nine texture roles independently selects `TEXCOORD_0` or
+Each of the eleven texture roles independently selects `TEXCOORD_0` or
 `TEXCOORD_1` and applies its retained finite `KHR_texture_transform` affine
 rows. The extension selector overrides the core texture-info selector.
 Generated tangents use the sole selected transformed normal-role coordinates.
@@ -550,9 +550,10 @@ is decoded from sRGB, multiplied by the numeric linear emissive factor and
 retained strength, then added
 after the ordinary metallic-roughness response, and clamped to one without
 changing alpha; texture alpha is ignored. Untextured draws use sRGB white
-base-color/emissive/specular-color, linear white metallic-roughness/specular-
-strength/clearcoat/clearcoat-roughness, and neutral-normal fallbacks. A scene
-`MaterialComponent` overrides the whole imported material, disables all nine
+base-color/emissive/specular-color/sheen-color, linear white metallic-
+roughness/specular-strength/clearcoat/clearcoat-roughness/sheen-roughness, and
+neutral-normal fallbacks. A scene
+`MaterialComponent` overrides the whole imported material, disables all eleven
 imported texture roles, and
 selects zero imported emission.
 A built-in or material-free
@@ -561,8 +562,8 @@ dielectric parameters `metallic = 0`, `roughness = 0.8`. Cross-surface
 emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
-fixed 848-byte per-draw uniform preserves the complete prior 832-byte prefix,
-which preserves the complete 736-byte, 720-byte, 656-byte, 640-byte, 624-byte,
+fixed 912-byte per-draw uniform preserves the complete prior 848-byte prefix,
+which preserves the complete 832-byte, 736-byte, 720-byte, 656-byte, 640-byte, 624-byte,
 496-byte, and 480-byte model,
 view-projection, material-color, identity, directional, point-light,
 camera-position, and metallic/roughness/normal-scale/material-flag prefix and
@@ -575,17 +576,19 @@ color RGB followed by strength. Four final padded affine rows carry strength
 then color texture transforms. One factor row carries clearcoat factor and
 roughness followed by two exact-zero padding lanes. Six final padded affine
 rows carry clearcoat intensity, roughness, and normal transforms; the coat-
-normal padding lanes carry finite scale and role presence. One final factor
-row carries sheen color RGB and roughness. Selector bits 12
-through 14 choose secondary coordinates for the three coat roles.
+normal padding lanes carry finite scale and role presence. One factor row
+carries sheen color RGB and roughness. Four final padded affine rows carry
+sheen-color then sheen-roughness transforms. Selector bits 12 through 14
+choose secondary coordinates for the three coat roles; bits 15 and 16 choose
+secondary coordinates for the two sheen roles.
 A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU
 submission.
 
-The fixed imported-material bind group contains nine texture views and nine
-samplers in nineteen total entries. Adapter preflight requires at least nine
-sampled textures, nine samplers per shader stage, and nineteen bindings per group,
+The fixed imported-material bind group contains eleven texture views and eleven
+samplers in twenty-three total entries. Adapter preflight requires at least
+eleven sampled textures, eleven samplers per shader stage, and twenty-three bindings per group,
 six vertex attributes, and a 72-byte vertex-buffer stride, so an insufficient
 adapter fails as structured `UnsupportedCapabilities` before pipeline
 construction.
@@ -633,18 +636,18 @@ declaration and coexistence checks. Clearcoat factor and roughness have exact
 zero defaults; all three clearcoat texture infos and their root resources are
 validated and retained with their ratified channel semantics. Sheen color and
 roughness have exact zero defaults; both sheen texture infos and their root
-resources validate before texture-bearing authority remains unsupported,
-without increasing the nine retained texture roles. Texture transform retains
+resources are validated and retained with their ratified color-space and
+channel semantics. Texture transform retains
 finite offset, rotation, and scale with exact defaults and Khronos
-translation-rotation-scale order for the nine texture-info roles.
+translation-rotation-scale order for the eleven texture-info roles.
 Each role retains effective selector zero or one, with extension `texCoord`
 overriding core `texCoord`, and requires the selected set on the primitive. The subset also retains
 one shared embedded PNG per base-color, metallic-roughness, normal, emissive,
-specular-strength, specular-color, clearcoat-intensity, clearcoat-roughness, or
-clearcoat-normal role. The image subset
+specular-strength, specular-color, clearcoat-intensity, clearcoat-roughness,
+clearcoat-normal, sheen-color, or sheen-roughness role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
 retained-byte, decoder-working-byte, per-asset, and aggregate CPU limits into
-at most nine immutable RGBA8 role values; a source shared by roles counts once
+at most eleven immutable RGBA8 role values; a source shared by roles counts once
 on CPU. Decoders verify declared and decoded sizes before allocation; expanded
 upload vertices always reserve exactly 72 bytes: the accepted 64-byte position,
 unit-normal, primary-coordinate, unit-tangent-plus-handedness, and unit-RGBA-

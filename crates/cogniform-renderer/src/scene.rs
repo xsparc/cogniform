@@ -512,6 +512,8 @@ pub(crate) struct ImportedTextureTransforms {
     pub(crate) clearcoat: AssetTextureTransform,
     pub(crate) clearcoat_roughness: AssetTextureTransform,
     pub(crate) clearcoat_normal: AssetTextureTransform,
+    pub(crate) sheen_color: AssetTextureTransform,
+    pub(crate) sheen_roughness: AssetTextureTransform,
 }
 
 impl ImportedTextureTransforms {
@@ -525,6 +527,8 @@ impl ImportedTextureTransforms {
         clearcoat: AssetTextureTransform::IDENTITY,
         clearcoat_roughness: AssetTextureTransform::IDENTITY,
         clearcoat_normal: AssetTextureTransform::IDENTITY,
+        sheen_color: AssetTextureTransform::IDENTITY,
+        sheen_roughness: AssetTextureTransform::IDENTITY,
     };
 }
 
@@ -534,10 +538,10 @@ pub(crate) struct ImportedTextureCoordinateSets(u16);
 impl ImportedTextureCoordinateSets {
     pub(crate) const PRIMARY: Self = Self(0);
     #[cfg(test)]
-    pub(crate) const ALL_SECONDARY: Self = Self(0b1_1111_1111);
+    pub(crate) const ALL_SECONDARY: Self = Self(0b111_1111_1111);
 
-    pub(crate) fn flags(self) -> u16 {
-        self.0 << 6
+    pub(crate) fn flags(self) -> u32 {
+        u32::from(self.0) << 6
     }
 }
 
@@ -625,6 +629,8 @@ impl ImportedTextureRoles {
     const CLEARCOAT: u16 = 1 << 6;
     const CLEARCOAT_ROUGHNESS: u16 = 1 << 7;
     const CLEARCOAT_NORMAL: u16 = 1 << 8;
+    const SHEEN_COLOR: u16 = 1 << 9;
+    const SHEEN_ROUGHNESS: u16 = 1 << 10;
 
     pub(crate) const fn base_color(self) -> bool {
         self.0 & Self::BASE_COLOR != 0
@@ -660,6 +666,14 @@ impl ImportedTextureRoles {
 
     pub(crate) const fn clearcoat_normal(self) -> bool {
         self.0 & Self::CLEARCOAT_NORMAL != 0
+    }
+
+    pub(crate) const fn sheen_color(self) -> bool {
+        self.0 & Self::SHEEN_COLOR != 0
+    }
+
+    pub(crate) const fn sheen_roughness(self) -> bool {
+        self.0 & Self::SHEEN_ROUGHNESS != 0
     }
 }
 
@@ -727,6 +741,8 @@ fn imported_material_selection(
     let use_clearcoat_normal = use_imported_material
         && use_lit_roles
         && material.is_some_and(|material| material.has_clearcoat_normal_texture());
+    let (use_sheen_color, use_sheen_roughness) =
+        selected_sheen_texture_roles(use_imported_material, use_lit_roles, material);
     let normal_scale = if use_normal {
         material.map_or(1.0, |material| material.normal_scale())
     } else {
@@ -747,6 +763,8 @@ fn imported_material_selection(
     roles |= u16::from(use_clearcoat) * ImportedTextureRoles::CLEARCOAT;
     roles |= u16::from(use_clearcoat_roughness) * ImportedTextureRoles::CLEARCOAT_ROUGHNESS;
     roles |= u16::from(use_clearcoat_normal) * ImportedTextureRoles::CLEARCOAT_NORMAL;
+    roles |= u16::from(use_sheen_color) * ImportedTextureRoles::SHEEN_COLOR;
+    roles |= u16::from(use_sheen_roughness) * ImportedTextureRoles::SHEEN_ROUGHNESS;
     let roles = ImportedTextureRoles(roles);
     let transforms = imported_texture_transforms(material, roles);
     let coordinate_sets = imported_texture_coordinate_sets(material, roles);
@@ -784,6 +802,18 @@ fn imported_material_selection(
         face_policy,
         shading_model,
         coordinate_sets,
+    )
+}
+
+fn selected_sheen_texture_roles(
+    use_imported_material: bool,
+    use_lit_roles: bool,
+    material: Option<&AssetMaterial>,
+) -> (bool, bool) {
+    let enabled = use_imported_material && use_lit_roles;
+    (
+        enabled && material.is_some_and(|material| material.has_sheen_color_texture()),
+        enabled && material.is_some_and(|material| material.has_sheen_roughness_texture()),
     )
 }
 
@@ -845,6 +875,16 @@ fn imported_texture_transforms(
             material.and_then(|material| material.clearcoat_normal_texture_transform()),
             "selected clearcoat-normal role retains a transform",
         ),
+        sheen_color: selected_transform(
+            roles.sheen_color(),
+            material.and_then(|material| material.sheen_color_texture_transform()),
+            "selected sheen-color role retains a transform",
+        ),
+        sheen_roughness: selected_transform(
+            roles.sheen_roughness(),
+            material.and_then(|material| material.sheen_roughness_texture_transform()),
+            "selected sheen-roughness role retains a transform",
+        ),
     }
 }
 
@@ -897,6 +937,16 @@ fn imported_texture_coordinate_sets(
             roles.clearcoat_normal(),
             material.and_then(|material| material.clearcoat_normal_texture_coordinate_set()),
             ImportedTextureRoles::CLEARCOAT_NORMAL,
+        ),
+        (
+            roles.sheen_color(),
+            material.and_then(|material| material.sheen_color_texture_coordinate_set()),
+            ImportedTextureRoles::SHEEN_COLOR,
+        ),
+        (
+            roles.sheen_roughness(),
+            material.and_then(|material| material.sheen_roughness_texture_coordinate_set()),
+            ImportedTextureRoles::SHEEN_ROUGHNESS,
         ),
     ];
     ImportedTextureCoordinateSets(

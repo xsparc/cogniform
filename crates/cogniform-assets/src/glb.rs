@@ -1103,11 +1103,6 @@ fn decode_material_sheen(
         "glb.json.materials.extensions.KHR_materials_sheen.sheenRoughnessTexture",
         false,
     )?;
-    if color_texture.is_some() || roughness_texture.is_some() {
-        unsupported.get_or_insert_with(|| {
-            diagnostic(AssetDiagnosticCode::UnsupportedExtension, LOCATION, None)
-        });
-    }
     if forbidden_coexistence {
         return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
     }
@@ -1470,6 +1465,8 @@ fn validate_root(
         clearcoat_texture: textures.clearcoat,
         clearcoat_roughness_texture: textures.clearcoat_roughness,
         clearcoat_normal_texture: textures.clearcoat_normal,
+        sheen_color_texture: textures.sheen_color,
+        sheen_roughness_texture: textures.sheen_roughness,
         byte_len: decoded_bytes,
     })
 }
@@ -1539,6 +1536,20 @@ fn validate_selected_texture_roles(
                 .iter()
                 .any(|mesh| mesh.material.has_clearcoat_normal_texture()),
             "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatNormalTexture",
+        ),
+        (
+            textures.sheen_color.is_some(),
+            meshes
+                .iter()
+                .any(|mesh| mesh.material.has_sheen_color_texture()),
+            "glb.json.materials.extensions.KHR_materials_sheen.sheenColorTexture",
+        ),
+        (
+            textures.sheen_roughness.is_some(),
+            meshes
+                .iter()
+                .any(|mesh| mesh.material.has_sheen_roughness_texture()),
+            "glb.json.materials.extensions.KHR_materials_sheen.sheenRoughnessTexture",
         ),
     ];
     if let Some((_, _, location)) = retained
@@ -1787,7 +1798,7 @@ fn validate_root_header(
         (root.samplers.len(), "glb.json.samplers"),
         (root.textures.len(), "glb.json.textures"),
     ] {
-        if actual > 9 {
+        if actual > 11 {
             return Err(diagnostic(
                 AssetDiagnosticCode::CollectionLimitExceeded,
                 location,
@@ -1808,6 +1819,8 @@ struct DecodedTextures {
     clearcoat: Option<AssetTexture>,
     clearcoat_roughness: Option<AssetTexture>,
     clearcoat_normal: Option<AssetTexture>,
+    sheen_color: Option<AssetTexture>,
+    sheen_roughness: Option<AssetTexture>,
     byte_len: u64,
     unsupported: Option<AssetDiagnostic>,
 }
@@ -1823,27 +1836,15 @@ fn empty_decoded_textures(unsupported: Option<AssetDiagnostic>) -> DecodedTextur
         clearcoat: None,
         clearcoat_roughness: None,
         clearcoat_normal: None,
+        sheen_color: None,
+        sheen_roughness: None,
         byte_len: 0,
         unsupported,
     }
 }
 
-fn referenced_texture_indices(
-    role_indices: &[Option<u32>; 9],
-    material_sheen: &[MaterialSheen],
-) -> BTreeSet<u32> {
-    role_indices
-        .iter()
-        .copied()
-        .flatten()
-        .chain(
-            material_sheen
-                .iter()
-                .flat_map(|sheen| [sheen.color_texture, sheen.roughness_texture])
-                .flatten()
-                .map(|info| info.index),
-        )
-        .collect()
+fn referenced_texture_indices(role_indices: &[Option<u32>; 11]) -> BTreeSet<u32> {
+    role_indices.iter().copied().flatten().collect()
 }
 
 fn decode_textures(
@@ -1867,10 +1868,13 @@ fn decode_textures(
         clearcoat_index,
         clearcoat_roughness_index,
         clearcoat_normal_index,
+        sheen_color_index,
+        sheen_roughness_index,
     ] = texture_role_indices(
         root,
         material_specular,
         material_clearcoat,
+        material_sheen,
         &mut unsupported,
     )?;
     let role_indices = [
@@ -1883,8 +1887,10 @@ fn decode_textures(
         clearcoat_index,
         clearcoat_roughness_index,
         clearcoat_normal_index,
+        sheen_color_index,
+        sheen_roughness_index,
     ];
-    let referenced_textures = referenced_texture_indices(&role_indices, material_sheen);
+    let referenced_textures = referenced_texture_indices(&role_indices);
     if referenced_textures.is_empty() {
         if root.textures.is_empty() && root.images.is_empty() {
             return Ok(empty_decoded_textures(unsupported));
@@ -1901,6 +1907,7 @@ fn decode_textures(
         texture_transforms,
         material_specular,
         material_clearcoat,
+        material_sheen,
         &mut unsupported,
     );
     if referenced_textures.len() != root.textures.len() {
@@ -1939,6 +1946,8 @@ fn decode_textures(
         clearcoat: role_texture(clearcoat_index),
         clearcoat_roughness: role_texture(clearcoat_roughness_index),
         clearcoat_normal: role_texture(clearcoat_normal_index),
+        sheen_color: role_texture(sheen_color_index),
+        sheen_roughness: role_texture(sheen_roughness_index),
         byte_len: resources.byte_len,
         unsupported,
     })
@@ -1948,8 +1957,9 @@ fn texture_role_indices(
     root: &Root,
     material_specular: &[MaterialSpecular],
     material_clearcoat: &[MaterialClearcoat],
+    material_sheen: &[MaterialSheen],
     unsupported: &mut Option<AssetDiagnostic>,
-) -> Result<[Option<u32>; 9], AssetDiagnostic> {
+) -> Result<[Option<u32>; 11], AssetDiagnostic> {
     let base_color_index = shared_texture_index(
         root.materials.iter().filter_map(|material| {
             material
@@ -2030,6 +2040,8 @@ fn texture_role_indices(
         "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatNormalTexture.index",
         unsupported,
     )?;
+    let [sheen_color_index, sheen_roughness_index] =
+        sheen_texture_role_indices(root, material_sheen, unsupported)?;
     Ok([
         base_color_index,
         emissive_index,
@@ -2040,7 +2052,33 @@ fn texture_role_indices(
         clearcoat_index,
         clearcoat_roughness_index,
         clearcoat_normal_index,
+        sheen_color_index,
+        sheen_roughness_index,
     ])
+}
+
+fn sheen_texture_role_indices(
+    root: &Root,
+    material_sheen: &[MaterialSheen],
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<[Option<u32>; 2], AssetDiagnostic> {
+    let color = shared_texture_index(
+        material_sheen
+            .iter()
+            .filter_map(|sheen| sheen.color_texture.map(|info| info.index)),
+        root.textures.len(),
+        "glb.json.materials.extensions.KHR_materials_sheen.sheenColorTexture.index",
+        unsupported,
+    )?;
+    let roughness = shared_texture_index(
+        material_sheen
+            .iter()
+            .filter_map(|sheen| sheen.roughness_texture.map(|info| info.index)),
+        root.textures.len(),
+        "glb.json.materials.extensions.KHR_materials_sheen.sheenRoughnessTexture.index",
+        unsupported,
+    )?;
+    Ok([color, roughness])
 }
 
 struct ValidatedTextureResources {
@@ -2087,7 +2125,7 @@ fn validate_root_samplers(root: &Root) -> Result<(), AssetDiagnostic> {
 }
 
 fn validate_sampler_resources(root: &Root) -> Result<(), AssetDiagnostic> {
-    if root.samplers.len() > 9 {
+    if root.samplers.len() > 11 {
         return Err(diagnostic(
             AssetDiagnosticCode::CollectionLimitExceeded,
             "glb.json.samplers",
@@ -2385,6 +2423,7 @@ fn validate_texture_coordinates(
     texture_transforms: &[MaterialTextureTransforms],
     material_specular: &[MaterialSpecular],
     material_clearcoat: &[MaterialClearcoat],
+    material_sheen: &[MaterialSheen],
     unsupported: &mut Option<AssetDiagnostic>,
 ) {
     for (material_index, material) in root.materials.iter().enumerate() {
@@ -2439,48 +2478,66 @@ fn validate_texture_coordinates(
             );
         }
         let specular = material_specular.get(material_index);
-        for (info, location) in [
-            (
-                specular.and_then(|value| value.texture),
-                "glb.json.materials.extensions.KHR_materials_specular.specularTexture.texCoord",
-            ),
-            (
-                specular.and_then(|value| value.color_texture),
-                "glb.json.materials.extensions.KHR_materials_specular.specularColorTexture.texCoord",
-            ),
-        ] {
-            if info.is_some_and(|info| info.texture_coordinate_set > 1) {
-                remember_unsupported(
-                    unsupported,
-                    AssetDiagnosticCode::UnsupportedFeature,
-                    location,
-                    None,
-                );
-            }
-        }
+        validate_pending_texture_coordinates(
+            [
+                (
+                    specular.and_then(|value| value.texture),
+                    "glb.json.materials.extensions.KHR_materials_specular.specularTexture.texCoord",
+                ),
+                (
+                    specular.and_then(|value| value.color_texture),
+                    "glb.json.materials.extensions.KHR_materials_specular.specularColorTexture.texCoord",
+                ),
+            ],
+            unsupported,
+        );
         let clearcoat = material_clearcoat.get(material_index);
-        for (info, location) in [
-            (
-                clearcoat.and_then(|value| value.texture),
-                "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatTexture.texCoord",
-            ),
-            (
-                clearcoat.and_then(|value| value.roughness_texture),
-                "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatRoughnessTexture.texCoord",
-            ),
-            (
-                clearcoat.and_then(|value| value.normal_texture),
-                "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatNormalTexture.texCoord",
-            ),
-        ] {
-            if info.is_some_and(|info| info.texture_coordinate_set > 1) {
-                remember_unsupported(
-                    unsupported,
-                    AssetDiagnosticCode::UnsupportedFeature,
-                    location,
-                    None,
-                );
-            }
+        validate_pending_texture_coordinates(
+            [
+                (
+                    clearcoat.and_then(|value| value.texture),
+                    "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatTexture.texCoord",
+                ),
+                (
+                    clearcoat.and_then(|value| value.roughness_texture),
+                    "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatRoughnessTexture.texCoord",
+                ),
+                (
+                    clearcoat.and_then(|value| value.normal_texture),
+                    "glb.json.materials.extensions.KHR_materials_clearcoat.clearcoatNormalTexture.texCoord",
+                ),
+            ],
+            unsupported,
+        );
+        let sheen = material_sheen.get(material_index);
+        validate_pending_texture_coordinates(
+            [
+                (
+                    sheen.and_then(|value| value.color_texture),
+                    "glb.json.materials.extensions.KHR_materials_sheen.sheenColorTexture.texCoord",
+                ),
+                (
+                    sheen.and_then(|value| value.roughness_texture),
+                    "glb.json.materials.extensions.KHR_materials_sheen.sheenRoughnessTexture.texCoord",
+                ),
+            ],
+            unsupported,
+        );
+    }
+}
+
+fn validate_pending_texture_coordinates<const N: usize>(
+    entries: [(Option<PendingTextureInfo>, &'static str); N],
+    unsupported: &mut Option<AssetDiagnostic>,
+) {
+    for (info, location) in entries {
+        if info.is_some_and(|info| info.texture_coordinate_set > 1) {
+            remember_unsupported(
+                unsupported,
+                AssetDiagnosticCode::UnsupportedFeature,
+                location,
+                None,
+            );
         }
     }
 }
@@ -4766,6 +4823,7 @@ fn decode_material(
         transforms,
         specular,
         clearcoat,
+        sheen,
         &material,
     )
 }
@@ -4776,6 +4834,7 @@ fn apply_material_textures(
     transforms: MaterialTextureTransforms,
     specular: MaterialSpecular,
     clearcoat: MaterialClearcoat,
+    sheen: MaterialSheen,
     material: &AssetMaterial,
 ) -> Result<AssetMaterial, AssetDiagnostic> {
     let mut material = *material;
@@ -4861,7 +4920,8 @@ fn apply_material_textures(
             retained_texture_coordinate_set(info.texture_coordinate_set),
         );
     }
-    apply_clearcoat_textures(root, clearcoat, material)
+    let material = apply_clearcoat_textures(root, clearcoat, material)?;
+    apply_sheen_textures(root, sheen, material)
 }
 
 fn apply_clearcoat_textures(
@@ -4886,6 +4946,28 @@ fn apply_clearcoat_textures(
     if let Some(info) = clearcoat.normal_texture {
         material = material.with_clearcoat_normal_texture(
             info.scale,
+            texture_sampler(root, info.index)?,
+            info.transform,
+            retained_texture_coordinate_set(info.texture_coordinate_set),
+        );
+    }
+    Ok(material)
+}
+
+fn apply_sheen_textures(
+    root: &Root,
+    sheen: MaterialSheen,
+    mut material: AssetMaterial,
+) -> Result<AssetMaterial, AssetDiagnostic> {
+    if let Some(info) = sheen.color_texture {
+        material = material.with_sheen_color_texture(
+            texture_sampler(root, info.index)?,
+            info.transform,
+            retained_texture_coordinate_set(info.texture_coordinate_set),
+        );
+    }
+    if let Some(info) = sheen.roughness_texture {
+        material = material.with_sheen_roughness_texture(
             texture_sampler(root, info.index)?,
             info.transform,
             retained_texture_coordinate_set(info.texture_coordinate_set),
@@ -5081,6 +5163,8 @@ pub(crate) fn proxy_asset() -> DecodedAsset {
         clearcoat_texture: None,
         clearcoat_roughness_texture: None,
         clearcoat_normal_texture: None,
+        sheen_color_texture: None,
+        sheen_roughness_texture: None,
         byte_len: 36 * ASSET_VERTEX_BYTES,
     }
 }

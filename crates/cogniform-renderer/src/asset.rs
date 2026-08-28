@@ -79,11 +79,11 @@ pub struct RendererAssetEviction {
     pub removed_resident_meshes: u32,
     /// Exact resident vertex-buffer bytes released from renderer ownership.
     pub released_resident_bytes: u64,
-    /// Unique pending role-texture reservations removed; currently zero to nine.
+    /// Unique pending role-texture reservations removed; currently zero to eleven.
     pub removed_pending_textures: u32,
     /// Exact pending RGBA8 texture bytes released.
     pub released_pending_texture_bytes: u64,
-    /// Unique resident role textures removed; currently zero to nine.
+    /// Unique resident role textures removed; currently zero to eleven.
     pub removed_resident_textures: u32,
     /// Exact resident RGBA8 texture bytes released from renderer ownership.
     pub released_resident_texture_bytes: u64,
@@ -128,6 +128,8 @@ pub(crate) enum AssetTextureRole {
     Clearcoat,
     ClearcoatRoughness,
     ClearcoatNormal,
+    SheenColor,
+    SheenRoughness,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -200,6 +202,14 @@ impl PendingAssetUpload {
         self.job.clearcoat_normal_texture()
     }
 
+    fn sheen_color_texture(&self) -> Option<&AssetTexture> {
+        self.job.sheen_color_texture()
+    }
+
+    fn sheen_roughness_texture(&self) -> Option<&AssetTexture> {
+        self.job.sheen_roughness_texture()
+    }
+
     fn texture(&self, role: AssetTextureRole) -> Option<&AssetTexture> {
         match role {
             AssetTextureRole::BaseColor => self.base_color_texture(),
@@ -211,6 +221,8 @@ impl PendingAssetUpload {
             AssetTextureRole::Clearcoat => self.clearcoat_texture(),
             AssetTextureRole::ClearcoatRoughness => self.clearcoat_roughness_texture(),
             AssetTextureRole::ClearcoatNormal => self.clearcoat_normal_texture(),
+            AssetTextureRole::SheenColor => self.sheen_color_texture(),
+            AssetTextureRole::SheenRoughness => self.sheen_roughness_texture(),
         }
     }
 }
@@ -344,7 +356,7 @@ impl RendererAssets {
         config: &RendererConfig,
     ) -> Result<(), RendererError> {
         let mesh_key = job.key();
-        let mut reservations = Vec::with_capacity(9);
+        let mut reservations = Vec::with_capacity(11);
         for (role, texture) in [
             (AssetTextureRole::BaseColor, job.base_color_texture()),
             (AssetTextureRole::Emissive, job.emissive_texture()),
@@ -366,6 +378,11 @@ impl RendererAssets {
             (
                 AssetTextureRole::ClearcoatNormal,
                 job.clearcoat_normal_texture(),
+            ),
+            (AssetTextureRole::SheenColor, job.sheen_color_texture()),
+            (
+                AssetTextureRole::SheenRoughness,
+                job.sheen_roughness_texture(),
             ),
         ] {
             let Some(texture) = texture else {
@@ -503,6 +520,11 @@ impl RendererAssets {
                 AssetTextureRole::ClearcoatNormal,
                 job.clearcoat_normal_texture(),
             ),
+            (AssetTextureRole::SheenColor, job.sheen_color_texture()),
+            (
+                AssetTextureRole::SheenRoughness,
+                job.sheen_roughness_texture(),
+            ),
         ] {
             let Some(texture) = texture else {
                 continue;
@@ -544,7 +566,7 @@ impl RendererAssets {
             .filter(|key| key.content_hash == content_hash)
             .collect();
         let removed_pending_textures =
-            u32::try_from(pending_texture_keys.len()).expect("at most nine roles are reserved");
+            u32::try_from(pending_texture_keys.len()).expect("at most eleven roles are reserved");
         let pending_texture_bytes = pending_texture_keys
             .iter()
             .map(|key| {
@@ -611,7 +633,7 @@ impl RendererAssets {
             .filter(|key| key.content_hash == content_hash)
             .collect();
         let removed_resident_textures =
-            u32::try_from(resident_texture_keys.len()).expect("at most nine roles are resident");
+            u32::try_from(resident_texture_keys.len()).expect("at most eleven roles are resident");
         let resident_texture_bytes = resident_texture_keys
             .into_iter()
             .map(|key| {
@@ -813,6 +835,8 @@ fn create_texture(
             AssetTextureRole::Clearcoat => "cogniform-asset-clearcoat",
             AssetTextureRole::ClearcoatRoughness => "cogniform-asset-clearcoat-roughness",
             AssetTextureRole::ClearcoatNormal => "cogniform-asset-clearcoat-normal",
+            AssetTextureRole::SheenColor => "cogniform-asset-sheen-color",
+            AssetTextureRole::SheenRoughness => "cogniform-asset-sheen-roughness",
         }),
         size,
         mip_level_count: 1,
@@ -821,13 +845,15 @@ fn create_texture(
         format: match role {
             AssetTextureRole::BaseColor
             | AssetTextureRole::Emissive
-            | AssetTextureRole::SpecularColor => wgpu::TextureFormat::Rgba8UnormSrgb,
+            | AssetTextureRole::SpecularColor
+            | AssetTextureRole::SheenColor => wgpu::TextureFormat::Rgba8UnormSrgb,
             AssetTextureRole::MetallicRoughness
             | AssetTextureRole::Normal
             | AssetTextureRole::Specular
             | AssetTextureRole::Clearcoat
             | AssetTextureRole::ClearcoatRoughness
-            | AssetTextureRole::ClearcoatNormal => wgpu::TextureFormat::Rgba8Unorm,
+            | AssetTextureRole::ClearcoatNormal
+            | AssetTextureRole::SheenRoughness => wgpu::TextureFormat::Rgba8Unorm,
         },
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
@@ -1254,8 +1280,8 @@ mod tests {
     }
 
     #[test]
-    fn nine_role_texture_reservations_are_atomic_exact_and_role_keyed() {
-        let upload = nine_textured_upload([128, 64, 255, 7]);
+    fn eleven_role_texture_reservations_are_atomic_exact_and_role_keyed() {
+        let upload = eleven_textured_upload([128, 64, 255, 7]);
         assert!(upload.base_color_texture().is_some());
         assert!(upload.emissive_texture().is_some());
         assert!(upload.metallic_roughness_texture().is_some());
@@ -1265,13 +1291,15 @@ mod tests {
         assert!(upload.clearcoat_texture().is_some());
         assert!(upload.clearcoat_roughness_texture().is_some());
         assert!(upload.clearcoat_normal_texture().is_some());
+        assert!(upload.sheen_color_texture().is_some());
+        assert!(upload.sheen_roughness_texture().is_some());
         for config in [
             RendererConfig::new(64, 64)
-                .with_max_pending_asset_texture_bytes(NonZeroU64::new(35).unwrap()),
+                .with_max_pending_asset_texture_bytes(NonZeroU64::new(43).unwrap()),
             RendererConfig::new(64, 64)
-                .with_max_resident_asset_textures(NonZeroU32::new(8).unwrap()),
+                .with_max_resident_asset_textures(NonZeroU32::new(10).unwrap()),
             RendererConfig::new(64, 64)
-                .with_max_resident_asset_texture_bytes(NonZeroU64::new(35).unwrap()),
+                .with_max_resident_asset_texture_bytes(NonZeroU64::new(43).unwrap()),
         ] {
             let mut assets = RendererAssets::new();
             assert!(assets.enqueue(upload.clone(), &config).is_err());
@@ -1286,12 +1314,12 @@ mod tests {
             .enqueue(upload.clone(), &RendererConfig::new(64, 64))
             .unwrap();
         assert_eq!(assets.stats().pending_uploads, 1);
-        assert_eq!(assets.stats().pending_textures, 9);
-        assert_eq!(assets.stats().pending_texture_bytes, 36);
+        assert_eq!(assets.stats().pending_textures, 11);
+        assert_eq!(assets.stats().pending_texture_bytes, 44);
         let eviction = assets.evict(upload.key().content_hash);
         assert_eq!(eviction.removed_pending_uploads, 1);
-        assert_eq!(eviction.removed_pending_textures, 9);
-        assert_eq!(eviction.released_pending_texture_bytes, 36);
+        assert_eq!(eviction.removed_pending_textures, 11);
+        assert_eq!(eviction.released_pending_texture_bytes, 44);
         assert_eq!(assets.stats().pending_textures, 0);
     }
 
@@ -1409,8 +1437,8 @@ mod tests {
         multi_textured_upload(texel, TexturedRoles::SPECULAR)
     }
 
-    fn nine_textured_upload(texel: [u8; 4]) -> AssetUploadJob {
-        multi_textured_upload(texel, TexturedRoles::CLEARCOAT)
+    fn eleven_textured_upload(texel: [u8; 4]) -> AssetUploadJob {
+        multi_textured_upload(texel, TexturedRoles::SHEEN)
     }
 
     #[derive(Clone, Copy)]
@@ -1421,11 +1449,13 @@ mod tests {
         const EMISSIVE_BIT: u8 = 1 << 1;
         const SPECULAR_BIT: u8 = 1 << 2;
         const CLEARCOAT_BIT: u8 = 1 << 3;
+        const SHEEN_BIT: u8 = 1 << 4;
         const NORMAL: Self = Self(0);
         const METALLIC_ROUGHNESS: Self = Self(Self::METALLIC_ROUGHNESS_BIT);
         const EMISSIVE: Self = Self(Self::METALLIC_ROUGHNESS_BIT | Self::EMISSIVE_BIT);
         const SPECULAR: Self = Self(Self::EMISSIVE.0 | Self::SPECULAR_BIT);
         const CLEARCOAT: Self = Self(Self::SPECULAR.0 | Self::CLEARCOAT_BIT);
+        const SHEEN: Self = Self(Self::CLEARCOAT.0 | Self::SHEEN_BIT);
 
         const fn includes(self, role: u8) -> bool {
             self.0 & role != 0
@@ -1487,6 +1517,10 @@ mod tests {
         if roles.includes(TexturedRoles::CLEARCOAT_BIT) {
             declarations.push(r#""KHR_materials_clearcoat""#);
             extensions.push(r#""KHR_materials_clearcoat":{"clearcoatTexture":{"index":0},"clearcoatRoughnessTexture":{"index":0},"clearcoatNormalTexture":{"index":0}}"#);
+        }
+        if roles.includes(TexturedRoles::SHEEN_BIT) {
+            declarations.push(r#""KHR_materials_sheen""#);
+            extensions.push(r#""KHR_materials_sheen":{"sheenColorTexture":{"index":0},"sheenRoughnessTexture":{"index":0}}"#);
         }
         let material_extensions = if extensions.is_empty() {
             String::new()

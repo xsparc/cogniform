@@ -697,6 +697,10 @@ fn create_draw_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
         draw_sampler_layout_entry(16),
         draw_texture_layout_entry(17),
         draw_sampler_layout_entry(18),
+        draw_texture_layout_entry(19),
+        draw_sampler_layout_entry(20),
+        draw_texture_layout_entry(21),
+        draw_sampler_layout_entry(22),
     ];
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("cogniform-draw-bind-group-layout"),
@@ -808,10 +812,10 @@ fn required_limits(
     required.max_color_attachments = required.max_color_attachments.max(3);
     required.max_color_attachment_bytes_per_sample =
         required.max_color_attachment_bytes_per_sample.max(12);
-    required.max_bindings_per_bind_group = required.max_bindings_per_bind_group.max(19);
+    required.max_bindings_per_bind_group = required.max_bindings_per_bind_group.max(23);
     required.max_sampled_textures_per_shader_stage =
-        required.max_sampled_textures_per_shader_stage.max(9);
-    required.max_samplers_per_shader_stage = required.max_samplers_per_shader_stage.max(9);
+        required.max_sampled_textures_per_shader_stage.max(11);
+    required.max_samplers_per_shader_stage = required.max_samplers_per_shader_stage.max(11);
     required.max_vertex_attributes = required.max_vertex_attributes.max(6);
     required.max_vertex_buffer_array_stride = required
         .max_vertex_buffer_array_stride
@@ -1162,7 +1166,7 @@ fn create_draw_bind_group(
     resources: &ScenePassResources<'_>,
     draw: &PreparedDraw,
     buffer: &wgpu::Buffer,
-    texture_views: [&wgpu::TextureView; 9],
+    texture_views: [&wgpu::TextureView; 11],
 ) -> wgpu::BindGroup {
     let samplers = draw_samplers(draw, resources);
     resources
@@ -1175,86 +1179,50 @@ fn create_draw_bind_group(
                     binding: 0,
                     resource: buffer.as_entire_binding(),
                 },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(texture_views[0]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(samplers[0]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(texture_views[1]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::TextureView(texture_views[2]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::TextureView(texture_views[3]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::Sampler(samplers[1]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: wgpu::BindingResource::Sampler(samplers[2]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::Sampler(samplers[3]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 9,
-                    resource: wgpu::BindingResource::TextureView(texture_views[4]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 10,
-                    resource: wgpu::BindingResource::Sampler(samplers[4]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 11,
-                    resource: wgpu::BindingResource::TextureView(texture_views[5]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 12,
-                    resource: wgpu::BindingResource::Sampler(samplers[5]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 13,
-                    resource: wgpu::BindingResource::TextureView(texture_views[6]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 14,
-                    resource: wgpu::BindingResource::Sampler(samplers[6]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 15,
-                    resource: wgpu::BindingResource::TextureView(texture_views[7]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 16,
-                    resource: wgpu::BindingResource::Sampler(samplers[7]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 17,
-                    resource: wgpu::BindingResource::TextureView(texture_views[8]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 18,
-                    resource: wgpu::BindingResource::Sampler(samplers[8]),
-                },
+                draw_texture_entry(1, texture_views[0]),
+                draw_sampler_entry(2, samplers[0]),
+                draw_texture_entry(3, texture_views[1]),
+                draw_texture_entry(4, texture_views[2]),
+                draw_texture_entry(5, texture_views[3]),
+                draw_sampler_entry(6, samplers[1]),
+                draw_sampler_entry(7, samplers[2]),
+                draw_sampler_entry(8, samplers[3]),
+                draw_texture_entry(9, texture_views[4]),
+                draw_sampler_entry(10, samplers[4]),
+                draw_texture_entry(11, texture_views[5]),
+                draw_sampler_entry(12, samplers[5]),
+                draw_texture_entry(13, texture_views[6]),
+                draw_sampler_entry(14, samplers[6]),
+                draw_texture_entry(15, texture_views[7]),
+                draw_sampler_entry(16, samplers[7]),
+                draw_texture_entry(17, texture_views[8]),
+                draw_sampler_entry(18, samplers[8]),
+                draw_texture_entry(19, texture_views[9]),
+                draw_sampler_entry(20, samplers[9]),
+                draw_texture_entry(21, texture_views[10]),
+                draw_sampler_entry(22, samplers[10]),
             ],
         })
+}
+
+fn draw_texture_entry(binding: u32, view: &wgpu::TextureView) -> wgpu::BindGroupEntry<'_> {
+    wgpu::BindGroupEntry {
+        binding,
+        resource: wgpu::BindingResource::TextureView(view),
+    }
+}
+
+fn draw_sampler_entry(binding: u32, sampler: &wgpu::Sampler) -> wgpu::BindGroupEntry<'_> {
+    wgpu::BindGroupEntry {
+        binding,
+        resource: wgpu::BindingResource::Sampler(sampler),
+    }
 }
 
 fn draw_samplers<'a>(
     draw: &PreparedDraw,
     resources: &'a ScenePassResources<'_>,
-) -> [&'a wgpu::Sampler; 9] {
+) -> [&'a wgpu::Sampler; 11] {
     let material = match draw.geometry {
         PreparedGeometry::Asset(key) => resources.assets.mesh(key).map(GpuAssetMesh::material),
         PreparedGeometry::Cuboid | PreparedGeometry::Plane | PreparedGeometry::Sphere => None,
@@ -1304,13 +1272,21 @@ fn draw_samplers<'a>(
             draw.imported_texture_roles.clearcoat_normal(),
             material.and_then(AssetMaterial::clearcoat_normal_sampler),
         ),
+        policy(
+            draw.imported_texture_roles.sheen_color(),
+            material.and_then(AssetMaterial::sheen_color_sampler),
+        ),
+        policy(
+            draw.imported_texture_roles.sheen_roughness(),
+            material.and_then(AssetMaterial::sheen_roughness_sampler),
+        ),
     ]
 }
 
 fn draw_resources<'a>(
     draw: &PreparedDraw,
     resources: &'a ScenePassResources<'_>,
-) -> (&'a wgpu::Buffer, u32, [&'a wgpu::TextureView; 9]) {
+) -> (&'a wgpu::Buffer, u32, [&'a wgpu::TextureView; 11]) {
     match draw.geometry {
         PreparedGeometry::Cuboid => (
             resources.cube_vertices,
@@ -1325,6 +1301,8 @@ fn draw_resources<'a>(
                 resources.neutral_metallic_roughness_view,
                 resources.neutral_metallic_roughness_view,
                 resources.neutral_normal_view,
+                resources.white_base_color_view,
+                resources.neutral_metallic_roughness_view,
             ],
         ),
         PreparedGeometry::Plane => (
@@ -1340,6 +1318,8 @@ fn draw_resources<'a>(
                 resources.neutral_metallic_roughness_view,
                 resources.neutral_metallic_roughness_view,
                 resources.neutral_normal_view,
+                resources.white_base_color_view,
+                resources.neutral_metallic_roughness_view,
             ],
         ),
         PreparedGeometry::Sphere => (
@@ -1355,6 +1335,8 @@ fn draw_resources<'a>(
                 resources.neutral_metallic_roughness_view,
                 resources.neutral_metallic_roughness_view,
                 resources.neutral_normal_view,
+                resources.white_base_color_view,
+                resources.neutral_metallic_roughness_view,
             ],
         ),
         PreparedGeometry::Asset(key) => {
@@ -1375,7 +1357,7 @@ fn asset_texture_views<'a>(
     draw: &PreparedDraw,
     resources: &'a ScenePassResources<'_>,
     key: AssetMeshKey,
-) -> [&'a wgpu::TextureView; 9] {
+) -> [&'a wgpu::TextureView; 11] {
     let selected = |enabled, role, fallback, message| {
         if enabled {
             resources
@@ -1440,6 +1422,18 @@ fn asset_texture_views<'a>(
             AssetTextureRole::ClearcoatNormal,
             resources.neutral_normal_view,
             "clearcoat-normal-textured resident mesh retains its shared GPU texture",
+        ),
+        selected(
+            draw.imported_texture_roles.sheen_color(),
+            AssetTextureRole::SheenColor,
+            resources.white_base_color_view,
+            "sheen-color-textured resident mesh retains its shared GPU texture",
+        ),
+        selected(
+            draw.imported_texture_roles.sheen_roughness(),
+            AssetTextureRole::SheenRoughness,
+            resources.neutral_metallic_roughness_view,
+            "sheen-roughness-textured resident mesh retains its shared GPU texture",
         ),
     ]
 }
@@ -1790,6 +1784,7 @@ fn encode_draw_uniform(
     const CLEARCOAT_FLOATS: usize = 4;
     const CLEARCOAT_TEXTURE_TRANSFORM_FLOATS: usize = 3 * 2 * 4;
     const SHEEN_FLOATS: usize = 4;
+    const SHEEN_TEXTURE_TRANSFORM_FLOATS: usize = 2 * 2 * 4;
     const UNIFORM_BYTES: usize = (BASE_FLOATS
         + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT
         + POINT_COUNT_FLOATS
@@ -1800,7 +1795,8 @@ fn encode_draw_uniform(
         + SPECULAR_TEXTURE_TRANSFORM_FLOATS
         + CLEARCOAT_FLOATS
         + CLEARCOAT_TEXTURE_TRANSFORM_FLOATS
-        + SHEEN_FLOATS)
+        + SHEEN_FLOATS
+        + SHEEN_TEXTURE_TRANSFORM_FLOATS)
         * 4;
     debug_assert!(directional_lights.len() <= MAX_DIRECTIONAL_LIGHTS);
     debug_assert!(point_lights.len() <= MAX_POINT_LIGHTS);
@@ -1883,15 +1879,15 @@ fn append_material_uniform(bytes: &mut Vec<u8>, draw: &PreparedDraw) {
     bytes.extend_from_slice(&draw.metallic.to_le_bytes());
     bytes.extend_from_slice(&draw.roughness.to_le_bytes());
     bytes.extend_from_slice(&draw.normal_scale.to_le_bytes());
-    let normal_flag = u16::from(draw.imported_texture_roles.normal());
-    let vertex_color_flag = u16::from(draw.imported_vertex_color) << 5;
+    let normal_flag = u32::from(draw.imported_texture_roles.normal());
+    let vertex_color_flag = u32::from(draw.imported_vertex_color) << 5;
     let material_flags = normal_flag
-        | u16::from(draw.imported_alpha_coverage.flags())
-        | u16::from(draw.imported_face_policy.flags())
-        | u16::from(draw.imported_shading_model.flags())
+        | u32::from(draw.imported_alpha_coverage.flags())
+        | u32::from(draw.imported_face_policy.flags())
+        | u32::from(draw.imported_shading_model.flags())
         | vertex_color_flag
         | draw.imported_texture_coordinate_sets.flags();
-    bytes.extend_from_slice(&f32::from(material_flags).to_le_bytes());
+    bytes.extend_from_slice(&exact_material_flags(material_flags).to_le_bytes());
     for value in draw.emissive {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
@@ -1955,6 +1951,27 @@ fn append_material_uniform(bytes: &mut Vec<u8>, draw: &PreparedDraw) {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.extend_from_slice(&draw.sheen_roughness_factor.to_le_bytes());
+    for transform in [
+        draw.imported_texture_transforms.sheen_color,
+        draw.imported_texture_transforms.sheen_roughness,
+    ] {
+        for row in transform.affine_rows() {
+            for value in row {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+    }
+}
+
+fn exact_material_flags(flags: u32) -> f32 {
+    const MAX_FLAGS: u32 = 131_071;
+    assert!(
+        flags <= MAX_FLAGS,
+        "material flags stay exactly representable"
+    );
+    let half = u16::try_from(flags / 2).expect("bounded material flags fit");
+    let remainder = u8::try_from(flags % 2).expect("binary remainder fits");
+    f32::from(half) * 2.0 + f32::from(remainder)
 }
 
 fn create_target_texture(
@@ -2311,7 +2328,7 @@ mod tests {
         }];
 
         let bytes = encode_draw_uniform(&draw, &lights, &point_lights);
-        assert_eq!(bytes.len(), 848);
+        assert_eq!(bytes.len(), 912);
         let words = bytes
             .chunks_exact(4)
             .map(|word| <[u8; 4]>::try_from(word).unwrap())
@@ -2389,6 +2406,10 @@ mod tests {
             (208..212).map(float).collect::<Vec<_>>(),
             vec![0.2, 0.4, 0.8, 0.55]
         );
+        assert_eq!(
+            (212..228).map(float).collect::<Vec<_>>(),
+            [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0].repeat(2)
+        );
     }
 
     #[test]
@@ -2423,10 +2444,10 @@ mod tests {
         };
 
         let bytes = encode_draw_uniform(&draw, &[], &[]);
-        assert_eq!(bytes.len(), 848);
+        assert_eq!(bytes.len(), 912);
         let float_at =
             |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
-        assert_eq!(float_at(119).to_bits(), 32_767.0_f32.to_bits());
+        assert_eq!(float_at(119).to_bits(), 131_071.0_f32.to_bits());
         assert_eq!(float_at(123).to_bits(), 1.25_f32.to_bits());
     }
 

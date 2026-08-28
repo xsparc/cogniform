@@ -382,6 +382,14 @@ Charlie/fitted-visibility implementation adds one private uniform row but no
 lookup texture, role, binding, sampler, pipeline, decoder, sample asset byte,
 network path, or supply-chain authority.
 
+CF078 changes no Cargo manifest, lock entry, vendored byte, feature, build
+script, unsafe/native boundary, workflow, or runtime dependency edge. The two
+sheen texture roles reuse existing strict JSON, PNG, coordinate, transform,
+sampler, upload, and shader paths. Fixed first-party uniform and bind-group
+layouts grow within guaranteed WebGPU limits without changing the sampler
+table or pipeline count. No sample asset byte, decoder, lookup texture,
+network path, or supply-chain authority is added.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the
