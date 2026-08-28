@@ -1858,6 +1858,36 @@ revision, logical hash, replay, protocol, persistence, dependency, workflow,
 release, and deployment boundaries. See
 [ADR 0078](../adr/0078-bounded-gltf-material-sheen-textures.md).
 
+### PR 79 - CF079: Bounded glTF material anisotropy factors
+
+Outcome: supported imported metallic-roughness materials may rotate one
+ratified directional-roughness response without expanding renderer resource
+topology.
+
+Gate: recognize `KHR_materials_anisotropy` through the strict unique
+declaration contract. Require an object payload. Retain finite unit
+`anisotropyStrength`, default zero, and finite-radian `anisotropyRotation`,
+default zero, with precomputed finite cosine/sine. Reject malformed,
+undeclared, non-finite, out-of-range, unlit-combined, or legacy specular-
+glossiness-combined members without proxy. Fully type-check optional
+`anisotropyTexture`, declared transforms, root resources, and selected
+coordinates, then classify well-formed texture authority as unsupported/proxy
+because the role remains deferred and root caps remain eleven.
+
+Require source `NORMAL` plus `TANGENT`, or the existing bounded base normal-
+texture tangent-generation path. For nonzero strength, rotate that basis and
+evaluate the ratified anisotropic GGX distribution and correlated visibility
+for directional and point lights. Preserve an exact zero-strength branch for
+the accepted isotropic response. Apply anisotropy only to the base specular
+lobe, below existing sheen and clearcoat, while preserving diffuse,
+IOR/specular, emission, no-light, scene override, unlit, and observation
+behavior. Append strength plus rotation cosine/sine after the exact 912-byte
+prefix for a fixed 928-byte uniform. Preserve the 72-byte vertex, eleven
+texture roles, twenty-three-entry bind group, 36 samplers, two pipelines,
+attachments, lifecycle, revision, logical hash, replay, protocol, persistence,
+dependency, workflow, release, and deployment boundaries. See
+[ADR 0079](../adr/0079-bounded-gltf-material-anisotropy-factors.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1870,7 +1900,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF046 -> CF047 -> CF048 -> CF049 -> CF050 -> CF051 -> CF052 -> CF053
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
-  -> CF072 -> CF073 -> CF074 -> CF075 -> CF076 -> CF077 -> CF078
+  -> CF072 -> CF073 -> CF074 -> CF075 -> CF076 -> CF077 -> CF078 -> CF079
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2293,6 +2323,18 @@ Validation expands with capability:
   and unchanged non-color Vulkan evidence; unchanged vertex, sampler table,
   pipeline, logical, protocol, persistence, dependency, workflow, release,
   and deployment boundaries.
+- CF079: strict ratified anisotropy declaration, exact zero-default finite unit
+  strength and finite rotation retention, malformed/unused/coexistence/wider-
+  payload precedence, and complete validation of the deferred texture info and
+  root resources before proxy classification; explicit source or bounded
+  base-normal-generated tangent-space requirement; ratified nonzero
+  anisotropic GGX distribution and correlated visibility with rotation and an
+  exact accepted zero-strength branch; exact 912-byte prefix plus one appended
+  row in a 928-byte uniform; directional, point, roughness, rotation,
+  handedness, combined-layer, scene-override, no-light, and unchanged non-
+  color Vulkan evidence; unchanged vertex, texture-role, binding, sampler,
+  pipeline, lifecycle, logical, protocol, persistence, dependency, workflow,
+  release, and deployment boundaries.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

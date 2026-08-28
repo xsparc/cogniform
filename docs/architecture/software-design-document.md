@@ -535,6 +535,17 @@ completed base-plus-sheen response. No-light compatibility, emission, unlit,
 scene overrides, built-ins, fallbacks, and proxies gain no sheen effect.
 Optional sheen-color sRGB RGB and sheen-roughness linear alpha multiply the
 retained numeric factors; color alpha and roughness RGB are ignored. The
+declared ratified `KHR_materials_anisotropy` object may retain finite unit
+`anisotropyStrength`, default zero, and finite-radian `anisotropyRotation`,
+default zero. A selected primitive requires source normal plus tangent or the
+existing bounded base normal-texture tangent-generation path. For nonzero
+strength, the rotated tangent basis drives the ratified anisotropic GGX
+distribution and correlated visibility for direct directional and point
+lighting. Exact zero strength takes the accepted isotropic branch. Anisotropy
+affects only the base specular lobe; diffuse, IOR/specular, sheen, clearcoat,
+emission, no-light, unlit, scene overrides, fallbacks, and observations remain
+unchanged. Its optional texture is fully validated but remains unsupported.
+The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source or bounded generated-tangent TBN perturbs only direct-light response.
@@ -562,7 +573,8 @@ dielectric parameters `metallic = 0`, `roughness = 0.8`. Cross-surface
 emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
-fixed 912-byte per-draw uniform preserves the complete prior 848-byte prefix,
+fixed 928-byte per-draw uniform preserves the complete prior 912-byte prefix,
+which preserves the complete 848-byte prefix,
 which preserves the complete 832-byte, 736-byte, 720-byte, 656-byte, 640-byte, 624-byte,
 496-byte, and 480-byte model,
 view-projection, material-color, identity, directional, point-light,
@@ -580,7 +592,8 @@ normal padding lanes carry finite scale and role presence. One factor row
 carries sheen color RGB and roughness. Four final padded affine rows carry
 sheen-color then sheen-roughness transforms. Selector bits 12 through 14
 choose secondary coordinates for the three coat roles; bits 15 and 16 choose
-secondary coordinates for the two sheen roles.
+secondary coordinates for the two sheen roles. One final row carries
+anisotropy strength, rotation cosine, rotation sine, and exact-zero padding.
 A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU
@@ -617,7 +630,7 @@ finite non-negative ratified emissive strength, and bounded
 OPAQUE/MASK alpha coverage plus a strict optional boolean `doubleSided` per
 mesh material. The ratified `KHR_materials_emissive_strength`,
 `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_clearcoat`,
-`KHR_materials_sheen`,
+`KHR_materials_sheen`, `KHR_materials_anisotropy`,
 `KHR_materials_unlit`,
 `KHR_texture_transform`, and `KHR_mesh_quantization`
 extensions are the sole
@@ -631,13 +644,16 @@ retains one typed shading model only after strict declaration,
 selected/unused material, and fallback-resource validation. Emissive strength
 defaults to one, is retained for selected and unused materials, and is
 mutually exclusive with the supported unlit marker. Material IOR, specular,
-clearcoat, and sheen objects retain their bounded numeric fields after strict
+clearcoat, sheen, and anisotropy objects retain their bounded numeric fields after strict
 declaration and coexistence checks. Clearcoat factor and roughness have exact
 zero defaults; all three clearcoat texture infos and their root resources are
 validated and retained with their ratified channel semantics. Sheen color and
 roughness have exact zero defaults; both sheen texture infos and their root
 resources are validated and retained with their ratified color-space and
-channel semantics. Texture transform retains
+channel semantics. Anisotropy strength and rotation have exact zero defaults;
+its optional texture info and root resources validate before the texture-
+bearing material remains unsupported. Factor-only anisotropy requires source
+normal plus tangent or base-normal tangent generation. Texture transform retains
 finite offset, rotation, and scale with exact defaults and Khronos
 translation-rotation-scale order for the eleven texture-info roles.
 Each role retains effective selector zero or one, with extension `texCoord`

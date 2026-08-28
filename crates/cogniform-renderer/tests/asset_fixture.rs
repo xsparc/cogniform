@@ -1122,6 +1122,108 @@ fn material_specular_factors_compose_without_changing_renderer_topology() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn anisotropy_factors_rotate_direct_specular_without_new_renderer_resources() {
+    for light in [LightKind::Directional, LightKind::Point] {
+        let omitted = material_frame(
+            anisotropy_fixture(None, None, 0.35, 1.0, false),
+            Some(light),
+            false,
+        );
+        let explicit_zero = material_frame(
+            anisotropy_fixture(Some(0.0), Some(1.25), 0.35, 1.0, false),
+            Some(light),
+            false,
+        );
+        assert_frames_equal(&explicit_zero, &omitted);
+
+        let tangent_aligned = material_frame(
+            anisotropy_fixture(Some(0.9), Some(0.0), 0.35, 1.0, false),
+            Some(light),
+            false,
+        );
+        let quarter_turn = material_frame(
+            anisotropy_fixture(
+                Some(0.9),
+                Some(core::f32::consts::FRAC_PI_2),
+                0.35,
+                1.0,
+                false,
+            ),
+            Some(light),
+            false,
+        );
+        let rough = material_frame(
+            anisotropy_fixture(Some(0.9), Some(0.0), 0.8, 1.0, false),
+            Some(light),
+            false,
+        );
+        let mirrored_handedness = material_frame(
+            anisotropy_fixture(Some(0.9), Some(0.6), 0.35, -1.0, false),
+            Some(light),
+            false,
+        );
+        let positive_handedness = material_frame(
+            anisotropy_fixture(Some(0.9), Some(0.6), 0.35, 1.0, false),
+            Some(light),
+            false,
+        );
+        assert_ne!(tangent_aligned.color(), quarter_turn.color());
+        assert_ne!(tangent_aligned.color(), rough.color());
+        assert_ne!(positive_handedness.color(), mirrored_handedness.color());
+        for candidate in [
+            &tangent_aligned,
+            &quarter_turn,
+            &rough,
+            &mirrored_handedness,
+        ] {
+            assert_non_color_observations_equal(candidate, &omitted);
+        }
+
+        let overridden = material_frame(
+            anisotropy_fixture(Some(0.9), Some(0.6), 0.35, -1.0, false),
+            Some(light),
+            true,
+        );
+        let overridden_baseline = material_frame(
+            anisotropy_fixture(None, None, 0.35, 1.0, false),
+            Some(light),
+            true,
+        );
+        assert_frames_equal(&overridden, &overridden_baseline);
+    }
+
+    let no_light = material_frame(
+        anisotropy_fixture(None, None, 0.35, 1.0, false),
+        None,
+        false,
+    );
+    let no_light_anisotropy = material_frame(
+        anisotropy_fixture(Some(1.0), Some(0.75), 0.35, 1.0, false),
+        None,
+        false,
+    );
+    assert_frames_equal(&no_light_anisotropy, &no_light);
+
+    let layered_zero = material_frame_with_combined_lights(anisotropy_fixture(
+        Some(0.0),
+        Some(0.0),
+        0.35,
+        1.0,
+        true,
+    ));
+    let layered_anisotropy = material_frame_with_combined_lights(anisotropy_fixture(
+        Some(0.9),
+        Some(0.75),
+        0.35,
+        1.0,
+        true,
+    ));
+    assert_ne!(layered_anisotropy.color(), layered_zero.color());
+    assert_non_color_observations_equal(&layered_anisotropy, &layered_zero);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn clearcoat_factors_layer_the_complete_imported_material_without_new_resources() {
     let center = (WIDTH / 2, HEIGHT / 2);
     assert_clearcoat_direct_light_cases(center);
@@ -3847,6 +3949,85 @@ fn specular_fixture(
     };
     let json = format!(
         r#"{{"asset":{{"version":"2.0"}}{root_extensions},"buffers":[{{"byteLength":36}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,0.4],"metallicFactor":{metallic_factor},"roughnessFactor":0.5}}{emissive}{material_extensions}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0}},"material":0,"mode":4}}]}}]}}"#,
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn anisotropy_fixture(
+    strength: Option<f32>,
+    rotation: Option<f32>,
+    roughness: f32,
+    tangent_handedness: f32,
+    layered: bool,
+) -> Vec<u8> {
+    let mut binary = Vec::with_capacity(120);
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, tangent_handedness]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let mut declarations = Vec::new();
+    let mut extensions = Vec::new();
+    if strength.is_some() || rotation.is_some() {
+        declarations.push(r#""KHR_materials_anisotropy""#);
+        let mut fields = Vec::new();
+        if let Some(value) = strength {
+            fields.push(format!(r#""anisotropyStrength":{value}"#));
+        }
+        if let Some(value) = rotation {
+            fields.push(format!(r#""anisotropyRotation":{value}"#));
+        }
+        extensions.push(format!(
+            r#""KHR_materials_anisotropy":{{{}}}"#,
+            fields.join(",")
+        ));
+    }
+    if layered {
+        declarations.extend([
+            r#""KHR_materials_ior""#,
+            r#""KHR_materials_specular""#,
+            r#""KHR_materials_clearcoat""#,
+            r#""KHR_materials_sheen""#,
+        ]);
+        extensions.extend([
+            r#""KHR_materials_ior":{"ior":1.33}"#.to_owned(),
+            r#""KHR_materials_specular":{"specularFactor":0.75,"specularColorFactor":[1.5,0.5,1.0]}"#.to_owned(),
+            r#""KHR_materials_clearcoat":{"clearcoatFactor":0.5,"clearcoatRoughnessFactor":0.25}"#.to_owned(),
+            r#""KHR_materials_sheen":{"sheenColorFactor":[0.1,0.2,0.4],"sheenRoughnessFactor":0.6}"#.to_owned(),
+        ]);
+    }
+    let root_extensions = if declarations.is_empty() {
+        String::new()
+    } else {
+        format!(r#", "extensionsUsed":[{}]"#, declarations.join(","))
+    };
+    let material_extensions = if extensions.is_empty() {
+        String::new()
+    } else {
+        format!(r#", "extensions":{{{}}}"#, extensions.join(","))
+    };
+    let emissive = if layered {
+        r#", "emissiveFactor":[0.02,0.01,0.0]"#
+    } else {
+        ""
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}}{root_extensions},"buffers":[{{"byteLength":120}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.1,"roughnessFactor":{roughness}}}{emissive}{material_extensions}}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2}},"material":0,"mode":4}}]}}]}}"#,
     );
     glb_with_json(&json, &binary)
 }

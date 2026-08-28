@@ -86,6 +86,81 @@ fn triangle_glb_with_extension_materials(
     glb_with_json(&json, &triangle_binary())
 }
 
+fn tangent_triangle_glb_with_extension_materials(
+    root_extension_fields: &str,
+    materials: &str,
+    selected_material: u32,
+    include_normals: bool,
+    include_tangents: bool,
+) -> Vec<u8> {
+    let mut binary = triangle_binary();
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let mut attributes = vec![r#""POSITION":0"#];
+    if include_normals {
+        attributes.push(r#""NORMAL":1"#);
+    }
+    if include_tangents {
+        attributes.push(r#""TANGENT":2"#);
+    }
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},{root_extension_fields}"buffers":[{{"byteLength":120}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}}],"materials":{materials},"meshes":[{{"primitives":[{{"attributes":{{{attributes}}},"material":{selected_material},"mode":4}}]}}]}}"#,
+        attributes = attributes.join(","),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn anisotropy_textured_triangle_glb(
+    png: &[u8],
+    anisotropy_fields: &str,
+    root_fields: &str,
+    include_texcoords: bool,
+    include_tangents: bool,
+) -> Vec<u8> {
+    let mut binary = triangle_binary();
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let image_offset = binary.len();
+    binary.extend_from_slice(png);
+    let tangent_attribute = if include_tangents {
+        r#","TANGENT":2"#
+    } else {
+        ""
+    };
+    let texcoord_attribute = if include_texcoords {
+        r#","TEXCOORD_0":3"#
+    } else {
+        ""
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}}{root_fields},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"normalTexture":{{"index":0}},"extensions":{{"KHR_materials_anisotropy":{{{anisotropy_fields}}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1{tangent_attribute}{texcoord_attribute}}},"material":0,"mode":4}}]}}]}}"#,
+        binary_length = binary.len(),
+        image_length = png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
 fn encode_png(
     width: u32,
     height: u32,
@@ -2196,6 +2271,322 @@ fn wider_clearcoat_payload_proxies_only_after_supported_fields_validate() {
         declared,
         r#"[{"extensions":{"KHR_materials_clearcoat":{"clearcoatFactor":2.0,"future":true}}}]"#,
         0,
+    );
+    let (store, hash) = process_with_proxy_policy(invalid);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidJson
+    );
+}
+
+#[test]
+fn anisotropy_defaults_strength_and_rotation_are_retained_without_accounting_growth() {
+    let cases = [
+        ("", r"[{}]", 0, false, 0.0_f32, 0.0_f32),
+        (
+            r#""extensionsUsed":["KHR_materials_anisotropy"],"#,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{}}}]"#,
+            0,
+            true,
+            0.0,
+            0.0,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_anisotropy"],"extensionsRequired":["KHR_materials_anisotropy"],"#,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":0.75,"anisotropyRotation":1.5707964}}}]"#,
+            0,
+            true,
+            0.75,
+            core::f32::consts::FRAC_PI_2,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_anisotropy"],"#,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":1.0,"anisotropyRotation":-0.5}}},{}]"#,
+            1,
+            false,
+            0.0,
+            0.0,
+        ),
+    ];
+    let mut decoded_bytes = Vec::new();
+    let mut upload_bytes = Vec::new();
+    for (root_fields, materials, selected, present, expected_strength, expected_rotation) in cases {
+        let bytes = tangent_triangle_glb_with_extension_materials(
+            root_fields,
+            materials,
+            selected,
+            true,
+            true,
+        );
+        let hash = content_hash(&bytes);
+        let mut store = AssetStore::default();
+        store.enqueue(hash, bytes).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        decoded_bytes.push(store.record(hash).unwrap().decoded_bytes);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        let material = upload.material();
+        assert_eq!(material.has_anisotropy(), present);
+        assert_eq!(
+            material.anisotropy_strength().to_bits(),
+            expected_strength.to_bits()
+        );
+        assert_eq!(
+            material.anisotropy_rotation().to_bits(),
+            expected_rotation.to_bits()
+        );
+        let (expected_sin, expected_cos) = expected_rotation.sin_cos();
+        assert_eq!(
+            material.anisotropy_rotation_cos_sin().map(f32::to_bits),
+            [expected_cos, expected_sin].map(f32::to_bits)
+        );
+        upload_bytes.push(upload.byte_len());
+    }
+    assert!(decoded_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+    assert!(upload_bytes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn malformed_or_forbidden_anisotropy_never_receives_a_proxy() {
+    let declared = r#""extensionsUsed":["KHR_materials_anisotropy"],"#;
+    let cases = [
+        ("", r#"[{"extensions":{"KHR_materials_anisotropy":{}}}]"#),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":null}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":[]}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":null}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":"1"}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":-0.1}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":1.1}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":1e100}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyRotation":null}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyRotation":"0"}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyRotation":1e100}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyTexture":null}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyTexture":{}}}}]"#,
+        ),
+        (
+            declared,
+            r#"[{}, {"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":2.0}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_anisotropy","KHR_materials_unlit"],"#,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{},"KHR_materials_unlit":{}}}]"#,
+        ),
+        (
+            r#""extensionsUsed":["KHR_materials_anisotropy","KHR_materials_pbrSpecularGlossiness"],"#,
+            r#"[{"extensions":{"KHR_materials_anisotropy":{},"KHR_materials_pbrSpecularGlossiness":{}}}]"#,
+        ),
+    ];
+    for (root_fields, materials) in cases {
+        let bytes =
+            tangent_triangle_glb_with_extension_materials(root_fields, materials, 0, true, true);
+        let (store, hash) = process_with_proxy_policy(bytes);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        assert_eq!(
+            store.record(hash).unwrap().diagnostics[0].code,
+            AssetDiagnosticCode::InvalidJson
+        );
+    }
+}
+
+#[test]
+fn anisotropy_requires_defined_tangent_space_or_base_normal_texture_generation() {
+    let declared = r#""extensionsUsed":["KHR_materials_anisotropy"],"#;
+    let material = r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":0.5}}}]"#;
+
+    let explicit = tangent_triangle_glb_with_extension_materials(declared, material, 0, true, true);
+    let (store, hash) = process_with_proxy_policy(explicit);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Ready);
+
+    for (include_normals, include_tangents) in [(false, false), (true, false), (false, true)] {
+        let missing = tangent_triangle_glb_with_extension_materials(
+            declared,
+            material,
+            0,
+            include_normals,
+            include_tangents,
+        );
+        let (store, hash) = process_with_proxy_policy(missing);
+        assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+        let diagnostic = &store.record(hash).unwrap().diagnostics[0];
+        assert_eq!(diagnostic.code, AssetDiagnosticCode::InvalidTangent);
+        assert_eq!(diagnostic.location, "glb.decoded.anisotropy_tangent_space");
+    }
+
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let generated = anisotropy_textured_triangle_glb(
+        &png,
+        r#""anisotropyStrength":0.5"#,
+        r#", "extensionsUsed":["KHR_materials_anisotropy"]"#,
+        true,
+        false,
+    );
+    let (store, hash) = process_with_proxy_policy(generated);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Ready);
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert!(upload.material().has_anisotropy());
+    let expected_tangent = [1.0_f32, 0.0, 0.0, 1.0].map(f32::to_bits);
+    assert!(
+        upload.vertices().iter().all(|vertex| {
+            vertex.tangent.map(|value| value.get().to_bits()) == expected_tangent
+        })
+    );
+}
+
+#[test]
+fn anisotropy_texture_proxies_only_after_info_root_and_coordinate_validation() {
+    let png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &[128, 128, 255, 255],
+    );
+    let root = r#", "extensionsUsed":["KHR_materials_anisotropy"]"#;
+    let valid = anisotropy_textured_triangle_glb(
+        &png,
+        r#""anisotropyStrength":0.5,"anisotropyTexture":{"index":0}"#,
+        root,
+        true,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(valid);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedExtension
+    );
+
+    let dangling = anisotropy_textured_triangle_glb(
+        &png,
+        r#""anisotropyTexture":{"index":1}"#,
+        root,
+        true,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(dangling);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidBufferRange
+    );
+
+    let missing_coordinates = anisotropy_textured_triangle_glb(
+        &png,
+        r#""anisotropyTexture":{"index":0}"#,
+        root,
+        false,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(missing_coordinates);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidTexcoord
+    );
+
+    let transformed = anisotropy_textured_triangle_glb(
+        &png,
+        r#""anisotropyTexture":{"index":0,"extensions":{"KHR_texture_transform":{"texCoord":1}}}"#,
+        r#", "extensionsUsed":["KHR_materials_anisotropy","KHR_texture_transform"]"#,
+        true,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(transformed);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::InvalidTexcoord
+    );
+
+    let overflowing_transform = anisotropy_textured_triangle_glb(
+        &png,
+        r#""anisotropyTexture":{"index":0,"extensions":{"KHR_texture_transform":{"offset":[3.4028235e38,0],"scale":[3.4028235e38,1]}}}"#,
+        r#", "extensionsUsed":["KHR_materials_anisotropy","KHR_texture_transform"]"#,
+        true,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(overflowing_transform);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    let diagnostic = &store.record(hash).unwrap().diagnostics[0];
+    assert_eq!(diagnostic.code, AssetDiagnosticCode::InvalidTexcoord);
+    assert_eq!(diagnostic.location, "glb.decoded.texture_transform");
+}
+
+#[test]
+fn wider_anisotropy_payload_proxies_only_after_supported_fields_validate() {
+    let declared = r#""extensionsUsed":["KHR_materials_anisotropy"],"#;
+    let wider = tangent_triangle_glb_with_extension_materials(
+        declared,
+        r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":0.5,"anisotropyRotation":0.25,"future":true}}}]"#,
+        0,
+        true,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(wider);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::UnsupportedExtension
+    );
+
+    let invalid = tangent_triangle_glb_with_extension_materials(
+        declared,
+        r#"[{"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":2.0,"future":true}}}]"#,
+        0,
+        true,
+        true,
     );
     let (store, hash) = process_with_proxy_policy(invalid);
     assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);

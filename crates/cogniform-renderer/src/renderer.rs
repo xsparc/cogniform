@@ -366,6 +366,8 @@ impl HeadlessRenderer {
                 dielectric_f0: 0.04,
                 specular_color_factor: [1.0; 3],
                 specular_factor: 1.0,
+                anisotropy_strength: 0.0,
+                anisotropy_rotation_cos_sin: [1.0, 0.0],
                 clearcoat_factor: 0.0,
                 clearcoat_roughness_factor: 0.0,
                 sheen_color_factor: [0.0; 3],
@@ -1785,6 +1787,7 @@ fn encode_draw_uniform(
     const CLEARCOAT_TEXTURE_TRANSFORM_FLOATS: usize = 3 * 2 * 4;
     const SHEEN_FLOATS: usize = 4;
     const SHEEN_TEXTURE_TRANSFORM_FLOATS: usize = 2 * 2 * 4;
+    const ANISOTROPY_FLOATS: usize = 4;
     const UNIFORM_BYTES: usize = (BASE_FLOATS
         + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT
         + POINT_COUNT_FLOATS
@@ -1796,7 +1799,8 @@ fn encode_draw_uniform(
         + CLEARCOAT_FLOATS
         + CLEARCOAT_TEXTURE_TRANSFORM_FLOATS
         + SHEEN_FLOATS
-        + SHEEN_TEXTURE_TRANSFORM_FLOATS)
+        + SHEEN_TEXTURE_TRANSFORM_FLOATS
+        + ANISOTROPY_FLOATS)
         * 4;
     debug_assert!(directional_lights.len() <= MAX_DIRECTIONAL_LIGHTS);
     debug_assert!(point_lights.len() <= MAX_POINT_LIGHTS);
@@ -1961,6 +1965,11 @@ fn append_material_uniform(bytes: &mut Vec<u8>, draw: &PreparedDraw) {
             }
         }
     }
+    bytes.extend_from_slice(&draw.anisotropy_strength.to_le_bytes());
+    for value in draw.anisotropy_rotation_cos_sin {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&0.0_f32.to_le_bytes());
 }
 
 fn exact_material_flags(flags: u32) -> f32 {
@@ -2289,6 +2298,8 @@ mod tests {
             dielectric_f0: 0.25,
             specular_color_factor: [1.5, 0.5, 2.0],
             specular_factor: 0.75,
+            anisotropy_strength: 0.6,
+            anisotropy_rotation_cos_sin: [0.8, 0.6],
             clearcoat_factor: 0.6,
             clearcoat_roughness_factor: 0.35,
             sheen_color_factor: [0.2, 0.4, 0.8],
@@ -2328,7 +2339,7 @@ mod tests {
         }];
 
         let bytes = encode_draw_uniform(&draw, &lights, &point_lights);
-        assert_eq!(bytes.len(), 912);
+        assert_eq!(bytes.len(), 928);
         let words = bytes
             .chunks_exact(4)
             .map(|word| <[u8; 4]>::try_from(word).unwrap())
@@ -2406,9 +2417,19 @@ mod tests {
             (208..212).map(float).collect::<Vec<_>>(),
             vec![0.2, 0.4, 0.8, 0.55]
         );
+        assert_sheen_and_anisotropy_uniform_tail(&bytes);
+    }
+
+    fn assert_sheen_and_anisotropy_uniform_tail(bytes: &[u8]) {
+        let float_at =
+            |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
         assert_eq!(
-            (212..228).map(float).collect::<Vec<_>>(),
+            (212..228).map(float_at).collect::<Vec<_>>(),
             [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0].repeat(2)
+        );
+        assert_eq!(
+            (228..232).map(float_at).collect::<Vec<_>>(),
+            vec![0.6, 0.8, 0.6, 0.0]
         );
     }
 
@@ -2427,6 +2448,8 @@ mod tests {
             dielectric_f0: 0.04,
             specular_color_factor: [1.0; 3],
             specular_factor: 1.0,
+            anisotropy_strength: 0.0,
+            anisotropy_rotation_cos_sin: [1.0, 0.0],
             clearcoat_factor: 0.0,
             clearcoat_roughness_factor: 0.0,
             sheen_color_factor: [0.0; 3],
@@ -2444,7 +2467,7 @@ mod tests {
         };
 
         let bytes = encode_draw_uniform(&draw, &[], &[]);
-        assert_eq!(bytes.len(), 912);
+        assert_eq!(bytes.len(), 928);
         let float_at =
             |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
         assert_eq!(float_at(119).to_bits(), 131_071.0_f32.to_bits());
@@ -2496,6 +2519,111 @@ mod tests {
         let (water, _) = terms(0.020_059_312, [1.5, 0.5, 2.0], 0.75, 0.6, 0.0, base);
         let (diamond, _) = terms(0.172_394_93, [1.5, 0.5, 2.0], 0.75, 0.6, 0.0, base);
         assert_ne!(water.map(f32::to_bits), diamond.map(f32::to_bits));
+    }
+
+    #[test]
+    fn anisotropy_reference_vectors_pin_zero_identity_distribution_visibility_and_rotation() {
+        fn isotropic_distribution(normal_half: f32, roughness: f32) -> f32 {
+            let bounded_roughness = roughness.max(0.05);
+            let alpha = bounded_roughness * bounded_roughness;
+            let alpha_squared = alpha * alpha;
+            let denominator = normal_half * normal_half * (alpha_squared - 1.0) + 1.0;
+            alpha_squared / (core::f32::consts::PI * denominator * denominator).max(1e-12)
+        }
+
+        fn anisotropic_distribution(
+            normal_half: f32,
+            tangent_half: f32,
+            bitangent_half: f32,
+            roughness: f32,
+            strength: f32,
+        ) -> f32 {
+            if strength.to_bits() == 0 {
+                return isotropic_distribution(normal_half, roughness);
+            }
+            let alpha = roughness.max(0.05).powi(2);
+            let tangent_roughness = alpha + (1.0 - alpha) * strength.powi(2);
+            let product = tangent_roughness * alpha;
+            let weighted = [
+                alpha * tangent_half,
+                tangent_roughness * bitangent_half,
+                product * normal_half,
+            ];
+            let weight = product
+                / weighted
+                    .into_iter()
+                    .map(|value| value * value)
+                    .sum::<f32>()
+                    .max(1e-12);
+            product * weight * weight / core::f32::consts::PI
+        }
+
+        fn anisotropic_visibility(
+            normal: [f32; 2],
+            tangent: [f32; 2],
+            bitangent: [f32; 2],
+            roughness: f32,
+            strength: f32,
+        ) -> f32 {
+            let alpha = roughness.max(0.05).powi(2);
+            let tangent_roughness = alpha + (1.0 - alpha) * strength.powi(2);
+            let length = |values: [f32; 3]| {
+                values
+                    .into_iter()
+                    .map(|value| value * value)
+                    .sum::<f32>()
+                    .sqrt()
+            };
+            let view = normal[0]
+                * length([
+                    tangent_roughness * tangent[1],
+                    alpha * bitangent[1],
+                    normal[1],
+                ]);
+            let light = normal[1]
+                * length([
+                    tangent_roughness * tangent[0],
+                    alpha * bitangent[0],
+                    normal[0],
+                ]);
+            (0.5 / (view + light).max(1e-6)).clamp(0.0, 1.0)
+        }
+
+        for (normal_half, roughness, tangent_half, bitangent_half) in [
+            (0.25_f32, 0.1_f32, 0.7_f32, 0.4_f32),
+            (0.7, 0.35, 0.4, 0.591_608),
+            (1.0, 1.0, 0.0, 0.0),
+        ] {
+            assert_eq!(
+                anisotropic_distribution(
+                    normal_half,
+                    tangent_half,
+                    bitangent_half,
+                    roughness,
+                    0.0,
+                )
+                .to_bits(),
+                isotropic_distribution(normal_half, roughness).to_bits()
+            );
+        }
+
+        let distribution = anisotropic_distribution(0.7, 0.4, 0.591_608, 0.35, 0.8);
+        let visibility = anisotropic_visibility(
+            [0.8, 0.6],
+            [0.3, -0.5],
+            [0.519_615_23, 0.624_499_8],
+            0.35,
+            0.8,
+        );
+        assert!((distribution - 0.006_509_72).abs() <= 1e-8);
+        assert!((visibility - 0.474_873_36).abs() <= 1e-7);
+        assert!((distribution * visibility - 0.003_091_293).abs() <= 1e-8);
+
+        let tangent = [1.0_f32, 0.0, 0.0];
+        let bitangent = [0.0_f32, 1.0, 0.0];
+        let rotated =
+            core::array::from_fn::<_, 3, _>(|index| tangent[index] * 0.0 + bitangent[index] * 1.0);
+        assert_eq!(rotated.map(f32::to_bits), bitangent.map(f32::to_bits));
     }
 
     #[test]

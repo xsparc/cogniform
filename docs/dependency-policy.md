@@ -390,6 +390,14 @@ layouts grow within guaranteed WebGPU limits without changing the sampler
 table or pipeline count. No sample asset byte, decoder, lookup texture,
 network path, or supply-chain authority is added.
 
+CF079 changes no Cargo manifest, lock entry, vendored byte, feature, build
+script, unsafe/native boundary, workflow, or runtime dependency edge. Numeric
+anisotropy and deferred-texture preflight reuse existing JSON, finite-value,
+tangent, texture-resource, PNG, coordinate, and transform validation. The
+first-party anisotropic GGX implementation adds one private uniform row but no
+texture role, binding, sampler, pipeline, decoder, sample asset byte, lookup
+resource, network path, or supply-chain authority.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

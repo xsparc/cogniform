@@ -89,7 +89,11 @@ scene revision that produced it.
 > multiply those factors independently. A conservative pointwise cap and
 > maximum-channel base attenuation guarantee no gain without a lookup
 > resource; zero color, no-light output, emission, and scene overrides preserve
-> the prior path. Refraction,
+> the prior path. Optional ratified anisotropy strength and rotation then
+> reshape only the imported base specular lobe through a retained tangent
+> basis and anisotropic GGX direct response. Exact zero strength preserves the
+> prior isotropic output, and the optional anisotropy texture remains validated
+> but unsupported without adding a twelfth role. Refraction,
 > transmission, and volume remain excluded.
 > Imported core glTF materials now apply
 > deterministic OPAQUE or cutoff-based MASK coverage; blending and sorting
@@ -169,7 +173,7 @@ implementations arrive:
 | `cogniform-mcp` | Bounded stable MCP stdio query/imagination/patch/observation translation and one retained canonical observation resource over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/coordinate/texture-transform/material/emissive-strength/IOR/specular/clearcoat/sheen/embedded-PNG decoding, immutable eleven-role-textured upload jobs, and explicit CPU-state eviction |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/coordinate/texture-transform/material/emissive-strength/IOR/specular/clearcoat/sheen/anisotropy/embedded-PNG decoding, immutable eleven-role-textured upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |

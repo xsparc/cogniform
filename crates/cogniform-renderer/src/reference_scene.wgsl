@@ -46,6 +46,7 @@ struct DrawUniform {
     sheen_color_uv_row_1: vec4<f32>,
     sheen_roughness_uv_row_0: vec4<f32>,
     sheen_roughness_uv_row_1: vec4<f32>,
+    anisotropy: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -166,6 +167,91 @@ fn geometry_schlick_ggx(normal_direction: f32, roughness: f32) -> f32 {
     return normal_direction / max(normal_direction * (1.0 - k) + k, 1e-6);
 }
 
+struct AnisotropyFrame {
+    tangent: vec3<f32>,
+    bitangent: vec3<f32>,
+    strength: f32,
+};
+
+fn anisotropy_frame(
+    world_normal: vec3<f32>,
+    source_tangent: vec4<f32>,
+    strength: f32,
+    rotation: vec2<f32>,
+) -> AnisotropyFrame {
+    var frame = AnisotropyFrame(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), 0.0);
+    if strength == 0.0 {
+        return frame;
+    }
+    let rejected_tangent = source_tangent.xyz
+        - world_normal * dot(world_normal, source_tangent.xyz);
+    let tangent_length_squared = dot(rejected_tangent, rejected_tangent);
+    if tangent_length_squared <= 1e-12 {
+        return frame;
+    }
+    let tangent = rejected_tangent * inverseSqrt(tangent_length_squared);
+    let handedness = select(-1.0, 1.0, source_tangent.w >= 0.0);
+    let bitangent = cross(world_normal, tangent) * handedness;
+    let rotated_tangent_candidate = tangent * rotation.x + bitangent * rotation.y;
+    let rotated_length_squared = dot(rotated_tangent_candidate, rotated_tangent_candidate);
+    if rotated_length_squared <= 1e-12 {
+        return frame;
+    }
+    let rotated_tangent = rotated_tangent_candidate * inverseSqrt(rotated_length_squared);
+    frame.tangent = rotated_tangent;
+    frame.bitangent = cross(world_normal, rotated_tangent) * handedness;
+    frame.strength = strength;
+    return frame;
+}
+
+fn anisotropic_distribution_ggx(
+    normal_half: f32,
+    tangent_half: f32,
+    bitangent_half: f32,
+    roughness: f32,
+    strength: f32,
+) -> f32 {
+    let bounded_roughness = max(roughness, MINIMUM_ROUGHNESS);
+    let alpha = bounded_roughness * bounded_roughness;
+    let tangent_roughness = mix(alpha, 1.0, strength * strength);
+    let bitangent_roughness = alpha;
+    let product = tangent_roughness * bitangent_roughness;
+    let weighted_half = vec3(
+        bitangent_roughness * tangent_half,
+        tangent_roughness * bitangent_half,
+        product * normal_half,
+    );
+    let weight = product / max(dot(weighted_half, weighted_half), 1e-12);
+    return product * weight * weight / PI;
+}
+
+fn anisotropic_visibility_ggx(
+    normal_light: f32,
+    normal_view: f32,
+    tangent_light: f32,
+    bitangent_light: f32,
+    tangent_view: f32,
+    bitangent_view: f32,
+    roughness: f32,
+    strength: f32,
+) -> f32 {
+    let bounded_roughness = max(roughness, MINIMUM_ROUGHNESS);
+    let alpha = bounded_roughness * bounded_roughness;
+    let tangent_roughness = mix(alpha, 1.0, strength * strength);
+    let bitangent_roughness = alpha;
+    let view_term = normal_light * length(vec3(
+        tangent_roughness * tangent_view,
+        bitangent_roughness * bitangent_view,
+        normal_view,
+    ));
+    let light_term = normal_view * length(vec3(
+        tangent_roughness * tangent_light,
+        bitangent_roughness * bitangent_light,
+        normal_light,
+    ));
+    return clamp(0.5 / max(view_term + light_term, 1e-6), 0.0, 1.0);
+}
+
 fn direct_material_response(
     world_normal: vec3<f32>,
     surface_to_light: vec3<f32>,
@@ -177,6 +263,9 @@ fn direct_material_response(
     dielectric_f0: f32,
     specular_color_factor: vec3<f32>,
     specular_factor: f32,
+    anisotropy_tangent: vec3<f32>,
+    anisotropy_bitangent: vec3<f32>,
+    anisotropy_strength: f32,
 ) -> vec3<f32> {
     let normal_light = clamp(dot(world_normal, surface_to_light), 0.0, 1.0);
     if normal_light <= 0.0 {
@@ -233,11 +322,32 @@ fn direct_material_response(
                     dielectric_normal_reflectance,
                     vec3(specular_factor),
                 );
-                let distribution = distribution_ggx(normal_half, roughness);
-                let geometry = geometry_schlick_ggx(normal_view, roughness)
-                    * geometry_schlick_ggx(normal_light, roughness);
-                specular = distribution * geometry * fresnel
-                    / max(4.0 * normal_view * normal_light, 1e-6);
+                if anisotropy_strength == 0.0 {
+                    let distribution = distribution_ggx(normal_half, roughness);
+                    let geometry = geometry_schlick_ggx(normal_view, roughness)
+                        * geometry_schlick_ggx(normal_light, roughness);
+                    specular = distribution * geometry * fresnel
+                        / max(4.0 * normal_view * normal_light, 1e-6);
+                } else {
+                    let distribution = anisotropic_distribution_ggx(
+                        normal_half,
+                        dot(anisotropy_tangent, surface_to_half),
+                        dot(anisotropy_bitangent, surface_to_half),
+                        roughness,
+                        anisotropy_strength,
+                    );
+                    let visibility = anisotropic_visibility_ggx(
+                        normal_light,
+                        normal_view,
+                        dot(anisotropy_tangent, surface_to_light),
+                        dot(anisotropy_bitangent, surface_to_light),
+                        dot(anisotropy_tangent, surface_to_view),
+                        dot(anisotropy_bitangent, surface_to_view),
+                        roughness,
+                        anisotropy_strength,
+                    );
+                    specular = distribution * visibility * fresnel;
+                }
             }
         }
     }
@@ -573,6 +683,12 @@ fn fs_main(
     let geometric_world_normal = source_geometric_world_normal * face_sign;
     let shaded_world_normal = source_shaded_world_normal * face_sign;
     let clearcoat_world_normal = source_clearcoat_world_normal * face_sign;
+    let anisotropy = anisotropy_frame(
+        shaded_world_normal,
+        input.world_tangent,
+        draw.anisotropy.x,
+        draw.anisotropy.yz,
+    );
     let sampled_material = textureSample(
         metallic_roughness_texture,
         metallic_roughness_sampler,
@@ -711,6 +827,9 @@ fn fs_main(
                 draw.optical.x,
                 specular_color_factor,
                 specular_factor,
+                anisotropy.tangent,
+                anisotropy.bitangent,
+                anisotropy.strength,
             );
             let layered_base = sheen_layered_response(
                 base_response,
@@ -764,6 +883,9 @@ fn fs_main(
                         draw.optical.x,
                         specular_color_factor,
                         specular_factor,
+                        anisotropy.tangent,
+                        anisotropy.bitangent,
+                        anisotropy.strength,
                     );
                     let layered_base = sheen_layered_response(
                         base_response,

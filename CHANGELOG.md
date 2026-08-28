@@ -153,6 +153,17 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   three entries with explicit eleven-texture/sampler adapter preflight while
   retaining 72-byte vertices, 36 samplers, two pipelines, dependencies,
   protocols, persistence, and release authority;
+- ratified factor-only `KHR_materials_anisotropy` through strict declarations,
+  exact zero defaults, finite unit strength, finite-radian rotation, forbidden
+  unlit and legacy specular-glossiness coexistence, and fully validated-but-
+  unsupported texture authority. Source normal plus tangent or the existing
+  bounded base-normal tangent generation supplies the rotated basis. Nonzero
+  strength uses the ratified anisotropic GGX distribution and correlated
+  visibility for directional and point lights, while an exact zero branch
+  preserves the prior isotropic response. One appended row preserves the exact
+  912-byte prefix in a fixed 928-byte uniform without changing the 72-byte
+  vertex, eleven texture roles, twenty-three bindings, 36 samplers, two
+  pipelines, dependencies, protocols, persistence, or release authority;
 - optional core glTF `OPAQUE` and `MASK` alpha coverage, with strict finite
   non-negative cutoff handling, multiplied factor/texture alpha, exact cutoff
   equality, pre-output discard across color/depth/identity/normal, opaque
