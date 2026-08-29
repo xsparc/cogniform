@@ -1,3 +1,5 @@
+const ANISOTROPY_DIRECTION_EPSILON_SQUARED: f32 = 1e-6;
+
 struct DirectionalLight {
     surface_to_light: vec4<f32>,
     color_intensity: vec4<f32>,
@@ -47,6 +49,8 @@ struct DrawUniform {
     sheen_roughness_uv_row_0: vec4<f32>,
     sheen_roughness_uv_row_1: vec4<f32>,
     anisotropy: vec4<f32>,
+    anisotropy_uv_row_0: vec4<f32>,
+    anisotropy_uv_row_1: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -117,6 +121,12 @@ var sheen_roughness_texture: texture_2d<f32>;
 
 @group(0) @binding(22)
 var sheen_roughness_sampler: sampler;
+
+@group(0) @binding(23)
+var anisotropy_texture: texture_2d<f32>;
+
+@group(0) @binding(24)
+var anisotropy_sampler: sampler;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -683,11 +693,40 @@ fn fs_main(
     let geometric_world_normal = source_geometric_world_normal * face_sign;
     let shaded_world_normal = source_shaded_world_normal * face_sign;
     let clearcoat_world_normal = source_clearcoat_world_normal * face_sign;
+    var anisotropy_strength = draw.anisotropy.x;
+    var anisotropy_direction = draw.anisotropy.yz;
+    if draw.anisotropy_uv_row_0.w != 0.0 {
+        let anisotropy_sample = textureSample(
+            anisotropy_texture,
+            anisotropy_sampler,
+            transform_uv(
+                select(
+                    input.texcoord_0,
+                    input.texcoord_1,
+                    (material_flags & 131072u) != 0u,
+                ),
+                draw.anisotropy_uv_row_0,
+                draw.anisotropy_uv_row_1,
+            ),
+        ).rgb;
+        let sampled_direction = anisotropy_sample.rg * 2.0 - vec2(1.0);
+        let direction_length_squared = dot(sampled_direction, sampled_direction);
+        if direction_length_squared > ANISOTROPY_DIRECTION_EPSILON_SQUARED {
+            let direction = sampled_direction * inverseSqrt(direction_length_squared);
+            anisotropy_direction = vec2(
+                draw.anisotropy.y * direction.x - draw.anisotropy.z * direction.y,
+                draw.anisotropy.z * direction.x + draw.anisotropy.y * direction.y,
+            );
+            anisotropy_strength = anisotropy_strength * anisotropy_sample.b;
+        } else {
+            anisotropy_strength = 0.0;
+        }
+    }
     let anisotropy = anisotropy_frame(
         shaded_world_normal,
         input.world_tangent,
-        draw.anisotropy.x,
-        draw.anisotropy.yz,
+        anisotropy_strength,
+        anisotropy_direction,
     );
     let sampled_material = textureSample(
         metallic_roughness_texture,

@@ -25,8 +25,8 @@ and filterable sampling for `Rgba8UnormSrgb` asset textures.
 Linear `Rgba8Unorm` asset normal, metallic-roughness, clearcoat-intensity,
 clearcoat-roughness, and clearcoat-normal textures require the
 same sampled, copy-destination, and filterable usages.
-The fixed imported-material layout also requires at least eleven sampled
-textures, eleven samplers per shader stage, twenty-three bindings per bind group, six
+The fixed imported-material layout also requires at least twelve sampled
+textures, twelve samplers per shader stage, twenty-five bindings per bind group, six
 vertex attributes, and a 72-byte vertex-buffer stride.
 Narrow adapters fail structured capability preflight before pipeline creation.
 
@@ -168,10 +168,12 @@ selected imported base specular lobe. Source normal plus tangent, or the
 existing bounded base normal-texture tangent generation, supplies the basis.
 Nonzero strength rotates that basis and evaluates the ratified anisotropic GGX
 distribution and correlated visibility for directional and point lights.
-Exact zero strength takes the accepted isotropic branch. Diffuse,
+An optional linear texture maps red/green into a normalized tangent-space
+direction, composes it with retained rotation, multiplies strength by blue,
+and ignores alpha. A degenerate mapped direction disables anisotropy. Exact
+zero effective strength takes the accepted isotropic branch. Diffuse,
 IOR/specular, sheen, clearcoat, emission, no-light output, unlit behavior,
-scene overrides, fallbacks, and observations remain unchanged; the optional
-anisotropy texture remains unsupported.
+scene overrides, fallbacks, and observations remain unchanged.
 Perceptual roughness is floored to `0.05` only in the GGX
 distribution to avoid a singular highlight. Each contribution and the shared
 sum are clamped in linear RGB; material alpha is preserved. If neither kind is
@@ -199,7 +201,7 @@ normal observation retain the
 geometric transformed direction. An imported metallic-roughness texture
 multiplies perceptual roughness by green and metallic by blue before both
 directional and point response; red and alpha are ignored. A scene material
-override disables all eleven imported texture roles.
+override disables all twelve imported texture roles.
 
 Imported GLB alpha coverage is evaluated independently of lighting. OPAQUE
 ignores multiplied factor/texture alpha and emits one. MASK discards products
@@ -224,8 +226,8 @@ non-finite value. A fifth definition of either kind, a degenerate active
 directional positive-Z axis, or an active point or selected camera translation
 outside finite GPU f32 returns a typed error before submission.
 
-The existing bind group carries one fixed 928-byte per-draw uniform. The prior
-912-byte prefix remains exact; its 848-byte, 832-byte, 736-byte, 720-byte, 656-byte, 640-byte, 624-byte,
+The existing bind group carries one fixed 960-byte per-draw uniform. The prior
+928-byte prefix remains exact; its 912-byte, 848-byte, 832-byte, 736-byte, 720-byte, 656-byte, 640-byte, 624-byte,
 496-byte, and first 480-byte
 prefixes remain model,
 view-projection, color, compact ID, directional
@@ -250,9 +252,11 @@ strength; four rows carry strength then color affine transforms. One final
 padding lanes. Six final rows carry clearcoat intensity, roughness, and normal
 affine transforms; the coat-normal padding lanes carry finite scale and role
 presence. One `vec4` contains sheen color RGB and roughness. Four final rows
-carry sheen-color then sheen-roughness affine transforms. One final `vec4`
+carry sheen-color then sheen-roughness affine transforms. One factor `vec4`
 contains anisotropy strength, rotation cosine, rotation sine, and exact-zero
-padding.
+padding. Two final rows carry the anisotropy affine transform; selector bit 17
+chooses secondary coordinates and the first row's padding lane records role
+presence.
 Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 selects base-color sampling and bindings 6, 7, and 8 select normal,
@@ -261,7 +265,8 @@ strength and specular-color views; bindings 10 and 12 select their samplers.
 Bindings 13, 15, and 17 select clearcoat intensity, roughness, and normal
 views; bindings 14, 16, and 18 select their samplers.
 Bindings 19 and 21 select sheen color and roughness views; bindings 20 and 22
-select their samplers.
+select their samplers. Binding 23 selects the linear anisotropy view and
+binding 24 selects its sampler.
 Inactive roles bind the
 linear/repeat table entry. This adds
 no light buffer, runtime-selected pipeline creation, runtime
@@ -349,9 +354,10 @@ cargo test --release -p cogniform-renderer --test asset_fixture sheen_factors_bo
 cargo test --release -p cogniform-renderer --test asset_fixture sheen_textures_multiply_srgb_rgb_and_linear_alpha_with_neutral_fallbacks --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture sheen_texture_coordinates_transforms_and_samplers_are_independent --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture anisotropy_factors_rotate_direct_specular_without_new_renderer_resources --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture anisotropy_texture_controls_linear_direction_and_strength_while_ignoring_alpha --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact six_texture_roles_upload_evict_and_rehydrate_exactly
-cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact eleven_texture_roles_upload_evict_and_rehydrate_exactly
+cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact twelve_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact double_sided_draws_switch_pipelines_without_reordering_or_causality_changes
@@ -435,6 +441,10 @@ sheen/clearcoat/emission composition, no-light compatibility, complete scene
 override, unchanged non-color observations, and no renderer resource growth.
 Independent CPU vectors pin the ratified nonzero distribution and visibility
 while preserving the accepted isotropic branch at exact zero.
+The anisotropy-texture contract proves linear red/green direction, blue
+strength, ignored alpha, directional/point response, scene override, no-light
+behavior, unchanged non-color observations, and exact twelve-role GPU upload,
+eviction, and rehydration.
 The alpha-coverage contract distinguishes factor, texture, and product alpha;
 pins equality, cutoff-above-one, OPAQUE, and scene-override behavior; verifies
 discard across every attachment; and preserves revision, logical hash, and
@@ -532,6 +542,9 @@ accounting, appended affine rows, and capability preflight.
 See [ADR 0079](../adr/0079-bounded-gltf-material-anisotropy-factors.md) for
 strict factor/rotation admission, tangent-space authority, deferred texture
 validation, anisotropic GGX, and the exact zero-strength compatibility branch.
+See [ADR 0080](../adr/0080-bounded-gltf-material-anisotropy-texture.md) for
+linear channel semantics, twelve-role accounting, appended affine rows,
+fixed bind-group growth, and capability preflight.
 See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for strict sampler
 decode, fixed-table indexing, independent role bindings, and the one-mip
 fallback.

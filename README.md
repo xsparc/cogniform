@@ -92,8 +92,10 @@ scene revision that produced it.
 > the prior path. Optional ratified anisotropy strength and rotation then
 > reshape only the imported base specular lobe through a retained tangent
 > basis and anisotropic GGX direct response. Exact zero strength preserves the
-> prior isotropic output, and the optional anisotropy texture remains validated
-> but unsupported without adding a twelfth role. Refraction,
+> prior isotropic output. Its bounded linear texture maps red/green into a
+> normalized tangent-space direction, multiplies strength by blue, and ignores
+> alpha through a fixed twelfth role; a degenerate direction disables
+> anisotropy for that fragment. Refraction,
 > transmission, and volume remain excluded.
 > Imported core glTF materials now apply
 > deterministic OPAQUE or cutoff-based MASK coverage; blending and sorting
@@ -103,11 +105,11 @@ scene revision that produced it.
 > its existing alpha and unculled face semantics. Strictly declared exact
 > `KHR_materials_unlit` materials preserve sampled base color independently of
 > direct lights while retaining the same bounded fallback-resource lifecycle.
-> All eleven imported texture roles now retain strict core glTF nearest/linear
+> All twelve imported texture roles now retain strict core glTF nearest/linear
 > filtering and repeat/mirrored/clamp S/T wrapping independently, backed by a
 > fixed renderer-owned sampler table and a documented one-mip fallback.
 > Ratified `KHR_texture_transform` offset, rotation, and scale now apply
-> independently to those same eleven roles under strict finite validation and
+> independently to those same twelve roles under strict finite validation and
 > one fixed prefix-compatible draw uniform. Each role selects coordinate set
 > zero or one, with the extension selector overriding the core selector.
 > Generated normal-map tangents use the sole selected transformed normal
@@ -173,7 +175,7 @@ implementations arrive:
 | `cogniform-mcp` | Bounded stable MCP stdio query/imagination/patch/observation translation and one retained canonical observation resource over one lazy serialized local service |
 | `cogniform-compilation` | Versioned bounded transport-neutral compiler outcomes and canonical JSON without execution or I/O |
 | `cogniform-compiler` | Pure seeded primitive imagination compilation and explanations |
-| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/coordinate/texture-transform/material/emissive-strength/IOR/specular/clearcoat/sheen/anisotropy/embedded-PNG decoding, immutable eleven-role-textured upload jobs, and explicit CPU-state eviction |
+| `cogniform-assets` | Content-addressed GLB admission, strict bounded geometry/normal/tangent generation/coordinate/texture-transform/material/emissive-strength/IOR/specular/clearcoat/sheen/anisotropy/embedded-PNG decoding, immutable twelve-role-textured upload jobs, and explicit CPU-state eviction |
 | `cogniform-procedural` | Pure seeded built-in procedures that emit ordinary scene patches |
 | `cogniform-world` | Authoritative world state and transactional mutation |
 | `cogniform-replay` | Canonical events, integrity, logical hashing, and replay |

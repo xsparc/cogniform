@@ -1224,6 +1224,200 @@ fn anisotropy_factors_rotate_direct_specular_without_new_renderer_resources() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn anisotropy_texture_controls_linear_direction_and_strength_while_ignoring_alpha() {
+    for light in [LightKind::Directional, LightKind::Point] {
+        let disabled = material_frame(
+            anisotropy_texture_fixture(None, 0.0, 0.0, 0.35),
+            Some(light),
+            false,
+        );
+        let blue_zero = material_frame(
+            anisotropy_texture_fixture(Some([255, 128, 0, 37]), 0.9, 0.0, 0.35),
+            Some(light),
+            false,
+        );
+        assert_frames_equal(&blue_zero, &disabled);
+
+        let tangent = material_frame(
+            anisotropy_texture_fixture(Some([255, 128, 255, 0]), 0.9, 0.0, 0.35),
+            Some(light),
+            false,
+        );
+        let bitangent = material_frame(
+            anisotropy_texture_fixture(Some([128, 255, 255, 0]), 0.9, 0.0, 0.35),
+            Some(light),
+            false,
+        );
+        let reduced = material_frame(
+            anisotropy_texture_fixture(Some([255, 128, 64, 0]), 0.9, 0.0, 0.35),
+            Some(light),
+            false,
+        );
+        let opaque_alpha = material_frame(
+            anisotropy_texture_fixture(Some([255, 128, 255, 255]), 0.9, 0.0, 0.35),
+            Some(light),
+            false,
+        );
+        assert_ne!(tangent.color(), bitangent.color());
+        assert_ne!(tangent.color(), reduced.color());
+        assert_frames_equal(&opaque_alpha, &tangent);
+        assert_anisotropy_texture_rotation_and_handedness(light, &tangent);
+        for candidate in [&tangent, &bitangent, &reduced] {
+            assert_non_color_observations_equal(candidate, &disabled);
+        }
+
+        let overridden = material_frame(
+            anisotropy_texture_fixture(Some([128, 255, 255, 0]), 0.9, 0.0, 0.35),
+            Some(light),
+            true,
+        );
+        let overridden_baseline = material_frame(
+            anisotropy_texture_fixture(None, 0.0, 0.0, 0.35),
+            Some(light),
+            true,
+        );
+        assert_frames_equal(&overridden, &overridden_baseline);
+    }
+
+    let no_light_tangent = material_frame(
+        anisotropy_texture_fixture(Some([255, 128, 255, 0]), 0.9, 0.0, 0.35),
+        None,
+        false,
+    );
+    let no_light_bitangent = material_frame(
+        anisotropy_texture_fixture(Some([128, 255, 64, 255]), 0.9, 0.0, 0.35),
+        None,
+        false,
+    );
+    assert_frames_equal(&no_light_tangent, &no_light_bitangent);
+
+    let layered_zero = material_frame_with_combined_lights(anisotropy_texture_variant(
+        Some([255, 128, 0, 255]),
+        0.9,
+        0.4,
+        0.35,
+        1.0,
+        true,
+    ));
+    let layered_anisotropy = material_frame_with_combined_lights(anisotropy_texture_variant(
+        Some([255, 128, 255, 255]),
+        0.9,
+        0.4,
+        0.35,
+        1.0,
+        true,
+    ));
+    assert_ne!(layered_anisotropy.color(), layered_zero.color());
+    assert_non_color_observations_equal(&layered_anisotropy, &layered_zero);
+
+    let generated_zero = material_frame(
+        generated_anisotropy_texture_fixture([255, 128, 255, 255], 0.0),
+        Some(LightKind::Directional),
+        false,
+    );
+    let generated_anisotropy = material_frame(
+        generated_anisotropy_texture_fixture([255, 128, 255, 255], 0.9),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_ne!(generated_anisotropy.color(), generated_zero.color());
+    assert_non_color_observations_equal(&generated_anisotropy, &generated_zero);
+}
+
+fn assert_anisotropy_texture_rotation_and_handedness(light: LightKind, tangent: &RenderedFrame) {
+    let rotated = material_frame(
+        anisotropy_texture_fixture(Some([255, 128, 255, 0]), 0.9, 0.75, 0.35),
+        Some(light),
+        false,
+    );
+    assert_ne!(rotated.color(), tangent.color());
+    let positive_handedness = material_frame(
+        anisotropy_texture_variant(Some([255, 128, 255, 0]), 0.9, 0.6, 0.35, 1.0, false),
+        Some(light),
+        false,
+    );
+    let mirrored_handedness = material_frame(
+        anisotropy_texture_variant(Some([255, 128, 255, 0]), 0.9, 0.6, 0.35, -1.0, false),
+        Some(light),
+        false,
+    );
+    assert_ne!(positive_handedness.color(), mirrored_handedness.color());
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
+fn anisotropy_texture_sampling_authority_and_degenerate_filter_are_bounded() {
+    let texels = [[255, 127, 255, 255], [128, 255, 255, 255]];
+    let patterned = material_frame(
+        anisotropy_pattern_fixture(&AnisotropyPatternFixture {
+            pixels: texels.as_flattened(),
+            width: 2,
+            height: 1,
+            texcoord_0: [0.25, 0.5],
+            texcoord_1: Some([0.75, 0.5]),
+            texture_info_fields: r#", "texCoord":1,"extensions":{"KHR_texture_transform":{"offset":[0.5,0.0]}}"#,
+            sampler_fields: Some(
+                r#""magFilter":9728,"minFilter":9728,"wrapS":10497,"wrapT":33071"#,
+            ),
+            strength: 0.9,
+            rotation: 0.0,
+        }),
+        Some(LightKind::Directional),
+        false,
+    );
+    let first_texel = material_frame(
+        anisotropy_texture_fixture(Some(texels[0]), 0.9, 0.0, 0.35),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_frames_equal(&patterned, &first_texel);
+
+    let nearest = material_frame(
+        anisotropy_pattern_fixture(&AnisotropyPatternFixture {
+            pixels: texels.as_flattened(),
+            width: 2,
+            height: 1,
+            texcoord_0: [0.49, 0.5],
+            texcoord_1: None,
+            texture_info_fields: "",
+            sampler_fields: Some(
+                r#""magFilter":9728,"minFilter":9728,"wrapS":10497,"wrapT":33071"#,
+            ),
+            strength: 0.9,
+            rotation: 0.0,
+        }),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_frames_equal(&nearest, &first_texel);
+
+    let degenerate_texels = [[0, 0, 255, 0], [255, 255, 255, 255]];
+    let degenerate = material_frame(
+        anisotropy_pattern_fixture(&AnisotropyPatternFixture {
+            pixels: degenerate_texels.as_flattened(),
+            width: 2,
+            height: 1,
+            texcoord_0: [0.5, 0.5],
+            texcoord_1: None,
+            texture_info_fields: "",
+            sampler_fields: None,
+            strength: 0.9,
+            rotation: 0.7,
+        }),
+        Some(LightKind::Directional),
+        false,
+    );
+    let disabled = material_frame(
+        anisotropy_texture_fixture(None, 0.0, 0.0, 0.35),
+        Some(LightKind::Directional),
+        false,
+    );
+    assert_frames_equal(&degenerate, &disabled);
+    assert_non_color_observations_equal(&degenerate, &disabled);
+}
+
+#[test]
+#[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
 fn clearcoat_factors_layer_the_complete_imported_material_without_new_resources() {
     let center = (WIDTH / 2, HEIGHT / 2);
     assert_clearcoat_direct_light_cases(center);
@@ -2531,15 +2725,15 @@ fn six_texture_roles_upload_evict_and_rehydrate_exactly() {
 
 #[test]
 #[ignore = "requires an approved DX12 or Vulkan conformance adapter"]
-fn eleven_texture_roles_upload_evict_and_rehydrate_exactly() {
-    let bytes = eleven_role_shared_image_fixture();
+fn twelve_texture_roles_upload_evict_and_rehydrate_exactly() {
+    let bytes = twelve_role_shared_image_fixture();
     let content_hash = content_hash(&bytes);
     let key = AssetMeshKey {
         content_hash,
         mesh_index: 0,
     };
     let mut assets = AssetStore::default();
-    assets.enqueue(content_hash, bytes).unwrap();
+    assets.enqueue(content_hash, bytes.clone()).unwrap();
     assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
     assert_eq!(assets.record(content_hash).unwrap().decoded_bytes, 220);
     let upload = assets.upload_job(key).unwrap();
@@ -2554,29 +2748,37 @@ fn eleven_texture_roles_upload_evict_and_rehydrate_exactly() {
     assert!(upload.clearcoat_normal_texture().is_some());
     assert!(upload.sheen_color_texture().is_some());
     assert!(upload.sheen_roughness_texture().is_some());
+    assert!(upload.anisotropy_texture().is_some());
 
     let mut renderer =
         pollster::block_on(HeadlessRenderer::new(RendererConfig::new(WIDTH, HEIGHT)))
             .expect("the declared reference adapter must initialize");
     renderer.enqueue_asset_upload(upload.clone()).unwrap();
-    assert_eq!(renderer.asset_stats().pending_textures, 11);
-    assert_eq!(renderer.asset_stats().pending_texture_bytes, 44);
+    assert_eq!(renderer.asset_stats().pending_textures, 12);
+    assert_eq!(renderer.asset_stats().pending_texture_bytes, 48);
     let uploaded = renderer.process_next_asset_upload().unwrap();
-    assert_eq!(uploaded.texture_byte_len, 44);
-    assert_eq!(renderer.asset_stats().resident_textures, 11);
-    assert_eq!(renderer.asset_stats().resident_texture_bytes, 44);
+    assert_eq!(uploaded.texture_byte_len, 48);
+    assert_eq!(renderer.asset_stats().resident_textures, 12);
+    assert_eq!(renderer.asset_stats().resident_texture_bytes, 48);
     let eviction = renderer.evict_asset(content_hash);
-    assert_eq!(eviction.removed_resident_textures, 11);
-    assert_eq!(eviction.released_resident_texture_bytes, 44);
-    renderer.enqueue_asset_upload(upload).unwrap();
+    assert_eq!(eviction.removed_resident_textures, 12);
+    assert_eq!(eviction.released_resident_texture_bytes, 48);
+    let store_eviction = assets.evict(content_hash);
+    assert_eq!(store_eviction.removed_textures, 12);
+    assert_eq!(store_eviction.released_resident_cpu_bytes, 220);
+    assets.enqueue(content_hash, bytes).unwrap();
+    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    let rehydrated = assets.upload_job(key).unwrap();
+    assert_eq!(rehydrated.key(), upload.key());
+    renderer.enqueue_asset_upload(rehydrated).unwrap();
     assert_eq!(
         renderer
             .process_next_asset_upload()
             .unwrap()
             .texture_byte_len,
-        44
+        48
     );
-    assert_eq!(renderer.asset_stats().resident_textures, 11);
+    assert_eq!(renderer.asset_stats().resident_textures, 12);
 }
 
 #[test]
@@ -2919,7 +3121,13 @@ fn oriented_material_frame_with_lights(
     };
     let mut assets = AssetStore::default();
     assets.enqueue(content_hash, bytes).unwrap();
-    assert_eq!(assets.process_next().unwrap().state, AssetState::Ready);
+    let outcome = assets.process_next().unwrap();
+    assert_eq!(
+        outcome.state,
+        AssetState::Ready,
+        "fixture diagnostics: {:?}",
+        assets.record(content_hash).unwrap().diagnostics
+    );
     let upload = assets.upload_job(key).unwrap();
     let (texture_count, texture_bytes) = upload_texture_stats(&upload);
     let rehydration_upload = upload.clone();
@@ -3002,6 +3210,7 @@ fn upload_texture_stats(upload: &AssetUploadJob) -> (u32, u64) {
         upload.clearcoat_normal_texture(),
         upload.sheen_color_texture(),
         upload.sheen_roughness_texture(),
+        upload.anisotropy_texture(),
     ];
     let count = textures.into_iter().flatten().count();
     let bytes = textures
@@ -4032,6 +4241,201 @@ fn anisotropy_fixture(
     glb_with_json(&json, &binary)
 }
 
+fn anisotropy_texture_fixture(
+    texel: Option<[u8; 4]>,
+    strength: f32,
+    rotation: f32,
+    roughness: f32,
+) -> Vec<u8> {
+    anisotropy_texture_variant(texel, strength, rotation, roughness, 1.0, false)
+}
+
+fn anisotropy_texture_variant(
+    texel: Option<[u8; 4]>,
+    strength: f32,
+    rotation: f32,
+    roughness: f32,
+    tangent_handedness: f32,
+    layered: bool,
+) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, tangent_handedness]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.5_f32, 0.5]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let (image_view, texture_resources, texture_field) = texel.map_or_else(
+        || (String::new(), String::new(), String::new()),
+        |texel| {
+            let png = encode_png(1, 1, &texel);
+            let offset = binary.len();
+            binary.extend_from_slice(&png);
+            (
+                format!(
+                    r#",{{"buffer":0,"byteOffset":{offset},"byteLength":{}}}"#,
+                    png.len()
+                ),
+                r#", "textures":[{"source":0}],"images":[{"bufferView":4,"mimeType":"image/png"}]"#
+                    .to_owned(),
+                r#", "anisotropyTexture":{"index":0}"#.to_owned(),
+            )
+        },
+    );
+    let (declarations, layer_fields, emissive) = if layered {
+        (
+            r#","KHR_materials_ior","KHR_materials_specular","KHR_materials_clearcoat","KHR_materials_sheen""#,
+            r#", "KHR_materials_ior":{"ior":1.33},"KHR_materials_specular":{"specularFactor":0.75,"specularColorFactor":[1.5,0.5,1.0]},"KHR_materials_clearcoat":{"clearcoatFactor":0.5,"clearcoatRoughnessFactor":0.25},"KHR_materials_sheen":{"sheenColorFactor":[0.1,0.2,0.4],"sheenRoughnessFactor":0.6}"#,
+            r#", "emissiveFactor":[0.02,0.01,0.0]"#,
+        )
+    } else {
+        ("", "", "")
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_anisotropy"{declarations}],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}}{image_view}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.1,"roughnessFactor":{roughness}}}{emissive},"extensions":{{"KHR_materials_anisotropy":{{"anisotropyStrength":{strength},"anisotropyRotation":{rotation}{texture_field}}}{layer_fields}}}}}]{texture_resources},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+struct AnisotropyPatternFixture<'a> {
+    pixels: &'a [u8],
+    width: u32,
+    height: u32,
+    texcoord_0: [f32; 2],
+    texcoord_1: Option<[f32; 2]>,
+    texture_info_fields: &'a str,
+    sampler_fields: Option<&'a str>,
+    strength: f32,
+    rotation: f32,
+}
+
+fn anisotropy_pattern_fixture(fixture: &AnisotropyPatternFixture<'_>) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for _ in 0..3 {
+        for value in fixture.texcoord_0 {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let secondary_view = fixture.texcoord_1.map_or_else(String::new, |texcoord| {
+        for _ in 0..3 {
+            for value in texcoord {
+                binary.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        r#",{"buffer":0,"byteOffset":144,"byteLength":24}"#.to_owned()
+    });
+    let secondary_accessor = fixture.texcoord_1.map_or_else(String::new, |_| {
+        r#",{"bufferView":4,"componentType":5126,"count":3,"type":"VEC2"}"#.to_owned()
+    });
+    let secondary_attribute = fixture
+        .texcoord_1
+        .map_or_else(String::new, |_| r#", "TEXCOORD_1":4"#.to_owned());
+    let image_view_index = if fixture.texcoord_1.is_some() { 5 } else { 4 };
+    let png = encode_png(fixture.width, fixture.height, fixture.pixels);
+    let image_offset = binary.len();
+    binary.extend_from_slice(&png);
+    let image_view = format!(
+        r#",{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}"#,
+        png.len()
+    );
+    let (texture_sampler, samplers) = fixture.sampler_fields.map_or_else(
+        || (String::new(), String::new()),
+        |fields| {
+            (
+                r#""sampler":0,"#.to_owned(),
+                format!(r#", "samplers":[{{{fields}}}]"#),
+            )
+        },
+    );
+    let transform_declaration = if fixture
+        .texture_info_fields
+        .contains("KHR_texture_transform")
+    {
+        r#", "KHR_texture_transform""#
+    } else {
+        ""
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_anisotropy"{transform_declaration}],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}}{secondary_view}{image_view}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}{secondary_accessor}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.1,"roughnessFactor":0.35}},"extensions":{{"KHR_materials_anisotropy":{{"anisotropyStrength":{},"anisotropyRotation":{},"anisotropyTexture":{{"index":0{}}}}}}}}}],"textures":[{{{texture_sampler}"source":0}}],"images":[{{"bufferView":{image_view_index},"mimeType":"image/png"}}]{samplers},"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3{secondary_attribute}}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+        fixture.strength,
+        fixture.rotation,
+        fixture.texture_info_fields,
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn generated_anisotropy_texture_fixture(texel: [u8; 4], strength: f32) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.0_f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let png = encode_png(1, 1, &texel);
+    let image_offset = binary.len();
+    binary.extend_from_slice(&png);
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_anisotropy"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorFactor":[0.8,0.4,0.2,1.0],"metallicFactor":0.1,"roughnessFactor":0.35}},"normalTexture":{{"index":0}},"extensions":{{"KHR_materials_anisotropy":{{"anisotropyStrength":{strength},"anisotropyTexture":{{"index":0}}}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":3,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
+        png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
 fn clearcoat_fixture(
     clearcoat_factor: Option<f32>,
     clearcoat_roughness: Option<f32>,
@@ -4840,13 +5244,13 @@ fn six_role_shared_image_fixture() -> Vec<u8> {
     glb_with_json(&json, &binary)
 }
 
-fn eleven_role_shared_image_fixture() -> Vec<u8> {
+fn twelve_role_shared_image_fixture() -> Vec<u8> {
     let mut binary = four_role_fixture_geometry(false);
     let png = encode_png(1, 1, &[128, 128, 255, 255]);
     let image_offset = binary.len();
     binary.extend_from_slice(&png);
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_specular","KHR_materials_clearcoat","KHR_materials_sheen"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":0}}}},"normalTexture":{{"index":0}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":0}},"extensions":{{"KHR_materials_specular":{{"specularTexture":{{"index":0}},"specularColorTexture":{{"index":0}}}},"KHR_materials_clearcoat":{{"clearcoatFactor":1.0,"clearcoatTexture":{{"index":0}},"clearcoatRoughnessTexture":{{"index":0}},"clearcoatNormalTexture":{{"index":0}}}},"KHR_materials_sheen":{{"sheenColorFactor":[0.8,0.4,0.2],"sheenRoughnessFactor":0.5,"sheenColorTexture":{{"index":0}},"sheenRoughnessTexture":{{"index":0}}}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_specular","KHR_materials_clearcoat","KHR_materials_sheen","KHR_materials_anisotropy"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"pbrMetallicRoughness":{{"baseColorTexture":{{"index":0}},"metallicRoughnessTexture":{{"index":0}}}},"normalTexture":{{"index":0}},"emissiveFactor":[0.25,0.5,0.75],"emissiveTexture":{{"index":0}},"extensions":{{"KHR_materials_specular":{{"specularTexture":{{"index":0}},"specularColorTexture":{{"index":0}}}},"KHR_materials_clearcoat":{{"clearcoatFactor":1.0,"clearcoatTexture":{{"index":0}},"clearcoatRoughnessTexture":{{"index":0}},"clearcoatNormalTexture":{{"index":0}}}},"KHR_materials_sheen":{{"sheenColorFactor":[0.8,0.4,0.2],"sheenRoughnessFactor":0.5,"sheenColorTexture":{{"index":0}},"sheenRoughnessTexture":{{"index":0}}}},"KHR_materials_anisotropy":{{"anisotropyStrength":0.8,"anisotropyTexture":{{"index":0}}}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
         binary.len(),
         png.len(),
     );

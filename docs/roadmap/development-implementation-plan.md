@@ -1888,6 +1888,29 @@ attachments, lifecycle, revision, logical hash, replay, protocol, persistence,
 dependency, workflow, release, and deployment boundaries. See
 [ADR 0079](../adr/0079-bounded-gltf-material-anisotropy-factors.md).
 
+### PR 80 - CF080: Bounded glTF material anisotropy texture
+
+Outcome: supported imported metallic-roughness materials retain and render the
+ratified linear anisotropy texture through one fixed portable role.
+
+Gate: admit linear red/green direction and blue strength only after the
+existing strict declaration, texture-info, selected-coordinate, transform,
+sampler, image, embedded-PNG, and tangent-space validation. Ignore alpha. Map
+red/green to `[-1,1]`, normalize before composing the retained rotation, and
+multiply numeric strength by blue. A degenerate mapped direction disables
+anisotropy for that fragment. Raise root image, texture, and sampler caps from
+eleven to twelve, preserve shared CPU-image accounting, reserve zero through
+twelve role-keyed GPU resources atomically, and reject a thirteenth.
+
+Append two affine rows after the exact 928-byte prefix for a fixed 960-byte
+uniform, use selector bit 17, and grow the fixed bind group from twenty-three
+to twenty-five entries. Require twelve sampled textures and twelve samplers per
+shader stage. Preserve the 72-byte vertex, 36-entry sampler table, two
+pipelines, attachments, observations, lifecycle, revision, logical hash,
+replay, protocol, persistence, dependency, workflow, release, and deployment
+boundaries. See
+[ADR 0080](../adr/0080-bounded-gltf-material-anisotropy-texture.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1901,6 +1924,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
   -> CF072 -> CF073 -> CF074 -> CF075 -> CF076 -> CF077 -> CF078 -> CF079
+  -> CF080
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2335,6 +2359,17 @@ Validation expands with capability:
   color Vulkan evidence; unchanged vertex, texture-role, binding, sampler,
   pipeline, lifecycle, logical, protocol, persistence, dependency, workflow,
   release, and deployment boundaries.
+- CF080: strict admission of the deferred linear anisotropy texture; normalized
+  red/green direction, blue strength multiplication, ignored alpha, and
+  degenerate-direction zero behavior; independent sampler, coordinate selector,
+  and affine-transform retention; exact eleven-to-twelve root collection and
+  role-accounting growth; shared CPU-image accounting; atomic twelve-role GPU
+  reservation, eviction, and rehydration; exact 928-byte uniform prefix plus
+  two appended rows in a 960-byte layout; selector bit 17; twenty-five fixed
+  bindings with explicit twelve-texture and twelve-sampler adapter preflight;
+  directional/point, scene-override, no-light, and unchanged non-color Vulkan
+  evidence; unchanged vertex, sampler table, pipeline, logical, protocol,
+  persistence, dependency, workflow, release, and deployment boundaries.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

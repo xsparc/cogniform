@@ -541,15 +541,18 @@ default zero. A selected primitive requires source normal plus tangent or the
 existing bounded base normal-texture tangent-generation path. For nonzero
 strength, the rotated tangent basis drives the ratified anisotropic GGX
 distribution and correlated visibility for direct directional and point
-lighting. Exact zero strength takes the accepted isotropic branch. Anisotropy
+lighting. Its optional linear texture maps red/green into a normalized tangent-
+space direction, composes that direction with retained rotation, multiplies
+strength by blue, and ignores alpha. A degenerate mapped direction disables
+anisotropy for that fragment. Exact zero effective strength takes the accepted isotropic branch. Anisotropy
 affects only the base specular lobe; diffuse, IOR/specular, sheen, clearcoat,
 emission, no-light, unlit, scene overrides, fallbacks, and observations remain
-unchanged. Its optional texture is fully validated but remains unsupported.
+unchanged.
 The
 metallic-roughness green and blue channels multiply numeric
 roughness and metallic only inside direct lighting; red and alpha are ignored.
 A source or bounded generated-tangent TBN perturbs only direct-light response.
-Each of the eleven texture roles independently selects `TEXCOORD_0` or
+Each of the twelve texture roles independently selects `TEXCOORD_0` or
 `TEXCOORD_1` and applies its retained finite `KHR_texture_transform` affine
 rows. The extension selector overrides the core texture-info selector.
 Generated tangents use the sole selected transformed normal-role coordinates.
@@ -564,7 +567,7 @@ changing alpha; texture alpha is ignored. Untextured draws use sRGB white
 base-color/emissive/specular-color/sheen-color, linear white metallic-
 roughness/specular-strength/clearcoat/clearcoat-roughness/sheen-roughness, and
 neutral-normal fallbacks. A scene
-`MaterialComponent` overrides the whole imported material, disables all eleven
+`MaterialComponent` overrides the whole imported material, disables all twelve
 imported texture roles, and
 selects zero imported emission.
 A built-in or material-free
@@ -573,7 +576,8 @@ dielectric parameters `metallic = 0`, `roughness = 0.8`. Cross-surface
 emission, ambient, image-based lighting,
 shadows, spot lights, configurable point range/radius,
 other material texture roles, blending, sorting, HDR, and tone mapping are outside this baseline. A
-fixed 928-byte per-draw uniform preserves the complete prior 912-byte prefix,
+fixed 960-byte per-draw uniform preserves the complete prior 928-byte prefix,
+which preserves the complete prior 912-byte prefix,
 which preserves the complete 848-byte prefix,
 which preserves the complete 832-byte, 736-byte, 720-byte, 656-byte, 640-byte, 624-byte,
 496-byte, and 480-byte model,
@@ -592,16 +596,19 @@ normal padding lanes carry finite scale and role presence. One factor row
 carries sheen color RGB and roughness. Four final padded affine rows carry
 sheen-color then sheen-roughness transforms. Selector bits 12 through 14
 choose secondary coordinates for the three coat roles; bits 15 and 16 choose
-secondary coordinates for the two sheen roles. One final row carries
+secondary coordinates for the two sheen roles. One factor row carries
 anisotropy strength, rotation cosine, rotation sine, and exact-zero padding.
+Two final padded affine rows carry the anisotropy transform; selector bit 17
+chooses secondary coordinates and the first row's padding lane records role
+presence.
 A fifth definition
 of either kind, a degenerate active direction, an active point position, or a
 selected camera position outside finite GPU-f32 range fails before GPU
 submission.
 
-The fixed imported-material bind group contains eleven texture views and eleven
-samplers in twenty-three total entries. Adapter preflight requires at least
-eleven sampled textures, eleven samplers per shader stage, and twenty-three bindings per group,
+The fixed imported-material bind group contains twelve texture views and twelve
+samplers in twenty-five total entries. Adapter preflight requires at least
+twelve sampled textures, twelve samplers per shader stage, and twenty-five bindings per group,
 six vertex attributes, and a 72-byte vertex-buffer stride, so an insufficient
 adapter fails as structured `UnsupportedCapabilities` before pipeline
 construction.
@@ -651,19 +658,20 @@ validated and retained with their ratified channel semantics. Sheen color and
 roughness have exact zero defaults; both sheen texture infos and their root
 resources are validated and retained with their ratified color-space and
 channel semantics. Anisotropy strength and rotation have exact zero defaults;
-its optional texture info and root resources validate before the texture-
-bearing material remains unsupported. Factor-only anisotropy requires source
+its optional linear texture retains normalized red/green direction, blue
+strength, ignored alpha, independent sampling authority, and a degenerate-
+direction zero guard after complete validation. Anisotropy requires source
 normal plus tangent or base-normal tangent generation. Texture transform retains
 finite offset, rotation, and scale with exact defaults and Khronos
-translation-rotation-scale order for the eleven texture-info roles.
+translation-rotation-scale order for the twelve texture-info roles.
 Each role retains effective selector zero or one, with extension `texCoord`
 overriding core `texCoord`, and requires the selected set on the primitive. The subset also retains
 one shared embedded PNG per base-color, metallic-roughness, normal, emissive,
 specular-strength, specular-color, clearcoat-intensity, clearcoat-roughness,
-clearcoat-normal, sheen-color, or sheen-roughness role. The image subset
+clearcoat-normal, sheen-color, sheen-roughness, or anisotropy role. The image subset
 is static non-interlaced 8-bit RGB/RGBA, decoded under dimension, pixel,
 retained-byte, decoder-working-byte, per-asset, and aggregate CPU limits into
-at most eleven immutable RGBA8 role values; a source shared by roles counts once
+at most twelve immutable RGBA8 role values; a source shared by roles counts once
 on CPU. Decoders verify declared and decoded sizes before allocation; expanded
 upload vertices always reserve exactly 72 bytes: the accepted 64-byte position,
 unit-normal, primary-coordinate, unit-tangent-plus-handedness, and unit-RGBA-

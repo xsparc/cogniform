@@ -438,8 +438,8 @@ pub struct AssetMaterial {
     anisotropy_rotation_cos_sin: [f32; 2],
     texture_roles: u16,
     texture_coordinate_sets: u16,
-    texture_samplers: [AssetSampler; 11],
-    texture_transforms: [AssetTextureTransform; 11],
+    texture_samplers: [AssetSampler; 12],
+    texture_transforms: [AssetTextureTransform; 12],
     normal_scale: f32,
     clearcoat_normal_scale: f32,
     alpha_mode: AssetAlphaMode,
@@ -460,6 +460,7 @@ impl AssetMaterial {
     const CLEARCOAT_NORMAL_TEXTURE: u16 = 1 << 8;
     const SHEEN_COLOR_TEXTURE: u16 = 1 << 9;
     const SHEEN_ROUGHNESS_TEXTURE: u16 = 1 << 10;
+    const ANISOTROPY_TEXTURE: u16 = 1 << 11;
     const BASE_COLOR_SAMPLER: usize = 0;
     const EMISSIVE_SAMPLER: usize = 1;
     const METALLIC_ROUGHNESS_SAMPLER: usize = 2;
@@ -471,6 +472,7 @@ impl AssetMaterial {
     const CLEARCOAT_NORMAL_SAMPLER: usize = 8;
     const SHEEN_COLOR_SAMPLER: usize = 9;
     const SHEEN_ROUGHNESS_SAMPLER: usize = 10;
+    const ANISOTROPY_SAMPLER: usize = 11;
 
     /// Creates one validated linear metallic-roughness material with zero emission.
     #[must_use]
@@ -495,8 +497,8 @@ impl AssetMaterial {
             anisotropy_rotation_cos_sin: [1.0, 0.0],
             texture_roles: 0,
             texture_coordinate_sets: 0,
-            texture_samplers: [AssetSampler::LINEAR_REPEAT; 11],
-            texture_transforms: [AssetTextureTransform::IDENTITY; 11],
+            texture_samplers: [AssetSampler::LINEAR_REPEAT; 12],
+            texture_transforms: [AssetTextureTransform::IDENTITY; 12],
             normal_scale: 1.0,
             clearcoat_normal_scale: 1.0,
             alpha_mode: AssetAlphaMode::Opaque,
@@ -744,6 +746,21 @@ impl AssetMaterial {
         self
     }
 
+    pub(crate) const fn with_anisotropy_texture(
+        mut self,
+        sampler: AssetSampler,
+        transform: AssetTextureTransform,
+        texture_coordinate_set: u8,
+    ) -> Self {
+        debug_assert!(texture_coordinate_set <= 1);
+        self.texture_roles |= Self::ANISOTROPY_TEXTURE;
+        self.texture_coordinate_sets |=
+            u16::from_le_bytes([texture_coordinate_set, 0]) * Self::ANISOTROPY_TEXTURE;
+        self.texture_samplers[Self::ANISOTROPY_SAMPLER] = sampler;
+        self.texture_transforms[Self::ANISOTROPY_SAMPLER] = transform;
+        self
+    }
+
     pub(crate) fn with_alpha_mask(mut self, cutoff: FiniteF32) -> Self {
         self.alpha_mode = AssetAlphaMode::Mask;
         self.alpha_cutoff = cutoff.get();
@@ -929,6 +946,12 @@ impl AssetMaterial {
         self.texture_roles & Self::SHEEN_ROUGHNESS_TEXTURE != 0
     }
 
+    /// Returns whether this material samples the linear anisotropy texture.
+    #[must_use]
+    pub const fn has_anisotropy_texture(self) -> bool {
+        self.texture_roles & Self::ANISOTROPY_TEXTURE != 0
+    }
+
     const fn texture_coordinate_set(self, role: u16) -> Option<u32> {
         if self.texture_roles & role == 0 {
             None
@@ -1003,6 +1026,12 @@ impl AssetMaterial {
     #[must_use]
     pub const fn sheen_roughness_texture_coordinate_set(self) -> Option<u32> {
         self.texture_coordinate_set(Self::SHEEN_ROUGHNESS_TEXTURE)
+    }
+
+    /// Returns the effective anisotropy texture-coordinate set when present.
+    #[must_use]
+    pub const fn anisotropy_texture_coordinate_set(self) -> Option<u32> {
+        self.texture_coordinate_set(Self::ANISOTROPY_TEXTURE)
     }
 
     /// Returns the retained base-color sampler when that role is present.
@@ -1110,6 +1139,16 @@ impl AssetMaterial {
     pub const fn sheen_roughness_sampler(self) -> Option<AssetSampler> {
         if self.has_sheen_roughness_texture() {
             Some(self.texture_samplers[Self::SHEEN_ROUGHNESS_SAMPLER])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the retained anisotropy sampler when present.
+    #[must_use]
+    pub const fn anisotropy_sampler(self) -> Option<AssetSampler> {
+        if self.has_anisotropy_texture() {
+            Some(self.texture_samplers[Self::ANISOTROPY_SAMPLER])
         } else {
             None
         }
@@ -1225,6 +1264,16 @@ impl AssetMaterial {
         }
     }
 
+    /// Returns the retained anisotropy UV transform when present.
+    #[must_use]
+    pub const fn anisotropy_texture_transform(self) -> Option<AssetTextureTransform> {
+        if self.has_anisotropy_texture() {
+            Some(self.texture_transforms[Self::ANISOTROPY_SAMPLER])
+        } else {
+            None
+        }
+    }
+
     /// Returns the finite glTF normal-texture XY scale.
     #[must_use]
     pub const fn normal_scale(self) -> f32 {
@@ -1324,6 +1373,7 @@ pub struct AssetUploadJob {
     clearcoat_normal_texture: Option<AssetTexture>,
     sheen_color_texture: Option<AssetTexture>,
     sheen_roughness_texture: Option<AssetTexture>,
+    anisotropy_texture: Option<AssetTexture>,
 }
 
 impl AssetUploadJob {
@@ -1331,7 +1381,7 @@ impl AssetUploadJob {
         key: AssetMeshKey,
         vertices: Arc<[AssetVertex]>,
         material: &AssetMaterial,
-        textures: [Option<AssetTexture>; 11],
+        textures: [Option<AssetTexture>; 12],
     ) -> Self {
         let [
             base_color_texture,
@@ -1345,6 +1395,7 @@ impl AssetUploadJob {
             clearcoat_normal_texture,
             sheen_color_texture,
             sheen_roughness_texture,
+            anisotropy_texture,
         ] = textures;
         Self {
             key,
@@ -1361,6 +1412,7 @@ impl AssetUploadJob {
             clearcoat_normal_texture,
             sheen_color_texture,
             sheen_roughness_texture,
+            anisotropy_texture,
         }
     }
 
@@ -1455,6 +1507,12 @@ impl AssetUploadJob {
         self.sheen_roughness_texture.as_ref()
     }
 
+    /// Returns the immutable shared linear anisotropy texture when referenced.
+    #[must_use]
+    pub const fn anisotropy_texture(&self) -> Option<&AssetTexture> {
+        self.anisotropy_texture.as_ref()
+    }
+
     /// Returns exact GPU vertex bytes required by this interleaved mesh.
     #[must_use]
     pub fn byte_len(&self) -> u64 {
@@ -1484,6 +1542,7 @@ pub(crate) struct DecodedAsset {
     pub(crate) clearcoat_normal_texture: Option<AssetTexture>,
     pub(crate) sheen_color_texture: Option<AssetTexture>,
     pub(crate) sheen_roughness_texture: Option<AssetTexture>,
+    pub(crate) anisotropy_texture: Option<AssetTexture>,
     pub(crate) byte_len: u64,
 }
 
@@ -1500,6 +1559,7 @@ impl DecodedAsset {
             + u32::from(self.clearcoat_normal_texture.is_some())
             + u32::from(self.sheen_color_texture.is_some())
             + u32::from(self.sheen_roughness_texture.is_some())
+            + u32::from(self.anisotropy_texture.is_some())
     }
 }
 

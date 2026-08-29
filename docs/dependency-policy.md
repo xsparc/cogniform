@@ -398,6 +398,14 @@ first-party anisotropic GGX implementation adds one private uniform row but no
 texture role, binding, sampler, pipeline, decoder, sample asset byte, lookup
 resource, network path, or supply-chain authority.
 
+CF080 changes no Cargo manifest, lock entry, vendored byte, feature, build
+script, unsafe/native boundary, workflow, or runtime dependency edge. The
+twelfth role reuses the exact-pinned embedded-PNG decoder, strict texture,
+sampler, coordinate, transform, and tangent validation, renderer-owned sampler
+table, and existing anisotropic GGX implementation. Two bindings and two
+private uniform rows are first-party fixed-layout code; no sample asset byte,
+decoder, lookup texture, network path, or supply-chain authority is added.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the
