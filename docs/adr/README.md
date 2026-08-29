@@ -82,5 +82,6 @@ earlier one and links the history.
 | [0076](0076-bounded-gltf-material-clearcoat-textures.md) | Accepted | Admit bounded ratified clearcoat intensity, roughness, and normal textures |
 | [0077](0077-bounded-gltf-material-sheen-factors.md) | Accepted | Apply bounded ratified material sheen factors without new texture roles |
 | [0078](0078-bounded-gltf-material-sheen-textures.md) | Accepted | Admit bounded ratified sheen color and roughness textures |
+| [0079](0079-bounded-gltf-material-anisotropy-factors.md) | Accepted | Apply bounded ratified material anisotropy factors without a new texture role |
 
 New records use four sections: context, decision, consequences, and status.

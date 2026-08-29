@@ -32,6 +32,7 @@ const PNG_IHDR_LENGTH: u32 = 13;
 const PNG_IEND: [u8; 12] = [0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xae, 0x42, 0x60, 0x82];
 const PNG_RGB: u8 = 2;
 const PNG_RGBA: u8 = 6;
+const KHR_MATERIALS_ANISOTROPY: &str = "KHR_materials_anisotropy";
 const KHR_MATERIALS_CLEARCOAT: &str = "KHR_materials_clearcoat";
 const KHR_MATERIALS_EMISSIVE_STRENGTH: &str = "KHR_materials_emissive_strength";
 const KHR_MATERIALS_IOR: &str = "KHR_materials_ior";
@@ -51,6 +52,7 @@ struct ExtensionPreflight {
     emissive_strengths: Vec<NonNegativeF32>,
     material_optics: Vec<MaterialOptics>,
     material_specular: Vec<MaterialSpecular>,
+    material_anisotropy: Vec<MaterialAnisotropy>,
     material_clearcoat: Vec<MaterialClearcoat>,
     material_sheen: Vec<MaterialSheen>,
     texture_transforms: Vec<MaterialTextureTransforms>,
@@ -68,6 +70,14 @@ struct MaterialSpecular {
     color_factor: [NonNegativeF32; 3],
     texture: Option<PendingTextureInfo>,
     color_texture: Option<PendingTextureInfo>,
+}
+
+#[derive(Clone, Copy)]
+struct MaterialAnisotropy {
+    present: bool,
+    strength: UnitF32,
+    rotation: FiniteF32,
+    texture: Option<PendingTextureInfo>,
 }
 
 #[derive(Clone, Copy)]
@@ -243,7 +253,8 @@ fn remove_declared_extensions_and_features(
         .any(|name| {
             !matches!(
                 name.as_str(),
-                KHR_MATERIALS_CLEARCOAT
+                KHR_MATERIALS_ANISOTROPY
+                    | KHR_MATERIALS_CLEARCOAT
                     | KHR_MATERIALS_EMISSIVE_STRENGTH
                     | KHR_MATERIALS_IOR
                     | KHR_MATERIALS_SHEEN
@@ -277,6 +288,12 @@ fn remove_declared_extensions_and_features(
         &unlit_extension_members,
         &mut unsupported,
     )?;
+    let material_anisotropy = remove_material_anisotropy_extensions(
+        value,
+        &used,
+        &unlit_extension_members,
+        &mut unsupported,
+    )?;
     let material_clearcoat = remove_material_clearcoat_extensions(
         value,
         &used,
@@ -296,6 +313,7 @@ fn remove_declared_extensions_and_features(
         emissive_strengths,
         material_optics,
         material_specular,
+        material_anisotropy,
         material_clearcoat,
         material_sheen,
         texture_transforms,
@@ -783,6 +801,129 @@ fn remove_specular_color_factor(
             .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, location, None))?;
     }
     Ok(retained)
+}
+
+fn default_material_anisotropy() -> MaterialAnisotropy {
+    MaterialAnisotropy {
+        present: false,
+        strength: UnitF32::new(0.0).expect("zero is in range"),
+        rotation: FiniteF32::new(0.0).expect("zero is finite"),
+        texture: None,
+    }
+}
+
+fn remove_material_anisotropy_extensions(
+    value: &mut serde_json::Value,
+    used: &BTreeSet<String>,
+    unlit_extension_members: &[bool],
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<Vec<MaterialAnisotropy>, AssetDiagnostic> {
+    let Some(materials) = value
+        .as_object_mut()
+        .and_then(|root| root.get_mut("materials"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(Vec::new());
+    };
+    let default = default_material_anisotropy();
+    let mut retained = Vec::with_capacity(materials.len());
+    for (material_index, material) in materials.iter_mut().enumerate() {
+        let Some(material) = material.as_object_mut() else {
+            retained.push(default);
+            continue;
+        };
+        let Some(mut extensions) = material.remove("extensions") else {
+            retained.push(default);
+            continue;
+        };
+        let Some(extensions) = extensions.as_object_mut() else {
+            return Err(diagnostic(
+                AssetDiagnosticCode::InvalidJson,
+                "glb.json.materials.extensions",
+                None,
+            ));
+        };
+        let specular_glossiness_member =
+            extensions.contains_key(KHR_MATERIALS_PBR_SPECULAR_GLOSSINESS);
+        let anisotropy = extensions
+            .remove(KHR_MATERIALS_ANISOTROPY)
+            .map(|payload| {
+                decode_material_anisotropy(
+                    payload,
+                    used,
+                    unlit_extension_members.get(material_index).copied() == Some(true)
+                        || specular_glossiness_member,
+                    unsupported,
+                )
+            })
+            .transpose()?
+            .unwrap_or(default);
+        if !extensions.is_empty() {
+            material.insert(
+                "extensions".to_owned(),
+                serde_json::Value::Object(core::mem::take(extensions)),
+            );
+        }
+        retained.push(anisotropy);
+    }
+    Ok(retained)
+}
+
+fn decode_material_anisotropy(
+    mut value: serde_json::Value,
+    used: &BTreeSet<String>,
+    forbidden_coexistence: bool,
+    unsupported: &mut Option<AssetDiagnostic>,
+) -> Result<MaterialAnisotropy, AssetDiagnostic> {
+    const LOCATION: &str = "glb.json.materials.extensions.KHR_materials_anisotropy";
+    if !used.contains(KHR_MATERIALS_ANISOTROPY) {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    }
+    let Some(payload) = value.as_object_mut() else {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    };
+    let strength = payload
+        .remove("anisotropyStrength")
+        .map(|value| {
+            serde_json::from_value::<f32>(value)
+                .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None))
+                .and_then(|value| {
+                    UnitF32::new(value)
+                        .map_err(|_| diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None))
+                })
+        })
+        .transpose()?
+        .unwrap_or_else(|| UnitF32::new(0.0).expect("zero is in range"));
+    let rotation = remove_finite_scalar(payload, "anisotropyRotation", 0.0, LOCATION)?;
+    let texture = remove_pending_texture_info(
+        payload,
+        "anisotropyTexture",
+        used,
+        unsupported,
+        "glb.json.materials.extensions.KHR_materials_anisotropy.anisotropyTexture",
+        false,
+    )?;
+    if texture.is_some() {
+        unsupported.get_or_insert_with(|| {
+            diagnostic(AssetDiagnosticCode::UnsupportedExtension, LOCATION, None)
+        });
+    }
+    if forbidden_coexistence {
+        return Err(diagnostic(AssetDiagnosticCode::InvalidJson, LOCATION, None));
+    }
+    if !payload.is_empty() {
+        let mut remainder = serde_json::Value::Object(core::mem::take(payload));
+        remove_nested_extensions(&mut remainder, used, unsupported)?;
+        unsupported.get_or_insert_with(|| {
+            diagnostic(AssetDiagnosticCode::UnsupportedExtension, LOCATION, None)
+        });
+    }
+    Ok(MaterialAnisotropy {
+        present: true,
+        strength,
+        rotation,
+        texture,
+    })
 }
 
 fn remove_pending_texture_info(
@@ -1418,15 +1559,7 @@ fn validate_root(
     validate_material_values(root)?;
     validate_deferred_extension_texture_references(root, extensions)?;
     let alpha_unsupported = validate_alpha_coverage(root)?;
-    let textures = decode_textures(
-        root,
-        binary,
-        limits,
-        &extensions.texture_transforms,
-        &extensions.material_specular,
-        &extensions.material_clearcoat,
-        &extensions.material_sheen,
-    )?;
+    let textures = decode_textures(root, binary, limits, extensions)?;
     let mut decoded_bytes = textures.byte_len;
     let mut meshes = Vec::with_capacity(root.meshes.len());
     for (mesh_index, mesh) in root.meshes.iter().enumerate() {
@@ -1578,6 +1711,19 @@ fn validate_deferred_extension_texture_references(
                 &root.textures,
                 texture.index,
                 "glb.json.materials.extensions.KHR_materials_specular.texture.index",
+            )
+            .map_err(|mut error| {
+                error.index = Some(stable_index(material_index));
+                error
+            })?;
+        }
+    }
+    for (material_index, anisotropy) in extensions.material_anisotropy.iter().enumerate() {
+        if let Some(texture) = anisotropy.texture {
+            get(
+                &root.textures,
+                texture.index,
+                "glb.json.materials.extensions.KHR_materials_anisotropy.anisotropyTexture.index",
             )
             .map_err(|mut error| {
                 error.index = Some(stable_index(material_index));
@@ -1843,18 +1989,27 @@ fn empty_decoded_textures(unsupported: Option<AssetDiagnostic>) -> DecodedTextur
     }
 }
 
-fn referenced_texture_indices(role_indices: &[Option<u32>; 11]) -> BTreeSet<u32> {
-    role_indices.iter().copied().flatten().collect()
+fn referenced_texture_indices(
+    role_indices: &[Option<u32>; 11],
+    material_anisotropy: &[MaterialAnisotropy],
+) -> BTreeSet<u32> {
+    role_indices
+        .iter()
+        .copied()
+        .flatten()
+        .chain(
+            material_anisotropy
+                .iter()
+                .filter_map(|anisotropy| anisotropy.texture.map(|info| info.index)),
+        )
+        .collect()
 }
 
 fn decode_textures(
     root: &Root,
     binary: &[u8],
     limits: AssetLimits,
-    texture_transforms: &[MaterialTextureTransforms],
-    material_specular: &[MaterialSpecular],
-    material_clearcoat: &[MaterialClearcoat],
-    material_sheen: &[MaterialSheen],
+    extensions: &ExtensionPreflight,
 ) -> Result<DecodedTextures, AssetDiagnostic> {
     let resources = validate_texture_resources(root, binary, limits)?;
     let mut unsupported = resources.unsupported;
@@ -1872,9 +2027,9 @@ fn decode_textures(
         sheen_roughness_index,
     ] = texture_role_indices(
         root,
-        material_specular,
-        material_clearcoat,
-        material_sheen,
+        &extensions.material_specular,
+        &extensions.material_clearcoat,
+        &extensions.material_sheen,
         &mut unsupported,
     )?;
     let role_indices = [
@@ -1890,7 +2045,8 @@ fn decode_textures(
         sheen_color_index,
         sheen_roughness_index,
     ];
-    let referenced_textures = referenced_texture_indices(&role_indices);
+    let referenced_textures =
+        referenced_texture_indices(&role_indices, &extensions.material_anisotropy);
     if referenced_textures.is_empty() {
         if root.textures.is_empty() && root.images.is_empty() {
             return Ok(empty_decoded_textures(unsupported));
@@ -1902,14 +2058,7 @@ fn decode_textures(
             None,
         );
     }
-    validate_texture_coordinates(
-        root,
-        texture_transforms,
-        material_specular,
-        material_clearcoat,
-        material_sheen,
-        &mut unsupported,
-    );
+    validate_texture_coordinates(root, extensions, &mut unsupported);
     if referenced_textures.len() != root.textures.len() {
         remember_unsupported(
             &mut unsupported,
@@ -2420,64 +2569,17 @@ fn shared_texture_index(
 
 fn validate_texture_coordinates(
     root: &Root,
-    texture_transforms: &[MaterialTextureTransforms],
-    material_specular: &[MaterialSpecular],
-    material_clearcoat: &[MaterialClearcoat],
-    material_sheen: &[MaterialSheen],
+    extensions: &ExtensionPreflight,
     unsupported: &mut Option<AssetDiagnostic>,
 ) {
     for (material_index, material) in root.materials.iter().enumerate() {
-        let transforms = texture_transforms
+        let transforms = extensions
+            .texture_transforms
             .get(material_index)
             .copied()
             .unwrap_or_default();
-        if let Some(info) = material
-            .pbr_metallic_roughness
-            .as_ref()
-            .and_then(|pbr| pbr.base_color_texture.as_ref())
-            && effective_texture_coordinate_set(info.tex_coord, transforms.base_color) > 1
-        {
-            remember_unsupported(
-                unsupported,
-                AssetDiagnosticCode::UnsupportedFeature,
-                "glb.json.materials.baseColorTexture.texCoord",
-                None,
-            );
-        }
-        if let Some(info) = material.normal_texture.as_ref()
-            && effective_texture_coordinate_set(info.tex_coord, transforms.normal) > 1
-        {
-            remember_unsupported(
-                unsupported,
-                AssetDiagnosticCode::UnsupportedFeature,
-                "glb.json.materials.normalTexture.texCoord",
-                None,
-            );
-        }
-        if let Some(info) = material.emissive_texture.as_ref()
-            && effective_texture_coordinate_set(info.tex_coord, transforms.emissive) > 1
-        {
-            remember_unsupported(
-                unsupported,
-                AssetDiagnosticCode::UnsupportedFeature,
-                "glb.json.materials.emissiveTexture.texCoord",
-                None,
-            );
-        }
-        if let Some(info) = material
-            .pbr_metallic_roughness
-            .as_ref()
-            .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
-            && effective_texture_coordinate_set(info.tex_coord, transforms.metallic_roughness) > 1
-        {
-            remember_unsupported(
-                unsupported,
-                AssetDiagnosticCode::UnsupportedFeature,
-                "glb.json.materials.metallicRoughnessTexture.texCoord",
-                None,
-            );
-        }
-        let specular = material_specular.get(material_index);
+        validate_core_texture_coordinates(material, transforms, unsupported);
+        let specular = extensions.material_specular.get(material_index);
         validate_pending_texture_coordinates(
             [
                 (
@@ -2491,7 +2593,15 @@ fn validate_texture_coordinates(
             ],
             unsupported,
         );
-        let clearcoat = material_clearcoat.get(material_index);
+        let anisotropy = extensions.material_anisotropy.get(material_index);
+        validate_pending_texture_coordinates(
+            [(
+                anisotropy.and_then(|value| value.texture),
+                "glb.json.materials.extensions.KHR_materials_anisotropy.anisotropyTexture.texCoord",
+            )],
+            unsupported,
+        );
+        let clearcoat = extensions.material_clearcoat.get(material_index);
         validate_pending_texture_coordinates(
             [
                 (
@@ -2509,7 +2619,7 @@ fn validate_texture_coordinates(
             ],
             unsupported,
         );
-        let sheen = material_sheen.get(material_index);
+        let sheen = extensions.material_sheen.get(material_index);
         validate_pending_texture_coordinates(
             [
                 (
@@ -2523,6 +2633,57 @@ fn validate_texture_coordinates(
             ],
             unsupported,
         );
+    }
+}
+
+fn validate_core_texture_coordinates(
+    material: &Material,
+    transforms: MaterialTextureTransforms,
+    unsupported: &mut Option<AssetDiagnostic>,
+) {
+    let candidates = [
+        (
+            material
+                .pbr_metallic_roughness
+                .as_ref()
+                .and_then(|pbr| pbr.base_color_texture.as_ref())
+                .map(|info| (info.tex_coord, transforms.base_color)),
+            "glb.json.materials.baseColorTexture.texCoord",
+        ),
+        (
+            material
+                .normal_texture
+                .as_ref()
+                .map(|info| (info.tex_coord, transforms.normal)),
+            "glb.json.materials.normalTexture.texCoord",
+        ),
+        (
+            material
+                .emissive_texture
+                .as_ref()
+                .map(|info| (info.tex_coord, transforms.emissive)),
+            "glb.json.materials.emissiveTexture.texCoord",
+        ),
+        (
+            material
+                .pbr_metallic_roughness
+                .as_ref()
+                .and_then(|pbr| pbr.metallic_roughness_texture.as_ref())
+                .map(|info| (info.tex_coord, transforms.metallic_roughness)),
+            "glb.json.materials.metallicRoughnessTexture.texCoord",
+        ),
+    ];
+    for (candidate, location) in candidates {
+        if let Some((texture_coordinate_set, transform)) = candidate
+            && effective_texture_coordinate_set(texture_coordinate_set, transform) > 1
+        {
+            remember_unsupported(
+                unsupported,
+                AssetDiagnosticCode::UnsupportedFeature,
+                location,
+                None,
+            );
+        }
     }
 }
 
@@ -2830,6 +2991,7 @@ fn decode_mesh(
         mesh_index,
     )?;
     let material = decode_material(root, primitive.material, extensions)?;
+    validate_anisotropy_tangent_space(&material, &layouts, mesh_index)?;
     if (material.has_base_color_texture()
         || material.has_emissive_texture()
         || material.has_metallic_roughness_texture()
@@ -2845,7 +3007,8 @@ fn decode_mesh(
             Some(mesh_index),
         ));
     }
-    validate_transformed_texture_coordinates(&vertices, &material, mesh_index)?;
+    let anisotropy_texture = selected_anisotropy_texture(primitive.material, extensions);
+    validate_transformed_texture_coordinates(&vertices, &material, anisotropy_texture, mesh_index)?;
     if layouts.has_unsupported_attributes {
         return Err(diagnostic(
             AssetDiagnosticCode::UnsupportedFeature,
@@ -2864,6 +3027,24 @@ fn decode_mesh(
         vertices: Arc::from(vertices),
         material,
     })
+}
+
+fn validate_anisotropy_tangent_space(
+    material: &AssetMaterial,
+    layouts: &VertexLayouts,
+    mesh_index: u32,
+) -> Result<(), AssetDiagnostic> {
+    if material.has_anisotropy()
+        && !material.has_normal_texture()
+        && (layouts.normals.is_none() || layouts.tangents.is_none())
+    {
+        return Err(diagnostic(
+            AssetDiagnosticCode::InvalidTangent,
+            "glb.decoded.anisotropy_tangent_space",
+            Some(mesh_index),
+        ));
+    }
+    Ok(())
 }
 
 fn generated_tangent_texture_source(
@@ -2890,6 +3071,7 @@ fn generated_tangent_texture_source(
 fn validate_transformed_texture_coordinates(
     vertices: &[AssetVertex],
     material: &AssetMaterial,
+    anisotropy_texture: Option<PendingTextureInfo>,
     mesh_index: u32,
 ) -> Result<(), AssetDiagnostic> {
     let roles = [
@@ -2928,6 +3110,10 @@ fn validate_transformed_texture_coordinates(
         (
             material.clearcoat_normal_texture_transform(),
             material.clearcoat_normal_texture_coordinate_set(),
+        ),
+        (
+            anisotropy_texture.map(|info| info.transform),
+            anisotropy_texture.map(|info| info.texture_coordinate_set),
         ),
     ];
     for (transform, texture_coordinate_set) in roles {
@@ -2997,6 +3183,15 @@ fn validate_material_texture_coordinate_sets(
                 value.color_texture.map(|info| info.texture_coordinate_set),
             ]
         }),
+        available_set_count,
+        mesh_index,
+    )?;
+    let anisotropy = primitive
+        .material
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| extensions.material_anisotropy.get(index));
+    validate_selected_texture_coordinates(
+        [anisotropy.and_then(|value| value.texture.map(|info| info.texture_coordinate_set))],
         available_set_count,
         mesh_index,
     )?;
@@ -4778,26 +4973,8 @@ fn decode_material(
         .and_then(|index| extensions.emissive_strengths.get(index))
         .copied()
         .unwrap_or_else(|| NonNegativeF32::new(1.0).expect("one is finite and non-negative"));
-    let optics = material_index
-        .and_then(|index| usize::try_from(index).ok())
-        .and_then(|index| extensions.material_optics.get(index))
-        .copied()
-        .unwrap_or_else(|| material_optics(1.5).expect("the default IOR is valid"));
-    let specular = material_index
-        .and_then(|index| usize::try_from(index).ok())
-        .and_then(|index| extensions.material_specular.get(index))
-        .copied()
-        .unwrap_or_else(default_material_specular);
-    let clearcoat = material_index
-        .and_then(|index| usize::try_from(index).ok())
-        .and_then(|index| extensions.material_clearcoat.get(index))
-        .copied()
-        .unwrap_or_else(default_material_clearcoat);
-    let sheen = material_index
-        .and_then(|index| usize::try_from(index).ok())
-        .and_then(|index| extensions.material_sheen.get(index))
-        .copied()
-        .unwrap_or_else(default_material_sheen);
+    let (optics, specular, anisotropy, clearcoat, sheen) =
+        selected_material_extensions(material_index, extensions);
     let material = AssetMaterial::new(
         color,
         material_scalar(metallic_value)?,
@@ -4807,6 +4984,7 @@ fn decode_material(
     .with_emissive_strength(emissive_strength)
     .with_ior(optics.ior, optics.dielectric_f0)
     .with_specular(specular.factor, specular.color_factor)
+    .with_anisotropy(anisotropy.present, anisotropy.strength, anisotropy.rotation)
     .with_clearcoat(clearcoat.factor, clearcoat.roughness_factor)
     .with_sheen(sheen.color_factor, sheen.roughness_factor);
     let material = apply_unlit(material_index, &extensions.unlit_materials, &material);
@@ -4826,6 +5004,50 @@ fn decode_material(
         sheen,
         &material,
     )
+}
+
+fn selected_material_extensions(
+    material_index: Option<u32>,
+    extensions: &ExtensionPreflight,
+) -> (
+    MaterialOptics,
+    MaterialSpecular,
+    MaterialAnisotropy,
+    MaterialClearcoat,
+    MaterialSheen,
+) {
+    let index = material_index.and_then(|index| usize::try_from(index).ok());
+    let optics = index
+        .and_then(|index| extensions.material_optics.get(index))
+        .copied()
+        .unwrap_or_else(|| material_optics(1.5).expect("the default IOR is valid"));
+    let specular = index
+        .and_then(|index| extensions.material_specular.get(index))
+        .copied()
+        .unwrap_or_else(default_material_specular);
+    let anisotropy = index
+        .and_then(|index| extensions.material_anisotropy.get(index))
+        .copied()
+        .unwrap_or_else(default_material_anisotropy);
+    let clearcoat = index
+        .and_then(|index| extensions.material_clearcoat.get(index))
+        .copied()
+        .unwrap_or_else(default_material_clearcoat);
+    let sheen = index
+        .and_then(|index| extensions.material_sheen.get(index))
+        .copied()
+        .unwrap_or_else(default_material_sheen);
+    (optics, specular, anisotropy, clearcoat, sheen)
+}
+
+fn selected_anisotropy_texture(
+    material_index: Option<u32>,
+    extensions: &ExtensionPreflight,
+) -> Option<PendingTextureInfo> {
+    material_index
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| extensions.material_anisotropy.get(index))
+        .and_then(|anisotropy| anisotropy.texture)
 }
 
 fn apply_material_textures(

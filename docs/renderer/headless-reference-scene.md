@@ -163,6 +163,15 @@ emission, unlit, explicit scene materials, built-ins, fallbacks, and proxies
 remain sheen-free. sRGB sheen-color RGB and linear sheen-roughness alpha
 multiply the retained numeric factors; color alpha and roughness RGB are
 ignored. Role-correct white fallbacks preserve factor-only behavior.
+Ratified `KHR_materials_anisotropy` strength and rotation reshape only the
+selected imported base specular lobe. Source normal plus tangent, or the
+existing bounded base normal-texture tangent generation, supplies the basis.
+Nonzero strength rotates that basis and evaluates the ratified anisotropic GGX
+distribution and correlated visibility for directional and point lights.
+Exact zero strength takes the accepted isotropic branch. Diffuse,
+IOR/specular, sheen, clearcoat, emission, no-light output, unlit behavior,
+scene overrides, fallbacks, and observations remain unchanged; the optional
+anisotropy texture remains unsupported.
 Perceptual roughness is floored to `0.05` only in the GGX
 distribution to avoid a singular highlight. Each contribution and the shared
 sum are clamped in linear RGB; material alpha is preserved. If neither kind is
@@ -215,8 +224,8 @@ non-finite value. A fifth definition of either kind, a degenerate active
 directional positive-Z axis, or an active point or selected camera translation
 outside finite GPU f32 returns a typed error before submission.
 
-The existing bind group carries one fixed 912-byte per-draw uniform. The prior
-848-byte prefix remains exact; its 832-byte, 736-byte, 720-byte, 656-byte, 640-byte, 624-byte,
+The existing bind group carries one fixed 928-byte per-draw uniform. The prior
+912-byte prefix remains exact; its 848-byte, 832-byte, 736-byte, 720-byte, 656-byte, 640-byte, 624-byte,
 496-byte, and first 480-byte
 prefixes remain model,
 view-projection, color, compact ID, directional
@@ -241,7 +250,9 @@ strength; four rows carry strength then color affine transforms. One final
 padding lanes. Six final rows carry clearcoat intensity, roughness, and normal
 affine transforms; the coat-normal padding lanes carry finite scale and role
 presence. One `vec4` contains sheen color RGB and roughness. Four final rows
-carry sheen-color then sheen-roughness affine transforms.
+carry sheen-color then sheen-roughness affine transforms. One final `vec4`
+contains anisotropy strength, rotation cosine, rotation sine, and exact-zero
+padding.
 Bindings 1, 3, 4, and 5 select
 the sampled base-color, normal, metallic-roughness, and emissive views;
 binding 2 selects base-color sampling and bindings 6, 7, and 8 select normal,
@@ -337,6 +348,7 @@ cargo test --release -p cogniform-renderer --test asset_fixture clearcoat_textur
 cargo test --release -p cogniform-renderer --test asset_fixture sheen_factors_bound_direct_light_and_preserve_compatibility_paths --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture sheen_textures_multiply_srgb_rgb_and_linear_alpha_with_neutral_fallbacks --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture sheen_texture_coordinates_transforms_and_samplers_are_independent --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture anisotropy_factors_rotate_direct_specular_without_new_renderer_resources --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact six_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact eleven_texture_roles_upload_evict_and_rehydrate_exactly
@@ -417,6 +429,12 @@ independent patterned coordinate-set overrides/transforms/authored samplers,
 and exact eleven-role GPU upload/eviction/rehydration. Independent CPU vectors
 reproduce the uncapped grazing-energy regression and pin the conservative
 analytic and midpoint-grid bound.
+The anisotropy contract proves exact omitted/zero identity, directional and
+point response, rotation, roughness, tangent handedness, combined IOR/specular/
+sheen/clearcoat/emission composition, no-light compatibility, complete scene
+override, unchanged non-color observations, and no renderer resource growth.
+Independent CPU vectors pin the ratified nonzero distribution and visibility
+while preserving the accepted isotropic branch at exact zero.
 The alpha-coverage contract distinguishes factor, texture, and product alpha;
 pins equality, cutoff-above-one, OPAQUE, and scene-override behavior; verifies
 discard across every attachment; and preserves revision, logical hash, and
@@ -511,6 +529,9 @@ factor row, and unchanged resource topology.
 See [ADR 0078](../adr/0078-bounded-gltf-material-sheen-textures.md) for
 color-space/channel semantics, independent sampling authority, eleven-role
 accounting, appended affine rows, and capability preflight.
+See [ADR 0079](../adr/0079-bounded-gltf-material-anisotropy-factors.md) for
+strict factor/rotation admission, tangent-space authority, deferred texture
+validation, anisotropic GGX, and the exact zero-strength compatibility branch.
 See [ADR 0062](../adr/0062-bounded-core-gltf-samplers.md) for strict sampler
 decode, fixed-table indexing, independent role bindings, and the one-mip
 fallback.

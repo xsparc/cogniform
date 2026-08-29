@@ -432,6 +432,10 @@ pub struct AssetMaterial {
     clearcoat_roughness_factor: f32,
     sheen_color_factor: [f32; 3],
     sheen_roughness_factor: f32,
+    anisotropy_present: bool,
+    anisotropy_strength: f32,
+    anisotropy_rotation: f32,
+    anisotropy_rotation_cos_sin: [f32; 2],
     texture_roles: u16,
     texture_coordinate_sets: u16,
     texture_samplers: [AssetSampler; 11],
@@ -485,6 +489,10 @@ impl AssetMaterial {
             clearcoat_roughness_factor: 0.0,
             sheen_color_factor: [0.0; 3],
             sheen_roughness_factor: 0.0,
+            anisotropy_present: false,
+            anisotropy_strength: 0.0,
+            anisotropy_rotation: 0.0,
+            anisotropy_rotation_cos_sin: [1.0, 0.0],
             texture_roles: 0,
             texture_coordinate_sets: 0,
             texture_samplers: [AssetSampler::LINEAR_REPEAT; 11],
@@ -594,6 +602,21 @@ impl AssetMaterial {
             color_factor[2].get(),
         ];
         self.sheen_roughness_factor = roughness_factor.get();
+        self
+    }
+
+    pub(crate) fn with_anisotropy(
+        mut self,
+        present: bool,
+        strength: UnitF32,
+        rotation: FiniteF32,
+    ) -> Self {
+        let (sin, cos) = rotation.get().sin_cos();
+        debug_assert!(sin.is_finite() && cos.is_finite());
+        self.anisotropy_present = present;
+        self.anisotropy_strength = strength.get();
+        self.anisotropy_rotation = rotation.get();
+        self.anisotropy_rotation_cos_sin = [cos, sin];
         self
     }
 
@@ -813,6 +836,30 @@ impl AssetMaterial {
     #[must_use]
     pub const fn sheen_roughness_factor(self) -> f32 {
         self.sheen_roughness_factor
+    }
+
+    /// Returns whether the ratified anisotropy extension is selected.
+    #[must_use]
+    pub const fn has_anisotropy(self) -> bool {
+        self.anisotropy_present
+    }
+
+    /// Returns the finite unit anisotropy strength.
+    #[must_use]
+    pub const fn anisotropy_strength(self) -> f32 {
+        self.anisotropy_strength
+    }
+
+    /// Returns the finite authored anisotropy rotation in radians.
+    #[must_use]
+    pub const fn anisotropy_rotation(self) -> f32 {
+        self.anisotropy_rotation
+    }
+
+    /// Returns the precomputed cosine and sine of the anisotropy rotation.
+    #[must_use]
+    pub const fn anisotropy_rotation_cos_sin(self) -> [f32; 2] {
+        self.anisotropy_rotation_cos_sin
     }
 
     /// Returns whether this material samples the asset's shared base-color texture.

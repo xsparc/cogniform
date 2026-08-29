@@ -1984,6 +1984,73 @@ No manifest, lockfile, vendored source, workflow, dependency, deny-policy,
 protocol, world, persistence, package, version, tag, release-asset, deployment,
 or publication authority changed.
 
+## CF079 bounded glTF material anisotropy-factor evidence
+
+CF079 admits ratified factor-only anisotropy after strict declaration,
+finite-unit strength, finite-radian rotation, forbidden unlit/legacy
+coexistence, and source-or-bounded-generated base tangent-space validation.
+The optional anisotropy texture info, selected coordinates, transform, and
+complete root resources validate before the texture-bearing material remains
+unsupported. No twelfth texture role is admitted.
+
+One row appends after the exact CF078 layout. The fixed uniform is 928 bytes
+with an exact 912-byte prefix and carries strength, precomputed rotation cosine
+and sine, and exact-zero padding. Nonzero direct lighting uses the ratified
+anisotropic GGX distribution and correlated visibility; exact zero strength
+takes the accepted isotropic path. The 72-byte vertex, eleven texture roles,
+twenty-three bindings, 36 samplers, two pipelines, observations, protocol,
+persistence, and release authority remain unchanged.
+
+The following portable checks passed on 2026-08-28:
+
+```text
+rustup show active-toolchain
+cargo build --workspace --locked --offline
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked --offline
+cargo test -p cogniform-assets --test asset_store anisotropy --locked --offline
+uv run --no-cache --no-project python tests/security/test_public_repo_check.py
+uv run --no-cache --no-project python tests/release/test_package_policy.py
+uv run --no-cache --no-project python scripts/check_public_repo.py --all
+uv run --no-cache --no-project python scripts/check_package_policy.py --repository . --expected-version 0.1.0-rc.1
+uv run --no-project python scripts/agent_workflow.py validate
+git diff --exit-code -- Cargo.toml Cargo.lock deny.toml rust-toolchain.toml .github/workflows vendor
+git diff --check
+```
+
+The changed-public-Markdown safeguard resolved every relative target,
+including the new ADR's official Khronos link.
+
+`cargo deny check advisories bans licenses sources` could not start because
+Windows Application Control blocked the installed binary with OS error 4551.
+No manifest, lockfile, vendored source, workflow, dependency, or deny-policy
+input changed, and the public-tree plus package-policy safeguards above passed.
+
+The generic OpenSteward strict governance checker reported that
+`docs/governance/project-evidence.toml` is absent. Cogniform intentionally has
+no tracked `docs/governance` sidecar; under `AGENTS.md`, public evidence is
+instead promoted through the authoritative ADR, software-design document,
+roadmap, code, tests, and pull-request record. CF079 updates those tracked
+surfaces and does not invent a second source of project truth.
+
+The complete optimized renderer conformance matrix passed on the approved
+NVIDIA GeForce RTX 5070 Windows/Vulkan profile: all 42 asset fixtures and all
+nine headless-reference tests. The new fixture proves directional and point
+response, rotation, roughness, tangent handedness, exact zero image identity,
+combined IOR/specular/sheen/clearcoat/emission composition, no-light and scene-
+override compatibility, unchanged non-color observations, and no renderer
+resource growth:
+
+```text
+WGPU_BACKEND=vulkan cargo test --release -p cogniform-renderer --tests --all-features --locked --offline -- --ignored --nocapture
+```
+
+No manifest, lockfile, vendored source, workflow, dependency, deny-policy,
+protocol, world, persistence, package, version, tag, release-asset, deployment,
+or publication authority changed.
+
 ## Deterministic source-candidate commands
 
 CF050 adds no tag, version, dependency, runtime, network, upload, or publication
