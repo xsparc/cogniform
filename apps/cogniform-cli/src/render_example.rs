@@ -39,29 +39,27 @@ fn validate_output_target(path: &Path) -> Result<(), Box<dyn std::error::Error>>
         ));
     }
 
-    match fs::symlink_metadata(path) {
-        Ok(_) => {
-            return Err(invalid_input(
-                "render-example output directory already exists",
-            ));
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(_) => return Err(io_failure("failed to inspect render-example output target")),
-    }
-
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     match fs::metadata(parent) {
-        Ok(metadata) if metadata.is_dir() => Ok(()),
+        Ok(metadata) if metadata.is_dir() => {}
         Ok(_) => Err(invalid_input(
             "render-example output parent is not a directory",
-        )),
+        ))?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => Err(invalid_input(
             "render-example output parent directory does not exist",
+        ))?,
+        Err(_) => return Err(io_failure("failed to inspect render-example output parent")),
+    }
+
+    match fs::symlink_metadata(path) {
+        Ok(_) => Err(invalid_input(
+            "render-example output directory already exists",
         )),
-        Err(_) => Err(io_failure("failed to inspect render-example output parent")),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(io_failure("failed to inspect render-example output target")),
     }
 }
 
