@@ -56,7 +56,10 @@ accounting from nine to eleven, and preserves the complete CF077 uniform as a
 fixed prefix. CF079 admits ratified numeric anisotropy strength and rotation,
 validates but defers its texture member, requires a defined base tangent
 space, and appends one factor/rotation row without changing the eleven-role
-renderer resource surface.
+renderer resource surface. CF080 admits that deferred linear role with
+normalized red/green direction, blue strength, and ignored alpha, expands
+bounded role accounting from eleven to twelve, and preserves the complete
+CF079 uniform as a fixed prefix.
 
 ## Ownership and lifecycle
 
@@ -105,7 +108,7 @@ original source is retained only while queued. Ready records retain expanded
 triangle positions, unit normals, primary and secondary coordinates, one typed immutable
 source or generated tangent and unit primary color per vertex, one typed immutable numeric
 material per mesh, and
-at most eleven role-separated immutable RGBA8 textures. A PNG referenced by
+at most twelve role-separated immutable RGBA8 textures. A PNG referenced by
 multiple roles shares its decoded CPU allocation.
 Proxy records have no texture. `AssetStore::evict` removes one hash's queued
 source or terminal CPU record, decoded meshes, and decoded role textures.
@@ -187,12 +190,13 @@ The importer accepts only the following baseline:
   VEC3 synthesizes alpha one. Every declared color set must be canonical,
   consecutive from zero, valid, and same-count before a valid `COLOR_1` or
   later set may receive unsupported/proxy classification;
-- at most eleven root textures and eleven referenced root images across one shared
+- at most twelve root textures and twelve referenced root images across one shared
   base-color index, one shared metallic-roughness index, one shared normal
   index, one shared emissive index, one shared specular-strength index, and one
   shared specular-color index, one shared clearcoat-intensity index, one shared
   clearcoat-roughness index, one shared clearcoat-normal index, one shared
-  sheen-color index, and one shared sheen-roughness index. Every referencing material
+  sheen-color index, one shared sheen-roughness index, and one shared
+  anisotropy index. Every referencing material
   must select coordinate set zero or one, and each referencing primitive must
   provide the selected set plus every preceding set. Each texture info may carry a declared
   `KHR_texture_transform` object with omitted or finite two-component `offset`,
@@ -237,7 +241,12 @@ The importer accepts only the following baseline:
 - `KHR_materials_sheen.sheenRoughnessTexture` uses the same selected-
   coordinate contract and linear texels; alpha multiplies numeric sheen
   roughness while RGB is ignored. Omission uses a linear-white fallback;
-- at most eleven strict root sampler objects. Each optional `magFilter`,
+- `KHR_materials_anisotropy.anisotropyTexture` uses the same selected-
+  coordinate contract and linear texels; red/green map to `[-1,1]` and
+  normalize before retained rotation, blue multiplies numeric strength, and
+  alpha is ignored. A degenerate mapped direction sets effective strength to
+  zero. Omission preserves factor-only behavior;
+- at most twelve strict root sampler objects. Each optional `magFilter`,
   `minFilter`, `wrapS`, and `wrapT` must be one core integer enum; explicit
   null and every other field or type are invalid. Every texture must reference
   an in-range image and optional in-range sampler. Omitted filters default to
@@ -338,8 +347,8 @@ The importer accepts only the following baseline:
   wider-payload classification. Optional `anisotropyTexture` requires valid
   shape, an in-range index, declared transform, complete root texture/sampler/
   source/image/PNG authority, and selected primitive coordinates. Malformed or
-  dangling authority rejects without proxy; a well-formed texture-bearing
-  payload remains unsupported. A factor-only selected primitive requires
+  dangling authority rejects without proxy. The well-formed role is retained
+  with linear color-space and exact channel semantics. A selected primitive requires
   source `NORMAL` plus `TANGENT`, or the supported base normal-texture tangent-
   generation path.
 
@@ -394,12 +403,11 @@ declarations are classified. External buffers or images, data URIs, additional
 GLB chunks, sparse accessors, other normal or coordinate encodings,
 node-based position dequantization transforms, rendered `TEXCOORD_2` or later,
 wider rendered color sets, morph
-targets, more than eleven images/textures/samplers, unused image or texture
+targets, more than twelve images/textures/samplers, unused image or texture
 records, valid unused sampler records, JPEG and wider PNG forms, coordinate selectors above one,
 occlusion texture roles, `BLEND` alpha coverage, nodes, scenes, cameras, animations,
 skins, and all other or wider extensions
-are not supported. There is no compressed geometry, mipmap, anisotropy-
-texture, or
+are not supported. There is no compressed geometry, mipmap, or
 scene-graph traversal path.
 
 ## Failure and proxy policy
@@ -556,11 +564,13 @@ must supply valid source normal plus tangent, or use the existing bounded base
 normal-texture tangent-generation path; a clearcoat normal alone is
 insufficient. Nonzero strength rotates the retained tangent basis and applies
 the ratified anisotropic GGX distribution and correlated visibility to the
-base direct specular lobe. Exact zero strength takes the accepted isotropic
+base direct specular lobe. An optional linear texture maps red/green to a
+normalized direction, composes that direction with retained rotation,
+multiplies strength by blue, and ignores alpha. A degenerate mapped direction
+disables anisotropy. Exact zero effective strength takes the accepted isotropic
 path. Diffuse, IOR/specular, sheen, clearcoat, emission, no-light behavior,
 alpha, observations, unlit, scene overrides, built-ins, fallbacks, and proxies
-remain unchanged. Optional anisotropy texture authority is fully validated but
-remains unsupported and adds no texture role.
+remain unchanged.
 
 `AssetMaterial` carries validated numeric metadata including core emissive
 RGB, finite non-negative emissive strength, authored finite IOR, finite unit
@@ -677,7 +687,8 @@ cargo test --release -p cogniform-renderer --test asset_fixture sheen_factors_bo
 cargo test --release -p cogniform-renderer --test asset_fixture sheen_textures_multiply_srgb_rgb_and_linear_alpha_with_neutral_fallbacks --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture sheen_texture_coordinates_transforms_and_samplers_are_independent --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture anisotropy_factors_rotate_direct_specular_without_new_renderer_resources --all-features --locked --offline -- --ignored --exact --nocapture
-cargo test --release -p cogniform-renderer --test asset_fixture eleven_texture_roles_upload_evict_and_rehydrate_exactly --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture anisotropy_texture_controls_linear_direction_and_strength_while_ignoring_alpha --all-features --locked --offline -- --ignored --exact --nocapture
+cargo test --release -p cogniform-renderer --test asset_fixture twelve_texture_roles_upload_evict_and_rehydrate_exactly --all-features --locked --offline -- --ignored --exact --nocapture
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact four_texture_roles_upload_evict_and_rehydrate_exactly
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_mask_factor_boundaries_control_every_fragment_output
 cargo test --release -p cogniform-renderer --test asset_fixture --all-features --locked --offline -- --ignored --exact alpha_texture_product_opaque_mode_and_scene_override_are_exact
@@ -752,7 +763,11 @@ unchanged non-color output, and no texture-role growth. The anisotropy
 comparison proves exact omitted/zero identity, directional and point response,
 rotation, roughness, tangent handedness, combined IOR/specular/sheen/clearcoat/
 emission composition, complete scene override, no-light compatibility,
-unchanged non-color observations, and no texture-role growth. The four-role test proves exact
+unchanged non-color observations, and no texture-role growth. The anisotropy-
+texture comparison proves linear red/green direction, blue strength, ignored
+alpha, scene override, no-light behavior, and unchanged non-color output. The
+twelve-role test proves exact shared-image CPU accounting plus atomic GPU
+upload, eviction, and rehydration. The four-role test proves exact
 distinct-image CPU bytes plus GPU upload, eviction, and
 rehydration counts. The alpha checks prove factor-only, texture-only, and
 multiplied coverage, exact cutoff equality, cutoff-above-one discard, OPAQUE
@@ -845,3 +860,7 @@ affine rows, fixed bind-group growth, and adapter capability preflight.
 See [ADR 0079](../adr/0079-bounded-gltf-material-anisotropy-factors.md) for
 strict factor/rotation admission, tangent-space authority, deferred texture
 validation, anisotropic GGX, and the exact zero-strength compatibility branch.
+
+See [ADR 0080](../adr/0080-bounded-gltf-material-anisotropy-texture.md) for
+linear channel semantics, twelve-role accounting, appended affine rows,
+fixed bind-group growth, and adapter capability preflight.

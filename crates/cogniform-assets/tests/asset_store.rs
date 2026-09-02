@@ -121,6 +121,7 @@ fn tangent_triangle_glb_with_extension_materials(
 fn anisotropy_textured_triangle_glb(
     png: &[u8],
     anisotropy_fields: &str,
+    texture_fields: &str,
     root_fields: &str,
     include_texcoords: bool,
     include_tangents: bool,
@@ -154,9 +155,71 @@ fn anisotropy_textured_triangle_glb(
         ""
     };
     let json = format!(
-        r#"{{"asset":{{"version":"2.0"}}{root_fields},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"normalTexture":{{"index":0}},"extensions":{{"KHR_materials_anisotropy":{{{anisotropy_fields}}}}}}}],"textures":[{{"source":0}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1{tangent_attribute}{texcoord_attribute}}},"material":0,"mode":4}}]}}]}}"#,
+        r#"{{"asset":{{"version":"2.0"}}{root_fields},"buffers":[{{"byteLength":{binary_length}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{{"buffer":0,"byteOffset":{image_offset},"byteLength":{image_length}}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"normalTexture":{{"index":0}},"extensions":{{"KHR_materials_anisotropy":{{{anisotropy_fields}}}}}}}],"textures":[{{{texture_fields}}}],"images":[{{"bufferView":4,"mimeType":"image/png"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1{tangent_attribute}{texcoord_attribute}}},"material":0,"mode":4}}]}}]}}"#,
         binary_length = binary.len(),
         image_length = png.len(),
+    );
+    glb_with_json(&json, &binary)
+}
+
+fn dual_anisotropy_textured_triangle_glb(
+    normal_png: &[u8],
+    anisotropy_png: &[u8],
+    shared_image: bool,
+) -> Vec<u8> {
+    let mut binary = Vec::new();
+    for position in [
+        [-0.75_f32, -0.75, 0.0],
+        [0.75, -0.75, 0.0],
+        [0.0, 0.75, 0.0],
+    ] {
+        for value in position {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for normal in [[0.0_f32, 0.0, 1.0]; 3] {
+        for value in normal {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for tangent in [[1.0_f32, 0.0, 0.0, 1.0]; 3] {
+        for value in tangent {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for texcoord in [[0.5_f32, 0.5]; 3] {
+        for value in texcoord {
+            binary.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let normal_offset = binary.len();
+    binary.extend_from_slice(normal_png);
+    let (image_views, images, anisotropy_source) = if shared_image {
+        (
+            format!(
+                r#"{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{}}}"#,
+                normal_png.len()
+            ),
+            r#"{"bufferView":4,"mimeType":"image/png"}"#.to_owned(),
+            0,
+        )
+    } else {
+        let anisotropy_offset = binary.len();
+        binary.extend_from_slice(anisotropy_png);
+        (
+            format!(
+                r#"{{"buffer":0,"byteOffset":{normal_offset},"byteLength":{}}},{{"buffer":0,"byteOffset":{anisotropy_offset},"byteLength":{}}}"#,
+                normal_png.len(),
+                anisotropy_png.len()
+            ),
+            r#"{"bufferView":4,"mimeType":"image/png"},{"bufferView":5,"mimeType":"image/png"}"#
+                .to_owned(),
+            1,
+        )
+    };
+    let json = format!(
+        r#"{{"asset":{{"version":"2.0"}},"extensionsUsed":["KHR_materials_anisotropy"],"buffers":[{{"byteLength":{}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},{{"buffer":0,"byteOffset":36,"byteLength":36}},{{"buffer":0,"byteOffset":72,"byteLength":48}},{{"buffer":0,"byteOffset":120,"byteLength":24}},{image_views}],"accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},{{"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"}}],"materials":[{{"normalTexture":{{"index":0}},"extensions":{{"KHR_materials_anisotropy":{{"anisotropyStrength":0.75,"anisotropyTexture":{{"index":1}}}}}}}}],"textures":[{{"source":0}},{{"source":{anisotropy_source}}}],"images":[{images}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TANGENT":2,"TEXCOORD_0":3}},"material":0,"mode":4}}]}}]}}"#,
+        binary.len(),
     );
     glb_with_json(&json, &binary)
 }
@@ -2463,6 +2526,7 @@ fn anisotropy_requires_defined_tangent_space_or_base_normal_texture_generation()
     let generated = anisotropy_textured_triangle_glb(
         &png,
         r#""anisotropyStrength":0.5"#,
+        r#""source":0"#,
         r#", "extensionsUsed":["KHR_materials_anisotropy"]"#,
         true,
         false,
@@ -2485,7 +2549,7 @@ fn anisotropy_requires_defined_tangent_space_or_base_normal_texture_generation()
 }
 
 #[test]
-fn anisotropy_texture_proxies_only_after_info_root_and_coordinate_validation() {
+fn anisotropy_texture_is_retained_only_after_info_root_and_coordinate_validation() {
     let png = encode_png(
         1,
         1,
@@ -2493,24 +2557,29 @@ fn anisotropy_texture_proxies_only_after_info_root_and_coordinate_validation() {
         png::BitDepth::Eight,
         &[128, 128, 255, 255],
     );
-    let root = r#", "extensionsUsed":["KHR_materials_anisotropy"]"#;
+    let root = r#", "extensionsUsed":["KHR_materials_anisotropy","KHR_texture_transform"], "samplers":[{"magFilter":9728,"minFilter":9729,"wrapS":33071,"wrapT":33648}]"#;
     let valid = anisotropy_textured_triangle_glb(
         &png,
-        r#""anisotropyStrength":0.5,"anisotropyTexture":{"index":0}"#,
+        r#""anisotropyStrength":0.5,"anisotropyTexture":{"index":0,"extensions":{"KHR_texture_transform":{"offset":[0.25,-0.5],"scale":[2,3]}}}"#,
+        r#""sampler":0,"source":0"#,
         root,
         true,
         true,
     );
     let (store, hash) = process_with_proxy_policy(valid);
-    assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
-    assert_eq!(
-        store.record(hash).unwrap().diagnostics[0].code,
-        AssetDiagnosticCode::UnsupportedExtension
-    );
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Ready);
+    let upload = store
+        .upload_job(AssetMeshKey {
+            content_hash: hash,
+            mesh_index: 0,
+        })
+        .unwrap();
+    assert_retained_anisotropy_texture(&upload);
 
     let dangling = anisotropy_textured_triangle_glb(
         &png,
         r#""anisotropyTexture":{"index":1}"#,
+        r#""source":0"#,
         root,
         true,
         true,
@@ -2525,6 +2594,7 @@ fn anisotropy_texture_proxies_only_after_info_root_and_coordinate_validation() {
     let missing_coordinates = anisotropy_textured_triangle_glb(
         &png,
         r#""anisotropyTexture":{"index":0}"#,
+        r#""source":0"#,
         root,
         false,
         true,
@@ -2539,6 +2609,7 @@ fn anisotropy_texture_proxies_only_after_info_root_and_coordinate_validation() {
     let transformed = anisotropy_textured_triangle_glb(
         &png,
         r#""anisotropyTexture":{"index":0,"extensions":{"KHR_texture_transform":{"texCoord":1}}}"#,
+        r#""source":0"#,
         r#", "extensionsUsed":["KHR_materials_anisotropy","KHR_texture_transform"]"#,
         true,
         true,
@@ -2553,6 +2624,7 @@ fn anisotropy_texture_proxies_only_after_info_root_and_coordinate_validation() {
     let overflowing_transform = anisotropy_textured_triangle_glb(
         &png,
         r#""anisotropyTexture":{"index":0,"extensions":{"KHR_texture_transform":{"offset":[3.4028235e38,0],"scale":[3.4028235e38,1]}}}"#,
+        r#""source":0"#,
         r#", "extensionsUsed":["KHR_materials_anisotropy","KHR_texture_transform"]"#,
         true,
         true,
@@ -2562,6 +2634,102 @@ fn anisotropy_texture_proxies_only_after_info_root_and_coordinate_validation() {
     let diagnostic = &store.record(hash).unwrap().diagnostics[0];
     assert_eq!(diagnostic.code, AssetDiagnosticCode::InvalidTexcoord);
     assert_eq!(diagnostic.location, "glb.decoded.texture_transform");
+}
+
+fn assert_retained_anisotropy_texture(upload: &AssetUploadJob) {
+    assert!(upload.material().has_anisotropy_texture());
+    assert_eq!(
+        upload.material().anisotropy_texture_coordinate_set(),
+        Some(0)
+    );
+    assert_eq!(
+        upload
+            .material()
+            .anisotropy_texture_transform()
+            .unwrap()
+            .affine_rows(),
+        [[2.0, 0.0, 0.25, 0.0], [0.0, 3.0, -0.5, 0.0]]
+    );
+    let anisotropy_sampler = upload.material().anisotropy_sampler().unwrap();
+    assert_eq!(anisotropy_sampler.mag_filter(), AssetSamplerFilter::Nearest);
+    assert_eq!(
+        anisotropy_sampler.min_filter(),
+        AssetSamplerMinFilter::Linear
+    );
+    assert_eq!(anisotropy_sampler.wrap_s(), AssetSamplerWrap::ClampToEdge);
+    assert_eq!(
+        anisotropy_sampler.wrap_t(),
+        AssetSamplerWrap::MirroredRepeat
+    );
+    assert_eq!(
+        upload
+            .material()
+            .normal_texture_transform()
+            .unwrap()
+            .affine_rows(),
+        [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]
+    );
+    let texture = upload.anisotropy_texture().unwrap();
+    assert_eq!((texture.width(), texture.height()), (1, 1));
+    assert_eq!(texture.rgba8(), &[128, 128, 255, 255]);
+}
+
+#[test]
+fn anisotropy_texture_accounts_shared_and_distinct_cpu_images_exactly() {
+    let normal_texel = [128, 128, 255, 255];
+    let anisotropy_texel = [255, 127, 64, 7];
+    let normal_png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &normal_texel,
+    );
+    let anisotropy_png = encode_png(
+        1,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &anisotropy_texel,
+    );
+    for (shared_image, expected_bytes) in [(true, 220), (false, 224)] {
+        let bytes =
+            dual_anisotropy_textured_triangle_glb(&normal_png, &anisotropy_png, shared_image);
+        let hash = content_hash(&bytes);
+        let mut exact_config = AssetStoreConfig::default();
+        exact_config.limits.max_asset_decoded_bytes = NonZeroU64::new(expected_bytes).unwrap();
+        exact_config.limits.max_resident_cpu_bytes = NonZeroU64::new(expected_bytes).unwrap();
+        let mut store = AssetStore::new(exact_config);
+        store.enqueue(hash, bytes.clone()).unwrap();
+        assert_eq!(store.process_next().unwrap().state, AssetState::Ready);
+        assert_eq!(store.record(hash).unwrap().decoded_bytes, expected_bytes);
+        assert_eq!(store.stats().resident_cpu_bytes, expected_bytes);
+        let upload = store
+            .upload_job(AssetMeshKey {
+                content_hash: hash,
+                mesh_index: 0,
+            })
+            .unwrap();
+        assert_eq!(upload.normal_texture().unwrap().rgba8(), normal_texel);
+        assert_eq!(
+            upload.anisotropy_texture().unwrap().rgba8(),
+            if shared_image {
+                normal_texel
+            } else {
+                anisotropy_texel
+            }
+        );
+        let eviction = store.evict(hash);
+        assert_eq!(eviction.removed_textures, 2);
+        assert_eq!(eviction.released_resident_cpu_bytes, expected_bytes);
+
+        let mut narrow_config = exact_config;
+        narrow_config.limits.max_asset_decoded_bytes = NonZeroU64::new(expected_bytes - 1).unwrap();
+        let mut narrow = AssetStore::new(narrow_config);
+        narrow.enqueue(hash, bytes).unwrap();
+        assert_eq!(narrow.process_next().unwrap().state, AssetState::Rejected);
+        assert_eq!(narrow.stats().resident_cpu_bytes, 0);
+    }
 }
 
 #[test]
@@ -5448,6 +5616,21 @@ fn malformed_sampler_indices_counts_and_precedence_fail_closed() {
         }
     }
 
+    let thirteen_records = textured_triangle_glb(
+        &png,
+        r#""baseColorTexture":{"index":0}"#,
+        r#"{"sampler":0,"source":0}"#,
+        r#"{"bufferView":2,"mimeType":"image/png"}"#,
+        r#","samplers":[{},{},{},{},{},{},{},{},{},{},{},{},{}]"#,
+        true,
+    );
+    let (store, hash) = process_with_proxy_policy(thirteen_records);
+    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
+    assert_eq!(
+        store.record(hash).unwrap().diagnostics[0].code,
+        AssetDiagnosticCode::CollectionLimitExceeded
+    );
+
     let twelve_records = textured_triangle_glb(
         &png,
         r#""baseColorTexture":{"index":0}"#,
@@ -5457,21 +5640,6 @@ fn malformed_sampler_indices_counts_and_precedence_fail_closed() {
         true,
     );
     let (store, hash) = process_with_proxy_policy(twelve_records);
-    assert_eq!(store.record(hash).unwrap().state, AssetState::Rejected);
-    assert_eq!(
-        store.record(hash).unwrap().diagnostics[0].code,
-        AssetDiagnosticCode::CollectionLimitExceeded
-    );
-
-    let eleven_records = textured_triangle_glb(
-        &png,
-        r#""baseColorTexture":{"index":0}"#,
-        r#"{"sampler":0,"source":0}"#,
-        r#"{"bufferView":2,"mimeType":"image/png"}"#,
-        r#","samplers":[{},{},{},{},{},{},{},{},{},{},{}]"#,
-        true,
-    );
-    let (store, hash) = process_with_proxy_policy(eleven_records);
     assert_eq!(store.record(hash).unwrap().state, AssetState::ProxyReady);
     assert_eq!(
         store.record(hash).unwrap().diagnostics[0].code,
@@ -5672,13 +5840,13 @@ fn explicit_default_sampler_is_supported_and_retained() {
 }
 
 #[test]
-fn more_than_eleven_texture_or_image_resources_fail_closed() {
+fn more_than_twelve_texture_or_image_resources_fail_closed() {
     let png = encode_png(1, 1, png::ColorType::Rgba, png::BitDepth::Eight, &[255; 4]);
     for bytes in [
         textured_triangle_glb(
             &png,
             r#""baseColorTexture":{"index":0}"#,
-            r#"{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0}"#,
+            r#"{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0}"#,
             r#"{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
@@ -5687,7 +5855,7 @@ fn more_than_eleven_texture_or_image_resources_fail_closed() {
             &png,
             r#""baseColorTexture":{"index":0}"#,
             r#"{"source":0}"#,
-            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
         ),
@@ -5704,7 +5872,7 @@ fn more_than_eleven_texture_or_image_resources_fail_closed() {
         textured_triangle_glb(
             &png,
             r#""baseColorTexture":{"index":0}"#,
-            r#"{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0}"#,
+            r#"{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0},{"source":0}"#,
             r#"{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
@@ -5713,7 +5881,7 @@ fn more_than_eleven_texture_or_image_resources_fail_closed() {
             &png,
             r#""baseColorTexture":{"index":0}"#,
             r#"{"source":0}"#,
-            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
+            r#"{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"},{"bufferView":2,"mimeType":"image/png"}"#,
             "",
             true,
         ),

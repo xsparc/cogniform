@@ -300,6 +300,10 @@ impl AssetStore {
                     .has_sheen_roughness_texture()
                     .then(|| decoded.sheen_roughness_texture.clone())
                     .flatten(),
+                mesh.material
+                    .has_anisotropy_texture()
+                    .then(|| decoded.anisotropy_texture.clone())
+                    .flatten(),
             ],
         ))
     }

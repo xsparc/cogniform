@@ -164,6 +164,19 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   912-byte prefix in a fixed 928-byte uniform without changing the 72-byte
   vertex, eleven texture roles, twenty-three bindings, 36 samplers, two
   pipelines, dependencies, protocols, persistence, or release authority;
+- the deferred linear `KHR_materials_anisotropy` texture through one fixed
+  twelfth role after strict texture-info, coordinate, transform, sampler,
+  embedded-PNG, resource, and tangent-space validation. Red/green maps to a
+  normalized tangent-space direction, blue multiplies retained strength, alpha
+  is ignored, and a degenerate direction disables anisotropy without producing
+  a non-finite value. Root collection and role accounting rise exactly from
+  eleven to twelve, shared CPU images remain single-counted, and all role-keyed
+  GPU resources reserve, upload, evict, and rehydrate atomically. Two appended
+  rows preserve the exact 928-byte uniform prefix in a fixed 960-byte layout;
+  selector bit 17 and bindings 23/24 produce twenty-five entries with explicit
+  twelve-texture/sampler adapter preflight while retaining 72-byte vertices,
+  36 samplers, two pipelines, dependencies, protocols, persistence, and
+  release authority;
 - optional core glTF `OPAQUE` and `MASK` alpha coverage, with strict finite
   non-negative cutoff handling, multiplied factor/texture alpha, exact cutoff
   equality, pre-output discard across color/depth/identity/normal, opaque

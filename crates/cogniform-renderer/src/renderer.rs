@@ -703,6 +703,8 @@ fn create_draw_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
         draw_sampler_layout_entry(20),
         draw_texture_layout_entry(21),
         draw_sampler_layout_entry(22),
+        draw_texture_layout_entry(23),
+        draw_sampler_layout_entry(24),
     ];
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("cogniform-draw-bind-group-layout"),
@@ -814,10 +816,10 @@ fn required_limits(
     required.max_color_attachments = required.max_color_attachments.max(3);
     required.max_color_attachment_bytes_per_sample =
         required.max_color_attachment_bytes_per_sample.max(12);
-    required.max_bindings_per_bind_group = required.max_bindings_per_bind_group.max(23);
+    required.max_bindings_per_bind_group = required.max_bindings_per_bind_group.max(25);
     required.max_sampled_textures_per_shader_stage =
-        required.max_sampled_textures_per_shader_stage.max(11);
-    required.max_samplers_per_shader_stage = required.max_samplers_per_shader_stage.max(11);
+        required.max_sampled_textures_per_shader_stage.max(12);
+    required.max_samplers_per_shader_stage = required.max_samplers_per_shader_stage.max(12);
     required.max_vertex_attributes = required.max_vertex_attributes.max(6);
     required.max_vertex_buffer_array_stride = required
         .max_vertex_buffer_array_stride
@@ -1168,7 +1170,7 @@ fn create_draw_bind_group(
     resources: &ScenePassResources<'_>,
     draw: &PreparedDraw,
     buffer: &wgpu::Buffer,
-    texture_views: [&wgpu::TextureView; 11],
+    texture_views: [&wgpu::TextureView; 12],
 ) -> wgpu::BindGroup {
     let samplers = draw_samplers(draw, resources);
     resources
@@ -1203,6 +1205,8 @@ fn create_draw_bind_group(
                 draw_sampler_entry(20, samplers[9]),
                 draw_texture_entry(21, texture_views[10]),
                 draw_sampler_entry(22, samplers[10]),
+                draw_texture_entry(23, texture_views[11]),
+                draw_sampler_entry(24, samplers[11]),
             ],
         })
 }
@@ -1224,7 +1228,7 @@ fn draw_sampler_entry(binding: u32, sampler: &wgpu::Sampler) -> wgpu::BindGroupE
 fn draw_samplers<'a>(
     draw: &PreparedDraw,
     resources: &'a ScenePassResources<'_>,
-) -> [&'a wgpu::Sampler; 11] {
+) -> [&'a wgpu::Sampler; 12] {
     let material = match draw.geometry {
         PreparedGeometry::Asset(key) => resources.assets.mesh(key).map(GpuAssetMesh::material),
         PreparedGeometry::Cuboid | PreparedGeometry::Plane | PreparedGeometry::Sphere => None,
@@ -1282,13 +1286,17 @@ fn draw_samplers<'a>(
             draw.imported_texture_roles.sheen_roughness(),
             material.and_then(AssetMaterial::sheen_roughness_sampler),
         ),
+        policy(
+            draw.imported_texture_roles.anisotropy(),
+            material.and_then(AssetMaterial::anisotropy_sampler),
+        ),
     ]
 }
 
 fn draw_resources<'a>(
     draw: &PreparedDraw,
     resources: &'a ScenePassResources<'_>,
-) -> (&'a wgpu::Buffer, u32, [&'a wgpu::TextureView; 11]) {
+) -> (&'a wgpu::Buffer, u32, [&'a wgpu::TextureView; 12]) {
     match draw.geometry {
         PreparedGeometry::Cuboid => (
             resources.cube_vertices,
@@ -1305,6 +1313,7 @@ fn draw_resources<'a>(
                 resources.neutral_normal_view,
                 resources.white_base_color_view,
                 resources.neutral_metallic_roughness_view,
+                resources.neutral_normal_view,
             ],
         ),
         PreparedGeometry::Plane => (
@@ -1322,6 +1331,7 @@ fn draw_resources<'a>(
                 resources.neutral_normal_view,
                 resources.white_base_color_view,
                 resources.neutral_metallic_roughness_view,
+                resources.neutral_normal_view,
             ],
         ),
         PreparedGeometry::Sphere => (
@@ -1339,6 +1349,7 @@ fn draw_resources<'a>(
                 resources.neutral_normal_view,
                 resources.white_base_color_view,
                 resources.neutral_metallic_roughness_view,
+                resources.neutral_normal_view,
             ],
         ),
         PreparedGeometry::Asset(key) => {
@@ -1359,7 +1370,7 @@ fn asset_texture_views<'a>(
     draw: &PreparedDraw,
     resources: &'a ScenePassResources<'_>,
     key: AssetMeshKey,
-) -> [&'a wgpu::TextureView; 11] {
+) -> [&'a wgpu::TextureView; 12] {
     let selected = |enabled, role, fallback, message| {
         if enabled {
             resources
@@ -1436,6 +1447,12 @@ fn asset_texture_views<'a>(
             AssetTextureRole::SheenRoughness,
             resources.neutral_metallic_roughness_view,
             "sheen-roughness-textured resident mesh retains its shared GPU texture",
+        ),
+        selected(
+            draw.imported_texture_roles.anisotropy(),
+            AssetTextureRole::Anisotropy,
+            resources.neutral_normal_view,
+            "anisotropy-textured resident mesh retains its shared GPU texture",
         ),
     ]
 }
@@ -1788,6 +1805,7 @@ fn encode_draw_uniform(
     const SHEEN_FLOATS: usize = 4;
     const SHEEN_TEXTURE_TRANSFORM_FLOATS: usize = 2 * 2 * 4;
     const ANISOTROPY_FLOATS: usize = 4;
+    const ANISOTROPY_TEXTURE_TRANSFORM_FLOATS: usize = 2 * 4;
     const UNIFORM_BYTES: usize = (BASE_FLOATS
         + MAX_DIRECTIONAL_LIGHTS * FLOATS_PER_DIRECTIONAL_LIGHT
         + POINT_COUNT_FLOATS
@@ -1800,7 +1818,8 @@ fn encode_draw_uniform(
         + CLEARCOAT_TEXTURE_TRANSFORM_FLOATS
         + SHEEN_FLOATS
         + SHEEN_TEXTURE_TRANSFORM_FLOATS
-        + ANISOTROPY_FLOATS)
+        + ANISOTROPY_FLOATS
+        + ANISOTROPY_TEXTURE_TRANSFORM_FLOATS)
         * 4;
     debug_assert!(directional_lights.len() <= MAX_DIRECTIONAL_LIGHTS);
     debug_assert!(point_lights.len() <= MAX_POINT_LIGHTS);
@@ -1970,17 +1989,28 @@ fn append_material_uniform(bytes: &mut Vec<u8>, draw: &PreparedDraw) {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+    append_anisotropy_texture_uniform(bytes, draw);
+}
+
+fn append_anisotropy_texture_uniform(bytes: &mut Vec<u8>, draw: &PreparedDraw) {
+    let mut anisotropy_rows = draw.imported_texture_transforms.anisotropy.affine_rows();
+    anisotropy_rows[0][3] = f32::from(draw.imported_texture_roles.anisotropy());
+    for row in anisotropy_rows {
+        for value in row {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
 }
 
 fn exact_material_flags(flags: u32) -> f32 {
-    const MAX_FLAGS: u32 = 131_071;
+    const MAX_FLAGS: u32 = 262_143;
     assert!(
         flags <= MAX_FLAGS,
         "material flags stay exactly representable"
     );
-    let half = u16::try_from(flags / 2).expect("bounded material flags fit");
-    let remainder = u8::try_from(flags % 2).expect("binary remainder fits");
-    f32::from(half) * 2.0 + f32::from(remainder)
+    let high = u8::try_from(flags / 65_536).expect("bounded material flag high bits fit");
+    let low = u16::try_from(flags % 65_536).expect("bounded material flag low bits fit");
+    f32::from(high) * 65_536.0 + f32::from(low)
 }
 
 fn create_target_texture(
@@ -2339,7 +2369,7 @@ mod tests {
         }];
 
         let bytes = encode_draw_uniform(&draw, &lights, &point_lights);
-        assert_eq!(bytes.len(), 928);
+        assert_eq!(bytes.len(), 960);
         let words = bytes
             .chunks_exact(4)
             .map(|word| <[u8; 4]>::try_from(word).unwrap())
@@ -2431,6 +2461,10 @@ mod tests {
             (228..232).map(float_at).collect::<Vec<_>>(),
             vec![0.6, 0.8, 0.6, 0.0]
         );
+        assert_eq!(
+            (232..240).map(float_at).collect::<Vec<_>>(),
+            vec![1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+        );
     }
 
     #[test]
@@ -2456,7 +2490,7 @@ mod tests {
             sheen_roughness_factor: 0.0,
             normal_scale: 1.0,
             clearcoat_normal_scale: 1.0,
-            imported_texture_roles: ImportedTextureRoles::NORMAL_ONLY,
+            imported_texture_roles: ImportedTextureRoles::NORMAL_AND_ANISOTROPY,
             imported_texture_transforms: ImportedTextureTransforms::IDENTITY,
             imported_texture_coordinate_sets: ImportedTextureCoordinateSets::ALL_SECONDARY,
             imported_alpha_coverage: ImportedAlphaCoverage::Mask { cutoff: 1.25 },
@@ -2467,11 +2501,12 @@ mod tests {
         };
 
         let bytes = encode_draw_uniform(&draw, &[], &[]);
-        assert_eq!(bytes.len(), 928);
+        assert_eq!(bytes.len(), 960);
         let float_at =
             |index: usize| f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
-        assert_eq!(float_at(119).to_bits(), 131_071.0_f32.to_bits());
+        assert_eq!(float_at(119).to_bits(), 262_143.0_f32.to_bits());
         assert_eq!(float_at(123).to_bits(), 1.25_f32.to_bits());
+        assert_eq!(float_at(235).to_bits(), 1.0_f32.to_bits());
     }
 
     #[test]

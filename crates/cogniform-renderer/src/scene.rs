@@ -518,6 +518,7 @@ pub(crate) struct ImportedTextureTransforms {
     pub(crate) clearcoat_normal: AssetTextureTransform,
     pub(crate) sheen_color: AssetTextureTransform,
     pub(crate) sheen_roughness: AssetTextureTransform,
+    pub(crate) anisotropy: AssetTextureTransform,
 }
 
 impl ImportedTextureTransforms {
@@ -533,6 +534,7 @@ impl ImportedTextureTransforms {
         clearcoat_normal: AssetTextureTransform::IDENTITY,
         sheen_color: AssetTextureTransform::IDENTITY,
         sheen_roughness: AssetTextureTransform::IDENTITY,
+        anisotropy: AssetTextureTransform::IDENTITY,
     };
 }
 
@@ -542,7 +544,7 @@ pub(crate) struct ImportedTextureCoordinateSets(u16);
 impl ImportedTextureCoordinateSets {
     pub(crate) const PRIMARY: Self = Self(0);
     #[cfg(test)]
-    pub(crate) const ALL_SECONDARY: Self = Self(0b111_1111_1111);
+    pub(crate) const ALL_SECONDARY: Self = Self(0b1111_1111_1111);
 
     pub(crate) fn flags(self) -> u32 {
         u32::from(self.0) << 6
@@ -621,9 +623,9 @@ pub(crate) struct ImportedTextureRoles(u16);
 impl ImportedTextureRoles {
     pub(crate) const NONE: Self = Self(0);
     #[cfg(test)]
-    pub(crate) const NORMAL_ONLY: Self = Self(Self::NORMAL);
-    #[cfg(test)]
     pub(crate) const CLEARCOAT_NORMAL_ONLY: Self = Self(Self::CLEARCOAT_NORMAL);
+    #[cfg(test)]
+    pub(crate) const NORMAL_AND_ANISOTROPY: Self = Self(Self::NORMAL | Self::ANISOTROPY);
     const BASE_COLOR: u16 = 1 << 0;
     const EMISSIVE: u16 = 1 << 1;
     const METALLIC_ROUGHNESS: u16 = 1 << 2;
@@ -635,6 +637,7 @@ impl ImportedTextureRoles {
     const CLEARCOAT_NORMAL: u16 = 1 << 8;
     const SHEEN_COLOR: u16 = 1 << 9;
     const SHEEN_ROUGHNESS: u16 = 1 << 10;
+    const ANISOTROPY: u16 = 1 << 11;
 
     pub(crate) const fn base_color(self) -> bool {
         self.0 & Self::BASE_COLOR != 0
@@ -678,6 +681,10 @@ impl ImportedTextureRoles {
 
     pub(crate) const fn sheen_roughness(self) -> bool {
         self.0 & Self::SHEEN_ROUGHNESS != 0
+    }
+
+    pub(crate) const fn anisotropy(self) -> bool {
+        self.0 & Self::ANISOTROPY != 0
     }
 }
 
@@ -747,6 +754,8 @@ fn imported_material_selection(
         && material.is_some_and(|material| material.has_clearcoat_normal_texture());
     let (use_sheen_color, use_sheen_roughness) =
         selected_sheen_texture_roles(use_imported_material, use_lit_roles, material);
+    let use_anisotropy =
+        selected_anisotropy_texture_role(use_imported_material, use_lit_roles, material);
     let normal_scale = if use_normal {
         material.map_or(1.0, |material| material.normal_scale())
     } else {
@@ -769,6 +778,7 @@ fn imported_material_selection(
     roles |= u16::from(use_clearcoat_normal) * ImportedTextureRoles::CLEARCOAT_NORMAL;
     roles |= u16::from(use_sheen_color) * ImportedTextureRoles::SHEEN_COLOR;
     roles |= u16::from(use_sheen_roughness) * ImportedTextureRoles::SHEEN_ROUGHNESS;
+    roles |= u16::from(use_anisotropy) * ImportedTextureRoles::ANISOTROPY;
     let roles = ImportedTextureRoles(roles);
     let transforms = imported_texture_transforms(material, roles);
     let coordinate_sets = imported_texture_coordinate_sets(material, roles);
@@ -807,6 +817,16 @@ fn imported_material_selection(
         shading_model,
         coordinate_sets,
     )
+}
+
+fn selected_anisotropy_texture_role(
+    use_imported_material: bool,
+    use_lit_roles: bool,
+    material: Option<&AssetMaterial>,
+) -> bool {
+    use_imported_material
+        && use_lit_roles
+        && material.is_some_and(|material| material.has_anisotropy_texture())
 }
 
 fn selected_sheen_texture_roles(
@@ -889,6 +909,11 @@ fn imported_texture_transforms(
             material.and_then(|material| material.sheen_roughness_texture_transform()),
             "selected sheen-roughness role retains a transform",
         ),
+        anisotropy: selected_transform(
+            roles.anisotropy(),
+            material.and_then(|material| material.anisotropy_texture_transform()),
+            "selected anisotropy role retains a transform",
+        ),
     }
 }
 
@@ -951,6 +976,11 @@ fn imported_texture_coordinate_sets(
             roles.sheen_roughness(),
             material.and_then(|material| material.sheen_roughness_texture_coordinate_set()),
             ImportedTextureRoles::SHEEN_ROUGHNESS,
+        ),
+        (
+            roles.anisotropy(),
+            material.and_then(|material| material.anisotropy_texture_coordinate_set()),
+            ImportedTextureRoles::ANISOTROPY,
         ),
     ];
     ImportedTextureCoordinateSets(
