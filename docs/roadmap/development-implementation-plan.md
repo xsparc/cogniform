@@ -1911,6 +1911,31 @@ replay, protocol, persistence, dependency, workflow, release, and deployment
 boundaries. See
 [ADR 0080](../adr/0080-bounded-gltf-material-anisotropy-texture.md).
 
+### PR 81 - CF081: Create-new rendered observation examples
+
+Outcome: one offline CLI command turns the existing headless reference frame
+into human-viewable color, depth, world-space-normal, and stable-identity PNG
+examples with a versioned causal manifest.
+
+Gate: `render-example <new-directory>` checks an absent target and existing
+parent before adapter selection, renders the fixed 64 by 64 reference scene
+once, prepares every output in memory, and writes exactly `color.png`,
+`depth.png`, `normals.png`, `identity.png`, and newline-terminated
+`manifest.json` through create-new paths. Color preserves linear RGBA8 source
+values and a linear gamma marker. Depth maps near to white and far to black.
+Normals map world XYZ to RGB with transparent background. Identity uses a
+deterministic bright display palette, while the manifest retains exact stable
+IDs plus adapter and frame/revision/camera/extraction causality.
+
+Existing files, directories, and symbolic links reject without overwrite.
+Errors do not echo paths. The files are local diagnostic derivatives, not new
+observation, protocol, conformance, screenshot-baseline, or release formats.
+Do not add external assets, checked-in generated images, renderer semantics,
+scene/material features, networking, upload, deployment, release, or
+publication. See
+[ADR 0081](../adr/0081-create-new-rendered-observation-examples.md) and the
+[rendered example guide](../getting-started/rendered-observation-example.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1924,7 +1949,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
   -> CF072 -> CF073 -> CF074 -> CF075 -> CF076 -> CF077 -> CF078 -> CF079
-  -> CF080
+  -> CF080 -> CF081
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2370,6 +2395,12 @@ Validation expands with capability:
   directional/point, scene-override, no-light, and unchanged non-color Vulkan
   evidence; unchanged vertex, sampler table, pipeline, logical, protocol,
   persistence, dependency, workflow, release, and deployment boundaries.
+- CF081: exact argument, absent-target, parent-directory, path-redaction, and
+  create-new preservation behavior; pure near/far, signed-normal, transparent-
+  background, deterministic-palette, valid eight-bit PNG and effective-gamma
+  tests; exact schema-version-one manifest fields and same-frame causality; and
+  controlled optimized Vulkan creation and decode of all four 64 by 64
+  examples with repeat-invocation overwrite rejection.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

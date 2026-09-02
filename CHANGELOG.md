@@ -266,6 +266,12 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   scenario, with exact adapter/revision/observation/identity/pixel/replay
   fields, unchanged 19-line human output, pre-GPU argument rejection, and
   complete scenario plus serialization before stdout;
+- create-new `render-example <new-directory>` CLI output from one fixed 64x64
+  headless reference frame: linear color, inverted normalized-depth,
+  world-space-normal,
+  and stable-identity PNG diagnostics plus one newline-terminated
+  schema-version-one causal manifest, with deterministic conversions,
+  path-redacted preflight, exact palette mapping, and overwrite refusal;
 - CPU-only `inspect-asset <content-hash> <path>` for bounded read-only
   verification of one caller-mapped immutable asset source, with exact
   lowercase hash parsing, aggregate hash/byte output, file immutability, and
@@ -630,6 +636,11 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   vertex. This is a source-breaking Rust API and capacity-planning change in
   the still-unpublished `0.0.0` workspace; no version or release action was
   taken.
+- `cogniform-cli` now directly reuses the existing workspace renderer and
+  already-vendored PNG encoder for its fixed rendered-example diagnostic.
+  `Cargo.lock` changes only the CLI's local dependency array; external package
+  versions, checksums, features, renderer behavior, workspace version, and
+  release state are unchanged.
 
 ### Known limitations
 
@@ -692,6 +703,14 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   input, scenario/profile/adapter selection, performance threshold, automatic
   upload, exporter, or additional support claim; adapter identity and exact run
   evidence can fingerprint or correlate the local host.
+  The rendered-example manifest is also CLI schema version one and its files
+  are diagnostic visualizations, not observation envelopes, screenshot
+  baselines, or release assets. PNG encoding and `color.png` source bytes are
+  lossless; depth/normal visualization loses numeric precision and identity
+  display colors can collide. The fixed reference cube is not an asset
+  gallery; cross-adapter image identity is not promised, a storage failure can
+  leave earlier files plus a truncated current file in an incomplete new
+  output directory, and adapter identity can fingerprint the host.
   Asset-source inspection has optional CLI schema-version-one JSON and proves
   bounded byte identity only, not format validity, renderability, authenticity,
   freshness, recovery association, or authorization; hash values can still

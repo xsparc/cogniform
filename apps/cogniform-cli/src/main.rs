@@ -9,6 +9,7 @@ mod asset;
 mod measure;
 mod profile;
 mod recovery;
+mod render_example;
 mod scenario;
 mod serve_stdio;
 
@@ -109,6 +110,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let expected_hash = asset::parse_content_hash(&encoded_hash)?;
             asset::run(expected_hash, &path, output)
         }
+        Some(command) if command == OsStr::new("render-example") => {
+            run_render_example(&mut arguments)
+        }
         Some(command) if command == OsStr::new("serve-stdio") => run_binary_stdio(&mut arguments),
         Some(command) if command == OsStr::new("serve-mcp-stdio") => run_mcp_stdio(&mut arguments),
         Some(command) if command == OsStr::new("help") || command == OsStr::new("--help") => {
@@ -135,6 +139,25 @@ fn run_mcp_stdio(arguments: &mut env::ArgsOs) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
+fn run_render_example(arguments: &mut env::ArgsOs) -> Result<(), Box<dyn std::error::Error>> {
+    let candidate = arguments
+        .next()
+        .ok_or_else(|| invalid_input("render-example requires one absent output directory"))?;
+    let path = if candidate == OsStr::new("--") {
+        arguments
+            .next()
+            .ok_or_else(|| invalid_input("render-example requires one absent output directory"))?
+    } else {
+        candidate
+    };
+    if arguments.next().is_some() {
+        return Err(invalid_input(
+            "render-example accepts exactly one absent output directory",
+        ));
+    }
+    render_example::run(&path)
+}
+
 fn print_usage() {
     println!("Cogniform local headless engine");
     println!();
@@ -144,6 +167,9 @@ fn print_usage() {
     println!("  cogniform-cli inspect-recovery [--json] <path>  Verify an immutable recovery file");
     println!(
         "  cogniform-cli inspect-asset [--json] <content-hash> <path>  Verify an immutable asset source file"
+    );
+    println!(
+        "  cogniform-cli render-example <new-directory>  Render color, depth, normal, and identity PNG examples"
     );
     println!(
         "  cogniform-cli serve-stdio [--profile <name>]  Run one bounded binary session over redirected stdio"

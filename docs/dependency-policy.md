@@ -406,6 +406,14 @@ table, and existing anisotropic GGX implementation. Two bindings and two
 private uniform rows are first-party fixed-layout code; no sample asset byte,
 decoder, lookup texture, network path, or supply-chain authority is added.
 
+CF081 adds two direct runtime edges to `cogniform-cli`: the existing local
+`cogniform-renderer` workspace package supplies the fixed headless reference
+frame, and the already-pinned `png` 0.18.1 package encodes its four diagnostic
+images. The lockfile changes only the CLI package's dependency list. No package
+version, checksum, feature, vendored source, build script, unsafe/native
+boundary, network or telemetry path, paid-service authority, or release
+publication behavior changes.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the
