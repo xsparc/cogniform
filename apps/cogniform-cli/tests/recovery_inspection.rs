@@ -237,6 +237,7 @@ fn inspection_arguments_and_help_are_exact() {
             "  cogniform-cli inspect-recovery [--json] <path>  Verify an immutable recovery file\n",
             "  cogniform-cli inspect-asset [--json] <content-hash> <path>  Verify an immutable asset source file\n",
             "  cogniform-cli render-example <new-directory>  Render color, depth, normal, and identity PNG examples\n",
+            "  cogniform-cli render-scenario <new-directory>  Render canonical room, table, light, and camera PNG examples\n",
             "  cogniform-cli serve-stdio [--profile <name>]  Run one bounded binary session over redirected stdio\n",
             "  cogniform-cli serve-mcp-stdio [--profile <name>]  Run one bounded MCP session over redirected stdio\n",
             "  cogniform-cli --help    Show this help\n",

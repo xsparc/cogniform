@@ -17,7 +17,7 @@ const EXAMPLE_HEIGHT: u32 = 64;
 
 pub(crate) fn run(output_directory: &OsStr) -> Result<(), Box<dyn std::error::Error>> {
     let output_directory = Path::new(output_directory);
-    validate_output_target(output_directory)?;
+    validate_output_target(output_directory, "render-example")?;
 
     let mut renderer = pollster::block_on(HeadlessRenderer::new(RendererConfig::new(
         EXAMPLE_WIDTH,
@@ -25,18 +25,21 @@ pub(crate) fn run(output_directory: &OsStr) -> Result<(), Box<dyn std::error::Er
     )))?;
     let frame = renderer.submit_reference_scene()?.read()?;
     let artifacts = build_artifacts(&frame)?;
-    write_artifacts(output_directory, &artifacts)?;
+    write_artifacts(output_directory, &artifacts, "render-example")?;
 
     println!("Cogniform rendered example created");
     println!("output files: color.png, depth.png, normals.png, identity.png, manifest.json");
     Ok(())
 }
 
-fn validate_output_target(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn validate_output_target(
+    path: &Path,
+    command: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     if path.as_os_str().is_empty() {
-        return Err(invalid_input(
-            "render-example output directory must not be empty",
-        ));
+        return Err(invalid_input(format!(
+            "{command} output directory must not be empty"
+        )));
     }
 
     let parent = path
@@ -45,21 +48,27 @@ fn validate_output_target(path: &Path) -> Result<(), Box<dyn std::error::Error>>
         .unwrap_or_else(|| Path::new("."));
     match fs::metadata(parent) {
         Ok(metadata) if metadata.is_dir() => {}
-        Ok(_) => Err(invalid_input(
-            "render-example output parent is not a directory",
-        ))?,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Err(invalid_input(
-            "render-example output parent directory does not exist",
-        ))?,
-        Err(_) => return Err(io_failure("failed to inspect render-example output parent")),
+        Ok(_) => Err(invalid_input(format!(
+            "{command} output parent is not a directory"
+        )))?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Err(invalid_input(format!(
+            "{command} output parent directory does not exist"
+        )))?,
+        Err(_) => {
+            return Err(io_failure(format!(
+                "failed to inspect {command} output parent"
+            )));
+        }
     }
 
     match fs::symlink_metadata(path) {
-        Ok(_) => Err(invalid_input(
-            "render-example output directory already exists",
-        )),
+        Ok(_) => Err(invalid_input(format!(
+            "{command} output directory already exists"
+        ))),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err(io_failure("failed to inspect render-example output target")),
+        Err(_) => Err(io_failure(format!(
+            "failed to inspect {command} output target"
+        ))),
     }
 }
 
@@ -132,22 +141,30 @@ fn build_artifacts(frame: &RenderedFrame) -> Result<Vec<Artifact>, Box<dyn std::
     ])
 }
 
-fn encode_manifest(manifest: &Manifest) -> Result<Vec<u8>, serde_json::Error> {
+pub(crate) fn encode_json_line<T: Serialize>(value: &T) -> Result<Vec<u8>, serde_json::Error> {
     let mut encoded = Vec::new();
-    serde_json::to_writer(&mut encoded, manifest)?;
+    serde_json::to_writer(&mut encoded, value)?;
     encoded.push(b'\n');
     Ok(encoded)
 }
 
-fn write_artifacts(path: &Path, artifacts: &[Artifact]) -> Result<(), Box<dyn std::error::Error>> {
+fn encode_manifest(manifest: &Manifest) -> Result<Vec<u8>, serde_json::Error> {
+    encode_json_line(manifest)
+}
+
+pub(crate) fn write_artifacts(
+    path: &Path,
+    artifacts: &[Artifact],
+    command: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir(path).map_err(|error| match error.kind() {
         io::ErrorKind::AlreadyExists => {
-            invalid_input("render-example output directory already exists")
+            invalid_input(format!("{command} output directory already exists"))
         }
         io::ErrorKind::NotFound => {
-            invalid_input("render-example output parent directory does not exist")
+            invalid_input(format!("{command} output parent directory does not exist"))
         }
-        _ => io_failure("failed to create render-example output directory"),
+        _ => io_failure(format!("failed to create {command} output directory")),
     })?;
 
     for artifact in artifacts {
@@ -163,7 +180,7 @@ fn write_artifacts(path: &Path, artifacts: &[Artifact]) -> Result<(), Box<dyn st
     Ok(())
 }
 
-fn flatten_rgba(pixels: &[[u8; 4]]) -> Vec<u8> {
+pub(crate) fn flatten_rgba(pixels: &[[u8; 4]]) -> Vec<u8> {
     let mut encoded = Vec::with_capacity(pixels.len().saturating_mul(4));
     for pixel in pixels {
         encoded.extend_from_slice(pixel);
@@ -171,14 +188,14 @@ fn flatten_rgba(pixels: &[[u8; 4]]) -> Vec<u8> {
     encoded
 }
 
-fn visualize_depth(values: &[f32]) -> Vec<u8> {
+pub(crate) fn visualize_depth(values: &[f32]) -> Vec<u8> {
     values
         .iter()
         .map(|depth| unit_to_byte(1.0 - depth))
         .collect()
 }
 
-fn visualize_normals(values: &[Option<[f32; 3]>]) -> Vec<u8> {
+pub(crate) fn visualize_normals(values: &[Option<[f32; 3]>]) -> Vec<u8> {
     let mut pixels = Vec::with_capacity(values.len().saturating_mul(4));
     for value in values {
         match value {
@@ -194,7 +211,9 @@ fn visualize_normals(values: &[Option<[f32; 3]>]) -> Vec<u8> {
     pixels
 }
 
-fn visualize_identities(values: &[Option<StableEntityId>]) -> (Vec<u8>, Vec<IdentityManifest>) {
+pub(crate) fn visualize_identities(
+    values: &[Option<StableEntityId>],
+) -> (Vec<u8>, Vec<IdentityManifest>) {
     let mut pixels = Vec::with_capacity(values.len().saturating_mul(4));
     let mut palette = BTreeMap::new();
     for value in values {
@@ -267,7 +286,7 @@ fn unit_to_byte(value: f32) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
-fn encode_png(
+pub(crate) fn encode_png(
     width: u32,
     height: u32,
     color_type: png::ColorType,
@@ -296,14 +315,18 @@ fn io_failure(message: impl Into<String>) -> Box<dyn std::error::Error> {
     Box::new(io::Error::other(message.into()))
 }
 
-struct Artifact {
+pub(crate) struct Artifact {
     name: &'static str,
     bytes: Vec<u8>,
 }
 
 impl Artifact {
-    fn png(name: &'static str, bytes: Vec<u8>) -> Self {
+    pub(crate) fn new(name: &'static str, bytes: Vec<u8>) -> Self {
         Self { name, bytes }
+    }
+
+    pub(crate) fn png(name: &'static str, bytes: Vec<u8>) -> Self {
+        Self::new(name, bytes)
     }
 }
 
@@ -344,9 +367,9 @@ struct FileManifest {
 }
 
 #[derive(Serialize)]
-struct IdentityManifest {
-    entity_id: String,
-    color: String,
+pub(crate) struct IdentityManifest {
+    pub(crate) entity_id: String,
+    pub(crate) color: String,
 }
 
 const FILES: [FileManifest; 4] = [

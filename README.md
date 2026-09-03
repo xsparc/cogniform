@@ -305,6 +305,23 @@ the command refuses to overwrite an existing path. See the
 [rendered observation example](docs/getting-started/rendered-observation-example.md)
 for interpretation and privacy limits.
 
+To inspect graphics from the actual canonical room/table/light/camera service
+workflow, choose another absent destination:
+
+```text
+cargo run --release -p cogniform-cli --locked --offline -- render-scenario ./target/cogniform-scenario-render
+```
+
+This command completes the existing revision-two scenario, then creates the
+same four diagnostic PNG roles from four sequential exact-revision
+observations. Its manifest records a distinct observation and frame ID for
+each file, the shared camera/revision, canonical entity IDs, and matching live
+and replayed logical hashes. Use it for transactional appearance checks,
+lighting-versus-geometry debugging, visible-entity grounding, segmentation,
+and revision-linked triage. It accepts no external scene or asset and refuses
+to overwrite an existing path. See the
+[canonical scenario graphics guide](docs/getting-started/canonical-scenario.md#inspect-the-rendered-graphics).
+
 For a local agent loop, a parent process can launch the exact child command
 `cogniform-cli serve-stdio` with both stdin and stdout piped. Do not run it
 interactively or treat stdout as text: stdout contains only binary CF039 frames,

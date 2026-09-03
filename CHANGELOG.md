@@ -272,6 +272,12 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   and stable-identity PNG diagnostics plus one newline-terminated
   schema-version-one causal manifest, with deterministic conversions,
   path-redacted preflight, exact palette mapping, and overwrite refusal;
+- create-new `render-scenario <new-directory>` CLI output from the unchanged
+  canonical room/table/light/camera workflow: four separately rendered
+  exact-revision PNG observations plus a schema-version-one manifest with
+  per-file observation/frame causality, canonical identities, matching live
+  and replayed hashes, deterministic identity colors, path-redacted preflight,
+  and overwrite refusal;
 - CPU-only `inspect-asset <content-hash> <path>` for bounded read-only
   verification of one caller-mapped immutable asset source, with exact
   lowercase hash parsing, aggregate hash/byte output, file immutability, and
