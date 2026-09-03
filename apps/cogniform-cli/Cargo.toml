@@ -18,7 +18,9 @@ cogniform-local-session.workspace = true
 cogniform-local-transport.workspace = true
 cogniform-mcp.workspace = true
 cogniform-protocol.workspace = true
+cogniform-renderer.workspace = true
 cogniform-storage.workspace = true
+png.workspace = true
 pollster = "=0.4.0"
 serde.workspace = true
 serde_json.workspace = true

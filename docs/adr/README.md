@@ -84,5 +84,6 @@ earlier one and links the history.
 | [0078](0078-bounded-gltf-material-sheen-textures.md) | Accepted | Admit bounded ratified sheen color and roughness textures |
 | [0079](0079-bounded-gltf-material-anisotropy-factors.md) | Accepted | Apply bounded ratified material anisotropy factors without a new texture role |
 | [0080](0080-bounded-gltf-material-anisotropy-texture.md) | Accepted | Admit one bounded ratified material anisotropy texture |
+| [0081](0081-create-new-rendered-observation-examples.md) | Accepted | Export one create-new diagnostic set from the fixed headless reference frame |
 
 New records use four sections: context, decision, consequences, and status.

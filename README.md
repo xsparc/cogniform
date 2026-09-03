@@ -241,6 +241,9 @@ validation. The
 composition boundary and known limitations, while the
 [canonical scenario guide](docs/getting-started/canonical-scenario.md) provides
 the unattended MVP command and expected evidence. The
+[rendered observation example](docs/getting-started/rendered-observation-example.md)
+shows how one headless frame becomes color, depth, world-space-normal, and
+stable-identity PNG diagnostics and explains practical uses for each. The
 [validation baseline](docs/operations/validation-baseline.md),
 [failure and recovery guide](docs/operations/failure-and-recovery.md),
 [MVP threat model](docs/threat-model/mvp.md), and
@@ -284,6 +287,23 @@ Consumers must require `schema_version` 1 and `scenario`
 correlate the local host, so the report is opt-in and must not be uploaded or
 published by default. See the
 [canonical scenario guide](docs/getting-started/canonical-scenario.md).
+
+To see concrete graphics from the headless renderer, choose a destination that
+does not exist:
+
+```text
+cargo run --release -p cogniform-cli --locked --offline -- render-example ./target/cogniform-render-example
+```
+
+The command renders the fixed 64x64 reference cube once and creates
+`color.png`, `depth.png`, `normals.png`, `identity.png`, and
+`manifest.json`. Typical uses include visual material and camera checks,
+occlusion/depth debugging, surface-orientation debugging, instance
+segmentation, and agent-visible entity grounding. These PNGs are diagnostic
+views rather than protocol payloads or cross-adapter screenshot baselines, and
+the command refuses to overwrite an existing path. See the
+[rendered observation example](docs/getting-started/rendered-observation-example.md)
+for interpretation and privacy limits.
 
 For a local agent loop, a parent process can launch the exact child command
 `cogniform-cli serve-stdio` with both stdin and stdout piped. Do not run it

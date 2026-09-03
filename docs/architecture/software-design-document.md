@@ -75,7 +75,7 @@ The first workspace should prove boundaries without prematurely creating every e
 | `cogniform-renderer` | `wgpu` feature negotiation, headless targets, primitive rendering, and color/depth/normal/ID outputs | Consumes extracted render data; never mutable world access |
 | `cogniform-engine` | Bounded channels, domain lifecycle, frame/revision correlation, composition, and complete in-memory restoration | Orchestrates through public interfaces; does not absorb domain state or perform persistence |
 | `cogniform-storage` | Explicit create-new and bounded-load adapters for local recovery envelopes and exact-hash asset sources | Depends on public engine recovery values, replay bounds, and asset identities; owns filesystem authority without world, renderer, replay, decode, or upload access |
-| `cogniform-cli` | Local sample client, bounded inherited-stdio session, replay, and diagnostic commands | Composes public engine/protocol interfaces and explicit service adapters such as storage and the local-session executor; owns no domain state |
+| `cogniform-cli` | Local sample client, bounded inherited-stdio session, replay, and diagnostic commands | Composes public engine/protocol/renderer interfaces and explicit service adapters such as storage and the local-session executor; owns no reusable domain state |
 
 CF006 establishes the semantic compiler as a separate pure crate while its
 offline gateway remains in the engine composition boundary. CF018 establishes
@@ -172,6 +172,13 @@ The three-entry allowlist rejects every other argument before stream, runtime,
 adapter, or service effects. It adds no per-request or protocol authority, and
 the widest current EntityId envelope remains within the existing runtime,
 binary bulk, and MCP output bounds.
+CF081 adds one separate CLI diagnostic over the renderer's public reference-
+scene API. It renders one fixed 64x64 frame and converts its color, depth,
+world-space normal, and stable-identity outputs into create-new PNG examples
+plus a versioned causal manifest. The files are local diagnostic derivatives,
+not observation payloads or conformance formats, and the command adds no
+reusable renderer state, external asset, network, upload, protocol, or render
+semantics.
 CF050 adds a separate standard-library-only release-preparation boundary. It
 accepts only a clean `HEAD` exactly named by a direct annotated tag, creates one
 bounded uncompressed Git tar and exact SHA-256 sidecar outside repository state,
@@ -223,6 +230,7 @@ protocol <- world <- replay
 local transport <- local session <- local executor -> engine
 CLI -> local executor
 CLI -> MCP adapter -> engine
+CLI -> renderer (fixed reference diagnostic)
 ```
 
 The diagram shows allowed information flow, not permission to create circular Cargo dependencies. Shared render DTOs belong in a dependency-neutral boundary rather than making world depend on renderer.
@@ -242,8 +250,10 @@ dependency. The MCP adapter separately owns only bounded newline JSON-RPC,
 stable initialization, typed translation, and one serialized lazy service; the
 engine remains unaware of MCP and the adapter opens no listener or child
 process. Storage depends on the public
-recovery and asset identities it persists. The CLI may compose engine and storage but must not
-move filesystem authority into the engine.
+recovery and asset identities it persists. The CLI may compose engine and
+storage but must not move filesystem authority into the engine. Its fixed
+rendered-example diagnostic may also compose the renderer's public reference
+frame directly, then discard the command-local renderer after create-new output.
 
 ## 3. Core contracts and invariants
 
@@ -785,6 +795,14 @@ IDs, pixel probe, and matching live/replayed hashes. Serialization finishes
 only after the complete scenario succeeds. The default human report remains
 unchanged; there is no automatic upload, exporter, or background collection.
 
+The `headless-reference-v1` rendered example has one CLI schema-version-one
+manifest joining four diagnostic PNGs to their fixed dimensions, adapter, and
+frame/revision/camera/extraction causality. The display transformations are
+documented and deterministic for one completed frame, but they are not numeric
+observation envelopes or cross-adapter screenshot baselines. Output is
+create-new and local; adapter identity can fingerprint the host and no upload
+is automatic.
+
 Research targets such as 60 Hz, 3 ms p95 CPU engine work, 8 ms p95 GPU time, 8 ms for 1,000 simple operations, 30 ms for 10,000 operations, one-frame commit-to-visibility, and near-zero hot-path allocations are hypotheses until reference hardware and fixtures are recorded. Correctness gates land before performance gates; thresholds cannot be silently weakened.
 
 ## 7. External interfaces
@@ -814,7 +832,8 @@ bounded exact-hash load without decoding or GPU initialization and emit an
 optional versioned CLI JSON report, run the
 controlled CPU measurement with an
 optional versioned CLI JSON report, run the canonical unattended scenario with
-an optional versioned CLI JSON proof, revert live recorded state,
+an optional versioned CLI JSON proof, render one fixed reference frame into a
+create-new local diagnostic PNG/manifest set, revert live recorded state,
 resolve assets, and explicitly evict one content hash from CPU/GPU residency.
 Initial implementation can use in-process Rust types and canonical JSON
 fixtures. CF045 supplies the first narrow MCP stdio adapter after the core
@@ -827,6 +846,8 @@ only the SDK's exact 2026-07-28 discovery/per-request lifecycle while retaining
 the same surface, bounds, and authority. CF064 adds only three immutable CLI
 launch profiles shared by both stdio roots; omission remains 64x64 and no
 profile field enters either protocol.
+CF081 adds only the fixed `render-example` CLI diagnostic; no file shape enters
+the engine, renderer, observation, local-session, or MCP public contracts.
 Protobuf/gRPC, MCP HTTP/authentication, resource templates, subscriptions,
 notifications, history, model features, local shared memory, and QUIC remain
 separate future adapters.
@@ -857,6 +878,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Recovery inspection | One explicit CLI path is loaded read-only and passes the same configuration, complete-replay, authoritative-world, logical-hash, and frame-frontier preflight as restoration without adapter selection; default human output is unchanged and optional deterministic schema-v1 JSON remains aggregate and path/payload redacted |
 | Controlled measurement | The fixed CPU world fixture retains its human report and emits optional fixed-layout schema-v1 integer-nanosecond distributions that are explicitly informational only and written only after measurement completes |
 | Canonical scenario report | The fixed 64x64 end-to-end scenario retains its 19-line human report and emits optional fixed-layout schema-v1 adapter, revision, observation, identity, pixel, and replay evidence only after the scenario succeeds |
+| Rendered observation example | One fixed 64x64 reference frame creates color/depth/normal/stable-identity PNG diagnostics and one schema-v1 causal manifest only in an absent directory; valid shapes, conversion endpoints, exact identity mapping, path-redacted preflight, and overwrite refusal are tested |
 | Asset source file | A new immutable local file stores one bounded exact-hash source without overwrite; bounded load rejects non-files, growth, substitution, truncation, extension, and over-limit input before explicit rehydration |
 | Asset source inspection | One explicit expected hash and CLI path pass the existing bounded regular-file load; the exact human report and optional fixed-layout schema-v1 JSON expose only hash and byte count after success, mutate no file or service, and perform no format decode or GPU work |
 | Headless render | Outward-wound reference cuboid plus extracted plane, sphere, and bounded direct metallic-roughness directional/point-lit scenes render without a visible window |
@@ -902,7 +924,8 @@ snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
 rotation, recovery-inspection profile selection, broader diagnostic schemas,
 including schemas beyond the versioned recovery, controlled-measurement, and
-canonical-scenario and asset-source-inspection CLI reports, and model policy remain
+canonical-scenario, asset-source-inspection, and rendered-example CLI reports,
+and model policy remain
 explicitly open.
 Defaults in the roadmap are
 planning assumptions, not production commitments.
