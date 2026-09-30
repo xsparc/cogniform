@@ -50,6 +50,10 @@ depth, normal, and stable-identity passes to caller-authored supported scenes.
 Those workflows must keep their own observations and causality together within
 the originating session; `render-example` does not render a requested object,
 export numeric observation payloads, or join evidence from another session.
+For a concrete service-backed example, `render-scenario` runs the canonical
+room/table/light/camera workflow and exports four separately identified
+exact-revision observations; see the
+[canonical scenario guide](canonical-scenario.md#inspect-the-rendered-graphics).
 
 ## Interpretation limits
 

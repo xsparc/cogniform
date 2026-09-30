@@ -1936,6 +1936,34 @@ publication. See
 [ADR 0081](../adr/0081-create-new-rendered-observation-examples.md) and the
 [rendered example guide](../getting-started/rendered-observation-example.md).
 
+### PR 82 - CF082: Create-new canonical-scenario graphics bundle
+
+Outcome: the existing canonical room, updated table, point light, and camera
+workflow produces human-viewable color, depth, world-normal, and stable-
+identity PNG diagnostics linked to the exact final scene and replay evidence.
+
+Gate: `render-scenario <new-directory>` checks one absent target and its
+existing parent before adapter selection, creates a fresh fixed 64 by 64 local
+service, and runs the unchanged canonical scenario through revision two. It
+then submits four sequential low-quality observation requests for the same
+final revision and camera, validates their payload shapes and strictly
+increasing frame IDs, prepares all encoded output in memory, and create-new
+writes exactly `color.png`, `depth.png`, `normals.png`, `identity.png`, and a
+newline-terminated schema-version-one `manifest.json`.
+
+The manifest retains canonical room/table/light/camera identities, matching
+live and replayed logical hashes, adapter summary, identity palette, and exact
+observation/frame/revision/camera causality per file. It must not imply that
+the independently requested passes share one frame. Preserve CF081's
+visualization, path-redaction, create-new, incomplete-write, and cooperative
+filesystem rules. Keep `render-example` byte-compatible. Do not add a new
+engine, renderer, observation, protocol, asset, persistence, dependency, CI,
+release, or deployment contract; caller scenes, external assets, configurable
+dimensions, publication, and screenshot conformance remain outside this
+slice. See
+[ADR 0082](../adr/0082-create-new-canonical-scenario-render-bundle.md) and the
+[canonical scenario guide](../getting-started/canonical-scenario.md#inspect-the-rendered-graphics).
+
 ## 3. Dependency graph
 
 ```text
@@ -1949,7 +1977,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
   -> CF072 -> CF073 -> CF074 -> CF075 -> CF076 -> CF077 -> CF078 -> CF079
-  -> CF080 -> CF081
+  -> CF080 -> CF081 -> CF082
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2401,6 +2429,13 @@ Validation expands with capability:
   tests; exact schema-version-one manifest fields and same-frame causality; and
   controlled optimized Vulkan creation and decode of all four 64 by 64
   examples with repeat-invocation overwrite rejection.
+- CF082: exact argument and pre-GPU target rejection; unchanged canonical
+  scenario proof; four same-revision/camera payloads with unique increasing
+  frame identities; exact schema-version-one scene, replay, file-causality,
+  adapter, and palette roles; valid diagnostic PNGs including the known table
+  center color; complete-before-output encoding; create-new preservation and
+  repeat rejection; and unchanged engine, renderer, observation, protocol,
+  asset, dependency, CI, persistence, release, and deployment boundaries.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

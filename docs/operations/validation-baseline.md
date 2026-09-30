@@ -356,6 +356,36 @@ release support claim. Adapter identity and run evidence can fingerprint or
 correlate the host and remain local opt-in output with no upload, exporter, or
 background collection.
 
+## Controlled canonical-scenario graphics commands
+
+CF082 added a create-new diagnostic bundle over the unchanged canonical
+scenario. The new command and CF081 compatibility path passed in release mode
+on the existing NVIDIA GeForce RTX 5070 Vulkan profile on 2026-09-03:
+
+```text
+cargo test --release -p cogniform-cli --test render_scenario --all-features --locked --offline -- --ignored
+cargo test --release -p cogniform-cli --test render_example --all-features --locked --offline -- --ignored
+```
+
+The scenario test created exactly four 64 by 64 PNGs and one newline-terminated
+schema-version-one manifest. It observed the known table center color
+`#371e0bff`, non-empty depth and normal evidence, transparent identity
+background, canonical room/table/light/camera identities, matching live and
+replayed hashes, and exact identity-palette correspondence. The four files
+retain unique observation IDs and increasing frame IDs 4-7 while sharing the
+final revision two and canonical camera. A repeated invocation rejected the
+existing directory without changing its manifest. The CF081 controlled test
+passed unchanged after the shared visualization and create-new helpers were
+made reusable inside the CLI binary.
+
+These PNGs are human-readable diagnostics, not exact numeric observation
+payloads, simultaneous captures, or cross-adapter conformance baselines. The
+test covers one local Vulkan adapter. Adapter details, stable IDs, and hashes
+can correlate a host or run; output remains local and no upload is automatic.
+A failed write may leave an incomplete new directory, and cooperative
+create-new behavior does not defend against hostile concurrent path
+substitution.
+
 ## Controlled pending-work age commands
 
 CF031 ran the focused CPU contracts, every existing release-mode renderer and

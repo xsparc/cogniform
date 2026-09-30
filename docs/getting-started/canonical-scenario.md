@@ -86,3 +86,40 @@ bounds. To drive the same service contract as a bounded binary session over
 inherited redirected standard I/O, use the separate
 [`serve-stdio` quickstart](local-stdio-session.md); the canonical scenario
 remains a fixed self-contained conformance flow.
+
+## Inspect the rendered graphics
+
+To render the same room, updated table, point light, and camera into ordinary
+diagnostic images, choose a destination that does not exist:
+
+```text
+cargo run --release -p cogniform-cli --locked --offline -- render-scenario ./target/cogniform-scenario-render
+```
+
+The command first completes the canonical scenario, then requests four new
+exact-revision observations. It creates `color.png`, `depth.png`,
+`normals.png`, `identity.png`, and `manifest.json`. Typical uses are:
+
+- checking that transactional position and material changes reached the
+  rendered table;
+- separating lighting/material problems (`color.png`) from occlusion or
+  camera problems (`depth.png`);
+- investigating surface orientation and transform problems (`normals.png`);
+- grounding an agent's entity reasoning in visible pixels (`identity.png`);
+  and
+- joining visual debugging evidence to revision two and the matching replay
+  hash (`manifest.json`).
+
+Unlike `render-example`, which derives all four files from one renderer
+reference frame, these files come from four sequential observation requests.
+The manifest carries a separate observation and frame ID for every file while
+requiring the same final revision and camera. This distinction matters when a
+consumer compares outputs or retains them for triage.
+
+The output is local and diagnostic. It does not export exact numeric depth or
+normal values, accept a caller-authored scene, or create a portable screenshot
+baseline. Adapter details, stable IDs, and logical hashes can correlate a host
+or run; review the manifest before sharing it. The target and each child use
+create-new behavior, with the same partial-write and hostile concurrent path-
+substitution limitations documented for the
+[fixed rendered example](rendered-observation-example.md).

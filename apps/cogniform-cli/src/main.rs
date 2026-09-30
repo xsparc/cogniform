@@ -10,6 +10,7 @@ mod measure;
 mod profile;
 mod recovery;
 mod render_example;
+mod render_scenario;
 mod scenario;
 mod serve_stdio;
 
@@ -111,16 +112,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             asset::run(expected_hash, &path, output)
         }
         Some(command) if command == OsStr::new("render-example") => {
-            run_render_example(&mut arguments)
+            run_render_directory(&mut arguments, "render-example", render_example::run)
+        }
+        Some(command) if command == OsStr::new("render-scenario") => {
+            run_render_directory(&mut arguments, "render-scenario", render_scenario::run)
         }
         Some(command) if command == OsStr::new("serve-stdio") => run_binary_stdio(&mut arguments),
         Some(command) if command == OsStr::new("serve-mcp-stdio") => run_mcp_stdio(&mut arguments),
         Some(command) if command == OsStr::new("help") || command == OsStr::new("--help") => {
-            if arguments.next().is_some() {
-                return Err(invalid_input("help accepts no arguments"));
-            }
-            print_usage();
-            Ok(())
+            run_help(&mut arguments)
         }
         Some(_) => Err(invalid_input("unknown command; run with --help for usage")),
     }
@@ -139,23 +139,35 @@ fn run_mcp_stdio(arguments: &mut env::ArgsOs) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-fn run_render_example(arguments: &mut env::ArgsOs) -> Result<(), Box<dyn std::error::Error>> {
+fn run_render_directory(
+    arguments: &mut env::ArgsOs,
+    command: &str,
+    runner: fn(&OsStr) -> Result<(), Box<dyn std::error::Error>>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let candidate = arguments
         .next()
-        .ok_or_else(|| invalid_input("render-example requires one absent output directory"))?;
+        .ok_or_else(|| invalid_input(format!("{command} requires one absent output directory")))?;
     let path = if candidate == OsStr::new("--") {
-        arguments
-            .next()
-            .ok_or_else(|| invalid_input("render-example requires one absent output directory"))?
+        arguments.next().ok_or_else(|| {
+            invalid_input(format!("{command} requires one absent output directory"))
+        })?
     } else {
         candidate
     };
     if arguments.next().is_some() {
-        return Err(invalid_input(
-            "render-example accepts exactly one absent output directory",
-        ));
+        return Err(invalid_input(format!(
+            "{command} accepts exactly one absent output directory"
+        )));
     }
-    render_example::run(&path)
+    runner(&path)
+}
+
+fn run_help(arguments: &mut env::ArgsOs) -> Result<(), Box<dyn std::error::Error>> {
+    if arguments.next().is_some() {
+        return Err(invalid_input("help accepts no arguments"));
+    }
+    print_usage();
+    Ok(())
 }
 
 fn print_usage() {
@@ -170,6 +182,9 @@ fn print_usage() {
     );
     println!(
         "  cogniform-cli render-example <new-directory>  Render color, depth, normal, and identity PNG examples"
+    );
+    println!(
+        "  cogniform-cli render-scenario <new-directory>  Render canonical room, table, light, and camera PNG examples"
     );
     println!(
         "  cogniform-cli serve-stdio [--profile <name>]  Run one bounded binary session over redirected stdio"

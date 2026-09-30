@@ -85,5 +85,6 @@ earlier one and links the history.
 | [0079](0079-bounded-gltf-material-anisotropy-factors.md) | Accepted | Apply bounded ratified material anisotropy factors without a new texture role |
 | [0080](0080-bounded-gltf-material-anisotropy-texture.md) | Accepted | Admit one bounded ratified material anisotropy texture |
 | [0081](0081-create-new-rendered-observation-examples.md) | Accepted | Export one create-new diagnostic set from the fixed headless reference frame |
+| [0082](0082-create-new-canonical-scenario-render-bundle.md) | Accepted | Export exact-revision canonical-scenario observations as a create-new graphics bundle |
 
 New records use four sections: context, decision, consequences, and status.

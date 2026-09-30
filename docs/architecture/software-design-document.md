@@ -179,6 +179,13 @@ plus a versioned causal manifest. The files are local diagnostic derivatives,
 not observation payloads or conformance formats, and the command adds no
 reusable renderer state, external asset, network, upload, protocol, or render
 semantics.
+CF082 adds a separate CLI diagnostic over the existing canonical scenario and
+local-service observation API. It runs the unchanged room/table/light/camera
+flow to revision two, then obtains four sequential color, depth, normal, and
+entity-ID observations for that exact revision and camera. Its create-new
+schema-version-one manifest records causality per file plus canonical IDs and
+matching replay hashes; it adds no engine, renderer, observation, protocol,
+asset, persistence, dependency, or endpoint behavior.
 CF050 adds a separate standard-library-only release-preparation boundary. It
 accepts only a clean `HEAD` exactly named by a direct annotated tag, creates one
 bounded uncompressed Git tar and exact SHA-256 sidecar outside repository state,
@@ -803,6 +810,15 @@ observation envelopes or cross-adapter screenshot baselines. Output is
 create-new and local; adapter identity can fingerprint the host and no upload
 is automatic.
 
+The `canonical-mvp-render-v1` diagnostic has a separate CLI schema-version-one
+manifest. It joins the canonical revision-two entity identities and matching
+live/replayed logical hashes to four image observations. Because the service
+produces one requested payload per render, each file retains its own
+observation and strictly increasing frame ID while all four require the same
+camera and scene revision. The PNG transformations and local create-new limits
+match the fixed rendered example; this is not a same-frame, numeric,
+conformance, or release format.
+
 Research targets such as 60 Hz, 3 ms p95 CPU engine work, 8 ms p95 GPU time, 8 ms for 1,000 simple operations, 30 ms for 10,000 operations, one-frame commit-to-visibility, and near-zero hot-path allocations are hypotheses until reference hardware and fixtures are recorded. Correctness gates land before performance gates; thresholds cannot be silently weakened.
 
 ## 7. External interfaces
@@ -833,7 +849,9 @@ optional versioned CLI JSON report, run the
 controlled CPU measurement with an
 optional versioned CLI JSON report, run the canonical unattended scenario with
 an optional versioned CLI JSON proof, render one fixed reference frame into a
-create-new local diagnostic PNG/manifest set, revert live recorded state,
+create-new local diagnostic PNG/manifest set, render four separately causal
+canonical-scenario observations into another create-new diagnostic set,
+revert live recorded state,
 resolve assets, and explicitly evict one content hash from CPU/GPU residency.
 Initial implementation can use in-process Rust types and canonical JSON
 fixtures. CF045 supplies the first narrow MCP stdio adapter after the core
@@ -848,6 +866,9 @@ launch profiles shared by both stdio roots; omission remains 64x64 and no
 profile field enters either protocol.
 CF081 adds only the fixed `render-example` CLI diagnostic; no file shape enters
 the engine, renderer, observation, local-session, or MCP public contracts.
+CF082 adds only the service-backed `render-scenario` CLI diagnostic and reuses
+the existing canonical scenario and observation calls; no new file shape
+enters those reusable contracts.
 Protobuf/gRPC, MCP HTTP/authentication, resource templates, subscriptions,
 notifications, history, model features, local shared memory, and QUIC remain
 separate future adapters.
@@ -923,9 +944,9 @@ recovery-to-asset catalogs and automatic rehydration, mutable/persistent
 snapshot registries, crash-atomic latest pointers, automatic
 device recreation, in-place revert automation and branch coordination, log
 rotation, recovery-inspection profile selection, broader diagnostic schemas,
-including schemas beyond the versioned recovery, controlled-measurement, and
-canonical-scenario, asset-source-inspection, and rendered-example CLI reports,
-and model policy remain
+including schemas beyond the versioned recovery, controlled-measurement,
+canonical-scenario, asset-source-inspection, rendered-example, and canonical-
+scenario-rendered-bundle CLI reports, and model policy remain
 explicitly open.
 Defaults in the roadmap are
 planning assumptions, not production commitments.
