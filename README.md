@@ -427,3 +427,9 @@ by the [Code of Conduct](CODE_OF_CONDUCT.md), and project decisions follow
 [GOVERNANCE.md](GOVERNANCE.md).
 
 Cogniform is licensed under [Apache-2.0](LICENSE).
+
+## Project overview
+
+For a concise explanation of this project's scope and engineering boundaries,
+see the [portfolio project profile](https://louijiecompo.com/work/cogniform/). This repository
+and its versioned documentation remain the source of truth for implementation details.
