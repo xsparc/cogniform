@@ -10,9 +10,10 @@ use cogniform_engine::{
     CanonicalScenarioConfig, CanonicalScenarioReport, LocalService, LocalServiceConfig,
     Observation, ObservationPayload, run_canonical_scenario,
 };
+use cogniform_observation::DiagnosticPngSource;
 use cogniform_protocol::{
-    ObservationId, ObservationKind, ObservationQuality, ObservationRequest, SceneRevision,
-    SchemaVersion, StableEntityId,
+    ImageDimensions, ObservationId, ObservationKind, ObservationQuality, ObservationRequest,
+    SceneRevision, SchemaVersion, StableEntityId,
 };
 use cogniform_renderer::AdapterSummary;
 use serde::Serialize;
@@ -20,9 +21,8 @@ use serde::Serialize;
 use crate::{
     LOCAL_PROFILE_HEIGHT, LOCAL_PROFILE_WIDTH,
     render_example::{
-        Artifact, IdentityManifest, encode_json_line, encode_png, flatten_rgba,
-        validate_output_target, visualize_depth, visualize_identities, visualize_normals,
-        write_artifacts,
+        Artifact, IdentityManifest, encode_diagnostic_image, encode_json_line, identity_manifest,
+        validate_output_target, write_artifacts,
     },
 };
 
@@ -131,7 +131,9 @@ fn build_artifacts(
     scenario: &CanonicalScenarioReport,
     observations: &[Observation; 4],
 ) -> Result<Vec<Artifact>, Box<dyn std::error::Error>> {
-    let (width, height, expected_pixels) = validate_observation_set(observations)?;
+    let (dimensions, expected_pixels) = validate_observation_set(observations)?;
+    let width = dimensions.width.get();
+    let height = dimensions.height.get();
 
     let ObservationPayload::Color(color) = observations[0].payload() else {
         return Err(io_failure(
@@ -162,10 +164,7 @@ fn build_artifacts(
         ));
     }
 
-    let color = flatten_rgba(color);
-    let depth = visualize_depth(depth);
-    let normals = visualize_normals(normals);
-    let (identity, identities) = visualize_identities(entity_ids);
+    let identities = identity_manifest(entity_ids);
     let files = [
         file_manifest(&observations[0], "color.png", "linear-rgba8-source-values"),
         file_manifest(
@@ -207,19 +206,23 @@ fn build_artifacts(
     Ok(vec![
         Artifact::png(
             "color.png",
-            encode_png(width, height, png::ColorType::Rgba, &color, true)?,
+            encode_diagnostic_image(dimensions, DiagnosticPngSource::Color(color), COMMAND)?,
         ),
         Artifact::png(
             "depth.png",
-            encode_png(width, height, png::ColorType::Grayscale, &depth, false)?,
+            encode_diagnostic_image(dimensions, DiagnosticPngSource::Depth(depth), COMMAND)?,
         ),
         Artifact::png(
             "normals.png",
-            encode_png(width, height, png::ColorType::Rgba, &normals, false)?,
+            encode_diagnostic_image(dimensions, DiagnosticPngSource::Normal(normals), COMMAND)?,
         ),
         Artifact::png(
             "identity.png",
-            encode_png(width, height, png::ColorType::Rgba, &identity, false)?,
+            encode_diagnostic_image(
+                dimensions,
+                DiagnosticPngSource::EntityId(entity_ids),
+                COMMAND,
+            )?,
         ),
         Artifact::new("manifest.json", encode_json_line(&manifest)?),
     ])
@@ -227,7 +230,7 @@ fn build_artifacts(
 
 fn validate_observation_set(
     observations: &[Observation; 4],
-) -> Result<(u32, u32, usize), Box<dyn std::error::Error>> {
+) -> Result<(ImageDimensions, usize), Box<dyn std::error::Error>> {
     let dimensions = observations[0]
         .metadata()
         .dimensions
@@ -251,11 +254,7 @@ fn validate_observation_set(
             "render-scenario observation frame identities are not increasing",
         ));
     }
-    Ok((
-        dimensions.width.get(),
-        dimensions.height.get(),
-        expected_pixels,
-    ))
+    Ok((dimensions, expected_pixels))
 }
 
 fn file_manifest(

@@ -82,6 +82,39 @@ with the version-one `COGOBS01`
 The server advertises no resource templates, subscriptions, list-change
 notifications, history, or persistence.
 
+## Request a diagnostic image
+
+For a directly viewable diagnostic in the same tool result, add exactly
+`"presentation": "png"` to a color, depth, normal, or entity-ID request:
+
+```json
+{
+  "schema_version": 1,
+  "observation_id": "00000000000000000000000000000044",
+  "scene_revision": 2,
+  "camera_id": "00000000000000000000000000000031",
+  "kind": "color",
+  "quality": "low",
+  "presentation": "png"
+}
+```
+
+The success contains text, one base64 `image/png` content block, and the same
+canonical resource link. Its structured `presentation` descriptor reports the
+decoded PNG byte count and `diagnostic_only: true`. Practical render uses are:
+
+- color for camera framing, visible materials, lighting, and render smoke
+  checks;
+- depth for occlusion, intersections, misplaced geometry, and camera-range
+  triage;
+- normal for winding, transform, and surface-orientation debugging; and
+- entity ID for segmentation, visible-entity grounding, and selection.
+
+Visibility is structured aggregation rather than an image and rejects the PNG
+option. Omit `presentation` when only the exact resource is needed. Always use
+the `COGOBS01` resource—not the diagnostic PNG—for numeric depth/normals,
+stable identity, metadata, or causal decisions.
+
 Every named profile is local and single-user. The parent must protect scene,
 compilation, observation, and resource values as sensitive data and supply
 identity, authorization, confidentiality, freshness, rate limits, and process

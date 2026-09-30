@@ -1964,6 +1964,29 @@ slice. See
 [ADR 0082](../adr/0082-create-new-canonical-scenario-render-bundle.md) and the
 [canonical scenario guide](../getting-started/canonical-scenario.md#inspect-the-rendered-graphics).
 
+### PR 83 - CF083: Bounded MCP observation image content
+
+Outcome: an MCP caller can opt into a directly viewable diagnostic PNG for an
+exact-revision color, depth, normal, or entity-ID observation while retaining
+the existing canonical observation resource as the authoritative result.
+
+Gate: extend only `cogniform.observe_scene` with optional
+`presentation: "png"`. Omission preserves the exact prior content and
+structured result. A successful opt-in call returns text, one base64 MCP
+`ImageContent` with media type `image/png`, and the existing resource link;
+structured output adds `{mime_type, size, diagnostic_only}`. Reject
+visibility-plus-PNG as `invalid_observation` before lazy service creation.
+
+Move the already-proven CF081/CF082 transformations into one pure observation-
+owned encoder, preserve both CLI commands byte-for-byte, bound a complete PNG
+to 1,048,576 bytes with fallible allocation, and prove the 480 by 270 profile.
+Prepare the canonical `COGOBS01` resource first, then the optional derivative,
+and replace the retained resource only after the complete tool result is
+available. Preserve both accepted MCP eras, exact four-tool order,
+cancellation, one latest resource, transport bounds, renderer behavior,
+filesystem behavior, and every authority boundary. See
+[ADR 0083](../adr/0083-bounded-mcp-observation-image-content.md).
+
 ## 3. Dependency graph
 
 ```text
@@ -1977,7 +2000,7 @@ CF000 -> CF001 -> CF002 -> CF003 -> CF004
   -> CF054 -> CF055 -> CF056 -> CF057 -> CF058 -> CF059 -> CF060 -> CF061
   -> CF062 -> CF063 -> CF064 -> CF065 -> CF066 -> CF068 -> CF069 -> CF071
   -> CF072 -> CF073 -> CF074 -> CF075 -> CF076 -> CF077 -> CF078 -> CF079
-  -> CF080 -> CF081 -> CF082
+  -> CF080 -> CF081 -> CF082 -> CF083
 ```
 
 The default is linear merge order so every PR starts from an unambiguous reviewed base. A future maintainer may explicitly approve stacked work, but task dependencies remain the authoritative merge gates. Later work depends on proven semantics rather than only crate existence.
@@ -2436,6 +2459,13 @@ Validation expands with capability:
   center color; complete-before-output encoding; create-new preservation and
   repeat rejection; and unchanged engine, renderer, observation, protocol,
   asset, dependency, CI, persistence, release, and deployment boundaries.
+- CF083: shared pure diagnostic transformations with byte-identical CLI
+  artifacts; exact omission compatibility; four opt-in image kinds across both
+  MCP eras; visibility rejection before service creation; a 1 MiB PNG bound
+  including the 480 by 270 profile; canonical-resource authority and atomic
+  replacement; presentation-failure preservation; and unchanged tool order,
+  cancellation, renderer, filesystem, persistence, release, and deployment
+  boundaries.
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 

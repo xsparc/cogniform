@@ -845,6 +845,10 @@ mod tests {
             json!({"enum": ["color", "depth", "normal", "entity_id", "visibility"]})
         );
         assert_eq!(
+            tool.input_schema["properties"]["presentation"],
+            json!({"const": "png"})
+        );
+        assert_eq!(
             tool.output_schema.as_ref().unwrap()["oneOf"],
             json!([
                 {
@@ -855,7 +859,17 @@ mod tests {
                         "schema_version": {"const": 1},
                         "resource_uri": {"type": "string"},
                         "resource_size": {"type": "integer", "minimum": 60, "maximum": 4_194_304},
-                        "metadata": {"type": "object"}
+                        "metadata": {"type": "object"},
+                        "presentation": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["mime_type", "size", "diagnostic_only"],
+                            "properties": {
+                                "mime_type": {"const": "image/png"},
+                                "size": {"type": "integer", "minimum": 1, "maximum": 1_048_576},
+                                "diagnostic_only": {"const": true}
+                            }
+                        }
                     }
                 },
                 {
@@ -1536,6 +1550,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn official_legacy_client_receives_all_opt_in_png_presentations() {
+        let backend = png_presentation_backend();
+        let (client, server) = client_and_server_with_observation_backend(Box::new(backend)).await;
+        assert_all_png_presentations(&client).await;
+        close(client, server).await;
+    }
+
+    #[tokio::test]
+    async fn official_modern_client_receives_all_opt_in_png_presentations() {
+        let backend = png_presentation_backend();
+        let (client, server) =
+            modern_client_and_server_with_observation_backend(Box::new(backend)).await;
+        assert_all_png_presentations(&client).await;
+        close(client, server).await;
+    }
+
+    #[tokio::test]
     async fn official_client_reads_the_exact_wide_profile_entity_id_resource() {
         let backend = FakeObservationBackend::with_dimensions(
             [FakeObservationOutcome::Completed(
@@ -1552,13 +1583,17 @@ mod tests {
         )
         .await;
 
-        let result = call_observation(&client, 0x46, ObservationKind::EntityId).await;
+        let result = call_png_observation(&client, 0x46, ObservationKind::EntityId).await;
         assert_eq!(result.is_error, Some(false));
+        assert_png_content(&result);
         let output = result.structured_content.unwrap();
         assert_eq!(output["metadata"]["dimensions"]["width"], 480);
         assert_eq!(output["metadata"]["dimensions"]["height"], 270);
         assert_eq!(output["metadata"]["kind"], "entity_id");
         assert_eq!(output["resource_size"], 2_203_260);
+        assert_eq!(output["presentation"]["mime_type"], "image/png");
+        assert_eq!(output["presentation"]["diagnostic_only"], true);
+        assert!(output["presentation"]["size"].as_u64().unwrap() <= 1_048_576);
 
         let uri = output["resource_uri"].as_str().unwrap();
         let resources = client.peer().list_all_resources().await.unwrap();
@@ -1587,6 +1622,66 @@ mod tests {
             payload,
             ObservationPayload::EntityId(values) if values.len() == 129_600
         ));
+        close(client, server).await;
+    }
+
+    #[tokio::test]
+    async fn over_limit_png_preserves_the_prior_canonical_resource() {
+        let mut color = Vec::with_capacity(512 * 512);
+        let mut state = 0x4d59_5df4_d0f3_3173_u64;
+        for _ in 0..(512 * 512) {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let bytes = state.to_le_bytes();
+            color.push([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        }
+        let backend = FakeObservationBackend::with_dimensions(
+            [
+                FakeObservationOutcome::Completed(ObservationPayload::Visibility(Vec::new())),
+                FakeObservationOutcome::Completed(ObservationPayload::Color(color)),
+            ],
+            (512, 512),
+        );
+        let (client, server) = client_and_server_with_observation_backend_and_policy(
+            Box::new(backend),
+            512,
+            512,
+            Duration::from_millis(2),
+            Duration::from_secs(15),
+        )
+        .await;
+        let seeded = call_visibility_observation(&client, 0x47).await;
+        let before = client.peer().list_all_resources().await.unwrap();
+        let uri = seeded.structured_content.unwrap()["resource_uri"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let blob = resource_blob(
+            &client
+                .peer()
+                .read_resource(ReadResourceRequestParams::new(&uri))
+                .await
+                .unwrap(),
+        );
+
+        let failed = call_png_observation(&client, 0x48, ObservationKind::Color).await;
+        assert_eq!(failed.is_error, Some(true));
+        assert_eq!(
+            failed.structured_content.unwrap()["error"],
+            "observation_too_large"
+        );
+        assert_eq!(client.peer().list_all_resources().await.unwrap(), before);
+        assert_eq!(
+            resource_blob(
+                &client
+                    .peer()
+                    .read_resource(ReadResourceRequestParams::new(&uri))
+                    .await
+                    .unwrap()
+            ),
+            blob
+        );
         close(client, server).await;
     }
 
@@ -1963,6 +2058,21 @@ mod tests {
 
     async fn assert_first_observation_resource(client: &TestClient) -> String {
         let first = call_visibility_observation(client, 0x41).await;
+        assert_eq!(first.content.len(), 2);
+        assert!(
+            first
+                .content
+                .iter()
+                .all(|content| !matches!(content, ContentBlock::Image(_)))
+        );
+        assert!(
+            first
+                .structured_content
+                .as_ref()
+                .unwrap()
+                .get("presentation")
+                .is_none()
+        );
         let first_uri = first.structured_content.as_ref().unwrap()["resource_uri"]
             .as_str()
             .unwrap()
@@ -2074,6 +2184,80 @@ mod tests {
         call_observation(client, observation_id, ObservationKind::Visibility).await
     }
 
+    fn png_presentation_backend() -> FakeObservationBackend {
+        let pixels = 64 * 64;
+        FakeObservationBackend::new([
+            FakeObservationOutcome::Completed(ObservationPayload::Color(vec![
+                [1, 2, 3, 255];
+                pixels
+            ])),
+            FakeObservationOutcome::Completed(ObservationPayload::Depth(vec![0.5; pixels])),
+            FakeObservationOutcome::Completed(ObservationPayload::Normal(vec![
+                Some([
+                    0.0, 0.0, 1.0
+                ]);
+                pixels
+            ])),
+            FakeObservationOutcome::Completed(ObservationPayload::EntityId(vec![
+                Some(
+                    StableEntityId::new(0x51).unwrap()
+                );
+                pixels
+            ])),
+        ])
+    }
+
+    async fn assert_all_png_presentations(client: &TestClient) {
+        for (offset, kind) in [
+            ObservationKind::Color,
+            ObservationKind::Depth,
+            ObservationKind::Normal,
+            ObservationKind::EntityId,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let result =
+                call_png_observation(client, 0x80 + u128::try_from(offset).unwrap(), kind).await;
+            assert_eq!(result.is_error, Some(false));
+            assert_png_content(&result);
+            let output = result.structured_content.as_ref().unwrap();
+            assert_eq!(
+                output["metadata"]["kind"],
+                serde_json::to_value(kind).unwrap()
+            );
+            assert_eq!(output["presentation"]["mime_type"], "image/png");
+            assert_eq!(output["presentation"]["diagnostic_only"], true);
+            assert!(output["presentation"]["size"].as_u64().unwrap() <= 1_048_576);
+            assert_eq!(client.peer().list_all_resources().await.unwrap().len(), 1);
+        }
+    }
+
+    fn assert_png_content(result: &CallToolResult) {
+        assert_eq!(result.content.len(), 3);
+        let image = result
+            .content
+            .iter()
+            .find_map(|content| match content {
+                ContentBlock::Image(image) => Some(image),
+                _ => None,
+            })
+            .expect("opt-in observation result contains an image");
+        assert_eq!(image.mime_type, "image/png");
+        let png = decode_base64(&image.data).unwrap();
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        assert_eq!(
+            result.structured_content.as_ref().unwrap()["presentation"]["size"],
+            u64::try_from(png.len()).unwrap()
+        );
+        assert!(
+            result
+                .content
+                .iter()
+                .any(|content| matches!(content, ContentBlock::ResourceLink(_)))
+        );
+    }
+
     async fn call_observation(
         client: &TestClient,
         observation_id: u128,
@@ -2089,6 +2273,28 @@ mod tests {
                     "camera_id": StableEntityId::new(0x31).unwrap().to_string(),
                     "kind": kind,
                     "quality": "low"
+                }))),
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn call_png_observation(
+        client: &TestClient,
+        observation_id: u128,
+        kind: ObservationKind,
+    ) -> CallToolResult {
+        client
+            .peer()
+            .call_tool(
+                CallToolRequestParams::new(OBSERVE_SCENE_TOOL).with_arguments(arguments(json!({
+                    "schema_version": 1,
+                    "observation_id": ObservationId::new(observation_id).unwrap().to_string(),
+                    "scene_revision": 0,
+                    "camera_id": StableEntityId::new(0x31).unwrap().to_string(),
+                    "kind": kind,
+                    "quality": "low",
+                    "presentation": "png"
                 }))),
             )
             .await

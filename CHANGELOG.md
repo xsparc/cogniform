@@ -278,6 +278,11 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
   per-file observation/frame causality, canonical identities, matching live
   and replayed hashes, deterministic identity colors, path-redacted preflight,
   and overwrite refusal;
+- opt-in `presentation: "png"` on `cogniform.observe_scene` for color, depth,
+  normal, and entity-ID observations, returning one independently bounded
+  diagnostic MCP image beside the unchanged authoritative `COGOBS01` resource;
+  the CLI graphics commands now reuse the same pure observation-owned encoder
+  with byte-identical artifacts;
 - CPU-only `inspect-asset <content-hash> <path>` for bounded read-only
   verification of one caller-mapped immutable asset source, with exact
   lowercase hash parsing, aggregate hash/byte output, file immutability, and
