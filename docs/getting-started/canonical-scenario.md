@@ -116,6 +116,16 @@ The manifest carries a separate observation and frame ID for every file while
 requiring the same final revision and camera. This distinction matters when a
 consumer compares outputs or retains them for triage.
 
+The bounded MCP adapter provides the same per-observation views without
+writing a directory: add `"presentation": "png"` to an exact-revision
+`cogniform.observe_scene` request for `color`, `depth`, `normal`, or
+`entity_id`. Typical agent uses include checking the restyled table's visible
+color, locating an occlusion in depth, diagnosing orientation from normals,
+and grounding a stable scene entity in image pixels. Each response also links
+the authoritative `COGOBS01` resource; the PNG remains diagnostic and lossy.
+See the [MCP quickstart](mcp-stdio-adapter.md#request-a-diagnostic-image) for a
+complete request and response shape.
+
 The output is local and diagnostic. It does not export exact numeric depth or
 normal values, accept a caller-authored scene, or create a portable screenshot
 baseline. Adapter details, stable IDs, and logical hashes can correlate a host

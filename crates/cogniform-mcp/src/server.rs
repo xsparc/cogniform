@@ -14,11 +14,14 @@ use cogniform_engine::{
     ObservationDelivery,
 };
 use cogniform_observation::{
-    ObservationEnvelopeError, ObservationPayload, ObservationPayloadLimits, encode_payload,
+    DIAGNOSTIC_PNG_MIME_TYPE, DiagnosticPngError, DiagnosticPngLimits, DiagnosticPngSource,
+    ObservationEnvelopeError, ObservationPayload, ObservationPayloadLimits, encode_diagnostic_png,
+    encode_payload,
 };
 use cogniform_protocol::{
     ApplyReceipt, ApplyStatus, ImaginationEnvelope, ObservationId, ObservationKind,
-    ObservationMetadata, ObservationRequest, RuntimeLimits, ScenePatch, SceneQuery,
+    ObservationMetadata, ObservationQuality, ObservationRequest, RuntimeLimits, ScenePatch,
+    SceneQuery, SceneRevision, SchemaVersion, StableEntityId,
 };
 use rmcp::{
     ErrorData as McpError, ServerHandler,
@@ -31,7 +34,7 @@ use rmcp::{
     },
     service::{NotificationContext, RequestContext, RoleServer, Service},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use tokio::{sync::Mutex, time::Instant};
 
@@ -102,6 +105,59 @@ struct RetainedObservation {
     blob: String,
 }
 
+#[derive(Debug)]
+struct PreparedObservation {
+    retained: RetainedObservation,
+    presentation: Option<PreparedPng>,
+}
+
+#[derive(Debug)]
+struct PreparedPng {
+    raw_size: u64,
+    data: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum ObservationPresentation {
+    Png,
+}
+
+fn deserialize_observation_presentation<'de, D>(
+    deserializer: D,
+) -> Result<Option<ObservationPresentation>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    ObservationPresentation::deserialize(deserializer).map(Some)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObservationToolInput {
+    schema_version: SchemaVersion,
+    observation_id: ObservationId,
+    scene_revision: SceneRevision,
+    camera_id: StableEntityId,
+    kind: ObservationKind,
+    quality: ObservationQuality,
+    #[serde(default, deserialize_with = "deserialize_observation_presentation")]
+    presentation: Option<ObservationPresentation>,
+}
+
+impl ObservationToolInput {
+    const fn request(&self) -> ObservationRequest {
+        ObservationRequest {
+            schema_version: self.schema_version,
+            observation_id: self.observation_id,
+            scene_revision: self.scene_revision,
+            camera_id: self.camera_id,
+            kind: self.kind,
+            quality: self.quality,
+        }
+    }
+}
+
 pub(crate) enum AdapterObservationDelivery {
     Completed {
         metadata: ObservationMetadata,
@@ -158,6 +214,27 @@ impl Default for ObservationPollPolicy {
             cadence: OBSERVATION_POLL_CADENCE,
             deadline: OBSERVATION_POLL_DEADLINE,
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ObservationOutputPolicy {
+    payload_limits: ObservationPayloadLimits,
+    presentation: Option<ObservationPresentation>,
+}
+
+impl ObservationOutputPolicy {
+    fn new(presentation: Option<ObservationPresentation>) -> Self {
+        Self {
+            payload_limits: ObservationPayloadLimits::default(),
+            presentation,
+        }
+    }
+}
+
+impl Default for ObservationOutputPolicy {
+    fn default() -> Self {
+        Self::new(None)
     }
 }
 
@@ -367,16 +444,22 @@ impl CogniformMcpServer {
         C: Fn() -> bool,
         F: Future<Output = ()>,
     {
-        let request = match parse_arguments::<ObservationRequest>(arguments) {
-            Ok(request) => request,
+        let input = match parse_arguments::<ObservationToolInput>(arguments) {
+            Ok(input) => input,
             Err(result) => return result,
         };
+        let request = input.request();
+        if input.presentation == Some(ObservationPresentation::Png)
+            && request.kind == ObservationKind::Visibility
+        {
+            return tool_error("invalid_observation");
+        }
         let mut state = self.state.lock().await;
         let runtime_limits = state.runtime_limits();
         if request.to_canonical_json(&runtime_limits).is_err() {
             return tool_error("invalid_observation");
         }
-        let payload_limits = ObservationPayloadLimits::default();
+        let output_policy = ObservationOutputPolicy::new(input.presentation);
         if state.service_failed {
             return tool_error("service_failed");
         }
@@ -388,7 +471,7 @@ impl CogniformMcpServer {
                 &request,
                 backend.as_mut(),
                 &runtime_limits,
-                payload_limits,
+                output_policy,
                 poll_policy,
                 is_cancelled,
                 cancelled,
@@ -403,7 +486,7 @@ impl CogniformMcpServer {
                 &request,
                 service,
                 &runtime_limits,
-                payload_limits,
+                output_policy,
                 poll_policy,
                 is_cancelled,
                 cancelled,
@@ -421,7 +504,7 @@ impl CogniformMcpServer {
                 &request,
                 service,
                 &runtime_limits,
-                payload_limits,
+                output_policy,
                 poll_policy,
                 is_cancelled,
                 cancelled,
@@ -430,10 +513,10 @@ impl CogniformMcpServer {
         };
 
         match outcome {
-            Ok(retained) => {
-                let result = observation_result(&retained);
+            Ok(prepared) => {
+                let result = observation_result(&prepared);
                 if result.is_error == Some(false) {
-                    state.retained_observation = Some(retained);
+                    state.retained_observation = Some(prepared.retained);
                 }
                 result
             }
@@ -663,11 +746,11 @@ async fn drive_observation<C, F>(
     request: &ObservationRequest,
     backend: &mut dyn ObservationBackend,
     runtime_limits: &RuntimeLimits,
-    payload_limits: ObservationPayloadLimits,
+    output_policy: ObservationOutputPolicy,
     policy: ObservationPollPolicy,
     is_cancelled: C,
     cancelled: F,
-) -> Result<RetainedObservation, ObservationToolFailure>
+) -> Result<PreparedObservation, ObservationToolFailure>
 where
     C: Fn() -> bool,
     F: Future<Output = ()>,
@@ -694,13 +777,14 @@ where
         }
         match delivery {
             Ok(Some(AdapterObservationDelivery::Completed { metadata, payload })) => {
-                return retain_observation(
+                return prepare_observation(
                     request,
                     metadata,
                     &payload,
                     backend.dimensions(),
                     runtime_limits,
-                    payload_limits,
+                    output_policy.payload_limits,
+                    output_policy.presentation,
                 );
             }
             Ok(Some(AdapterObservationDelivery::Failed { observation_id })) => {
@@ -721,6 +805,68 @@ where
                 }
             }
             Err(()) => return Err(ObservationToolFailure::poison("service_failed")),
+        }
+    }
+}
+
+fn prepare_observation(
+    request: &ObservationRequest,
+    metadata: ObservationMetadata,
+    payload: &ObservationPayload,
+    dimensions: (u32, u32),
+    runtime_limits: &RuntimeLimits,
+    payload_limits: ObservationPayloadLimits,
+    presentation: Option<ObservationPresentation>,
+) -> Result<PreparedObservation, ObservationToolFailure> {
+    let retained = retain_observation(
+        request,
+        metadata,
+        payload,
+        dimensions,
+        runtime_limits,
+        payload_limits,
+    )?;
+    let presentation = match presentation {
+        None => None,
+        Some(ObservationPresentation::Png) => {
+            let image_dimensions = retained
+                .metadata
+                .dimensions
+                .ok_or_else(|| ObservationToolFailure::poison("invalid_service_output"))?;
+            let source = DiagnosticPngSource::try_from(payload)
+                .map_err(|error| map_diagnostic_png_error(&error))?;
+            let png = encode_diagnostic_png(
+                image_dimensions,
+                source,
+                runtime_limits,
+                DiagnosticPngLimits::default(),
+            )
+            .map_err(|error| map_diagnostic_png_error(&error))?;
+            let raw_size = u64::try_from(png.len())
+                .map_err(|_| ObservationToolFailure::stable("output_unavailable"))?;
+            let data = base64_encode(&png)
+                .map_err(|()| ObservationToolFailure::stable("output_unavailable"))?;
+            Some(PreparedPng { raw_size, data })
+        }
+    };
+    Ok(PreparedObservation {
+        retained,
+        presentation,
+    })
+}
+
+fn map_diagnostic_png_error(error: &DiagnosticPngError) -> ObservationToolFailure {
+    match error {
+        DiagnosticPngError::PngLimitExceeded { .. } => {
+            ObservationToolFailure::stable("observation_too_large")
+        }
+        DiagnosticPngError::AllocationFailed
+        | DiagnosticPngError::EncodingFailed
+        | DiagnosticPngError::SizeOverflow => ObservationToolFailure::stable("output_unavailable"),
+        DiagnosticPngError::UnsupportedKind { .. }
+        | DiagnosticPngError::DimensionLimitExceeded
+        | DiagnosticPngError::ItemCountMismatch { .. } => {
+            ObservationToolFailure::poison("invalid_service_output")
         }
     }
 }
@@ -844,20 +990,33 @@ pub(crate) fn base64_encoded_len(input_len: usize) -> Result<usize, ()> {
         .ok_or(())
 }
 
-fn observation_result(retained: &RetainedObservation) -> CallToolResult {
+fn observation_result(prepared: &PreparedObservation) -> CallToolResult {
+    let retained = &prepared.retained;
     serde_json::to_value(ObservationToolOutput {
         schema_version: 1,
         resource_uri: &retained.resource.uri,
         resource_size: retained.raw_size,
         metadata: &retained.metadata,
+        presentation: prepared.presentation.as_ref().map(|presentation| {
+            ObservationPresentationOutput {
+                mime_type: DIAGNOSTIC_PNG_MIME_TYPE,
+                size: presentation.raw_size,
+                diagnostic_only: true,
+            }
+        }),
     })
     .map_or_else(
         |_| tool_error("output_unavailable"),
         |value| {
-            let mut result = CallToolResult::success(vec![
-                ContentBlock::text("cogniform observation resource"),
-                ContentBlock::ResourceLink(retained.resource.clone()),
-            ]);
+            let mut content = vec![ContentBlock::text("cogniform observation resource")];
+            if let Some(presentation) = &prepared.presentation {
+                content.push(ContentBlock::image(
+                    presentation.data.clone(),
+                    DIAGNOSTIC_PNG_MIME_TYPE,
+                ));
+            }
+            content.push(ContentBlock::ResourceLink(retained.resource.clone()));
+            let mut result = CallToolResult::success(content);
             result.structured_content = Some(value);
             result
         },
@@ -1094,6 +1253,15 @@ struct ObservationToolOutput<'a> {
     resource_uri: &'a str,
     resource_size: u64,
     metadata: &'a ObservationMetadata,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    presentation: Option<ObservationPresentationOutput<'a>>,
+}
+
+#[derive(Serialize)]
+struct ObservationPresentationOutput<'a> {
+    mime_type: &'a str,
+    size: u64,
+    diagnostic_only: bool,
 }
 
 fn validate_completion(
@@ -1358,7 +1526,7 @@ fn patch_tool() -> Tool {
 fn observation_tool() -> Tool {
     Tool::new(
         OBSERVE_SCENE_TOOL,
-        "Render one bounded exact-revision observation and retain its canonical payload as one MCP resource.",
+        "Render one bounded exact-revision observation, retain its canonical payload as one MCP resource, and optionally include a diagnostic PNG image.",
         Arc::new(schema_object(json!({
             "type": "object",
             "additionalProperties": false,
@@ -1369,7 +1537,8 @@ fn observation_tool() -> Tool {
                 "scene_revision": {"type": "integer", "minimum": 0},
                 "camera_id": {"type": "string"},
                 "kind": {"enum": ["color", "depth", "normal", "entity_id", "visibility"]},
-                "quality": {"enum": ["low", "medium", "high"]}
+                "quality": {"enum": ["low", "medium", "high"]},
+                "presentation": {"const": "png"}
             }
         }))),
     )
@@ -1383,7 +1552,17 @@ fn observation_tool() -> Tool {
                     "schema_version": {"const": 1},
                     "resource_uri": {"type": "string"},
                     "resource_size": {"type": "integer", "minimum": 60, "maximum": 4_194_304},
-                    "metadata": {"type": "object"}
+                    "metadata": {"type": "object"},
+                    "presentation": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["mime_type", "size", "diagnostic_only"],
+                        "properties": {
+                            "mime_type": {"const": "image/png"},
+                            "size": {"type": "integer", "minimum": 1, "maximum": 1_048_576},
+                            "diagnostic_only": {"const": true}
+                        }
+                    }
                 }
             },
             {
@@ -1515,6 +1694,50 @@ mod tests {
             "camera_id": "00000000000000000000000000000031",
             "kind": "visibility",
             "quality": "low"
+        }) else {
+            unreachable!("test arguments are an object");
+        };
+        let result = server
+            .observe_scene(Some(arguments), || false, std::future::pending())
+            .await;
+        assert_eq!(error_code(&result), Some("invalid_observation"));
+        assert!(server.state.lock().await.service.is_none());
+    }
+
+    #[tokio::test]
+    async fn invalid_presentation_values_precede_lazy_service_creation() {
+        for presentation in [Value::Null, json!("jpeg"), json!(7), json!({})] {
+            let server = CogniformMcpServer::new(LocalServiceConfig::new(64, 64));
+            let Value::Object(arguments) = json!({
+                "schema_version": 1,
+                "observation_id": "00000000000000000000000000000041",
+                "scene_revision": 0,
+                "camera_id": "00000000000000000000000000000031",
+                "kind": "color",
+                "quality": "low",
+                "presentation": presentation
+            }) else {
+                unreachable!("test arguments are an object");
+            };
+            let result = server
+                .observe_scene(Some(arguments), || false, std::future::pending())
+                .await;
+            assert_eq!(error_code(&result), Some("invalid_arguments"));
+            assert!(server.state.lock().await.service.is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn visibility_png_is_rejected_before_lazy_service_creation() {
+        let server = CogniformMcpServer::new(LocalServiceConfig::new(64, 64));
+        let Value::Object(arguments) = json!({
+            "schema_version": 1,
+            "observation_id": "00000000000000000000000000000041",
+            "scene_revision": 0,
+            "camera_id": "00000000000000000000000000000031",
+            "kind": "visibility",
+            "quality": "low",
+            "presentation": "png"
         }) else {
             unreachable!("test arguments are an object");
         };
@@ -1693,7 +1916,7 @@ mod tests {
             &observation_request(0x41),
             &mut NeverReady,
             &RuntimeLimits::default(),
-            ObservationPayloadLimits::default(),
+            ObservationOutputPolicy::default(),
             ObservationPollPolicy {
                 cadence: Duration::from_millis(1),
                 deadline: Duration::ZERO,
@@ -1758,7 +1981,7 @@ mod tests {
                 &observation_request(0x41),
                 &mut backend,
                 &RuntimeLimits::default(),
-                ObservationPayloadLimits::default(),
+                ObservationOutputPolicy::default(),
                 ObservationPollPolicy::default(),
                 move || check.load(Ordering::SeqCst),
                 async move { wait.notified().await },
@@ -1812,7 +2035,7 @@ mod tests {
             &observation_request(0x41),
             &mut backend,
             &RuntimeLimits::default(),
-            ObservationPayloadLimits::default(),
+            ObservationOutputPolicy::default(),
             ObservationPollPolicy {
                 cadence: Duration::from_millis(10),
                 deadline: Duration::from_millis(10),
@@ -1862,7 +2085,7 @@ mod tests {
             &request,
             &mut OnePoll(Err(())),
             &RuntimeLimits::default(),
-            ObservationPayloadLimits::default(),
+            ObservationOutputPolicy::default(),
             policy,
             || false,
             std::future::pending(),
@@ -1878,7 +2101,7 @@ mod tests {
                 observation_id: ObservationId::new(0x42).unwrap(),
             }))),
             &RuntimeLimits::default(),
-            ObservationPayloadLimits::default(),
+            ObservationOutputPolicy::default(),
             policy,
             || false,
             std::future::pending(),

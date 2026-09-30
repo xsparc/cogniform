@@ -82,6 +82,7 @@ or automatic startup/rehydration; operators compose those concerns.
 | `serve-mcp-stdio` receives extra arguments, an interactive stream, a wrong initialization version, malformed/truncated JSON, or an input over its byte/nesting limits | Reject before lazy service creation when possible; return a bounded JSON-RPC error for an identified request or terminate nonzero with one stable payload-redacted category | CF045 transport equality/adversarial tests and CLI black-box tests |
 | An MCP query, imagination, or direct patch is semantically invalid, stale, conflicting, busy, or inconsistent with compilation/receipt roles | Return one small structured tool error; validate arguments before lazy service creation, serialize service access, process at most one queued command, and use retained replay without a second compilation or mutation | CF045-CF046 portable official-client and role tests plus controlled adapter-backed query, apply, replay, conflict, stale-base, and exact-revision integrations |
 | An MCP observation is rejected, fails delivery, exceeds its payload bound, times out, or returns inconsistent causality | Return one stable structured tool error and preserve the last fully completed resource; request-level rejection/failure remains usable, while timeout, poll failure, or invalid service output poisons further service-backed calls and requires child replacement | CF047 fake-backend replacement/failure tests, causal and deadline unit tests, and controlled canonical resource readback |
+| An MCP diagnostic PNG request is incompatible, malformed, over-limit, or unavailable | Reject visibility plus PNG before service creation; prepare the canonical envelope before the independently bounded derivative; preserve the prior retained resource unless the complete result succeeds; keep exact values and identities authoritative only in `COGOBS01` | CF083 transform, limit, omission, both-era, widest-profile, and prior-resource tests |
 | An MCP peer pipelines ordinary messages while a prior response is stalled | Decode at most one bounded pending message without dispatching it; read no further line until the active response flushes, retaining one handler/response cycle under fixed reader/pipe backpressure | CF047-CF053 stalled-writer and pending-message transport tests |
 | An MCP peer cancels the exact active request before response writing begins | Deliver the matching control to RMCP, suppress that request's response, poison an admitted observation wait, preserve the prior completed resource until teardown, dispatch no pending/later work, and terminate the child successfully after bounded cleanup; never infer an effect or reuse the child | CF053 exact-ID transport, cooperative-poll, response-suppression, retained-resource, and official-client tests |
 | An MCP cancellation is missing, mismatched, queued behind another pending message, or arrives after response writing begins | Treat it as nonmatching/late and preserve the active response-through-flush contract; the parent still owns a process timeout and kill/reap fallback | CF053 missing/wrong-ID and response-write race tests |
@@ -225,6 +226,15 @@ preserve that prior resource without poisoning the service.
 `invalid_service_output` also preserve and leave the prior resource readable,
 but no further service-backed call is trusted; discard the child after reading
 only if recovery of that already completed payload is required.
+
+An optional `presentation: "png"` is diagnostic-only for color, depth, normal,
+or entity-ID observations. Visibility rejects it as `invalid_observation`
+before service creation. The complete encoded image has an independent 1 MiB
+bound and is prepared after the canonical envelope but before resource
+replacement. Image size failure returns `observation_too_large`; allocation or
+encoding failure returns `output_unavailable`. Both preserve the prior resource.
+Use the resource rather than the image for exact numeric, identity, metadata,
+or causal recovery decisions.
 
 Each response is fully encoded and checked against the byte and nesting limits
 before its first write. Only one request is admitted through complete response

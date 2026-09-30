@@ -3,10 +3,14 @@ use std::{
     ffi::OsStr,
     fs::{self, OpenOptions},
     io::{self, Write},
+    num::NonZeroU32,
     path::Path,
 };
 
-use cogniform_protocol::StableEntityId;
+use cogniform_observation::{
+    DiagnosticPngLimits, DiagnosticPngSource, diagnostic_identity_color, encode_diagnostic_png,
+};
+use cogniform_protocol::{ImageDimensions, RuntimeLimits, StableEntityId};
 use cogniform_renderer::{HeadlessRenderer, RenderedFrame, RendererConfig};
 use serde::Serialize;
 
@@ -88,10 +92,8 @@ fn build_artifacts(frame: &RenderedFrame) -> Result<Vec<Artifact>, Box<dyn std::
         ));
     }
 
-    let color = flatten_rgba(frame.color());
-    let depth = visualize_depth(frame.depth());
-    let normals = visualize_normals(frame.normals());
-    let (identity, identities) = visualize_identities(frame.stable_entity_ids());
+    let dimensions = diagnostic_dimensions(width, height, "render-example")?;
+    let identities = identity_manifest(frame.stable_entity_ids());
 
     let metadata = frame.metadata();
     let manifest = Manifest {
@@ -120,19 +122,35 @@ fn build_artifacts(frame: &RenderedFrame) -> Result<Vec<Artifact>, Box<dyn std::
     Ok(vec![
         Artifact::png(
             "color.png",
-            encode_png(width, height, png::ColorType::Rgba, &color, true)?,
+            encode_diagnostic_image(
+                dimensions,
+                DiagnosticPngSource::Color(frame.color()),
+                "render-example",
+            )?,
         ),
         Artifact::png(
             "depth.png",
-            encode_png(width, height, png::ColorType::Grayscale, &depth, false)?,
+            encode_diagnostic_image(
+                dimensions,
+                DiagnosticPngSource::Depth(frame.depth()),
+                "render-example",
+            )?,
         ),
         Artifact::png(
             "normals.png",
-            encode_png(width, height, png::ColorType::Rgba, &normals, false)?,
+            encode_diagnostic_image(
+                dimensions,
+                DiagnosticPngSource::Normal(frame.normals()),
+                "render-example",
+            )?,
         ),
         Artifact::png(
             "identity.png",
-            encode_png(width, height, png::ColorType::Rgba, &identity, false)?,
+            encode_diagnostic_image(
+                dimensions,
+                DiagnosticPngSource::EntityId(frame.stable_entity_ids()),
+                "render-example",
+            )?,
         ),
         Artifact {
             name: "manifest.json",
@@ -180,131 +198,47 @@ pub(crate) fn write_artifacts(
     Ok(())
 }
 
-pub(crate) fn flatten_rgba(pixels: &[[u8; 4]]) -> Vec<u8> {
-    let mut encoded = Vec::with_capacity(pixels.len().saturating_mul(4));
-    for pixel in pixels {
-        encoded.extend_from_slice(pixel);
-    }
-    encoded
-}
-
-pub(crate) fn visualize_depth(values: &[f32]) -> Vec<u8> {
-    values
-        .iter()
-        .map(|depth| unit_to_byte(1.0 - depth))
-        .collect()
-}
-
-pub(crate) fn visualize_normals(values: &[Option<[f32; 3]>]) -> Vec<u8> {
-    let mut pixels = Vec::with_capacity(values.len().saturating_mul(4));
-    for value in values {
-        match value {
-            None => pixels.extend_from_slice(&[0, 0, 0, 0]),
-            Some(normal) => pixels.extend_from_slice(&[
-                signed_unit_to_byte(normal[0]),
-                signed_unit_to_byte(normal[1]),
-                signed_unit_to_byte(normal[2]),
-                255,
-            ]),
-        }
-    }
-    pixels
-}
-
-pub(crate) fn visualize_identities(
-    values: &[Option<StableEntityId>],
-) -> (Vec<u8>, Vec<IdentityManifest>) {
-    let mut pixels = Vec::with_capacity(values.len().saturating_mul(4));
+pub(crate) fn identity_manifest(values: &[Option<StableEntityId>]) -> Vec<IdentityManifest> {
     let mut palette = BTreeMap::new();
-    for value in values {
-        match value {
-            None => pixels.extend_from_slice(&[0, 0, 0, 0]),
-            Some(entity_id) => {
-                let color = identity_color(*entity_id);
-                pixels.extend_from_slice(&color);
-                palette.entry(*entity_id).or_insert(color);
-            }
+    for entity_id in values.iter().flatten() {
+        if !palette.contains_key(entity_id) {
+            palette.insert(*entity_id, diagnostic_identity_color(*entity_id));
         }
     }
-    let identities = palette
+    palette
         .into_iter()
         .map(|(entity_id, color)| IdentityManifest {
             entity_id: entity_id.to_string(),
             color: format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2]),
         })
-        .collect();
-    (pixels, identities)
+        .collect()
 }
 
-fn identity_color(entity_id: StableEntityId) -> [u8; 4] {
-    let [
-        b0,
-        b1,
-        b2,
-        b3,
-        b4,
-        b5,
-        b6,
-        b7,
-        b8,
-        b9,
-        b10,
-        b11,
-        b12,
-        b13,
-        b14,
-        b15,
-    ] = entity_id.get().to_le_bytes();
-    let low = u64::from_le_bytes([b0, b1, b2, b3, b4, b5, b6, b7]);
-    let high = u64::from_le_bytes([b8, b9, b10, b11, b12, b13, b14, b15]);
-    let mut mixed = low ^ high.rotate_left(29);
-    mixed = mixed.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    mixed ^= mixed >> 31;
-    let bytes = mixed.to_le_bytes();
-    [
-        visible_channel(bytes[0]),
-        visible_channel(bytes[1]),
-        visible_channel(bytes[2]),
-        255,
-    ]
-}
-
-fn visible_channel(value: u8) -> u8 {
-    let scaled = (u16::from(value) * 191) / 255;
-    64 + u8::try_from(scaled).expect("scaled color channel is at most 191")
-}
-
-fn signed_unit_to_byte(value: f32) -> u8 {
-    unit_to_byte(value.mul_add(0.5, 0.5))
-}
-
-// The clamp and scale prove the rounded value is finite and within u8.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn unit_to_byte(value: f32) -> u8 {
-    (value.clamp(0.0, 1.0) * 255.0).round() as u8
-}
-
-pub(crate) fn encode_png(
+pub(crate) fn diagnostic_dimensions(
     width: u32,
     height: u32,
-    color_type: png::ColorType,
-    pixels: &[u8],
-    linear_gamma: bool,
-) -> Result<Vec<u8>, png::EncodingError> {
-    let mut png_bytes = Vec::new();
-    {
-        let mut png_encoder = png::Encoder::new(&mut png_bytes, width, height);
-        png_encoder.set_color(color_type);
-        png_encoder.set_depth(png::BitDepth::Eight);
-        if linear_gamma {
-            png_encoder.set_source_gamma(png::ScaledFloat::new(1.0));
-        }
-        let mut writer = png_encoder.write_header()?;
-        writer.write_image_data(pixels)?;
-    }
-    Ok(png_bytes)
+    command: &str,
+) -> Result<ImageDimensions, Box<dyn std::error::Error>> {
+    Ok(ImageDimensions {
+        width: NonZeroU32::new(width)
+            .ok_or_else(|| io_failure(format!("{command} image width is zero")))?,
+        height: NonZeroU32::new(height)
+            .ok_or_else(|| io_failure(format!("{command} image height is zero")))?,
+    })
+}
+
+pub(crate) fn encode_diagnostic_image(
+    dimensions: ImageDimensions,
+    source: DiagnosticPngSource<'_>,
+    command: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    encode_diagnostic_png(
+        dimensions,
+        source,
+        &RuntimeLimits::default(),
+        DiagnosticPngLimits::default(),
+    )
+    .map_err(|_| io_failure(format!("{command} diagnostic PNG encoding failed")))
 }
 
 fn invalid_input(message: impl Into<String>) -> Box<dyn std::error::Error> {
@@ -397,49 +331,18 @@ const FILES: [FileManifest; 4] = [
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
     use cogniform_protocol::StableEntityId;
 
     use super::{
         AdapterManifest, FileManifest, FrameManifest, IdentityManifest, Manifest, encode_manifest,
-        encode_png, identity_color, signed_unit_to_byte, unit_to_byte, visualize_depth,
-        visualize_identities, visualize_normals,
+        identity_manifest,
     };
 
     #[test]
-    fn depth_visualization_maps_near_to_white_and_far_to_black() {
-        assert_eq!(visualize_depth(&[0.0, 0.5, 1.0]), [255, 128, 0]);
-        assert_eq!(unit_to_byte(-1.0), 0);
-        assert_eq!(unit_to_byte(2.0), 255);
-    }
-
-    #[test]
-    fn normal_visualization_preserves_axes_and_marks_background_transparent() {
-        assert_eq!(signed_unit_to_byte(-1.0), 0);
-        assert_eq!(signed_unit_to_byte(0.0), 128);
-        assert_eq!(signed_unit_to_byte(1.0), 255);
-        assert_eq!(
-            visualize_normals(&[None, Some([-1.0, 0.0, 1.0])]),
-            [0, 0, 0, 0, 0, 128, 255, 255]
-        );
-    }
-
-    #[test]
-    fn identity_visualization_is_repeatable_bright_and_manifest_linked() {
+    fn identity_manifest_is_repeatable_and_linked_to_the_shared_palette() {
         let first = StableEntityId::new(7).unwrap();
         let second = StableEntityId::new(8).unwrap();
-        let first_color = identity_color(first);
-        assert_eq!(first_color, [225, 73, 101, 255]);
-        assert_eq!(first_color, identity_color(first));
-        assert_ne!(first_color, identity_color(second));
-        assert!(first_color[..3].iter().all(|channel| *channel >= 64));
-
-        let (pixels, identities) =
-            visualize_identities(&[None, Some(first), Some(first), Some(second)]);
-        assert_eq!(&pixels[..4], &[0, 0, 0, 0]);
-        assert_eq!(&pixels[4..8], &first_color);
-        assert_eq!(&pixels[8..12], &first_color);
+        let identities = identity_manifest(&[None, Some(first), Some(first), Some(second)]);
         assert_eq!(identities.len(), 2);
         assert_eq!(identities[0].entity_id, first.to_string());
         assert_eq!(identities[0].color, "#e14965");
@@ -514,22 +417,5 @@ mod tests {
                 "\"00000000000000000000000000000007\",\"color\":\"#e14965\"}]}\n",
             )
         );
-    }
-
-    #[test]
-    fn png_encoder_writes_exact_eight_bit_shape_and_pixels() {
-        let source = [1, 2, 3, 4, 5, 6, 7, 8];
-        let encoded = encode_png(2, 1, png::ColorType::Rgba, &source, true).unwrap();
-        let decoder = png::Decoder::new(Cursor::new(encoded));
-        let mut reader = decoder.read_info().unwrap();
-        assert_eq!(reader.output_buffer_size(), Some(source.len()));
-        let mut pixel_bytes = vec![0; source.len()];
-        let info = reader.next_frame(&mut pixel_bytes).unwrap();
-        assert_eq!(info.width, 2);
-        assert_eq!(info.height, 1);
-        assert_eq!(info.color_type, png::ColorType::Rgba);
-        assert_eq!(info.bit_depth, png::BitDepth::Eight);
-        assert_eq!(pixel_bytes, source);
-        assert_eq!(reader.info().gamma(), Some(png::ScaledFloat::new(1.0)));
     }
 }

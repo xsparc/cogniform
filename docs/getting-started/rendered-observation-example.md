@@ -55,6 +55,15 @@ room/table/light/camera workflow and exports four separately identified
 exact-revision observations; see the
 [canonical scenario guide](canonical-scenario.md#inspect-the-rendered-graphics).
 
+An MCP client can request the same diagnostic projection in the tool result by
+adding `"presentation": "png"` to `cogniform.observe_scene` for a `color`,
+`depth`, `normal`, or `entity_id` observation. This is useful when an agent
+needs to see camera framing, occlusion, surface orientation, or entity
+occupancy without first decoding `COGOBS01`. The result still retains and
+links the canonical observation resource; the PNG is a bounded convenience
+view and must not be used as the numeric or identity authority. See the
+[`serve-mcp-stdio` example](mcp-stdio-adapter.md#request-a-diagnostic-image).
+
 ## Interpretation limits
 
 The PNGs are diagnostic visualizations, not new observation or conformance

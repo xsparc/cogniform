@@ -386,6 +386,33 @@ A failed write may leave an incomplete new directory, and cooperative
 create-new behavior does not defend against hostile concurrent path
 substitution.
 
+## Controlled MCP observation-image commands
+
+CF083 moved the CF081/CF082 diagnostic transforms into the transport-neutral
+observation crate and added an opt-in PNG content block to the bounded MCP
+observation tool. On 2026-10-01, the existing NVIDIA GeForce RTX 5070 Vulkan
+profile passed the optimized fixed-example, canonical-scenario, legacy MCP,
+modern MCP, and widest 480 by 270 MCP child tests:
+
+```text
+cargo test --release -p cogniform-cli --test render_example --all-features --locked --offline -- --ignored --nocapture
+cargo test --release -p cogniform-cli --test render_scenario --all-features --locked --offline -- --ignored --nocapture
+cargo test --release -p cogniform-cli --test mcp_stdio --all-features --locked --offline -- --ignored --nocapture
+```
+
+The two CLI bundles retained every pre-change SHA-256 value for their four
+PNGs and manifest. Official legacy and modern MCP clients received image
+content for color, depth, normal, and entity-ID observations while the default
+request retained its prior two-block result. The widest test proved bounded
+PNG and base64 output at 480 by 270. Focused tests additionally cover exact
+transforms, linear gamma, transparent absent pixels, malformed shapes,
+runtime dimensions, the one-MiB encoded-image cap, invalid and explicit-null
+presentation values before service creation, visibility rejection, and prior
+canonical-resource preservation when presentation fails. The canonical
+`COGOBS01` resource remains the exact numeric and identity authority; rendered
+images are sensitive, lossy diagnostics and are not cross-adapter conformance
+baselines.
+
 ## Controlled pending-work age commands
 
 CF031 ran the focused CPU contracts, every existing release-mode renderer and

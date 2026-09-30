@@ -9,6 +9,7 @@
 
 mod codec;
 mod error;
+mod presentation;
 
 use core::num::{NonZeroU32, NonZeroU64};
 
@@ -19,6 +20,10 @@ pub use codec::{
     OBSERVATION_PAYLOAD_ENVELOPE_VERSION, decode_payload, encode_payload,
 };
 pub use error::ObservationEnvelopeError;
+pub use presentation::{
+    DIAGNOSTIC_PNG_MIME_TYPE, DiagnosticPngError, DiagnosticPngLimits, DiagnosticPngSource,
+    diagnostic_identity_color, encode_diagnostic_png,
+};
 
 /// Stable visibility summary for one entity in one frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

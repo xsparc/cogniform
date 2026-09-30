@@ -636,6 +636,65 @@ mod tests {
         );
     }
 
+    #[test]
+    fn maximum_diagnostic_png_accepts_exact_tool_output_bound() {
+        let raw_bytes = cogniform_observation::DiagnosticPngLimits::default()
+            .max_png_bytes
+            .get();
+        let image_bytes =
+            crate::server::base64_encoded_len(usize::try_from(raw_bytes).unwrap()).unwrap();
+        let request_id_bytes = usize::try_from(DEFAULT_MAX_INPUT_BYTES)
+            .unwrap()
+            .saturating_sub(128);
+        let value = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": "i".repeat(request_id_bytes),
+            "result": {
+                "content": [
+                    {"type": "text", "text": "cogniform observation resource"},
+                    {"type": "image", "data": "A".repeat(image_bytes), "mimeType": "image/png"},
+                    {
+                        "type": "resource_link",
+                        "uri": "cogniform://observations/00000000000000000000000000000001",
+                        "name": "observation-00000000000000000000000000000001",
+                        "mimeType": "application/vnd.cogniform.observation-envelope",
+                        "size": 4_194_304
+                    }
+                ],
+                "structuredContent": {
+                    "schema_version": 1,
+                    "resource_uri": "cogniform://observations/00000000000000000000000000000001",
+                    "resource_size": 4_194_304,
+                    "metadata": {},
+                    "presentation": {
+                        "mime_type": "image/png",
+                        "size": raw_bytes,
+                        "diagnostic_only": true
+                    }
+                },
+                "isError": false
+            }
+        });
+        let encoded_len = u64::try_from(serde_json::to_vec(&value).unwrap().len()).unwrap() + 1;
+        assert!(encoded_len <= DEFAULT_MAX_OUTPUT_BYTES);
+        let exact = McpTransportLimits {
+            max_output_bytes: NonZeroU64::new(encoded_len).unwrap(),
+            ..McpTransportLimits::default()
+        };
+        assert_eq!(
+            u64::try_from(encode_bounded(&value, exact).unwrap().len()).unwrap(),
+            encoded_len
+        );
+        let one_less = McpTransportLimits {
+            max_output_bytes: NonZeroU64::new(encoded_len - 1).unwrap(),
+            ..McpTransportLimits::default()
+        };
+        assert_eq!(
+            encode_bounded(&value, one_less),
+            Err(TransportFailureKind::OutputSizeExceeded)
+        );
+    }
+
     #[tokio::test]
     async fn matching_cancellation_is_terminal_and_suppresses_output() {
         for (id, error_response) in [
