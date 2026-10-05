@@ -414,6 +414,14 @@ version, checksum, feature, vendored source, build script, unsafe/native
 boundary, network or telemetry path, paid-service authority, or release
 publication behavior changes.
 
+CF083 moves that already-approved encoder edge from `cogniform-cli` to
+`cogniform-observation`; the CLI consumes the local observation crate at
+runtime and retains `png` only for tests that decode output. `cogniform-mcp`
+already depended on `cogniform-observation`, so it gains no direct external
+edge. The lockfile changes only the observation package dependency array. No
+package version, checksum, feature, vendored byte, build script, unsafe/native
+boundary, network, telemetry, paid service, or publication authority changes.
+
 ## Review and verification
 
 `Cargo.lock` is committed. Manifest, lockfile, or policy changes trigger the

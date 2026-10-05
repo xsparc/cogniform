@@ -10,7 +10,9 @@ keeping the child process terminal and the request pipeline bounded. CF054
 adds exact MCP `2026-07-28` discovery and self-contained requests beside the
 unchanged legacy lifecycle. CF064 gives the CLI composition root the same
 closed launch-time profile allowlist as the binary stdio command without
-changing MCP discovery or messages.
+changing MCP discovery or messages. CF083 adds an opt-in bounded diagnostic
+PNG content block to the existing observation call while retaining its
+canonical resource.
 
 `cogniform-cli serve-mcp-stdio` serves exact MCP `2025-11-25` legacy sessions
 and exact MCP `2026-07-28` stateless requests over inherited redirected
@@ -89,7 +91,7 @@ support. It exposes these tools in this order:
 | `cogniform.query_scene` | One complete core `SceneQuery` object | Success `SceneQueryResult` or stable error `{schema_version, error}` as `structuredContent` | read-only, non-destructive, idempotent, closed world |
 | `cogniform.submit_imagination` | One complete core `ImaginationEnvelope` object | Success `{schema_version, admission, compilation, receipt}` or stable error `{schema_version, error}` as `structuredContent` | mutating, destructive, idempotent, closed world |
 | `cogniform.apply_patch` | One complete core `ScenePatch` object | Success `{schema_version, admission, receipt}` or stable error `{schema_version, error}` as `structuredContent` | mutating, destructive, idempotent, closed world |
-| `cogniform.observe_scene` | One complete core `ObservationRequest` object | Success `{schema_version, resource_uri, resource_size, metadata}` plus one resource link, or stable error `{schema_version, error}` | local effect, non-destructive, non-idempotent, closed world |
+| `cogniform.observe_scene` | One complete core `ObservationRequest` object plus optional `presentation: "png"` | Success `{schema_version, resource_uri, resource_size, metadata}` plus one resource link; an opt-in success also contains one PNG image block and a `presentation` descriptor; otherwise stable error `{schema_version, error}` | local effect, non-destructive, non-idempotent, closed world |
 
 The advertised JSON Schemas deterministically fix each tool's top-level fields,
 required names, success/error wrapper roles, and selected scalar constraints. They are
@@ -135,6 +137,15 @@ The widest named profile remains inside that bound: an all-absent 480x270
 EntityId observation is exactly 2,203,260 envelope bytes and 2,937,680 base64
 bytes, below the fixed 8 MiB output-line limit.
 
+The optional MCP-only `presentation: "png"` field is accepted for color,
+depth, normal, and entity-ID requests. It derives the same diagnostic view as
+the CLI graphics commands under a separate 1,048,576-byte complete-PNG bound:
+linear RGBA8 color, inverted normalized grayscale depth, world normals mapped
+to RGB with transparent absence, or deterministic entity display colors with
+transparent background. Visibility-plus-PNG is `invalid_observation` before
+lazy service creation. Omission preserves the prior content and structured
+result exactly.
+
 On success, the tool returns a link to exactly one retained resource named by
 `cogniform://observations/{observation-id}` with media type
 `application/vnd.cogniform.observation-envelope`. `resources/list` returns
@@ -145,6 +156,15 @@ resource-not-found error. A later success atomically replaces the prior
 resource only after its envelope and tool result are complete. There are no
 resource templates, subscriptions, list-change notifications, history, or
 persistence.
+
+An opt-in success places the base64 `image/png` block between the existing
+text and resource-link blocks. Structured output adds
+`presentation: {mime_type: "image/png", size, diagnostic_only: true}`, where
+`size` is the decoded PNG byte count. The image is a lossy diagnostic
+derivative; exact numeric values, stable identities, metadata, and causality
+remain authoritative only in the canonical resource. The adapter prepares the
+resource first and retains it only after the complete presentation and result
+succeed, so a presentation failure preserves the previous resource.
 
 The success `resource_size` and MCP `Resource.size` are the number of decoded
 canonical envelope bytes. They do not count the longer base64 text returned by
@@ -230,6 +250,7 @@ See [ADR 0045](../adr/0045-bounded-mcp-stdio-adapter.md),
 [ADR 0049](../adr/0049-conformant-mcp-discovery-contract.md),
 [ADR 0053](../adr/0053-bounded-terminal-mcp-cancellation.md),
 [ADR 0054](../adr/0054-bounded-dual-era-mcp-stdio-lifecycle.md),
-[ADR 0064](../adr/0064-bounded-named-stdio-profiles.md), the
+[ADR 0064](../adr/0064-bounded-named-stdio-profiles.md),
+[ADR 0083](../adr/0083-bounded-mcp-observation-image-content.md), the
 [quickstart](../getting-started/mcp-stdio-adapter.md), and the
 [threat model](../threat-model/mvp.md).

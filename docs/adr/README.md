@@ -86,5 +86,6 @@ earlier one and links the history.
 | [0080](0080-bounded-gltf-material-anisotropy-texture.md) | Accepted | Admit one bounded ratified material anisotropy texture |
 | [0081](0081-create-new-rendered-observation-examples.md) | Accepted | Export one create-new diagnostic set from the fixed headless reference frame |
 | [0082](0082-create-new-canonical-scenario-render-bundle.md) | Accepted | Export exact-revision canonical-scenario observations as a create-new graphics bundle |
+| [0083](0083-bounded-mcp-observation-image-content.md) | Accepted | Add opt-in bounded diagnostic image content beside the canonical MCP observation resource |
 
 New records use four sections: context, decision, consequences, and status.

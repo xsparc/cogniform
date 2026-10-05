@@ -285,7 +285,7 @@ fn controlled_wide_profile_emits_exact_entity_id_resource() {
     let observed = session.call(
         3,
         "cogniform.observe_scene",
-        &observation_request_kind(0x45, 1, "entity_id"),
+        &observation_request_png(0x45, 1, "entity_id"),
     );
     assert_eq!(observed["result"]["isError"], false);
     let output = &observed["result"]["structuredContent"];
@@ -293,6 +293,7 @@ fn controlled_wide_profile_emits_exact_entity_id_resource() {
     assert_eq!(output["metadata"]["dimensions"]["height"], 270);
     assert_eq!(output["metadata"]["kind"], "entity_id");
     assert_eq!(output["resource_size"], 2_203_260);
+    assert_png_presentation(&observed);
 
     let uri = output["resource_uri"].as_str().unwrap();
     let read = session.send(&json!({
@@ -398,6 +399,7 @@ fn assert_controlled_workflow(session: &mut Session) {
 
     assert_camera_query(session);
     assert_observation_resource(session);
+    assert_observation_png(session);
 }
 
 fn assert_missing_camera_observation_preserves_empty_resources(session: &mut Session) {
@@ -462,6 +464,40 @@ fn assert_observation_resource(session: &mut Session) {
     assert!(matches!(payload, ObservationPayload::Visibility(_)));
 }
 
+fn assert_observation_png(session: &mut Session) {
+    let observed = session.call(
+        13,
+        "cogniform.observe_scene",
+        &observation_request_png(0x45, 2, "color"),
+    );
+    assert_eq!(observed["result"]["isError"], false);
+    assert_eq!(
+        observed["result"]["structuredContent"]["metadata"]["kind"],
+        "color"
+    );
+    assert_png_presentation(&observed);
+}
+
+fn assert_png_presentation(observed: &Value) {
+    let output = &observed["result"]["structuredContent"];
+    assert_eq!(output["presentation"]["mime_type"], "image/png");
+    assert_eq!(output["presentation"]["diagnostic_only"], true);
+    let image = observed["result"]["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|content| content["type"] == "image")
+        .expect("opt-in observation contains image content");
+    assert_eq!(image["mimeType"], "image/png");
+    let png = decode_base64(image["data"].as_str().unwrap()).unwrap();
+    assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    assert_eq!(
+        output["presentation"]["size"].as_u64().unwrap(),
+        u64::try_from(png.len()).unwrap()
+    );
+    assert!(png.len() <= 1_048_576);
+}
+
 fn observation_request(observation_id: u128, scene_revision: u64) -> Value {
     observation_request_kind(observation_id, scene_revision, "visibility")
 }
@@ -475,6 +511,12 @@ fn observation_request_kind(observation_id: u128, scene_revision: u64, kind: &st
         "kind": kind,
         "quality": "low"
     })
+}
+
+fn observation_request_png(observation_id: u128, scene_revision: u64, kind: &str) -> Value {
+    let mut request = observation_request_kind(observation_id, scene_revision, kind);
+    request["presentation"] = json!("png");
+    request
 }
 
 fn assert_camera_query(session: &mut Session) {

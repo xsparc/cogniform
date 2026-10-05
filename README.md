@@ -347,7 +347,9 @@ startup. Use exact `2025-11-25` initialization or exact `2026-07-28`
 discovery/self-contained request metadata. Stdout contains only newline-
 delimited MCP JSON-RPC. The parent owns child supervision, identity,
 authorization, confidentiality, freshness, and rate policy. See the
-[MCP quickstart](docs/getting-started/mcp-stdio-adapter.md). Its controlled
+[MCP quickstart](docs/getting-started/mcp-stdio-adapter.md). Observation calls
+may opt into a bounded diagnostic PNG for color, depth, normal, or entity-ID
+inspection while retaining the exact canonical resource. Its controlled
 legacy and modern query/application/replay/observation-resource child proofs
 are:
 

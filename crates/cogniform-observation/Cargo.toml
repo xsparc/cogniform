@@ -13,4 +13,5 @@ workspace = true
 
 [dependencies]
 cogniform-protocol.workspace = true
+png.workspace = true
 sha2.workspace = true

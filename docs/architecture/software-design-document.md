@@ -64,11 +64,11 @@ The first workspace should prove boundaries without prematurely creating every e
 |---|---|---|
 | `cogniform-protocol` | Stable public value types, patches, receipts, observations, limits, errors | No ECS, GPU, network, or generated transport dependency |
 | `cogniform-compilation` | Versioned bounded compiler outcomes, report validation, and canonical JSON | Depends only on protocol and existing serialization; owns no compiler execution, session, service, world, renderer, or I/O |
-| `cogniform-observation` | Owned observation payload values and bounded transport-neutral binary envelopes | Depends only on protocol and deterministic hashing; owns no renderer, service, I/O, session, or shared-memory resource |
+| `cogniform-observation` | Owned observation payload values, bounded transport-neutral binary envelopes, and pure bounded diagnostic PNG projections | Depends only on protocol, deterministic hashing, and the pinned PNG codec; owns no renderer, service, I/O, session, or shared-memory resource |
 | `cogniform-local-transport` | Fixed bounded frames over caller-owned synchronous streams | Depends only on protocol, observation values, deterministic hashing, and standard I/O traits; opens no endpoint and owns no session or service state |
 | `cogniform-local-session` | Versioned direction-specific control values and canonical bounded CF039 control bytes | Depends only on compilation values, protocol, and local transport; executes no service work and opens no endpoint |
 | `cogniform-local-executor` | Bounded caller-driven session lifecycle, service mapping, and exact correlation ownership | Depends on compilation values, engine, and the protocol/session/transport boundaries; owns one supplied local service but no endpoint, I/O, thread, timer, or runtime loop |
-| `cogniform-mcp` | Stable bounded MCP initialization, exact query/imagination/patch/observation tools, one retained canonical observation resource, and inherited-stream JSON-RPC framing | Depends on compilation, engine, observation, protocol, the exact-pinned official SDK, and minimal async runtime features; owns no domain state, listener, network/auth stack, process launch, or model authority |
+| `cogniform-mcp` | Stable bounded MCP initialization, exact query/imagination/patch/observation tools, one retained canonical observation resource, optional diagnostic image content, and inherited-stream JSON-RPC framing | Depends on compilation, engine, observation, protocol, the exact-pinned official SDK, and minimal async runtime features; owns no domain state, listener, network/auth stack, process launch, or model authority |
 | `cogniform-compiler` | Pure seeded primitive imagination normalization | Depends only on compilation values, protocol, and deterministic hashing; owns no world/service state |
 | `cogniform-world` | `hecs` implementation, stable-ID index, validation, atomic commit, hierarchy, transforms, queries | Depends on protocol/math; never renderer or service |
 | `cogniform-replay` | Canonical event encoding, hash chain, replay and logical scene hashing | Depends on public world snapshots/events, not GPU state |
@@ -186,6 +186,13 @@ entity-ID observations for that exact revision and camera. Its create-new
 schema-version-one manifest records causality per file plus canonical IDs and
 matching replay hashes; it adds no engine, renderer, observation, protocol,
 asset, persistence, dependency, or endpoint behavior.
+CF083 reuses those exact diagnostic transformations inside the transport-
+neutral observation boundary and lets an MCP caller opt into one bounded PNG
+`ImageContent` beside the existing canonical observation resource. Omission
+preserves the prior result exactly. Color, depth, normal, and entity-ID are
+supported; visibility has no image projection and rejects before service
+creation. The image is explicitly diagnostic and never replaces the exact
+`COGOBS01` payload.
 CF050 adds a separate standard-library-only release-preparation boundary. It
 accepts only a clean `HEAD` exactly named by a direct annotated tag, creates one
 bounded uncompressed Git tar and exact SHA-256 sidecar outside repository state,
@@ -383,6 +390,13 @@ envelope and visibility-entry bounds. Encoding is caller-invoked after local
 delivery; it does not enter the render worker, persist data, or create a
 transport. Its SHA-256 digest detects corruption but does not authenticate,
 authorize, encrypt, or establish freshness.
+
+The observation boundary may also derive a complete in-memory diagnostic PNG
+for color, depth, normal, or entity-ID payloads using the documented CF081
+visualization rules. The derivative has its own 1 MiB encoded bound and uses
+fallible allocation. It is not canonical, lossless for numeric values, or an
+identity authority; `COGOBS01` metadata and payload bytes remain authoritative.
+Visibility has no PNG projection.
 
 An optional versioned local frame places either schema-owned control bytes or
 canonical observation metadata plus its payload envelope behind one fixed
@@ -869,6 +883,10 @@ the engine, renderer, observation, local-session, or MCP public contracts.
 CF082 adds only the service-backed `render-scenario` CLI diagnostic and reuses
 the existing canonical scenario and observation calls; no new file shape
 enters those reusable contracts.
+CF083 adds only an optional `presentation: "png"` field to the existing MCP
+observation call. It returns diagnostic image content beside the unchanged
+latest canonical resource and does not add a tool, resource type, renderer
+behavior, file output, or remote authority.
 Protobuf/gRPC, MCP HTTP/authentication, resource templates, subscriptions,
 notifications, history, model features, local shared memory, and QUIC remain
 separate future adapters.
@@ -910,7 +928,7 @@ Default pull-request CI uses one standard Linux runner and one quality job: work
 | Local-session messages | Every schema-version-one client/server variant round-trips exact LF bytes; direction, version, unknown fields, noncanonical bytes, nesting, substitutions, nested values, receipt roles, frame kind, and effective limits fail closed before returning a message |
 | Local-session executor | One caller-driven service session negotiates field-wise limits, preserves exact patch/observation correlations through deterministic bounded advancement, emits stable failures, and closes only when quiescent |
 | Local stdio session | Exact arguments and redirected streams are checked before adapter selection; immediate EOF is a clean no-op, while complete-session EOF, truncation, corruption, service/executor failure, deadline, write, and flush failures terminate with stable redacted diagnostics and no whole-frame retry |
-| MCP stdio adapter | Exact byte-compatible 2025-11-25 initialization or self-contained 2026-07-28 discovery/direct requests; one pinned connection era; exact per-request modern protocol/capability validation; no advertised extensions or Tasks; exact 508-byte workflow instructions; complete modern result/server-identity/zero-lifetime private-cache roles with legacy omission; exact deterministic query/imagination/patch/observation metadata with closed mutually exclusive success/error schemas and complete stable error vocabularies; incremental input and encode-before-output bounds; one active request plus one decoded pending message; exact matching pre-response cancellation with response suppression and terminal no-later-dispatch semantics; response-through-flush treatment of wrong/missing/late cancellation; cooperative observation polling with prior-resource preservation; lazy serialized service access; exact query/application/replay/observation roles; direct atomic camera-capable patch application; one latest-value canonical binary resource with exact-URI read and atomic replacement; stdout purity, EOF, invalid-direction, mixed-era, and redacted transport failure behavior pass through official-SDK, raw-wire, and legacy/modern controlled CLI child tests |
+| MCP stdio adapter | Exact byte-compatible 2025-11-25 initialization or self-contained 2026-07-28 discovery/direct requests; one pinned connection era; exact per-request modern protocol/capability validation; no advertised extensions or Tasks; exact 508-byte workflow instructions; complete modern result/server-identity/zero-lifetime private-cache roles with legacy omission; exact deterministic query/imagination/patch/observation metadata with closed mutually exclusive success/error schemas and complete stable error vocabularies; incremental input and encode-before-output bounds; one active request plus one decoded pending message; exact matching pre-response cancellation with response suppression and terminal no-later-dispatch semantics; response-through-flush treatment of wrong/missing/late cancellation; cooperative observation polling with prior-resource preservation; lazy serialized service access; exact query/application/replay/observation roles; direct atomic camera-capable patch application; one latest-value canonical binary resource with exact-URI read and atomic replacement; optional independently bounded diagnostic PNG content for four image observation kinds with omission compatibility, visibility rejection, and prior-resource preservation; stdout purity, EOF, invalid-direction, mixed-era, and redacted transport failure behavior pass through official-SDK, raw-wire, and legacy/modern controlled CLI child tests |
 | Source candidate | One clean direct annotated-tag commit repeatedly produces the same bounded uncompressed tar under the recorded Git implementation and one exact SHA-256 sidecar; independent raw verification proves stable tag/HEAD identities, the sole commit PAX value, canonical termination, exact portable inventory/blob/mode/owner/time roles, mandatory offline source content, public-safe actual bytes, and fail-closed cleanup without extraction or publication |
 | Package candidate identity | Every explicit workspace member inherits `0.1.0-rc.1` and remains non-publishable; every local crate edge has one exact path-bound shared requirement; every first-party lock entry is source-less at that version; disposable drift cases and the live inventory pass without network access |
 | Release integrity and support | The future prerelease contract requires release immutability, draft-first exact two-asset assembly, six separately authorized live gates, release and per-asset attestation checks, independent SHA-256 verification, and a latest-candidate-only support lifetime without claiming that a release exists |
