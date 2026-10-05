@@ -2471,6 +2471,12 @@ No performance threshold becomes a merge gate until reference hardware, fixture,
 
 ## 6. Deferred roadmap
 
+The accepted [October 2026 feature horizon](feature-horizon-2026-10.md)
+records exactly ten research-backed candidates with examples, use cases,
+dependencies, risks, and verification needs. It is planning evidence, not
+implementation approval. Each candidate must become its own explicitly
+approved bounded task and, when consequential, ADR before code changes begin.
+
 After the MVP and only with evidence: arbitrary or externally configurable
 stdio dimensions, MCP resource
 templates, subscriptions, list-change notifications, resource history and
