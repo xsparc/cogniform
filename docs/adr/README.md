@@ -87,5 +87,6 @@ earlier one and links the history.
 | [0081](0081-create-new-rendered-observation-examples.md) | Accepted | Export one create-new diagnostic set from the fixed headless reference frame |
 | [0082](0082-create-new-canonical-scenario-render-bundle.md) | Accepted | Export exact-revision canonical-scenario observations as a create-new graphics bundle |
 | [0083](0083-bounded-mcp-observation-image-content.md) | Accepted | Add opt-in bounded diagnostic image content beside the canonical MCP observation resource |
+| [0084](0084-bounded-gltf-scene-import-identity.md) | Accepted | Compile one bounded default glTF scene into ordinary stable world entities |
 
 New records use four sections: context, decision, consequences, and status.

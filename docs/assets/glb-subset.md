@@ -410,6 +410,40 @@ skins, and all other or wider extensions
 are not supported. There is no compressed geometry, mipmap, or
 scene-graph traversal path.
 
+## Accepted scene-graph direction
+
+[ADR 0084](../adr/0084-bounded-gltf-scene-import-identity.md) defines the
+staged F01 target, but no scene-graph code is implemented by that decision.
+The current importer therefore continues to classify every `nodes`, `scenes`,
+and root `scene` value as unsupported.
+
+The first implementation family will require a selected default scene,
+validate all declared scene and node records as disjoint strict trees, and
+retain only the selected scene's reachable closure as immutable asset data.
+Its default ceilings are 16 scenes, 256 nodes, 256 reachable nodes or mesh
+instances, depth 64, and 256 UTF-8 bytes per optional scene or node name.
+Supported nodes contain children, one existing one-primitive mesh reference,
+an optional discarded bounded name, and finite positive TRS only. Rotations
+must be unit quaternions under a fixture-pinned tolerance and are normalized
+once deterministically. Node matrices, zero or negative scale, cameras, skins,
+morph weights, animations, lights, node extensions, node extras, and
+name-based identity remain outside that subset.
+
+Retained root indices, child indices, transforms, mesh references, and scene
+records will count exactly against both per-asset decoded bytes and aggregate
+resident CPU bytes. Validation uses a bounded iterative worklist; any
+collection, depth, byte, arithmetic, or structural failure rejects before
+partial blueprint adoption.
+
+An explicit pure compiler will derive stable entity IDs from exact content,
+the selected scene, a caller-provided instance identity, and source node
+indices; emit every node as an ordinary world create followed by stable-ordered
+reparents; and return the source-node identity map. It will neither apply the
+patch nor upload a mesh. Repeated mesh references will share immutable asset
+residency while retaining separate public entities. Later local-service proof
+must cover atomic application, identity observations, replay, eviction, and
+exact-hash rehydration before the feature is described as supported.
+
 ## Failure and proxy policy
 
 Import diagnostics contain a stable code, a static schema/import location, and

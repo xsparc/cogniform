@@ -364,6 +364,13 @@ source-only candidate as `0.1.0-rc.1`; every package remains non-publishable.
 
 ### Changed
 
+- CF085 accepts a staged bounded glTF default-scene import contract. Immutable
+  asset decoding will retain a strictly limited selected-scene blueprint, a
+  pure compiler will produce ordinary stable world entities and hierarchy,
+  and local-service composition will remain a later explicit slice. The
+  current importer still rejects scenes and nodes; no runtime, protocol,
+  dependency, renderer, persistence, release, or deployment behavior changes;
+
 - CF066 adds public immutable `AssetTextureTransform` plus additive per-role
   `AssetMaterial` transform accessors. Exact declared transform markers move
   from unsupported/proxy handling into the supported path; malformed,

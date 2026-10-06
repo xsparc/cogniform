@@ -187,6 +187,11 @@ implementations arrive:
 See the [software design document](docs/architecture/software-design-document.md),
 [implementation plan](docs/roadmap/development-implementation-plan.md), and
 [architecture decisions](docs/adr/README.md) for the authoritative direction.
+The accepted [October 2026 feature horizon](docs/roadmap/feature-horizon-2026-10.md)
+orders ten post-MVP feature families. Its first prerequisite,
+[ADR 0084](docs/adr/0084-bounded-gltf-scene-import-identity.md), defines a
+staged default-scene import contract; the current runtime still rejects glTF
+scenes and nodes until those implementation slices land.
 The [source release-candidate checklist](docs/release/release-candidate.md)
 documents the separately gated tag, local archive preparation/verification,
 and publication sequence. The
