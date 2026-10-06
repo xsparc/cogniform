@@ -1,12 +1,14 @@
 # Feature horizon: October 2026
 
-Status: accepted planning evidence; implementation is not approved
+Status: accepted planning evidence; program implementation authorized for
+dependency-ordered bounded delivery on 2026-10-06
 
 This brief records ten research-backed feature candidates beyond the current
-CF083 baseline. It is advisory sequencing evidence, not an implementation
-queue. Every candidate still needs its own explicit approval, bounded task,
-acceptance gates, and, where it changes a consequential contract, an ADR. No
-candidate may silently enter another pull request.
+CF083 baseline. The maintainer authorized implementing the complete program,
+but that authority does not collapse the dependency graph or evidence gates.
+Every candidate still enters its own bounded task and pull request, and every
+consequential contract still requires an ADR. F05 remains measurement-gated
+and F10 remains threat-model-and-ADR-gated before their implementation tasks.
 
 ## DirectionBriefV1
 
@@ -53,9 +55,12 @@ ratification date, the brief says so instead of inventing one.
   residency, identity, replay, eviction, and diagnostics.
 - `disposition`: adopt.
 - `roadmap_delta`: Add a staged scene-import feature family before every other
-  imported-node proposal in this brief. Start with one default scene, finite
-  transforms, explicit node/depth/instance limits, and meshes already inside
-  the accepted subset.
+  imported-node proposal in this brief. [ADR 0084](../adr/0084-bounded-gltf-scene-import-identity.md)
+  selects pure default-scene-to-patch compilation, deterministic
+  instance-scoped node identities, positive TRS, explicit
+  scene/node/depth/instance limits, and meshes already inside the accepted
+  subset. Decode/retention, pure patch compilation, and service/render proof
+  remain separate dependency-ordered slices.
 - `verification_needed`: Negative hierarchy and limit fixtures; repeated-mesh
   identity tests; exact replay/hash tests; eviction and rehydration tests; and
   controlled renders from Khronos multi-node sample assets.

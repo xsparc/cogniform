@@ -2469,13 +2469,46 @@ Validation expands with capability:
 
 No performance threshold becomes a merge gate until reference hardware, fixture, sampling method, and baseline are versioned.
 
+### PR 86 - CF085: Bounded glTF scene-import identity contract
+
+Outcome: the first post-MVP scene-graph family has one accepted authority,
+identity, bounds, lifecycle, and delivery contract before executable behavior
+changes.
+
+Gate: the decision must preserve world-owned stable identity, ordinary atomic
+patch admission, canonical hash and replay, content-addressed asset lifecycle,
+explicit upload, and current positive-transform semantics. Current runtime
+support must remain truthfully unsupported until its staged code slices land.
+
+Accepted contract: retain an immutable bounded selected-scene blueprint in the
+asset domain, compile one explicit instance purely into ordinary stable world
+entities, and apply only through the existing gateway. Require a selected
+default scene, validate the complete strict-tree structure, admit positive TRS
+and existing one-primitive meshes only, derive node identities from exact
+content plus caller instance identity, emit all creates before stable-ordered
+reparents, and keep eviction/rehydration independent of logical world state.
+Renderer-owned traversal, opaque asset-scene components, matrix decomposition,
+signed or zero scale, cameras, skins, animation, node metadata, extensions,
+and implicit mutation remain outside the first subset. See
+[ADR 0084](../adr/0084-bounded-gltf-scene-import-identity.md).
+
+F01 now proceeds through three independently reviewable implementation slices:
+
+1. decode and retain the bounded selected-scene blueprint without changing
+   world or renderer behavior;
+2. compile one blueprint instance into an ordinary patch and source-node
+   identity map without applying it; and
+3. compose explicit local-service application and prove repeated-mesh
+   hierarchy rendering, observations, replay, eviction, and rehydration.
+
 ## 6. Deferred roadmap
 
 The accepted [October 2026 feature horizon](feature-horizon-2026-10.md)
 records exactly ten research-backed candidates with examples, use cases,
-dependencies, risks, and verification needs. It is planning evidence, not
-implementation approval. Each candidate must become its own explicitly
-approved bounded task and, when consequential, ADR before code changes begin.
+dependencies, risks, and verification needs. The maintainer authorized the
+program on 2026-10-06, but each candidate still becomes its own bounded task
+and pull request, follows recorded dependencies and evidence gates, and adds a
+consequential ADR before code changes where required.
 
 After the MVP and only with evidence: arbitrary or externally configurable
 stdio dimensions, MCP resource

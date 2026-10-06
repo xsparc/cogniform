@@ -744,6 +744,29 @@ oldest-upload ages without exposing source bytes, mesh keys, texture content,
 or backend handles. Processing and explicit eviction remove matching age state
 with the existing queue entry.
 
+The accepted post-MVP scene-import direction keeps authored hierarchy inside
+these same boundaries. A future bounded decoder retains one immutable selected
+default-scene blueprint beside decoded meshes, with exact blueprint bytes
+included in per-asset and aggregate CPU residency. The assets crate exposes
+that immutable value; a pure `cogniform-procedural` compiler converts one
+caller-namespaced instance into ordinary `Create` and `Reparent` operations
+without world, renderer, I/O, time, or entropy access. The engine later
+composes lookup, compilation, and ordinary gateway admission without owning
+graph or identity semantics.
+Every reachable source node receives a deterministic stable world identity;
+nodes that reuse one mesh share the existing content-hash-and-mesh key without
+sharing entity identity. The first subset requires a selected default scene,
+validates the complete strict-tree collection under explicit scene, node,
+depth, and instance limits, and maps only finite translation, finite non-zero
+rotation, and strictly positive finite scale. Renderer-owned virtual nodes,
+opaque asset-scene world components, node matrices, signed or zero scale,
+cameras, skins, animation, node metadata, and implicit apply/upload remain
+excluded. Ordinary patch preflight, logical hashing, replay, extraction,
+eviction, and exact-hash rehydration remain authoritative. See
+[ADR 0084](../adr/0084-bounded-gltf-scene-import-identity.md). The current
+runtime still rejects scenes and nodes until the staged implementation slices
+land.
+
 Built-in procedures are pure synchronous preparation functions. The local
 service executes a supported typed request under active runtime limits and
 admits its canonical output through the existing patch gateway. Procedure
