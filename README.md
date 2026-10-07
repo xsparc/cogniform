@@ -5,6 +5,8 @@ Rust. It is being built to turn bounded agent intent into atomic revisioned
 worlds, render machine-readable observations, and link feedback to the exact
 scene revision that produced it.
 
+[Portfolio case study: architecture, evidence and current limitations](https://louijiecompo.com/work/cogniform/).
+
 > [!IMPORTANT]
 > Cogniform is an early core, not a complete service or general-purpose 3D
 > engine. Public contracts, the atomic authoritative world, deterministic
